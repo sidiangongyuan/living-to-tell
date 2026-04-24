@@ -1,0 +1,93 @@
+"""Hand-written application container.
+
+Centralises construction of long-lived objects (database connection,
+repositories, settings facade). Intentionally simple — no DI framework, no
+service locator. Wiring code lives here so the rest of the app stays unaware
+of how things are built.
+"""
+from __future__ import annotations
+
+import sqlite3
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+from writer.app.settings import Settings
+from writer.services.ai.openai_provider import OpenAiProvider
+from writer.services.ai.prompt_builder import PromptBuilder
+from writer.services.ai.rewrite_service import RewriteService
+from writer.services.export import MarkdownExporter, TextExporter
+from writer.services.search_service import SearchService
+from writer.services.version_history_service import VersionHistoryService
+from writer.storage.database import open_and_initialize
+from writer.storage.repositories.chapter_repository import ChapterRepository
+from writer.storage.repositories.entry_repository import EntryRepository
+from writer.storage.repositories.project_repository import ProjectRepository
+from writer.storage.repositories.reference_repository import ReferenceRepository
+from writer.storage.repositories.settings_repository import SettingsRepository
+from writer.storage.repositories.version_repository import VersionRepository
+
+
+@dataclass
+class AppContainer:
+    """Holds the wired dependencies for the application."""
+
+    connection: sqlite3.Connection
+    settings_repository: SettingsRepository
+    settings: Settings
+    entry_repository: EntryRepository
+    version_repository: VersionRepository
+    reference_repository: ReferenceRepository
+    project_repository: ProjectRepository
+    chapter_repository: ChapterRepository
+    search_service: SearchService
+    prompt_builder: PromptBuilder
+    rewrite_service: RewriteService
+    markdown_exporter: MarkdownExporter
+    text_exporter: TextExporter
+    version_history_service: VersionHistoryService
+
+    def close(self) -> None:
+        try:
+            self.connection.close()
+        except sqlite3.Error:
+            pass
+
+
+def build_container(db_path: Optional[Path] = None) -> AppContainer:
+    """Create the application's services and repositories."""
+    conn = open_and_initialize(db_path)
+    settings_repo = SettingsRepository(conn)
+    settings = Settings(settings_repo)
+    entry_repo = EntryRepository(conn)
+    version_repo = VersionRepository(conn)
+    reference_repo = ReferenceRepository(conn)
+    project_repo = ProjectRepository(conn)
+    chapter_repo = ChapterRepository(conn)
+    search_service = SearchService(conn)
+    prompt_builder = PromptBuilder()
+
+    def _provider_factory():
+        return OpenAiProvider(settings.load_ai_config(), prompt_builder)
+
+    rewrite_service = RewriteService(entry_repo, version_repo, _provider_factory)
+    markdown_exporter = MarkdownExporter(entry_repo, chapter_repo)
+    text_exporter = TextExporter(entry_repo, chapter_repo)
+    version_history_service = VersionHistoryService(entry_repo, version_repo)
+
+    return AppContainer(
+        connection=conn,
+        settings_repository=settings_repo,
+        settings=settings,
+        entry_repository=entry_repo,
+        version_repository=version_repo,
+        reference_repository=reference_repo,
+        project_repository=project_repo,
+        chapter_repository=chapter_repo,
+        search_service=search_service,
+        prompt_builder=prompt_builder,
+        rewrite_service=rewrite_service,
+        markdown_exporter=markdown_exporter,
+        text_exporter=text_exporter,
+        version_history_service=version_history_service,
+    )
