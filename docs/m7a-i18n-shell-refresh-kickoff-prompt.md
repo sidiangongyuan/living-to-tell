@@ -12,6 +12,20 @@
 - 当前应用版本是 `0.1.0-alpha`
 - 当前产品主线已经具备：fragment editor / search / tags / AI rewrite / partial accept / version history / projects / chapters / export / portable packaging
 
+## Git / 协作规则
+
+这轮实现 agent 不负责版本控制收口。
+
+要求：
+
+- 不要自己 `git init`
+- 不要自己改 remote
+- 不要自己 `git commit`
+- 不要自己 `git push`
+- 只在当前工作区完成代码与文档修改，并按要求汇报
+
+这轮的 git review / commit / push / tag 由审查 agent 统一处理。
+
 这轮不要跳去 AI chat、深色模式完整实现、DOCX/PDF、多人同步、移动端。
 
 这轮的目标不是“补一个小功能”，而是把产品从“功能可用的 internal alpha”推进到“有明确视觉方向、可中英切换、写作体验更顺手的 `0.2.0-alpha.1`”。
