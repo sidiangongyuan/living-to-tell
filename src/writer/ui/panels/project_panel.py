@@ -36,6 +36,7 @@ from writer.services.export.text_exporter import TextExporter
 from writer.storage.repositories.chapter_repository import ChapterRepository
 from writer.storage.repositories.entry_repository import EntryRepository
 from writer.storage.repositories.project_repository import ProjectRepository
+from writer.ui.i18n import TR
 
 
 _UNCHAPTERED_SENTINEL = "__unchaptered__"
@@ -66,24 +67,24 @@ class ProjectPanel(QWidget):
 
         # ----- column 1: projects -----
         self._project_list = QListWidget()
-        self._new_project_btn = QPushButton("New")
-        self._rename_project_btn = QPushButton("Rename")
-        self._delete_project_btn = QPushButton("Delete")
+        self._new_project_btn = QPushButton(TR("pp.new_btn"))
+        self._rename_project_btn = QPushButton(TR("pp.rename_btn"))
+        self._delete_project_btn = QPushButton(TR("pp.delete_btn"))
         project_btn_row = QHBoxLayout()
         project_btn_row.addWidget(self._new_project_btn)
         project_btn_row.addWidget(self._rename_project_btn)
         project_btn_row.addWidget(self._delete_project_btn)
         project_btn_row.addStretch(1)
         left = QVBoxLayout()
-        left.addWidget(QLabel("Projects"))
+        left.addWidget(QLabel(TR("pp.projects_label")))
         left.addWidget(self._project_list, 1)
         left.addLayout(project_btn_row)
 
         # ----- column 2: sections (Unchaptered + chapters) -----
         self._chapter_list = QListWidget()
-        self._new_chapter_btn = QPushButton("New")
-        self._rename_chapter_btn = QPushButton("Rename")
-        self._delete_chapter_btn = QPushButton("Delete")
+        self._new_chapter_btn = QPushButton(TR("pp.new_btn"))
+        self._rename_chapter_btn = QPushButton(TR("pp.rename_btn"))
+        self._delete_chapter_btn = QPushButton(TR("pp.delete_btn"))
         self._up_btn = QPushButton("↑")
         self._down_btn = QPushButton("↓")
         chapter_btn_row = QHBoxLayout()
@@ -94,7 +95,7 @@ class ProjectPanel(QWidget):
         chapter_btn_row.addWidget(self._down_btn)
         chapter_btn_row.addStretch(1)
         middle = QVBoxLayout()
-        middle.addWidget(QLabel("Sections"))
+        middle.addWidget(QLabel(TR("pp.sections_label")))
         middle.addWidget(self._chapter_list, 1)
         middle.addLayout(chapter_btn_row)
 
@@ -102,9 +103,9 @@ class ProjectPanel(QWidget):
         self._entry_list = QListWidget()
         self._entry_up_btn = QPushButton("↑")
         self._entry_down_btn = QPushButton("↓")
-        self._move_to_unch_btn = QPushButton("→ Unchaptered")
-        self._move_to_chapter_btn = QPushButton("→ Chapter…")
-        self._remove_entry_btn = QPushButton("Remove from project")
+        self._move_to_unch_btn = QPushButton(TR("pp.move_to_unch_btn"))
+        self._move_to_chapter_btn = QPushButton(TR("pp.move_to_chapter_btn"))
+        self._remove_entry_btn = QPushButton(TR("pp.remove_entry_btn"))
         entry_btn_row = QHBoxLayout()
         entry_btn_row.addWidget(self._entry_up_btn)
         entry_btn_row.addWidget(self._entry_down_btn)
@@ -113,7 +114,7 @@ class ProjectPanel(QWidget):
         entry_btn_row.addWidget(self._remove_entry_btn)
         entry_btn_row.addStretch(1)
         right = QVBoxLayout()
-        right.addWidget(QLabel("Entries"))
+        right.addWidget(QLabel(TR("pp.entries_label")))
         right.addWidget(self._entry_list, 1)
         right.addLayout(entry_btn_row)
 
@@ -125,13 +126,11 @@ class ProjectPanel(QWidget):
 
         # ----- bottom: description + export -----
         self._description_edit = QPlainTextEdit()
-        self._description_edit.setPlaceholderText(
-            "Project description — shown in exported manuscripts."
-        )
+        self._description_edit.setPlaceholderText(TR("pp.description_placeholder"))
         self._description_edit.setFixedHeight(80)
-        self._save_description_btn = QPushButton("Save description")
-        self._export_md_btn = QPushButton("Export Markdown…")
-        self._export_txt_btn = QPushButton("Export Text…")
+        self._save_description_btn = QPushButton(TR("pp.save_desc_btn"))
+        self._export_md_btn = QPushButton(TR("pp.export_md_btn"))
+        self._export_txt_btn = QPushButton(TR("pp.export_txt_btn"))
         bottom_row = QHBoxLayout()
         bottom_row.addWidget(self._save_description_btn)
         bottom_row.addStretch(1)
@@ -141,7 +140,7 @@ class ProjectPanel(QWidget):
         # ----- assemble -----
         outer = QVBoxLayout(self)
         outer.addLayout(columns, 1)
-        outer.addWidget(QLabel("Description"))
+        outer.addWidget(QLabel(TR("pp.description_label")))
         outer.addWidget(self._description_edit)
         outer.addLayout(bottom_row)
 
@@ -210,13 +209,13 @@ class ProjectPanel(QWidget):
         self._chapter_list.blockSignals(True)
         try:
             self._chapter_list.clear()
-            unchaptered_item = QListWidgetItem("Unchaptered")
+            unchaptered_item = QListWidgetItem(TR("pp.unchaptered"))
             unchaptered_item.setData(
                 Qt.ItemDataRole.UserRole, _UNCHAPTERED_SENTINEL
             )
             self._chapter_list.addItem(unchaptered_item)
             for chapter in self._chapters.list_for_project(project_id):
-                item = QListWidgetItem(chapter.title or "Untitled chapter")
+                item = QListWidgetItem(chapter.title or TR("pp.untitled_chapter"))
                 item.setData(Qt.ItemDataRole.UserRole, chapter.id)
                 self._chapter_list.addItem(item)
         finally:
@@ -246,7 +245,7 @@ class ProjectPanel(QWidget):
         else:
             entries = self._entries.list_for_chapter(section_data)
         for entry in entries:
-            item = QListWidgetItem(entry.title.strip() or "Untitled fragment")
+            item = QListWidgetItem(entry.title.strip() or TR("pp.untitled_fragment"))
             item.setData(Qt.ItemDataRole.UserRole, entry.id)
             self._entry_list.addItem(item)
         if self._entry_list.count() > 0:
@@ -306,7 +305,7 @@ class ProjectPanel(QWidget):
         self._refresh_entries()
 
     def _on_new_project(self) -> None:
-        name, ok = QInputDialog.getText(self, "New project", "Project name:")
+        name, ok = QInputDialog.getText(self, TR("pp.new_project_title"), TR("pp.new_project_prompt"))
         if not ok or not name.strip():
             return
         project = self._projects.create(name.strip())
@@ -318,7 +317,7 @@ class ProjectPanel(QWidget):
         if project is None:
             return
         name, ok = QInputDialog.getText(
-            self, "Rename project", "Project name:", text=project.name
+            self, TR("pp.rename_project_title"), TR("pp.rename_project_prompt"), text=project.name
         )
         if not ok or not name.strip():
             return
@@ -332,9 +331,8 @@ class ProjectPanel(QWidget):
             return
         confirm = QMessageBox.question(
             self,
-            "Delete project",
-            f"Delete project '{project.name}' and all its chapters?"
-            " Fragments will be detached but kept.",
+            TR("pp.delete_project_title"),
+            TR("pp.delete_project_msg").format(name=project.name),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -346,7 +344,7 @@ class ProjectPanel(QWidget):
         project = self.current_project()
         if project is None:
             return
-        title, ok = QInputDialog.getText(self, "New chapter", "Chapter title:")
+        title, ok = QInputDialog.getText(self, TR("pp.new_chapter_title"), TR("pp.new_chapter_prompt"))
         if not ok:
             return
         chapter = self._chapters.create(project.id, title.strip())
@@ -360,7 +358,7 @@ class ProjectPanel(QWidget):
         if chapter is None or project is None:
             return
         title, ok = QInputDialog.getText(
-            self, "Rename chapter", "Chapter title:", text=chapter.title
+            self, TR("pp.rename_chapter_title"), TR("pp.rename_chapter_prompt"), text=chapter.title
         )
         if not ok:
             return
@@ -375,9 +373,8 @@ class ProjectPanel(QWidget):
             return
         confirm = QMessageBox.question(
             self,
-            "Delete chapter",
-            f"Delete chapter '{chapter.title or 'Untitled'}'?"
-            " Its fragments will remain in the project as unchaptered.",
+            TR("pp.delete_chapter_title"),
+            TR("pp.delete_chapter_msg").format(title=chapter.title or TR("pp.untitled_chapter")),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -457,8 +454,8 @@ class ProjectPanel(QWidget):
         if not chapters:
             QMessageBox.information(
                 self,
-                "No chapters",
-                "This project has no chapters yet. Create one first.",
+                TR("pp.no_chapters_title"),
+                TR("pp.no_chapters_msg"),
             )
             return
 
@@ -468,12 +465,12 @@ class ProjectPanel(QWidget):
         seen: dict[str, int] = {}
         counts: dict[str, int] = {}
         for ch in chapters:
-            label = ch.title.strip() if ch.title and ch.title.strip() else "Untitled chapter"
+            label = ch.title.strip() if ch.title and ch.title.strip() else TR("pp.untitled_chapter")
             counts[label] = counts.get(label, 0) + 1
         seq: dict[str, int] = {}
         labels: list[str] = []
         for ch in chapters:
-            base = ch.title.strip() if ch.title and ch.title.strip() else "Untitled chapter"
+            base = ch.title.strip() if ch.title and ch.title.strip() else TR("pp.untitled_chapter")
             if counts[base] > 1:
                 seq[base] = seq.get(base, 0) + 1
                 label = f"{base} ({seq[base]})"
@@ -482,16 +479,15 @@ class ProjectPanel(QWidget):
             labels.append(label)
 
         pick, ok = QInputDialog.getItem(
-            self, "Move to chapter", "Chapter:", labels, 0, False
+            self, TR("pp.move_to_chapter_title"), TR("pp.move_to_chapter_prompt"), labels, 0, False
         )
         if not ok:
             return
-        # Use index to get the exact chapter object — labels are now unique.
         target = chapters[labels.index(pick)]
         try:
             self._entries.assign_to_chapter(entry_id, target.id)
         except ValueError as err:
-            QMessageBox.warning(self, "Move failed", str(err))
+            QMessageBox.warning(self, TR("pp.move_failed"), str(err))
             return
         self._refresh_chapters(project.id, select_id=target.id)
         self._refresh_entries()
@@ -504,9 +500,8 @@ class ProjectPanel(QWidget):
             return
         confirm = QMessageBox.question(
             self,
-            "Remove from project",
-            "Detach this fragment from the project? The fragment itself is"
-            " kept and stays editable from the main window.",
+            TR("pp.remove_entry_title"),
+            TR("pp.remove_entry_msg"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -537,7 +532,7 @@ class ProjectPanel(QWidget):
         project = self.current_project()
         if project is None:
             QMessageBox.information(
-                self, "No project", "Select a project to export."
+                self, TR("pp.no_project_export"), TR("pp.no_project_export_msg")
             )
             return
         exporter = (
@@ -546,14 +541,14 @@ class ProjectPanel(QWidget):
         text = exporter.export_project(project)
         ext = "md" if fmt == "markdown" else "txt"
         filter_label = (
-            "Markdown (*.md)" if fmt == "markdown" else "Text files (*.txt)"
+            TR("dlg.export_md_filter") if fmt == "markdown" else TR("dlg.export_txt_filter")
         )
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export project", f"{project.name}.{ext}", filter_label
+            self, TR("pp.export_project_title"), f"{project.name}.{ext}", filter_label
         )
         if not path:
             return
         try:
             Path(path).write_text(text, encoding="utf-8", newline="\n")
         except OSError as err:
-            QMessageBox.critical(self, "Export failed", str(err))
+            QMessageBox.critical(self, TR("pp.export_failed"), str(err))

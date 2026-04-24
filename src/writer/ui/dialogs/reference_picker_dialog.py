@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 
 from writer.domain.models.reference_passage import ReferencePassage
 from writer.storage.repositories.reference_repository import ReferenceRepository
+from writer.ui.i18n import TR
 
 
 class ReferencePickerDialog(QDialog):
@@ -38,21 +39,20 @@ class ReferencePickerDialog(QDialog):
         self, repo: ReferenceRepository, parent: Optional[QWidget] = None
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Attach references")
+        self.setWindowTitle(TR("refpicker.title"))
         self.resize(560, 440)
         self._repo = repo
         self._selected_contents: List[str] = []
         self._skipped = False
 
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Search references…")
+        self._search.setPlaceholderText(TR("refpicker.search_placeholder"))
         self._list = QListWidget()
         self._list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
 
-        # Row of action buttons (Use selected / Skip / Cancel).
-        self._use_btn = QPushButton("Use selected")
-        self._skip_btn = QPushButton("Skip references")
-        self._cancel_btn = QPushButton("Cancel")
+        self._use_btn = QPushButton(TR("refpicker.use_btn"))
+        self._skip_btn = QPushButton(TR("refpicker.skip_btn"))
+        self._cancel_btn = QPushButton(TR("refpicker.cancel_btn"))
 
         button_row = QHBoxLayout()
         button_row.addStretch(1)
@@ -61,9 +61,7 @@ class ReferencePickerDialog(QDialog):
         button_row.addWidget(self._cancel_btn)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(
-            QLabel("Tick passages to include as tonal inspiration (optional).")
-        )
+        layout.addWidget(QLabel(TR("refpicker.hint")))
         layout.addWidget(self._search)
         layout.addWidget(self._list, 1)
         layout.addLayout(button_row)

@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from writer.ui.i18n import TR
+
 
 class AcceptMode(Enum):
     FULL = "full"
@@ -40,7 +42,7 @@ class RewriteCompareDialog(QDialog):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle(f"Review AI {action_label}")
+        self.setWindowTitle(TR("dlg.review_title").format(action=action_label))
         self.resize(900, 540)
 
         self._accept_mode: AcceptMode = AcceptMode.FULL
@@ -52,11 +54,11 @@ class RewriteCompareDialog(QDialog):
         original_view.setReadOnly(True)
 
         left_box = QVBoxLayout()
-        left_box.addWidget(QLabel("Original"))
+        left_box.addWidget(QLabel(TR("compare.original_label")))
         left_box.addWidget(original_view, 1)
 
         right_box = QVBoxLayout()
-        right_label = "AI rewrite (editable before accepting)"
+        right_label = TR("compare.generated_label_base")
         if provider_label:
             right_label += f"  —  {provider_label}"
         right_box.addWidget(QLabel(right_label))
@@ -66,21 +68,16 @@ class RewriteCompareDialog(QDialog):
         compare_row.addLayout(left_box, 1)
         compare_row.addLayout(right_box, 1)
 
-        notice = QLabel(
-            "Accepting will replace the original text and record both the "
-            "original and the AI version in the entry's history."
-        )
+        notice = QLabel(TR("compare.notice"))
         notice.setWordWrap(True)
         notice.setStyleSheet("color: gray;")
 
         # Button row (manual layout for three buttons)
-        self._accept_btn = QPushButton("Accept")
-        self._accept_selection_btn = QPushButton("Accept Selection")
+        self._accept_btn = QPushButton(TR("compare.accept_btn"))
+        self._accept_selection_btn = QPushButton(TR("compare.accept_selection_btn"))
         self._accept_selection_btn.setEnabled(False)
-        self._accept_selection_btn.setToolTip(
-            "Select text in the generated pane first"
-        )
-        cancel_btn = QPushButton("Cancel")
+        self._accept_selection_btn.setToolTip(TR("compare.accept_selection_tooltip"))
+        cancel_btn = QPushButton(TR("compare.cancel_btn"))
 
         self._accept_btn.clicked.connect(self._on_accept_full)
         self._accept_selection_btn.clicked.connect(self._on_accept_selection)

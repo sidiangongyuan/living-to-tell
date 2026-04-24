@@ -1,15 +1,16 @@
 """Main application window.
 
-Milestone 2: two-pane shell (recent fragments list + editor) wired to the
-entry repository, autosave service, and search service. Always shows an
-editable fragment — if the database is empty on startup, MainWindow asks the
-repository to create a blank one.
+Redesigned for M7A as a focus-writing shell: the editor is the primary
+surface, the sidebar is collapsible and its width is persisted. A command
+palette (Ctrl+P) gives quick access to all menu actions. Language and
+splitter state are persisted in the settings database.
 
 UI code never touches SQLite directly; everything goes through the
 container's repositories and services.
 """
 from __future__ import annotations
 
+import json
 from typing import Optional
 
 from PySide6.QtCore import Qt
@@ -17,28 +18,39 @@ from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
+    QHBoxLayout,
     QMainWindow,
     QMenuBar,
     QMessageBox,
     QProgressDialog,
+    QPushButton,
     QSplitter,
+    QToolBar,
     QWidget,
 )
 
 from writer.app.container import AppContainer
+from writer.app.locale import LOCALE_EN, LOCALE_ZH_CN
 from writer.domain.enums import RewriteAction
 from writer.services.ai.interfaces import RewriteRequest, RewriteResponse
 from writer.services.autosave_service import AutosaveService
 from writer.ui.dialogs.assign_fragment_dialog import AssignFragmentDialog
+from writer.ui.dialogs.command_palette_dialog import CommandPaletteDialog
 from writer.ui.dialogs.projects_dialog import ProjectsDialog
 from writer.ui.dialogs.reference_library_dialog import ReferenceLibraryDialog
 from writer.ui.dialogs.reference_picker_dialog import ReferencePickerDialog
 from writer.ui.dialogs.rewrite_compare_dialog import AcceptMode, RewriteCompareDialog
 from writer.ui.dialogs.settings_dialog import SettingsDialog
 from writer.ui.dialogs.version_history_dialog import VersionHistoryDialog
+from writer.ui.i18n import TR, rewrite_action_label
 from writer.ui.panels.editor_panel import EditorPanel
 from writer.ui.panels.fragment_list_panel import FragmentListPanel
 from writer.ui.rewrite_worker import RewriteWorker
+
+_SPLITTER_SIZES_KEY = "ui.splitter_sizes"
+_SIDEBAR_COLLAPSED_KEY = "ui.sidebar_collapsed"
+_DEFAULT_SIDEBAR_WIDTH = 280
+_DEFAULT_EDITOR_WIDTH = 820
 
 
 class MainWindow(QMainWindow):
@@ -58,13 +70,18 @@ class MainWindow(QMainWindow):
         self._list_panel = FragmentListPanel()
         self._editor_panel = EditorPanel()
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self._list_panel)
-        splitter.addWidget(self._editor_panel)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([280, 820])
-        self.setCentralWidget(splitter)
+        self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter.addWidget(self._list_panel)
+        self._splitter.addWidget(self._editor_panel)
+        self._splitter.setStretchFactor(0, 0)
+        self._splitter.setStretchFactor(1, 1)
+        self._splitter.splitterMoved.connect(self._on_splitter_moved)
+
+        # Restore persisted splitter sizes (or fall back to defaults)
+        self._sidebar_collapsed = False
+        self._restore_splitter_state()
+
+        self.setCentralWidget(self._splitter)
 
         self._autosave = AutosaveService(
             container.entry_repository,
@@ -82,78 +99,214 @@ class MainWindow(QMainWindow):
         self._autosave.saved.connect(self._on_autosaved)
 
         self._build_menu_bar()
+        self._build_toolbar()
         self._initial_load()
 
     # --------------------------------------------------------------
     def _build_menu_bar(self) -> None:
         menu_bar: QMenuBar = self.menuBar()
 
-        file_menu = menu_bar.addMenu("&File")
-        new_action = QAction("&New Fragment", self)
+        file_menu = menu_bar.addMenu(TR("menu.file"))
+        new_action = QAction(TR("menu.new_fragment"), self)
         new_action.setShortcut(QKeySequence("Ctrl+N"))
         new_action.triggered.connect(self._on_new_fragment)
         file_menu.addAction(new_action)
         file_menu.addSeparator()
-        assign_action = QAction("&Assign to Project…", self)
+        assign_action = QAction(TR("menu.assign_to_project"), self)
         assign_action.triggered.connect(self._on_assign_fragment)
         file_menu.addAction(assign_action)
-        projects_action = QAction("&Projects…", self)
+        projects_action = QAction(TR("menu.projects"), self)
         projects_action.triggered.connect(self._on_open_projects)
         file_menu.addAction(projects_action)
         file_menu.addSeparator()
-        history_action = QAction("Version &History…", self)
+        history_action = QAction(TR("menu.version_history"), self)
         history_action.triggered.connect(self._on_open_version_history)
         file_menu.addAction(history_action)
-        export_menu = file_menu.addMenu("&Export")
-        export_fragment_md = QAction("Current &fragment as Markdown…", self)
+        export_menu = file_menu.addMenu(TR("menu.export"))
+        export_fragment_md = QAction(TR("menu.export_fragment_md"), self)
         export_fragment_md.triggered.connect(
             lambda: self._on_export("fragment", "markdown")
         )
         export_menu.addAction(export_fragment_md)
-        export_fragment_txt = QAction("Current fragment as &text…", self)
+        export_fragment_txt = QAction(TR("menu.export_fragment_txt"), self)
         export_fragment_txt.triggered.connect(
             lambda: self._on_export("fragment", "text")
         )
         export_menu.addAction(export_fragment_txt)
         export_menu.addSeparator()
-        export_project_md = QAction("Current &project as Markdown…", self)
+        export_project_md = QAction(TR("menu.export_project_md"), self)
         export_project_md.triggered.connect(
             lambda: self._on_export("project", "markdown")
         )
         export_menu.addAction(export_project_md)
-        export_project_txt = QAction("Current project as text…", self)
+        export_project_txt = QAction(TR("menu.export_project_txt"), self)
         export_project_txt.triggered.connect(
             lambda: self._on_export("project", "text")
         )
         export_menu.addAction(export_project_txt)
         file_menu.addSeparator()
-        quit_action = QAction("&Quit", self)
+        quit_action = QAction(TR("menu.quit"), self)
         quit_action.setShortcut("Ctrl+Q")
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
 
-        ai_menu = menu_bar.addMenu("&AI")
-        polish_action = QAction("&Polish", self)
+        ai_menu = menu_bar.addMenu(TR("menu.ai"))
+        polish_action = QAction(TR("menu.polish"), self)
         polish_action.triggered.connect(lambda: self._on_rewrite(RewriteAction.POLISH))
         ai_menu.addAction(polish_action)
-        expand_action = QAction("&Expand", self)
+        expand_action = QAction(TR("menu.expand"), self)
         expand_action.triggered.connect(lambda: self._on_rewrite(RewriteAction.EXPAND))
         ai_menu.addAction(expand_action)
-        continue_action = QAction("&Continue", self)
+        continue_action = QAction(TR("menu.continue"), self)
         continue_action.triggered.connect(lambda: self._on_rewrite(RewriteAction.CONTINUE))
         ai_menu.addAction(continue_action)
         ai_menu.addSeparator()
-        references_action = QAction("&References Library…", self)
+        references_action = QAction(TR("menu.references"), self)
         references_action.triggered.connect(self._on_open_reference_library)
         ai_menu.addAction(references_action)
-        settings_action = QAction("&Settings…", self)
+        settings_action = QAction(TR("menu.settings"), self)
         settings_action.triggered.connect(self._on_open_settings)
         ai_menu.addAction(settings_action)
 
-        help_menu = menu_bar.addMenu("&Help")
-        about_action = QAction("&About Writer", self)
+        help_menu = menu_bar.addMenu(TR("menu.help"))
+        about_action = QAction(TR("menu.about"), self)
         about_action.triggered.connect(self._on_about)
         help_menu.addAction(about_action)
+
+        # Collect all leaf actions for the command palette (populated after
+        # building, so the list is available at Ctrl+P time)
+        self._all_menu_actions: list[QAction] = []
+        for top in menu_bar.actions():
+            menu = top.menu()
+            if menu:
+                self._collect_actions(menu, self._all_menu_actions)
+
+    def _collect_actions(self, menu, out: list) -> None:
+        for action in menu.actions():
+            if action.isSeparator():
+                continue
+            if action.menu():
+                self._collect_actions(action.menu(), out)
+            else:
+                out.append(action)
+
+    # --------------------------------------------------------------
+    def _build_toolbar(self) -> None:
+        toolbar = QToolBar("Quick actions", self)
+        toolbar.setMovable(False)
+        toolbar.setFloatable(False)
+
+        # Sidebar toggle button
+        self._sidebar_btn = QPushButton("◀")
+        self._sidebar_btn.setToolTip(TR("toolbar.toggle_sidebar"))
+        self._sidebar_btn.setFixedWidth(28)
+        self._sidebar_btn.clicked.connect(self._toggle_sidebar)
+        toolbar.addWidget(self._sidebar_btn)
+
+        # Spacer to push language button to the right
+        spacer = QWidget()
+        spacer.setSizePolicy(
+            spacer.sizePolicy().horizontalPolicy(),
+            spacer.sizePolicy().verticalPolicy(),
+        )
+        from PySide6.QtWidgets import QSizePolicy
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        toolbar.addWidget(spacer)
+
+        # Language quick-switch button
+        self._lang_btn = QPushButton(TR("toolbar.language_switch"))
+        self._lang_btn.setToolTip(TR("toolbar.language_switch_tooltip"))
+        self._lang_btn.setFixedWidth(40)
+        self._lang_btn.clicked.connect(self._on_toggle_language)
+        toolbar.addWidget(self._lang_btn)
+
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
+
+        # Extra (non-menu) actions exposed in the command palette
+        focus_search_action = QAction(TR("cmd.focus_search"), self)
+        focus_search_action.triggered.connect(
+            lambda: self._list_panel._search.setFocus()
+        )
+        switch_lang_action = QAction(TR("cmd.switch_language"), self)
+        switch_lang_action.triggered.connect(self._on_toggle_language)
+        self._extra_palette_actions: list[QAction] = [
+            focus_search_action,
+            switch_lang_action,
+        ]
+
+        # Command palette shortcut
+        cmd_action = QAction(TR("menu.command_palette"), self)
+        cmd_action.setShortcut(QKeySequence("Ctrl+P"))
+        cmd_action.triggered.connect(self._on_command_palette)
+        self.addAction(cmd_action)
+
+    # --------------------------------------------------------------
+    def _restore_splitter_state(self) -> None:
+        """Restore sidebar width and collapsed state from persisted settings."""
+        collapsed_raw = self._container.settings.get(_SIDEBAR_COLLAPSED_KEY, "false")
+        self._sidebar_collapsed = collapsed_raw == "true"
+
+        sizes_raw = self._container.settings.get(_SPLITTER_SIZES_KEY)
+        if sizes_raw:
+            try:
+                sizes = json.loads(sizes_raw)
+                if (
+                    isinstance(sizes, list)
+                    and len(sizes) == 2
+                    and all(isinstance(s, int) for s in sizes)
+                ):
+                    self._splitter.setSizes(sizes)
+                    return
+            except (json.JSONDecodeError, TypeError):
+                pass
+        # Default sizes
+        if self._sidebar_collapsed:
+            self._splitter.setSizes([0, _DEFAULT_EDITOR_WIDTH])
+        else:
+            self._splitter.setSizes([_DEFAULT_SIDEBAR_WIDTH, _DEFAULT_EDITOR_WIDTH])
+
+    def _on_splitter_moved(self, _pos: int, _index: int) -> None:
+        sizes = self._splitter.sizes()
+        self._container.settings.set(_SPLITTER_SIZES_KEY, json.dumps(sizes))
+        # Update collapsed state based on actual size
+        self._sidebar_collapsed = sizes[0] == 0
+        self._container.settings.set(
+            _SIDEBAR_COLLAPSED_KEY, "true" if self._sidebar_collapsed else "false"
+        )
+        self._sidebar_btn.setText("▶" if self._sidebar_collapsed else "◀")
+
+    def _toggle_sidebar(self) -> None:
+        if self._sidebar_collapsed:
+            self._splitter.setSizes([_DEFAULT_SIDEBAR_WIDTH, _DEFAULT_EDITOR_WIDTH])
+            self._sidebar_collapsed = False
+            self._sidebar_btn.setText("◀")
+        else:
+            self._splitter.setSizes([0, self._splitter.width()])
+            self._sidebar_collapsed = True
+            self._sidebar_btn.setText("▶")
+        sizes = self._splitter.sizes()
+        self._container.settings.set(_SPLITTER_SIZES_KEY, json.dumps(sizes))
+        self._container.settings.set(
+            _SIDEBAR_COLLAPSED_KEY, "true" if self._sidebar_collapsed else "false"
+        )
+
+    def _on_toggle_language(self) -> None:
+        from writer.app.locale import current_locale
+
+        current = current_locale()
+        new_locale = LOCALE_ZH_CN if current == LOCALE_EN else LOCALE_EN
+        self._container.settings.save_language(new_locale)
+        QMessageBox.information(
+            self,
+            TR("settings.restart_required_title"),
+            TR("settings.restart_required_msg"),
+        )
+
+    def _on_command_palette(self) -> None:
+        dialog = CommandPaletteDialog(
+            self._all_menu_actions + self._extra_palette_actions, parent=self
+        )
+        dialog.exec()
 
     # --------------------------------------------------------------
     def _initial_load(self) -> None:
@@ -229,6 +382,8 @@ class MainWindow(QMainWindow):
         self._list_panel.reset_tag_filter()
         self._refresh_list(select_id=entry.id)
         self._load_entry(entry.id)
+        # Auto-focus the body editor so the user can start writing immediately
+        self._editor_panel.focus_body()
 
     def _on_search_changed(self, _query: str) -> None:
         self._refresh_list(select_id=self._editor_panel.current_entry_id())
@@ -251,11 +406,8 @@ class MainWindow(QMainWindow):
 
         QMessageBox.about(
             self,
-            "About Writer",
-            f"<b>Writer</b><br>"
-            f"Version {APP_VERSION}<br><br>"
-            "A personal writing tool with lightweight AI rewrite assistance.<br><br>"
-            "<i>Internal alpha — not a final release.</i>",
+            TR("about.title"),
+            TR("about.content").format(version=APP_VERSION),
         )
 
     def _on_open_settings(self) -> None:
@@ -334,8 +486,8 @@ class MainWindow(QMainWindow):
             except ValueError as err:
                 QMessageBox.warning(
                     self,
-                    "Chapter not assigned",
-                    f"Could not attach the fragment to that chapter:\n{err}",
+                    TR("dlg.chapter_not_assigned"),
+                    TR("dlg.chapter_not_assigned_msg") + str(err),
                 )
         self._refresh_list(select_id=entry.id)
 
@@ -363,10 +515,10 @@ class MainWindow(QMainWindow):
 
         extension = "md" if fmt == "markdown" else "txt"
         filter_label = (
-            "Markdown (*.md)" if fmt == "markdown" else "Text files (*.txt)"
+            TR("dlg.export_md_filter") if fmt == "markdown" else TR("dlg.export_txt_filter")
         )
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export", f"{default_name}.{extension}", filter_label
+            self, TR("dlg.export_save_title"), f"{default_name}.{extension}", filter_label
         )
         if not path:
             return
@@ -374,7 +526,7 @@ class MainWindow(QMainWindow):
             with open(path, "w", encoding="utf-8", newline="\n") as fh:
                 fh.write(text)
         except OSError as err:
-            QMessageBox.critical(self, "Export failed", str(err))
+            QMessageBox.critical(self, TR("dlg.export_failed"), str(err))
 
     def _build_fragment_export(self, fmt: str) -> Optional[str]:
         entry_id = self._editor_panel.current_entry_id()
@@ -396,9 +548,8 @@ class MainWindow(QMainWindow):
         if project is None:
             QMessageBox.information(
                 self,
-                "No project",
-                "The current fragment isn't assigned to a project. Use"
-                " File → Assign to Project first.",
+                TR("dlg.no_project"),
+                TR("dlg.no_project_msg"),
             )
             return None
         exporter = (
@@ -454,8 +605,8 @@ class MainWindow(QMainWindow):
         if not target_text.strip():
             QMessageBox.information(
                 self,
-                "Nothing to rewrite",
-                "The fragment is empty. Write something first or select text.",
+                TR("dlg.nothing_to_rewrite"),
+                TR("dlg.nothing_to_rewrite_msg"),
             )
             return
 
@@ -471,13 +622,13 @@ class MainWindow(QMainWindow):
         cancelled = {"flag": False}
 
         progress = QProgressDialog(
-            f"Asking the model to {action.value} the text…",
-            "Cancel",
+            TR("dlg.rewrite_progress").format(action=rewrite_action_label(action)),
+            TR("dlg.rewrite_cancel"),
             0,
             0,
             self,
         )
-        progress.setWindowTitle("Working")
+        progress.setWindowTitle(TR("dlg.working"))
         progress.setMinimumDuration(0)
         progress.setAutoClose(False)
         progress.setAutoReset(False)
@@ -506,7 +657,7 @@ class MainWindow(QMainWindow):
             if cancelled["flag"]:
                 worker.deleteLater()
                 return
-            QMessageBox.critical(self, "AI request failed", message)
+            QMessageBox.critical(self, TR("dlg.ai_failed"), message)
             worker.deleteLater()
 
         def _on_cancel() -> None:
@@ -536,7 +687,7 @@ class MainWindow(QMainWindow):
         dialog = RewriteCompareDialog(
             original_text=original_view,
             generated_text=response.content,
-            action_label=action.value,
+            action_label=rewrite_action_label(action),
             provider_label=provider_label,
             parent=self,
         )

@@ -11,6 +11,7 @@ from writer.storage.repositories.chapter_repository import ChapterRepository
 from writer.storage.repositories.entry_repository import EntryRepository
 from writer.storage.repositories.project_repository import ProjectRepository
 from writer.ui.panels.project_panel import ProjectPanel
+from writer.ui.i18n import TR
 
 
 class ProjectsDialog(QDialog):
@@ -24,7 +25,7 @@ class ProjectsDialog(QDialog):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Projects")
+        self.setWindowTitle(TR("projects.title"))
         self.resize(960, 560)
         self.panel = ProjectPanel(
             project_repo,

@@ -8,6 +8,7 @@ from typing import List, Optional
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from writer.app.container import AppContainer, build_container
+from writer.app.version import APP_VERSION
 from writer.ui.main_window import MainWindow
 
 
@@ -29,13 +30,22 @@ def run(argv: Optional[List[str]] = None) -> int:
     app = _ensure_qapplication(args)
     app.setApplicationName("Writer")
     app.setOrganizationName("Writer")
-    app.setApplicationVersion("0.1.0-alpha")
+    app.setApplicationVersion(APP_VERSION)
 
     try:
         container = build_container()
     except Exception:  # noqa: BLE001
         _show_startup_error("Failed to initialise the database or services.")
         return 1
+
+    # Load the persisted locale before any UI is constructed so TR() calls
+    # during widget initialisation pick up the right language.
+    try:
+        from writer.app import locale as locale_module
+        from writer.ui.i18n import TR as _TR_unused  # noqa: F401 — side-effect import
+        locale_module.set_locale(container.settings.language)
+    except Exception:  # noqa: BLE001 — locale failure must not block startup
+        pass
 
     try:
         window = create_main_window(container)

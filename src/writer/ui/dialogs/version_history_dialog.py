@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 )
 
 from writer.services.version_history_service import VersionHistoryService
+from writer.ui.i18n import TR
 
 
 class VersionHistoryDialog(QDialog):
@@ -65,7 +66,7 @@ class VersionHistoryDialog(QDialog):
         # caller can reload the editor.
         self._restored_body: Optional[str] = None
 
-        self.setWindowTitle("Version History")
+        self.setWindowTitle(TR("vhd.title"))
         self.resize(860, 520)
 
         self._build_ui()
@@ -89,20 +90,20 @@ class VersionHistoryDialog(QDialog):
         self._version_list.currentItemChanged.connect(self._on_selection_changed)
 
         left = QVBoxLayout()
-        left.addWidget(QLabel("History (newest first)"))
+        left.addWidget(QLabel(TR("vhd.history_label")))
         left.addWidget(self._version_list, 1)
         left_widget = QWidget()
         left_widget.setLayout(left)
 
         # Right: current pane + selected pane
-        self._current_label = QLabel("Current body")
+        self._current_label = QLabel(TR("vhd.current_body_label"))
         self._current_edit = QPlainTextEdit(self._live_body)
         self._current_edit.setReadOnly(True)
 
-        self._selected_label = QLabel("(select a version to compare)")
+        self._selected_label = QLabel(TR("vhd.no_version_selected"))
         self._selected_edit = QPlainTextEdit()
         self._selected_edit.setReadOnly(True)
-        self._selected_edit.setPlaceholderText("No version selected")
+        self._selected_edit.setPlaceholderText(TR("vhd.no_version_selected_placeholder"))
 
         right_splitter = QSplitter(Qt.Orientation.Vertical)
         current_widget = QWidget()
@@ -131,11 +132,11 @@ class VersionHistoryDialog(QDialog):
 
         # Restore button (separate from the dialog button box so we can
         # control its enabled state and keep Close independent).
-        self._restore_btn = QPushButton("Restore Selected Version")
+        self._restore_btn = QPushButton(TR("vhd.restore_btn"))
         self._restore_btn.setEnabled(False)
         self._restore_btn.clicked.connect(self._on_restore)
 
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(TR("vhd.close_btn"))
         close_btn.clicked.connect(self.reject)
 
         btn_row = QHBoxLayout()
@@ -155,7 +156,7 @@ class VersionHistoryDialog(QDialog):
         self._version_list.clear()
         versions = self._service.list_history(self._entry_id)
         if not versions:
-            placeholder = QListWidgetItem("No version history yet.")
+            placeholder = QListWidgetItem(TR("vhd.no_history"))
             placeholder.setFlags(Qt.ItemFlag.NoItemFlags)
             self._version_list.addItem(placeholder)
             self._restore_btn.setEnabled(False)
@@ -182,7 +183,7 @@ class VersionHistoryDialog(QDialog):
         self, current: Optional[QListWidgetItem], _prev
     ) -> None:
         if current is None or not current.data(Qt.ItemDataRole.UserRole):
-            self._selected_label.setText("(select a version to compare)")
+            self._selected_label.setText(TR("vhd.no_version_selected"))
             self._selected_edit.setPlainText("")
             self._restore_btn.setEnabled(False)
             return
@@ -202,10 +203,8 @@ class VersionHistoryDialog(QDialog):
 
         confirm = QMessageBox.question(
             self,
-            "Restore version",
-            "Replace the current body with this version?\n\n"
-            "Your current body will be saved as a snapshot so you can "
-            "restore it again later.",
+            TR("vhd.restore_confirm_title"),
+            TR("vhd.restore_confirm_msg"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -213,26 +212,23 @@ class VersionHistoryDialog(QDialog):
         try:
             outcome = self._service.restore(self._entry_id, version_id)
         except ValueError as err:
-            QMessageBox.critical(self, "Restore failed", str(err))
+            QMessageBox.critical(self, TR("vhd.restore_failed"), str(err))
             return
 
         if outcome.was_noop:
             QMessageBox.information(
                 self,
-                "Nothing changed",
-                "The selected version is identical to the current body.",
+                TR("vhd.nothing_changed_title"),
+                TR("vhd.nothing_changed_msg"),
             )
             return
 
         self._restored_body = outcome.new_body
-        # Update the "Current body" pane to reflect the just-restored text.
         self._current_edit.setPlainText(outcome.new_body)
         self._live_body = outcome.new_body
-        # Reload the list so the new MANUAL_SNAPSHOT appears.
         self._load_versions()
         QMessageBox.information(
             self,
-            "Restored",
-            "The version has been restored. Your previous body was saved "
-            "as a snapshot.",
+            TR("vhd.restored_title"),
+            TR("vhd.restored_msg"),
         )

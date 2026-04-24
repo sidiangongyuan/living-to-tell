@@ -3,11 +3,16 @@
 Kept independent from any SDK so prompts can be unit-tested without touching
 the network. The system prompts deliberately encourage a restrained,
 voice-preserving rewrite — see docs/cloud-ai-strategy.md §5.
+
+System prompts are available in English and Simplified Chinese. The active
+locale is read from ``writer.app.locale`` at call time so the language
+follows the setting chosen at startup.
 """
 from __future__ import annotations
 
 from typing import Dict, List
 
+from writer.app.locale import LOCALE_ZH_CN, current_locale
 from writer.domain.enums import RewriteAction
 from writer.services.ai.interfaces import RewriteRequest
 
@@ -34,13 +39,41 @@ _SYSTEM_PROMPTS: Dict[RewriteAction, str] = {
     ),
 }
 
+_SYSTEM_PROMPTS_ZH_CN: Dict[RewriteAction, str] = {
+    RewriteAction.POLISH: (
+        "你是一位为个人写作者服务的克制散文润色助手。"
+        "在保留作者原意、情感基调和第一人称叙述风格的前提下，"
+        "轻微改善文章的节奏、清晰度和用词选择。"
+        "不要添加新事实，不要扩展范围，不要过度改写。"
+        "只返回改写后的文本，不要添加任何前言或说明。"
+    ),
+    RewriteAction.EXPAND: (
+        "你是一位细心的写作助手。"
+        "在与作者声音和现有内容保持一致的前提下，"
+        "用更多感官细节、反思或背景来扩展给定的段落。"
+        "不要虚构与文章相矛盾的事实。"
+        "只返回扩展后的文本。"
+    ),
+    RewriteAction.CONTINUE: (
+        "你是一位细心的写作助手。"
+        "以相同的声音、语气和时态续写给定的段落。"
+        "从文本结尾处接着写，不要重复现有内容。"
+        "只返回新续写的文本。"
+    ),
+}
+
 
 class PromptBuilder:
     """Builds the message list for a rewrite request."""
 
     def system_prompt(self, action: RewriteAction) -> str:
+        prompts = (
+            _SYSTEM_PROMPTS_ZH_CN
+            if current_locale() == LOCALE_ZH_CN
+            else _SYSTEM_PROMPTS
+        )
         try:
-            return _SYSTEM_PROMPTS[action]
+            return prompts[action]
         except KeyError as exc:  # pragma: no cover - defensive
             raise ValueError(f"Unknown rewrite action: {action}") from exc
 

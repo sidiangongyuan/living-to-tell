@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -19,12 +20,44 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSplitter,
+    QStyledItemDelegate,
     QVBoxLayout,
     QWidget,
 )
 
 from writer.domain.models.reference_passage import ReferencePassage
 from writer.storage.repositories.reference_repository import ReferenceRepository
+from writer.ui.i18n import TR
+from writer.ui.tag_colors import get_tag_color
+
+
+class _RefTagDotDelegate(QStyledItemDelegate):
+    """Draws a small colored dot for the first tag of a reference passage."""
+
+    _DOT_SIZE = 8
+    _DOT_MARGIN = 6
+
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
+        tags_raw: str = index.data(Qt.ItemDataRole.UserRole + 1) or ""
+        first_tag = tags_raw.split(",")[0].strip() if tags_raw.strip() else ""
+        if not first_tag:
+            return
+        bg_hex, _ = get_tag_color(first_tag)
+        r = option.rect
+        cx = r.right() - self._DOT_MARGIN - self._DOT_SIZE // 2
+        cy = r.center().y()
+        painter.save()
+        painter.setRenderHint(painter.RenderHint.Antialiasing)
+        painter.setBrush(QColor(bg_hex))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(
+            cx - self._DOT_SIZE // 2,
+            cy - self._DOT_SIZE // 2,
+            self._DOT_SIZE,
+            self._DOT_SIZE,
+        )
+        painter.restore()
 
 
 class ReferenceLibraryPanel(QWidget):
@@ -37,10 +70,11 @@ class ReferenceLibraryPanel(QWidget):
 
         # left side: search + list + buttons
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Search references…")
+        self._search.setPlaceholderText(TR("rlp.search_placeholder"))
         self._list = QListWidget()
-        self._new_btn = QPushButton("New")
-        self._delete_btn = QPushButton("Delete")
+        self._list.setItemDelegate(_RefTagDotDelegate(self._list))
+        self._new_btn = QPushButton(TR("rlp.new_btn"))
+        self._delete_btn = QPushButton(TR("rlp.delete_btn"))
 
         left_buttons = QHBoxLayout()
         left_buttons.addWidget(self._new_btn)
@@ -59,18 +93,18 @@ class ReferenceLibraryPanel(QWidget):
         self._author_edit = QLineEdit()
         self._tags_edit = QLineEdit()
         self._content_edit = QPlainTextEdit()
-        self._save_btn = QPushButton("Save")
+        self._save_btn = QPushButton(TR("rlp.save_btn"))
 
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.addWidget(QLabel("Source title *"))
+        right_layout.addWidget(QLabel(TR("rlp.source_title_label")))
         right_layout.addWidget(self._title_edit)
-        right_layout.addWidget(QLabel("Author"))
+        right_layout.addWidget(QLabel(TR("rlp.author_label")))
         right_layout.addWidget(self._author_edit)
-        right_layout.addWidget(QLabel("Tags (free text)"))
+        right_layout.addWidget(QLabel(TR("rlp.tags_label")))
         right_layout.addWidget(self._tags_edit)
-        right_layout.addWidget(QLabel("Passage content *"))
+        right_layout.addWidget(QLabel(TR("rlp.content_label")))
         right_layout.addWidget(self._content_edit, 1)
         save_row = QHBoxLayout()
         save_row.addStretch(1)
@@ -108,6 +142,7 @@ class ReferenceLibraryPanel(QWidget):
             for passage in items:
                 item = QListWidgetItem(passage.display_label())
                 item.setData(Qt.ItemDataRole.UserRole, passage.id)
+                item.setData(Qt.ItemDataRole.UserRole + 1, passage.tags or "")
                 self._list.addItem(item)
         finally:
             self._list.blockSignals(False)
@@ -154,10 +189,10 @@ class ReferenceLibraryPanel(QWidget):
         title = self._title_edit.text().strip()
         content = self._content_edit.toPlainText()
         if not title:
-            QMessageBox.warning(self, "Missing title", "Source title is required.")
+            QMessageBox.warning(self, TR("rlp.missing_title"), TR("rlp.missing_title_msg"))
             return
         if not content.strip():
-            QMessageBox.warning(self, "Missing content", "Passage content is required.")
+            QMessageBox.warning(self, TR("rlp.missing_content"), TR("rlp.missing_content_msg"))
             return
         author = self._author_edit.text()
         tags = self._tags_edit.text()
@@ -178,10 +213,10 @@ class ReferenceLibraryPanel(QWidget):
                     tags=tags,
                 )
         except ValueError as err:
-            QMessageBox.warning(self, "Invalid reference", str(err))
+            QMessageBox.warning(self, TR("rlp.invalid_ref"), str(err))
             return
         if passage is None:
-            QMessageBox.warning(self, "Not found", "Reference no longer exists.")
+            QMessageBox.warning(self, TR("rlp.not_found"), TR("rlp.not_found_msg"))
             self.refresh()
             return
         self.refresh(select_id=passage.id)
@@ -191,8 +226,8 @@ class ReferenceLibraryPanel(QWidget):
             return
         confirm = QMessageBox.question(
             self,
-            "Delete reference",
-            "Delete this reference passage?",
+            TR("rlp.confirm_delete_title"),
+            TR("rlp.confirm_delete_msg"),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return

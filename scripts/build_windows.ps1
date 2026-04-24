@@ -10,6 +10,33 @@ $distDir = Join-Path $repoRoot "dist"
 $bundleDir = Join-Path $distDir "Writer"
 $zipPath = Join-Path $distDir "Writer-portable.zip"
 
+function Compress-ArchiveWithRetry {
+    param(
+        [string]$SourcePath,
+        [string]$DestinationPath,
+        [int]$MaxAttempts = 5,
+        [int]$DelayMilliseconds = 1000
+    )
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        try {
+            if (Test-Path $DestinationPath) {
+                Remove-Item $DestinationPath -Force
+            }
+
+            Compress-Archive -Path $SourcePath -DestinationPath $DestinationPath -Force -ErrorAction Stop
+            return
+        }
+        catch {
+            if ($attempt -ge $MaxAttempts) {
+                throw
+            }
+
+            [System.Threading.Thread]::Sleep($DelayMilliseconds)
+        }
+    }
+}
+
 Push-Location $repoRoot
 try {
     if (-not (Test-Path $specPath)) {
@@ -32,7 +59,7 @@ try {
         throw "Expected executable was not created: $exePath"
     }
 
-    Compress-Archive -Path (Join-Path $bundleDir "*") -DestinationPath $zipPath -Force
+    Compress-ArchiveWithRetry -SourcePath (Join-Path $bundleDir "*") -DestinationPath $zipPath
 
     Write-Output ""
     Write-Output "=== Build complete ==="
