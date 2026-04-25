@@ -87,6 +87,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(entries)")}
     if "archived_at" not in cols:
         conn.execute("ALTER TABLE entries ADD COLUMN archived_at TEXT")
+    # M8: curation status (unsorted / included / parking / discarded).
+    if "curation_status" not in cols:
+        conn.execute(
+            "ALTER TABLE entries ADD COLUMN curation_status TEXT "
+            "NOT NULL DEFAULT 'unsorted'"
+        )
 
 
 def _backfill_sequence_order(conn: sqlite3.Connection) -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-from writer.domain.enums import EntryType
+from writer.domain.enums import CurationStatus, EntryType
 
 
 @dataclass
@@ -20,3 +20,4 @@ class Entry:
     chapter_id: Optional[str] = None
     sequence_order: Optional[int] = None
     archived_at: Optional[str] = None
+    curation_status: str = CurationStatus.UNSORTED.value

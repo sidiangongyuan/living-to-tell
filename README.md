@@ -12,15 +12,41 @@ ever silently overwriting the original text.
 
 - **Fragment editor** — write and edit short text fragments with autosave
 - **Recent fragments list** — quickly switch between fragments
-- **Full-text search** — SQLite FTS5 search across all fragments
+- **Full-text search** — SQLite FTS5 search across fragments, plus a global
+  search dialog for fragments and works
 - **Tags & tag filter** — tag fragments and filter the list by tag
+- **Works** — create longer-form pieces with title, summary, tags, status,
+  target word count, and ordered sections
+- **Collections** — organise multiple works into an ordered set and export
+  the whole collection together
+- **Include fragment into work** — insert the selected text (or the whole
+  fragment) into a chosen work section at an explicit insertion point
 - **AI rewrite** — Polish / Expand / Continue via OpenAI-compatible API
   - Side-by-side compare dialog with full accept or partial (selection) accept
 - **Reference library** — paste-in source material for AI context
 - **Projects & chapters** — organise fragments into projects with chapters
-- **Export** — fragment or full project as Markdown or plain text
-- **Version history** — every AI acceptance and manual snapshot is tracked;
-  restore any previous version at any time
+- **Export** — fragments and projects as Markdown / plain text; works and
+  collections as TXT / Markdown / DOCX
+- **Version history** — fragment AI acceptances and manual snapshots are
+  tracked; works also support manual snapshots and restore-to-current
+
+## M8 Highlights
+
+M8 adds a second writing layer above fragments:
+
+- **Works mode** — write longer-form pieces as ordered sections (`body` and
+  `heading` blocks) instead of keeping everything as loose fragments
+- **Collections mode** — assemble multiple works into a book-like or
+  anthology-like order, then export the whole collection with a generated
+  table of contents
+- **Fragment inclusion flow** — send a fragment into a work through a review
+  dialog, edit the inserted text before confirming, and choose the insertion
+  point inside the target section preview
+- **Unified search** — search fragments and works from one dialog and jump
+  directly to the matching fragment or work section
+
+Current M8 scope is intentionally plain-text-first: no rich text, no PDF
+typesetting, and no book front-matter system yet.
 
 ## Run locally (source)
 
@@ -45,6 +71,14 @@ pytest
 # or for quieter output:
 pytest -q
 ```
+
+## Keyboard shortcuts
+
+- `Ctrl+N` — new fragment
+- `Ctrl+P` — command palette
+- `Ctrl+S` — save current fragment
+- `Ctrl+Shift+F` — global search
+- `Ctrl+Shift+I` — include current fragment into a work
 
 ## Build a Windows package
 
@@ -149,11 +183,18 @@ dist\Writer\Writer.exe
 - All `writer` package source
 - `writer/storage/schema.sql`
 - PySide6 Qt runtime (plugins, translations, libraries)
+- `python-docx` and its runtime dependencies for work / collection DOCX export
 - `hooks/rthook_pyside6_dlls.py` — custom runtime hook that adds `PySide6/`
   and `shiboken6/` subdirectories to the Windows DLL search path via
   `os.add_dll_directory()`. This is required on Python 3.8+ where the legacy
   `PATH` environment variable is no longer used for extension-module DLL
   resolution.
+
+## Release notes
+
+- [docs/m8-release-notes.md](docs/m8-release-notes.md) — M8 summary covering
+  works, collections, unified search, inclusion flow, export formats, and
+  current scope limits
 
 ## Design docs
 
@@ -164,3 +205,5 @@ Product and design docs live under [`docs/`](docs/):
 - `docs/product-requirements.md`
 - `docs/technical-approach.md`
 - `docs/development-plan.md`
+- `docs/m8-release-notes.md`
+

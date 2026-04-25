@@ -17,15 +17,28 @@ from writer.services.ai.openai_provider import OpenAiProvider
 from writer.services.ai.prompt_builder import PromptBuilder
 from writer.services.ai.rewrite_service import RewriteService
 from writer.services.export import MarkdownExporter, TextExporter
+from writer.services.export.work_exporter import WorkExportService
 from writer.services.search_service import SearchService
 from writer.services.version_history_service import VersionHistoryService
+from writer.services.work_service import WorkService
 from writer.storage.database import open_and_initialize
 from writer.storage.repositories.chapter_repository import ChapterRepository
+from writer.storage.repositories.collection_repository import CollectionRepository
 from writer.storage.repositories.entry_repository import EntryRepository
 from writer.storage.repositories.project_repository import ProjectRepository
 from writer.storage.repositories.reference_repository import ReferenceRepository
 from writer.storage.repositories.settings_repository import SettingsRepository
 from writer.storage.repositories.version_repository import VersionRepository
+from writer.storage.repositories.work_fragment_ref_repository import (
+    WorkFragmentRefRepository,
+)
+from writer.storage.repositories.work_repository import WorkRepository
+from writer.storage.repositories.work_section_repository import (
+    WorkSectionRepository,
+)
+from writer.storage.repositories.work_version_repository import (
+    WorkVersionRepository,
+)
 
 
 @dataclass
@@ -46,6 +59,13 @@ class AppContainer:
     markdown_exporter: MarkdownExporter
     text_exporter: TextExporter
     version_history_service: VersionHistoryService
+    work_repository: WorkRepository
+    work_section_repository: WorkSectionRepository
+    collection_repository: CollectionRepository
+    work_fragment_ref_repository: WorkFragmentRefRepository
+    work_version_repository: WorkVersionRepository
+    work_service: WorkService
+    work_export_service: WorkExportService
 
     def close(self) -> None:
         try:
@@ -86,6 +106,23 @@ def build_container(db_path: Optional[Path] = None) -> AppContainer:
     text_exporter = TextExporter(entry_repo, chapter_repo)
     version_history_service = VersionHistoryService(entry_repo, version_repo)
 
+    work_repo = WorkRepository(conn)
+    section_repo = WorkSectionRepository(conn)
+    collection_repo = CollectionRepository(conn)
+    work_ref_repo = WorkFragmentRefRepository(conn)
+    work_version_repo = WorkVersionRepository(conn)
+    work_service = WorkService(
+        conn,
+        work_repo,
+        section_repo,
+        work_ref_repo,
+        work_version_repo,
+        entry_repo,
+    )
+    work_export_service = WorkExportService(
+        work_repo, section_repo, collection_repo
+    )
+
     return AppContainer(
         connection=conn,
         settings_repository=settings_repo,
@@ -101,4 +138,11 @@ def build_container(db_path: Optional[Path] = None) -> AppContainer:
         markdown_exporter=markdown_exporter,
         text_exporter=text_exporter,
         version_history_service=version_history_service,
+        work_repository=work_repo,
+        work_section_repository=section_repo,
+        collection_repository=collection_repo,
+        work_fragment_ref_repository=work_ref_repo,
+        work_version_repository=work_version_repo,
+        work_service=work_service,
+        work_export_service=work_export_service,
     )

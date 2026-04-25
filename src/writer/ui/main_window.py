@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QProgressDialog,
     QPushButton,
     QSplitter,
+    QStackedWidget,
     QStatusBar,
     QToolBar,
     QWidget,
@@ -42,6 +43,8 @@ from writer.storage.repositories.entry_repository import (
 )
 from writer.ui.dialogs.assign_fragment_dialog import AssignFragmentDialog
 from writer.ui.dialogs.command_palette_dialog import CommandPaletteDialog
+from writer.ui.dialogs.global_search_dialog import GlobalSearchDialog
+from writer.ui.dialogs.include_fragment_dialog import IncludeFragmentDialog
 from writer.ui.dialogs.projects_dialog import ProjectsDialog
 from writer.ui.dialogs.reference_library_dialog import ReferenceLibraryDialog
 from writer.ui.dialogs.reference_picker_dialog import ReferencePickerDialog
@@ -49,8 +52,10 @@ from writer.ui.dialogs.rewrite_compare_dialog import AcceptMode, RewriteCompareD
 from writer.ui.dialogs.settings_dialog import SettingsDialog
 from writer.ui.dialogs.version_history_dialog import VersionHistoryDialog
 from writer.ui.i18n import TR, rewrite_action_label
+from writer.ui.panels.collections_panel import CollectionsPanel
 from writer.ui.panels.editor_panel import EditorPanel
 from writer.ui.panels.fragment_list_panel import FragmentListPanel
+from writer.ui.panels.works_panel import WorksPanel
 from writer.ui.rewrite_worker import RewriteWorker
 
 _SPLITTER_SIZES_KEY = "ui.splitter_sizes"
@@ -87,7 +92,17 @@ class MainWindow(QMainWindow):
         self._sidebar_collapsed = False
         self._restore_splitter_state()
 
-        self.setCentralWidget(self._splitter)
+        # M8 mode-switching central widget. The existing fragment splitter
+        # is mode 0; works panel mode 1; collections panel mode 2.
+        self._fragments_widget = self._splitter
+        self._works_panel = WorksPanel(container)
+        self._collections_panel = CollectionsPanel(container)
+        self._stack = QStackedWidget()
+        self._stack.addWidget(self._fragments_widget)  # 0
+        self._stack.addWidget(self._works_panel)        # 1
+        self._stack.addWidget(self._collections_panel)  # 2
+
+        self.setCentralWidget(self._stack)
 
         self._autosave = AutosaveService(
             container.entry_repository,
@@ -172,6 +187,13 @@ class MainWindow(QMainWindow):
         )
         export_menu.addAction(export_project_txt)
         file_menu.addSeparator()
+        include_action = QAction(TR("menu.include_fragment"), self)
+        include_action.triggered.connect(self._on_include_fragment)
+        file_menu.addAction(include_action)
+        global_search_action = QAction(TR("menu.global_search"), self)
+        global_search_action.triggered.connect(self._on_global_search)
+        file_menu.addAction(global_search_action)
+        file_menu.addSeparator()
         quit_action = QAction(TR("menu.quit"), self)
         quit_action.setShortcut("Ctrl+Q")
         quit_action.triggered.connect(self.close)
@@ -230,6 +252,26 @@ class MainWindow(QMainWindow):
         self._sidebar_btn.clicked.connect(self._toggle_sidebar)
         toolbar.addWidget(self._sidebar_btn)
 
+        # M8 mode-switch buttons.
+        self._mode_fragments_btn = QPushButton(TR("toolbar.mode_fragments"))
+        self._mode_fragments_btn.setCheckable(True)
+        self._mode_fragments_btn.setChecked(True)
+        self._mode_fragments_btn.clicked.connect(lambda: self._set_mode(0))
+        toolbar.addWidget(self._mode_fragments_btn)
+        self._mode_works_btn = QPushButton(TR("toolbar.mode_works"))
+        self._mode_works_btn.setCheckable(True)
+        self._mode_works_btn.clicked.connect(lambda: self._set_mode(1))
+        toolbar.addWidget(self._mode_works_btn)
+        self._mode_collections_btn = QPushButton(TR("toolbar.mode_collections"))
+        self._mode_collections_btn.setCheckable(True)
+        self._mode_collections_btn.clicked.connect(lambda: self._set_mode(2))
+        toolbar.addWidget(self._mode_collections_btn)
+
+        # M8 global search button.
+        self._search_btn = QPushButton(TR("toolbar.global_search"))
+        self._search_btn.clicked.connect(self._on_global_search)
+        toolbar.addWidget(self._search_btn)
+
         # Spacer to push language button to the right
         spacer = QWidget()
         spacer.setSizePolicy(
@@ -266,6 +308,20 @@ class MainWindow(QMainWindow):
         cmd_action.setShortcut(QKeySequence("Ctrl+P"))
         cmd_action.triggered.connect(self._on_command_palette)
         self.addAction(cmd_action)
+
+        # M8 global search shortcut (Ctrl+Shift+F).
+        gsearch_action = QAction(TR("cmd.global_search"), self)
+        gsearch_action.setShortcut(QKeySequence("Ctrl+Shift+F"))
+        gsearch_action.triggered.connect(self._on_global_search)
+        self.addAction(gsearch_action)
+        self._extra_palette_actions.append(gsearch_action)
+
+        # M8 include-fragment shortcut (Ctrl+Shift+I).
+        include_action = QAction(TR("cmd.include_fragment"), self)
+        include_action.setShortcut(QKeySequence("Ctrl+Shift+I"))
+        include_action.triggered.connect(self._on_include_fragment)
+        self.addAction(include_action)
+        self._extra_palette_actions.append(include_action)
 
     # --------------------------------------------------------------
     def _restore_splitter_state(self) -> None:
@@ -627,6 +683,57 @@ class MainWindow(QMainWindow):
             self._container.reference_repository, parent=self
         )
         dialog.exec()
+
+    # --------------------------------------------------------------
+    # M8 Works / Collections / Search / Include
+    # --------------------------------------------------------------
+    def _set_mode(self, mode: int) -> None:
+        self._stack.setCurrentIndex(mode)
+        self._mode_fragments_btn.setChecked(mode == 0)
+        self._mode_works_btn.setChecked(mode == 1)
+        self._mode_collections_btn.setChecked(mode == 2)
+        if mode == 1:
+            self._works_panel.refresh(preserve_selection=True)
+        elif mode == 2:
+            self._collections_panel.refresh_collections()
+
+    def _on_global_search(self) -> None:
+        dlg = GlobalSearchDialog(self._container, parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted or dlg.selected_hit is None:
+            return
+        hit = dlg.selected_hit
+        if hit.kind == "fragment":
+            self._set_mode(0)
+            self._refresh_list(select_id=hit.id)
+        elif hit.kind == "work":
+            self._set_mode(1)
+            self._works_panel.select_work_section(hit.id, hit.section_id)
+
+    def _on_include_fragment(self) -> None:
+        entry_id = self._editor_panel.current_entry_id()
+        if entry_id is None:
+            return
+        self._autosave.flush()
+        entry = self._container.entry_repository.get(entry_id)
+        if entry is None:
+            return
+        # Default the dialog's text to the current selection (if any).
+        # Falling through to the full body happens inside the dialog.
+        selected = self._editor_panel.selected_body_text()
+        dlg = IncludeFragmentDialog(
+            self._container,
+            entry,
+            default_text=selected or None,
+            parent=self,
+        )
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.included_outcome is not None:
+            QMessageBox.information(
+                self,
+                TR("include.title"),
+                TR("include.success_msg"),
+            )
+            # Refresh fragment list so the curation badge updates.
+            self._refresh_list(select_id=entry_id)
 
     # --------------------------------------------------------------
     # Projects / assignment / export / version history

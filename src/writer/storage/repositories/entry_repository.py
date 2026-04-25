@@ -51,6 +51,11 @@ def _row_to_entry(row: sqlite3.Row) -> Entry:
         ),
         tags=parse_tags(raw_tags),
         archived_at=row["archived_at"] if "archived_at" in keys else None,
+        curation_status=(
+            row["curation_status"]
+            if "curation_status" in keys and row["curation_status"]
+            else "unsorted"
+        ),
     )
 
 
@@ -256,6 +261,22 @@ class EntryRepository:
                 "UPDATE entries SET archived_at = NULL WHERE id = ?",
                 (entry_id,),
             )
+        return self.get(entry_id)
+
+    def set_curation_status(
+        self, entry_id: str, status: str
+    ) -> Optional[Entry]:
+        """Update the M8 curation tag (unsorted/included/parking/discarded)."""
+        from writer.domain.enums import CurationStatus
+
+        if status not in CurationStatus.values():
+            raise ValueError(f"unknown curation status: {status!r}")
+        self._conn.execute(
+            "UPDATE entries SET curation_status = ?, "
+            "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') "
+            "WHERE id = ?",
+            (status, entry_id),
+        )
         return self.get(entry_id)
 
     # reads -------------------------------------------------------------

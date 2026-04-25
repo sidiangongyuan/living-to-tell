@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS entries (
     sequence_order INTEGER,
     tags_text      TEXT NOT NULL DEFAULT '',
     archived_at    TEXT,
+    curation_status TEXT NOT NULL DEFAULT 'unsorted',
     created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
@@ -132,3 +133,97 @@ CREATE INDEX IF NOT EXISTS idx_chapters_project_order
 -- Indexes on entries.project_id / entries.chapter_id are created by
 -- database._ensure_post_migration_indexes() so they can't run before the
 -- migration step finishes backfilling those columns on pre-M5 databases.
+
+-- ---------------------------------------------------------------------------
+-- Milestone 8: works, work sections, collections, fragment refs, work versions.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS works (
+    id                TEXT PRIMARY KEY,
+    title             TEXT NOT NULL DEFAULT '',
+    summary           TEXT NOT NULL DEFAULT '',
+    status            TEXT NOT NULL DEFAULT 'idea',
+    tags_text         TEXT NOT NULL DEFAULT '',
+    target_word_count INTEGER,
+    archived_at       TEXT,
+    created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_works_updated_at ON works (updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_works_status ON works (status);
+
+CREATE TABLE IF NOT EXISTS work_sections (
+    id           TEXT PRIMARY KEY,
+    work_id      TEXT NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+    section_type TEXT NOT NULL DEFAULT 'body',
+    content      TEXT NOT NULL DEFAULT '',
+    sort_order   INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_work_sections_work_order
+    ON work_sections (work_id, sort_order);
+
+CREATE TABLE IF NOT EXISTS collections (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_collections_updated_at
+    ON collections (updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS collection_items (
+    id            TEXT PRIMARY KEY,
+    collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    work_id       TEXT NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+    sort_order    INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE(collection_id, work_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_collection_items_collection_order
+    ON collection_items (collection_id, sort_order);
+
+CREATE TABLE IF NOT EXISTS work_fragment_refs (
+    id            TEXT PRIMARY KEY,
+    work_id       TEXT NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+    section_id    TEXT REFERENCES work_sections(id) ON DELETE SET NULL,
+    entry_id      TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+    included_text TEXT NOT NULL DEFAULT '',
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_work_fragment_refs_work
+    ON work_fragment_refs (work_id);
+CREATE INDEX IF NOT EXISTS idx_work_fragment_refs_entry
+    ON work_fragment_refs (entry_id);
+
+CREATE TABLE IF NOT EXISTS work_versions (
+    id           TEXT PRIMARY KEY,
+    work_id      TEXT NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+    version_type TEXT NOT NULL,
+    content_json TEXT NOT NULL,
+    label        TEXT NOT NULL DEFAULT '',
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_work_versions_work
+    ON work_versions (work_id, created_at DESC);
+
+-- Standalone (non-content) FTS5 over works. The repository keeps it in sync
+-- whenever the work's title / summary / tags / sections change. We avoid
+-- triggers across multiple tables for simplicity and clarity.
+CREATE VIRTUAL TABLE IF NOT EXISTS works_fts USING fts5(
+    work_id UNINDEXED,
+    title,
+    summary,
+    body,
+    tags,
+    tokenize='unicode61'
+);
+
