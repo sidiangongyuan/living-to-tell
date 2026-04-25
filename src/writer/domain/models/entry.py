@@ -19,3 +19,4 @@ class Entry:
     project_id: Optional[str] = None
     chapter_id: Optional[str] = None
     sequence_order: Optional[int] = None
+    archived_at: Optional[str] = None

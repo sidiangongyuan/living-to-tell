@@ -63,3 +63,28 @@ def test_missing_env_var_raises(monkeypatch):
     provider = OpenAiProvider(config, PromptBuilder())  # no injected client
     with pytest.raises(AiError):
         provider.rewrite(RewriteRequest(action=RewriteAction.POLISH, text="hi"))
+
+
+def test_codex_source_routes_to_resolver(tmp_path):
+    import json
+
+    from writer.services.ai.codex_auth import CodexAuthResolver
+
+    auth = tmp_path / "auth.json"
+    auth.write_text(
+        json.dumps({"OPENAI_API_KEY": "sk-from-codex"}), encoding="utf-8"
+    )
+    resolver = CodexAuthResolver(path=auth)
+    config = AiConfig(api_key_source="codex")
+    provider = OpenAiProvider(config, PromptBuilder(), codex_auth=resolver)
+    assert provider._resolve_api_key() == "sk-from-codex"
+
+
+def test_codex_source_raises_ai_error_when_missing(tmp_path):
+    from writer.services.ai.codex_auth import CodexAuthResolver
+
+    resolver = CodexAuthResolver(path=tmp_path / "no-such.json")
+    config = AiConfig(api_key_source="codex")
+    provider = OpenAiProvider(config, PromptBuilder(), codex_auth=resolver)
+    with pytest.raises(AiError):
+        provider._resolve_api_key()

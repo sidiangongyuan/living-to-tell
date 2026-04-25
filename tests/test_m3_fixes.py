@@ -119,10 +119,14 @@ def test_main_window_cancel_blocks_compare_dialog(qtbot, container, monkeypatch)
     from writer.ui import main_window as main_window_module
     from writer.ui.main_window import MainWindow
 
-    class _ImmediateProvider(AiProvider):
-        name = "immediate"
+    # M7B preflight requires the configured env var to be set.
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only-not-real")
+
+    class _SlowProvider(AiProvider):
+        name = "slow"
 
         def rewrite(self, request):
+            QThread_msleep(50)
             return RewriteResponse(
                 content="REWRITTEN", model="m", provider=self.name
             )
@@ -131,7 +135,7 @@ def test_main_window_cancel_blocks_compare_dialog(qtbot, container, monkeypatch)
     container.rewrite_service = RewriteService(  # type: ignore[attr-defined]
         container.entry_repository,
         container.version_repository,
-        lambda: _ImmediateProvider(),
+        lambda: _SlowProvider(),
     )
     entry = container.entry_repository.create(title="t", body="hello world")
 
@@ -155,17 +159,37 @@ def test_main_window_cancel_blocks_compare_dialog(qtbot, container, monkeypatch)
 
     monkeypatch.setattr(main_window_module, "RewriteCompareDialog", _FakeCompareDialog)
 
-    # Patch QProgressDialog.exec to cancel immediately before the worker
-    # finishes, then process remaining events to drain queued signals.
-    from PySide6.QtWidgets import QProgressDialog
+    # Use a fake progress dialog that deterministically emits `canceled`
+    # before returning from exec(). This avoids relying on platform-specific
+    # QProgressDialog.exec/cancel semantics.
+    from PySide6.QtCore import QObject, Signal
 
-    real_exec = QProgressDialog.exec
+    class _FakeProgressDialog(QObject):
+        canceled = Signal()
 
-    def _cancel_exec(self):
-        self.cancel()  # emits canceled
-        return 0
+        def __init__(self, *args, **kwargs):
+            super().__init__()
 
-    monkeypatch.setattr(QProgressDialog, "exec", _cancel_exec)
+        def setWindowTitle(self, *args, **kwargs):
+            pass
+
+        def setMinimumDuration(self, *args, **kwargs):
+            pass
+
+        def setAutoClose(self, *args, **kwargs):
+            pass
+
+        def setAutoReset(self, *args, **kwargs):
+            pass
+
+        def close(self):
+            pass
+
+        def exec(self):
+            self.canceled.emit()
+            return 0
+
+    monkeypatch.setattr(main_window_module, "QProgressDialog", _FakeProgressDialog)
 
     window._on_rewrite(RewriteAction.POLISH)  # noqa: SLF001
     qtbot.wait(200)
@@ -174,4 +198,61 @@ def test_main_window_cancel_blocks_compare_dialog(qtbot, container, monkeypatch)
     assert reloaded.body == "hello world"
     assert compare_calls == []
 
-    monkeypatch.setattr(QProgressDialog, "exec", real_exec)
+
+def test_main_window_success_opens_compare_dialog(qtbot, container, monkeypatch):
+    """A successful rewrite must open the compare dialog on the GUI thread.
+
+    This regression test keeps the real RewriteWorker + QProgressDialog path,
+    but stubs the network call so we can prove the success handler actually
+    reaches RewriteCompareDialog instead of silently disappearing after the
+    progress dialog closes.
+    """
+    from writer.domain.enums import RewriteAction
+    from writer.services.ai.interfaces import RewriteResponse
+    from writer.ui import main_window as main_window_module
+    from writer.ui.main_window import MainWindow
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only-not-real")
+
+    entry = container.entry_repository.create(title="t", body="hello world")
+
+    window = MainWindow(container, autosave_debounce_ms=50)
+    qtbot.addWidget(window)
+    window._load_entry(entry.id)  # noqa: SLF001
+
+    compare_calls: list = []
+    critical_calls: list = []
+
+    def _fake_generate(_request):
+        return RewriteResponse(
+            content="REWRITTEN",
+            model="m",
+            provider="openai",
+        )
+
+    container.rewrite_service.generate = _fake_generate  # type: ignore[method-assign]
+
+    class _FakeCompareDialog:
+        DialogCode = type("DC", (), {"Accepted": 1})
+
+        def __init__(self, *args, **kwargs):
+            compare_calls.append(kwargs)
+
+        def exec(self):
+            return 0
+
+        def accepted_text(self):
+            return ""
+
+    monkeypatch.setattr(main_window_module, "RewriteCompareDialog", _FakeCompareDialog)
+    monkeypatch.setattr(
+        main_window_module.QMessageBox,
+        "critical",
+        lambda *args, **kwargs: critical_calls.append(args[2] if len(args) > 2 else "critical"),
+    )
+
+    window._on_rewrite(RewriteAction.POLISH)  # noqa: SLF001
+    qtbot.wait(200)
+
+    assert critical_calls == []
+    assert len(compare_calls) == 1

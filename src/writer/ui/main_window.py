@@ -19,12 +19,14 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMenuBar,
     QMessageBox,
     QProgressDialog,
     QPushButton,
     QSplitter,
+    QStatusBar,
     QToolBar,
     QWidget,
 )
@@ -34,6 +36,10 @@ from writer.app.locale import LOCALE_EN, LOCALE_ZH_CN
 from writer.domain.enums import RewriteAction
 from writer.services.ai.interfaces import RewriteRequest, RewriteResponse
 from writer.services.autosave_service import AutosaveService
+from writer.storage.repositories.entry_repository import (
+    SORT_UPDATED,
+    serialize_tags,
+)
 from writer.ui.dialogs.assign_fragment_dialog import AssignFragmentDialog
 from writer.ui.dialogs.command_palette_dialog import CommandPaletteDialog
 from writer.ui.dialogs.projects_dialog import ProjectsDialog
@@ -95,11 +101,25 @@ class MainWindow(QMainWindow):
         self._list_panel.new_requested.connect(self._on_new_fragment)
         self._list_panel.search_changed.connect(self._on_search_changed)
         self._list_panel.tag_filter_changed.connect(self._on_tag_filter_changed)
+        self._list_panel.delete_requested.connect(self._on_delete_requested)
+        self._list_panel.archive_requested.connect(self._on_archive_requested)
+        self._list_panel.sort_changed.connect(self._on_sort_changed)
+        self._list_panel.show_archived_changed.connect(self._on_show_archived_changed)
         self._editor_panel.content_changed.connect(self._on_editor_changed)
         self._autosave.saved.connect(self._on_autosaved)
+        self._autosave.dirty.connect(self._on_autosave_dirty)
+        self._autosave.saving.connect(self._on_autosave_saving)
+
+        # M7B: in-memory trash for the most recent deletions. Each entry is
+        # a dict with title/body/tags; survives until the app closes.
+        self._deleted_trash: list[dict] = []
+        # M7B: active sort / archive filter state (UI -> repo kwargs).
+        self._sort_mode: str = SORT_UPDATED
+        self._show_archived: bool = False
 
         self._build_menu_bar()
         self._build_toolbar()
+        self._build_status_bar()
         self._initial_load()
 
     # --------------------------------------------------------------
@@ -111,6 +131,13 @@ class MainWindow(QMainWindow):
         new_action.setShortcut(QKeySequence("Ctrl+N"))
         new_action.triggered.connect(self._on_new_fragment)
         file_menu.addAction(new_action)
+        save_action = QAction(TR("menu.save"), self)
+        save_action.setShortcut(QKeySequence.StandardKey.Save)
+        save_action.triggered.connect(self._on_manual_save)
+        file_menu.addAction(save_action)
+        recover_action = QAction(TR("menu.recover_last_deleted"), self)
+        recover_action.triggered.connect(self._on_recover_last_deleted)
+        file_menu.addAction(recover_action)
         file_menu.addSeparator()
         assign_action = QAction(TR("menu.assign_to_project"), self)
         assign_action.triggered.connect(self._on_assign_fragment)
@@ -309,6 +336,23 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     # --------------------------------------------------------------
+    def _build_status_bar(self) -> None:
+        status: QStatusBar = self.statusBar()
+        self._save_status_label = QLabel("")
+        self._save_status_label.setStyleSheet("color: gray; padding: 0 8px;")
+        status.addPermanentWidget(self._save_status_label)
+        self._set_save_status("saved")
+
+    def _set_save_status(self, state: str) -> None:
+        key = {
+            "saved": "status.saved",
+            "saving": "status.saving",
+            "unsaved": "status.unsaved",
+            "none": "status.no_entry",
+        }.get(state, "status.saved")
+        self._save_status_label.setText(TR(key))
+
+    # --------------------------------------------------------------
     def _initial_load(self) -> None:
         repo = self._container.entry_repository
         if repo.count() == 0:
@@ -332,16 +376,29 @@ class MainWindow(QMainWindow):
         tag = self._list_panel.current_tag_filter()
         repo = self._container.entry_repository
 
+        include_archived = self._show_archived
+        sort = self._sort_mode
+
         if search and tag:
             results = self._container.search_service.search(search)
             tag_lower = tag.lower()
-            entries = [e for e in results if any(t.lower() == tag_lower for t in e.tags)]
+            entries = [
+                e for e in results if any(t.lower() == tag_lower for t in e.tags)
+            ]
+            if not include_archived:
+                entries = [e for e in entries if not e.archived_at]
         elif search:
             entries = self._container.search_service.search(search)
+            if not include_archived:
+                entries = [e for e in entries if not e.archived_at]
         elif tag:
-            entries = repo.list_recent_by_tag(tag)
+            entries = repo.list_recent_by_tag(
+                tag, sort=sort, include_archived=include_archived
+            )
         else:
-            entries = repo.list_recent()
+            entries = repo.list_recent(
+                sort=sort, include_archived=include_archived
+            )
 
         self._list_panel.set_entries(entries, select_id=select_id)
 
@@ -397,6 +454,157 @@ class MainWindow(QMainWindow):
     def _on_autosaved(self, entry_id: str) -> None:
         self._refresh_tag_filter()
         self._refresh_list(select_id=entry_id)
+        self._set_save_status("saved")
+
+    def _on_autosave_dirty(self) -> None:
+        self._set_save_status("unsaved")
+
+    def _on_autosave_saving(self, _entry_id: str) -> None:
+        self._set_save_status("saving")
+
+    # --------------------------------------------------------------
+    # M7B: save / delete / archive / sort / recovery
+    # --------------------------------------------------------------
+    def _on_manual_save(self) -> None:
+        self._autosave.flush()
+        self._set_save_status("saved")
+
+    def _on_sort_changed(self, sort: str) -> None:
+        self._sort_mode = sort
+        self._refresh_list(select_id=self._editor_panel.current_entry_id())
+
+    def _on_show_archived_changed(self, enabled: bool) -> None:
+        self._show_archived = bool(enabled)
+        self._refresh_list(select_id=self._editor_panel.current_entry_id())
+
+    def _on_archive_requested(self, entry_id: str, archived: bool) -> None:
+        self._autosave.flush()
+        repo = self._container.entry_repository
+        repo.set_archived(entry_id, archived)
+
+        # If the entry we just archived is the one loaded in the editor, and
+        # archived entries are currently filtered out of the list, the UI
+        # would otherwise be left on a hidden row with no selection. Load a
+        # visible neighbour (or a fresh blank fragment) the same way a
+        # deletion does.
+        current_id = self._editor_panel.current_entry_id()
+        entry_disappeared = (
+            archived
+            and current_id == entry_id
+            and not self._show_archived
+        )
+        if entry_disappeared:
+            remaining = repo.list_recent(
+                limit=1, sort=self._sort_mode, include_archived=False
+            )
+            if remaining:
+                self._refresh_tag_filter()
+                self._refresh_list(select_id=remaining[0].id)
+                self._load_entry(remaining[0].id)
+            else:
+                new_entry = repo.create()
+                self._refresh_tag_filter()
+                self._refresh_list(select_id=new_entry.id)
+                self._load_entry(new_entry.id)
+        else:
+            self._refresh_list(select_id=entry_id)
+
+    def _on_delete_requested(self, entry_ids: list[str]) -> None:
+        if not entry_ids:
+            return
+        repo = self._container.entry_repository
+        if len(entry_ids) == 1:
+            entry = repo.get(entry_ids[0])
+            if entry is None:
+                return
+            title = entry.title.strip() or TR("list.empty_fragment")
+            msg = TR("dlg.confirm_delete_one").format(title=title)
+        else:
+            msg = TR("dlg.confirm_delete_many").format(count=len(entry_ids))
+        reply = QMessageBox.question(
+            self,
+            TR("dlg.confirm_delete_title"),
+            msg,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # Stash snapshots for "Recover last deleted" before deletion.
+        snapshots: list[dict] = []
+        for eid in entry_ids:
+            e = repo.get(eid)
+            if e is not None:
+                snapshots.append(
+                    {
+                        "title": e.title,
+                        "body": e.body,
+                        "tags": list(e.tags),
+                        "project_id": e.project_id,
+                        "chapter_id": e.chapter_id,
+                        "sequence_order": e.sequence_order,
+                        "archived_at": e.archived_at,
+                    }
+                )
+        repo.delete_many(entry_ids)
+        # Only keep the most recent batch — keep the behaviour simple and
+        # predictable (File → Recover last deleted restores this batch).
+        self._deleted_trash = snapshots
+
+        # If the editor was showing one of the deleted entries, load a
+        # fresh one (next recent, or create a new blank entry).
+        current_id = self._editor_panel.current_entry_id()
+        if current_id in entry_ids or current_id is None:
+            remaining = repo.list_recent(
+                limit=1, sort=self._sort_mode, include_archived=self._show_archived
+            )
+            if remaining:
+                self._refresh_tag_filter()
+                self._refresh_list(select_id=remaining[0].id)
+                self._load_entry(remaining[0].id)
+            else:
+                new_entry = repo.create()
+                self._refresh_tag_filter()
+                self._refresh_list(select_id=new_entry.id)
+                self._load_entry(new_entry.id)
+        else:
+            self._refresh_tag_filter()
+            self._refresh_list(select_id=current_id)
+
+    def _on_recover_last_deleted(self) -> None:
+        if not self._deleted_trash:
+            QMessageBox.information(
+                self,
+                TR("dlg.nothing_to_recover_title"),
+                TR("dlg.nothing_to_recover_msg"),
+            )
+            return
+        repo = self._container.entry_repository
+        restored_last: Optional[str] = None
+        # Restore in reverse order so the most recent deletion ends up at
+        # the top of the recent list.
+        for snap in reversed(self._deleted_trash):
+            entry = repo.insert_restored(
+                title=snap["title"],
+                body=snap["body"],
+                tags=snap["tags"],
+                project_id=snap.get("project_id"),
+                chapter_id=snap.get("chapter_id"),
+                sequence_order=snap.get("sequence_order"),
+                archived_at=snap.get("archived_at"),
+            )
+            restored_last = entry.id
+        self._deleted_trash.clear()
+        self._refresh_tag_filter()
+        self._refresh_list(select_id=restored_last)
+        if restored_last is not None:
+            self._load_entry(restored_last)
+        QMessageBox.information(
+            self,
+            TR("dlg.recovered_title"),
+            TR("dlg.recovered_msg"),
+        )
 
     # --------------------------------------------------------------
     # AI rewrite flow
@@ -587,10 +795,9 @@ class MainWindow(QMainWindow):
 
     def _on_rewrite(self, action: RewriteAction) -> None:
         entry_id = self._editor_panel.current_entry_id()
-        if entry_id is None:
-            return
         # Make sure the in-memory edits are flushed before snapshotting.
-        self._autosave.flush()
+        if entry_id is not None:
+            self._autosave.flush()
 
         full_body = self._editor_panel.body_text()
         title = self._editor_panel.title_text()
@@ -602,13 +809,29 @@ class MainWindow(QMainWindow):
         else:
             target_text = selected_text or full_body
 
-        if not target_text.strip():
-            QMessageBox.information(
+        # M7B: preflight BEFORE showing a progress window. If anything is
+        # missing (no key, bad config, empty text) the user gets a clear,
+        # actionable error instead of a progress box that flashes and dies.
+        from writer.services.ai.preflight import (
+            format_issues,
+            preflight_rewrite,
+        )
+
+        issues = preflight_rewrite(
+            self._container.settings.load_ai_config(),
+            target_text,
+            has_entry=entry_id is not None,
+        )
+        if issues:
+            QMessageBox.warning(
                 self,
-                TR("dlg.nothing_to_rewrite"),
-                TR("dlg.nothing_to_rewrite_msg"),
+                TR("dlg.ai_not_ready"),
+                format_issues(issues),
             )
             return
+
+        # From here on the target entry is guaranteed to exist.
+        assert entry_id is not None
 
         references = self._collect_references()
         if references is None:
@@ -620,6 +843,7 @@ class MainWindow(QMainWindow):
         )
 
         cancelled = {"flag": False}
+        finishing = {"flag": False}
 
         progress = QProgressDialog(
             TR("dlg.rewrite_progress").format(action=rewrite_action_label(action)),
@@ -636,6 +860,7 @@ class MainWindow(QMainWindow):
         worker = RewriteWorker(self._container.rewrite_service, request, parent=self)
 
         def _on_success(response: RewriteResponse) -> None:
+            finishing["flag"] = True
             progress.close()
             if cancelled["flag"]:
                 # Fix 2: cancellation was requested before the success signal
@@ -653,6 +878,7 @@ class MainWindow(QMainWindow):
             worker.deleteLater()
 
         def _on_failure(message: str) -> None:
+            finishing["flag"] = True
             progress.close()
             if cancelled["flag"]:
                 worker.deleteLater()
@@ -661,11 +887,20 @@ class MainWindow(QMainWindow):
             worker.deleteLater()
 
         def _on_cancel() -> None:
+            if finishing["flag"]:
+                return
             cancelled["flag"] = True
             worker.requestInterruption()
 
-        worker.succeeded.connect(_on_success)
-        worker.failed.connect(_on_failure)
+        # RewriteWorker is a QThread subclass created on the GUI thread.
+        # Force queued delivery so success/failure handlers always run back
+        # on the main thread before they touch dialogs or widgets.
+        worker.succeeded.connect(
+            _on_success, Qt.ConnectionType.QueuedConnection
+        )
+        worker.failed.connect(
+            _on_failure, Qt.ConnectionType.QueuedConnection
+        )
         progress.canceled.connect(_on_cancel)
         worker.start()
         progress.exec()

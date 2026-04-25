@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 from writer.app.locale import LOCALE_EN, LOCALE_ZH_CN
 from writer.app.settings import SUPPORTED_WIRE_APIS, Settings
 from writer.domain.models.ai_config import AiConfig
+from writer.services.ai.codex_auth import CODEX_AUTH_SOURCE, CodexAuthResolver
 from writer.services.ai.codex_config_importer import (
     CodexConfigImporter,
     CodexImportResult,
@@ -53,6 +54,7 @@ class SettingsDialog(QDialog):
         self,
         settings: Settings,
         importer: Optional[CodexConfigImporter] = None,
+        codex_auth: Optional[CodexAuthResolver] = None,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -61,6 +63,7 @@ class SettingsDialog(QDialog):
 
         self._settings = settings
         self._importer = importer or CodexConfigImporter()
+        self._codex_auth = codex_auth or CodexAuthResolver()
 
         config = settings.load_ai_config()
 
@@ -104,6 +107,9 @@ class SettingsDialog(QDialog):
         import_button = QPushButton(TR("settings.import_codex"))
         import_button.clicked.connect(self._on_import_codex)
 
+        test_button = QPushButton(TR("settings.test_btn"))
+        test_button.clicked.connect(self._on_test_config)
+
         button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -112,6 +118,7 @@ class SettingsDialog(QDialog):
 
         action_row = QHBoxLayout()
         action_row.addWidget(import_button)
+        action_row.addWidget(test_button)
         action_row.addStretch(1)
 
         layout = QVBoxLayout(self)
@@ -121,6 +128,23 @@ class SettingsDialog(QDialog):
 
     def _refresh_key_status(self) -> None:
         source = self._api_key_source.text().strip()
+        if source.lower() == CODEX_AUTH_SOURCE:
+            status = self._codex_auth.status()
+            if status.available:
+                self._key_status.setText(
+                    TR("settings.codex_auth_available").format(path=status.path)
+                )
+            else:
+                reason_key = {
+                    "missing_file": "settings.codex_auth_missing_file",
+                    "missing_key": "settings.codex_auth_missing_key",
+                    "unreadable": "settings.codex_auth_unreadable",
+                }.get(status.reason, "settings.codex_auth_missing_file")
+                self._key_status.setText(TR(reason_key).format(path=status.path))
+            return
+        if source.startswith("literal:"):
+            self._key_status.setText(TR("settings.key_only_env"))
+            return
         if not source.startswith("env:"):
             self._key_status.setText(TR("settings.key_only_env"))
             return
@@ -165,8 +189,68 @@ class SettingsDialog(QDialog):
             idx = self._wire_api.findText(result.wire_api)
             if idx >= 0:
                 self._wire_api.setCurrentIndex(idx)
+        # If the imported config says it needs OpenAI-style auth AND a local
+        # Codex auth file is actually readable, wire the credential source
+        # to 'codex' so the user does not also have to export an env var.
+        auto_codex = False
+        if result.requires_openai_auth:
+            status = self._codex_auth.status()
+            if status.available:
+                self._api_key_source.setText(CODEX_AUTH_SOURCE)
+                auto_codex = True
+        body_key = (
+            "settings.codex_imported_body_with_auth"
+            if auto_codex
+            else "settings.codex_imported_body"
+        )
         QMessageBox.information(
-            self, TR("settings.imported"), TR("settings.imported_msg")
+            self,
+            TR("settings.codex_imported_title"),
+            TR(body_key),
+        )
+
+    def _on_test_config(self) -> None:
+        """Run preflight on the CURRENT (unsaved) form values.
+
+        Local-only validation: does not send a network request. It
+        checks that the form yields a valid AiConfig, that the API key
+        source is env:VAR, and that the env var is present.
+        """
+        from writer.services.ai.preflight import (
+            format_issues,
+            preflight_rewrite,
+        )
+
+        wire_api = self._wire_api.currentText().strip() or "responses"
+        model = self._model.text().strip()
+        api_key_source = self._api_key_source.text().strip() or "env:OPENAI_API_KEY"
+        raw_base_url = self._base_url.text().strip()
+
+        candidate = AiConfig(
+            base_url=raw_base_url or None,
+            wire_api=wire_api,
+            model=model,
+            api_key_source=api_key_source,
+        )
+        # Use a non-empty sentinel so the "empty text" rule never fires —
+        # this button validates CONFIG, not editor state.
+        issues = preflight_rewrite(
+            candidate,
+            target_text="_",
+            has_entry=True,
+            codex_auth=self._codex_auth,
+        )
+        if issues:
+            QMessageBox.warning(
+                self,
+                TR("settings.test_fail_title"),
+                format_issues(issues),
+            )
+            return
+        QMessageBox.information(
+            self,
+            TR("settings.test_ok_title"),
+            TR("settings.test_ok_msg"),
         )
 
     def _on_accept(self) -> None:

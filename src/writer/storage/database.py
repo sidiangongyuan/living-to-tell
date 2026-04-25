@@ -83,6 +83,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE entries ADD COLUMN tags_text TEXT NOT NULL DEFAULT ''"
         )
+    # M7B: archive support.
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(entries)")}
+    if "archived_at" not in cols:
+        conn.execute("ALTER TABLE entries ADD COLUMN archived_at TEXT")
 
 
 def _backfill_sequence_order(conn: sqlite3.Connection) -> None:

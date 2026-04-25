@@ -86,6 +86,28 @@ class Settings:
                 f"Unsupported wire_api '{config.wire_api}'. "
                 f"Supported values: {SUPPORTED_WIRE_APIS}."
             )
+
+        # M7B: reject legacy literal:<key> syntax. API keys are *never*
+        # stored on disk — only the name of the env var that holds one,
+        # or the sentinel "codex" meaning "read ~/.codex/auth.json".
+        api_key_source = (config.api_key_source or "").strip()
+        if api_key_source.startswith("literal:"):
+            raise ValueError(
+                "literal:<key> is not supported. The API key is never stored "
+                "on disk — set api_key_source to env:VARNAME (and export the "
+                "key in your shell), or to 'codex' to reuse ~/.codex/auth.json."
+            )
+        if (
+            api_key_source
+            and api_key_source.lower() != "codex"
+            and not api_key_source.startswith("env:")
+        ):
+            raise ValueError(
+                "api_key_source must be either env:VARNAME "
+                "(for example env:OPENAI_API_KEY) or the literal string "
+                "'codex' (to reuse ~/.codex/auth.json)."
+            )
+
         self._repo.set(KEY_AI_WIRE_API, wire_api)
         self._repo.set(KEY_AI_MODEL, config.model)
         self._repo.set(KEY_AI_API_KEY_SOURCE, config.api_key_source)

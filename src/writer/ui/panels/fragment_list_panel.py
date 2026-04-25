@@ -4,14 +4,17 @@ from __future__ import annotations
 from typing import List, Optional
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QStackedWidget,
     QStyledItemDelegate,
@@ -20,6 +23,11 @@ from PySide6.QtWidgets import (
 )
 
 from writer.domain.models.entry import Entry
+from writer.storage.repositories.entry_repository import (
+    SORT_CREATED,
+    SORT_TITLE,
+    SORT_UPDATED,
+)
 from writer.ui.i18n import TR
 from writer.ui.tag_colors import get_tag_color
 
@@ -66,6 +74,11 @@ class FragmentListPanel(QWidget):
     new_requested = Signal()
     search_changed = Signal(str)
     tag_filter_changed = Signal(str)  # emits "" for "All tags"
+    # M7B additions -----------------------------------------------------
+    delete_requested = Signal(list)       # list[str] entry ids
+    archive_requested = Signal(str, bool)  # (entry_id, archived?)
+    sort_changed = Signal(str)             # SORT_* constant
+    show_archived_changed = Signal(bool)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -79,18 +92,45 @@ class FragmentListPanel(QWidget):
         self._new_button.setToolTip(TR("list.new_button_tooltip"))
         self._new_button.clicked.connect(self.new_requested)
 
+        self._delete_button = QPushButton(TR("list.delete_btn"))
+        self._delete_button.setToolTip(TR("list.delete_tooltip"))
+        self._delete_button.setEnabled(False)
+        self._delete_button.clicked.connect(self._emit_delete)
+
         top = QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
         top.addWidget(self._search, 1)
         top.addWidget(self._new_button, 0)
+        top.addWidget(self._delete_button, 0)
 
         self._tag_combo = QComboBox()
         self._tag_combo.addItem(TR("list.all_tags"))
         self._tag_combo.currentIndexChanged.connect(self._on_tag_changed)
 
+        # Sort + archive row
+        self._sort_combo = QComboBox()
+        self._sort_combo.addItem(TR("list.sort_updated"), SORT_UPDATED)
+        self._sort_combo.addItem(TR("list.sort_created"), SORT_CREATED)
+        self._sort_combo.addItem(TR("list.sort_title"), SORT_TITLE)
+        self._sort_combo.currentIndexChanged.connect(self._on_sort_changed)
+
+        self._archived_check = QCheckBox(TR("list.show_archived"))
+        self._archived_check.toggled.connect(self.show_archived_changed)
+
+        sort_row = QHBoxLayout()
+        sort_row.setContentsMargins(0, 0, 0, 0)
+        sort_row.addWidget(QLabel(TR("list.sort_label")))
+        sort_row.addWidget(self._sort_combo, 1)
+        sort_row.addWidget(self._archived_check, 0)
+
         self._list = QListWidget()
         self._list.setItemDelegate(_TagDotDelegate(self._list))
-        self._list.itemSelectionChanged.connect(self._emit_selection)
+        self._list.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
+        self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._list.customContextMenuRequested.connect(self._on_context_menu)
+        self._list.itemSelectionChanged.connect(self._on_selection_changed)
 
         # Empty state label shown when the list is empty
         self._empty_label = QLabel(TR("list.empty_state"))
@@ -108,6 +148,7 @@ class FragmentListPanel(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.addLayout(top)
         layout.addWidget(self._tag_combo)
+        layout.addLayout(sort_row)
         layout.addWidget(self._stack, 1)
 
     # ------------------------------------------------------------------
@@ -157,9 +198,13 @@ class FragmentListPanel(QWidget):
         self._list.blockSignals(True)
         self._list.clear()
         for entry in entries:
-            item = QListWidgetItem(_summary_for(entry))
+            label = _summary_for(entry)
+            if entry.archived_at:
+                label = label + TR("list.archived_badge")
+            item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, entry.id)
             item.setData(Qt.ItemDataRole.UserRole + 1, list(entry.tags))
+            item.setData(Qt.ItemDataRole.UserRole + 2, bool(entry.archived_at))
             self._list.addItem(item)
             if select_id and entry.id == select_id:
                 self._list.setCurrentItem(item)
@@ -169,6 +214,7 @@ class FragmentListPanel(QWidget):
             current_id = self._current_id()
             if current_id:
                 self.entry_selected.emit(current_id)
+        self._update_delete_enabled()
 
         # Show empty-state label when there are no results
         self._stack.setCurrentIndex(0 if entries else 1)
@@ -203,3 +249,67 @@ class FragmentListPanel(QWidget):
         entry_id = self._current_id()
         if entry_id:
             self.entry_selected.emit(entry_id)
+
+    # ------------------------------------------------------------------
+    # M7B: multi-select + delete + archive + sort
+    # ------------------------------------------------------------------
+
+    def selected_entry_ids(self) -> list[str]:
+        """Return the entry IDs of all currently selected list items."""
+        ids: list[str] = []
+        for item in self._list.selectedItems():
+            eid = item.data(Qt.ItemDataRole.UserRole)
+            if eid:
+                ids.append(eid)
+        return ids
+
+    def current_sort(self) -> str:
+        data = self._sort_combo.currentData()
+        return data if isinstance(data, str) else SORT_UPDATED
+
+    def show_archived(self) -> bool:
+        return self._archived_check.isChecked()
+
+    def _on_selection_changed(self) -> None:
+        self._update_delete_enabled()
+        # Preserve legacy single-selection behaviour: emit entry_selected
+        # whenever the "current" item changes (current != selected set).
+        entry_id = self._current_id()
+        if entry_id:
+            self.entry_selected.emit(entry_id)
+
+    def _update_delete_enabled(self) -> None:
+        self._delete_button.setEnabled(bool(self._list.selectedItems()))
+
+    def _emit_delete(self) -> None:
+        ids = self.selected_entry_ids()
+        if ids:
+            self.delete_requested.emit(ids)
+
+    def _on_sort_changed(self, _index: int) -> None:
+        self.sort_changed.emit(self.current_sort())
+
+    def _on_context_menu(self, pos) -> None:
+        item = self._list.itemAt(pos)
+        if item is None:
+            return
+        entry_id = item.data(Qt.ItemDataRole.UserRole)
+        if not entry_id:
+            return
+        is_archived = bool(item.data(Qt.ItemDataRole.UserRole + 2))
+        menu = QMenu(self)
+
+        delete_action = QAction(TR("list.delete_btn"), menu)
+        delete_action.triggered.connect(self._emit_delete)
+        menu.addAction(delete_action)
+
+        archive_label = (
+            TR("list.unarchive_btn") if is_archived else TR("list.archive_btn")
+        )
+        archive_action = QAction(archive_label, menu)
+        archive_action.triggered.connect(
+            lambda: self.archive_requested.emit(entry_id, not is_archived)
+        )
+        menu.addAction(archive_action)
+
+        menu.exec(self._list.mapToGlobal(pos))

@@ -18,14 +18,7 @@ from writer.domain.models.entry import Entry
 # ---------------------------------------------------------------------------
 
 def parse_tags(tags_text: str) -> list[str]:
-    """Parse a comma-separated ``tags_text`` string into a normalised list.
-
-    Rules:
-    * Split on comma.
-    * Strip whitespace from each part.
-    * Drop empty parts.
-    * Case-insensitive deduplication preserving first-occurrence order.
-    """
+    """Parse a comma-separated ``tags_text`` string into a normalised list."""
     seen: set[str] = set()
     result: list[str] = []
     for part in tags_text.split(","):
@@ -57,7 +50,26 @@ def _row_to_entry(row: sqlite3.Row) -> Entry:
             row["sequence_order"] if "sequence_order" in keys else None
         ),
         tags=parse_tags(raw_tags),
+        archived_at=row["archived_at"] if "archived_at" in keys else None,
     )
+
+
+# Sort modes for ``list_recent`` (M7B).
+SORT_UPDATED = "updated"
+SORT_CREATED = "created"
+SORT_TITLE = "title"
+SUPPORTED_SORT_MODES = (SORT_UPDATED, SORT_CREATED, SORT_TITLE)
+
+
+def _order_by_clause(sort: str) -> str:
+    if sort == SORT_CREATED:
+        return "ORDER BY created_at DESC, updated_at DESC"
+    if sort == SORT_TITLE:
+        return (
+            "ORDER BY CASE WHEN title IS NULL OR title = '' THEN 1 ELSE 0 END, "
+            "LOWER(title) ASC, updated_at DESC"
+        )
+    return "ORDER BY updated_at DESC, created_at DESC"
 
 
 class EntryRepository:
@@ -83,6 +95,93 @@ class EntryRepository:
         assert loaded is not None
         return loaded
 
+    def insert_restored(
+        self,
+        *,
+        title: str,
+        body: str,
+        tags: list[str] | None = None,
+        project_id: Optional[str] = None,
+        chapter_id: Optional[str] = None,
+        sequence_order: Optional[int] = None,
+        archived_at: Optional[str] = None,
+        entry_type: str = EntryType.FRAGMENT.value,
+    ) -> Entry:
+        """Re-create an entry whose content was recovered from trash.
+
+        Preserves the original project/chapter/sequence assignment and the
+        archived state where possible. If the requested ``sequence_order``
+        is already taken (or invalid) inside the target project/chapter,
+        the restored entry is appended to the end.
+        """
+        # Validate that chapter (if provided) actually belongs to the given
+        # project. If not, drop the chapter assignment rather than writing
+        # an inconsistent row.
+        resolved_chapter: Optional[str] = chapter_id
+        if project_id is not None and chapter_id is not None:
+            row = self._conn.execute(
+                "SELECT project_id FROM chapters WHERE id = ?",
+                (chapter_id,),
+            ).fetchone()
+            if row is None or row["project_id"] != project_id:
+                resolved_chapter = None
+
+        # Resolve sequence_order: None stays None (unassigned); a conflicting
+        # value is bumped to the next free slot.
+        resolved_seq: Optional[int] = None
+        if project_id is not None:
+            if sequence_order is None:
+                resolved_seq = self._next_sequence(project_id, resolved_chapter)
+            else:
+                if resolved_chapter is None:
+                    existing = self._conn.execute(
+                        """
+                        SELECT 1 FROM entries
+                         WHERE project_id = ? AND chapter_id IS NULL
+                           AND sequence_order = ?
+                        """,
+                        (project_id, sequence_order),
+                    ).fetchone()
+                else:
+                    existing = self._conn.execute(
+                        """
+                        SELECT 1 FROM entries
+                         WHERE chapter_id = ? AND sequence_order = ?
+                        """,
+                        (resolved_chapter, sequence_order),
+                    ).fetchone()
+                if existing is None:
+                    resolved_seq = int(sequence_order)
+                else:
+                    resolved_seq = self._next_sequence(
+                        project_id, resolved_chapter
+                    )
+
+        new_id = str(uuid.uuid4())
+        tags_text = serialize_tags(tags) if tags else ""
+        self._conn.execute(
+            """
+            INSERT INTO entries (
+                id, title, body, entry_type, tags_text,
+                project_id, chapter_id, sequence_order, archived_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                new_id,
+                title,
+                body,
+                entry_type,
+                tags_text,
+                project_id,
+                resolved_chapter,
+                resolved_seq,
+                archived_at,
+            ),
+        )
+        loaded = self.get(new_id)
+        assert loaded is not None
+        return loaded
+
     def update(
         self,
         entry_id: str,
@@ -91,8 +190,6 @@ class EntryRepository:
         body: str,
         tags: list[str] | None = None,
     ) -> Optional[Entry]:
-        """Update title and body.  When *tags* is provided it is also saved;
-        ``None`` (default) means "leave existing tags unchanged"."""
         if tags is not None:
             cur = self._conn.execute(
                 """
@@ -124,6 +221,43 @@ class EntryRepository:
         cur = self._conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
         return cur.rowcount > 0
 
+    def delete_many(self, entry_ids: list[str]) -> int:
+        """Delete a batch of entries and return how many rows were removed."""
+        unique = list({eid for eid in entry_ids if eid})
+        if not unique:
+            return 0
+        placeholders = ",".join("?" for _ in unique)
+        cur = self._conn.execute(
+            f"DELETE FROM entries WHERE id IN ({placeholders})", unique
+        )
+        return cur.rowcount or 0
+
+    def set_archived(self, entry_id: str, archived: bool) -> Optional[Entry]:
+        """Archive or un-archive an entry.
+
+        Archived entries are hidden from the default recent list but
+        keep every other property (project/chapter, tags, body,
+        version history).
+        """
+        if archived:
+            self._conn.execute(
+                """
+                UPDATE entries
+                   SET archived_at = COALESCE(
+                           archived_at,
+                           strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                       )
+                 WHERE id = ?
+                """,
+                (entry_id,),
+            )
+        else:
+            self._conn.execute(
+                "UPDATE entries SET archived_at = NULL WHERE id = ?",
+                (entry_id,),
+            )
+        return self.get(entry_id)
+
     # reads -------------------------------------------------------------
     def get(self, entry_id: str) -> Optional[Entry]:
         row = self._conn.execute(
@@ -131,13 +265,28 @@ class EntryRepository:
         ).fetchone()
         return _row_to_entry(row) if row else None
 
-    def list_recent(self, limit: int = 100) -> List[Entry]:
+    def list_recent(
+        self,
+        limit: int = 100,
+        *,
+        sort: str = SORT_UPDATED,
+        include_archived: bool = False,
+        archived_only: bool = False,
+    ) -> List[Entry]:
+        """Return recent entries.
+
+        By default archived entries are excluded so the main list stays
+        clean. Pass ``include_archived=True`` to see everything or
+        ``archived_only=True`` to see only archived rows.
+        """
+        where = ""
+        if archived_only:
+            where = "WHERE archived_at IS NOT NULL"
+        elif not include_archived:
+            where = "WHERE archived_at IS NULL"
+        order = _order_by_clause(sort)
         rows = self._conn.execute(
-            """
-            SELECT * FROM entries
-            ORDER BY updated_at DESC, created_at DESC
-            LIMIT ?
-            """,
+            f"SELECT * FROM entries {where} {order} LIMIT ?",
             (limit,),
         ).fetchall()
         return [_row_to_entry(r) for r in rows]
@@ -161,15 +310,25 @@ class EntryRepository:
                     result.append(tag)
         return sorted(result, key=lambda t: t.lower())
 
-    def list_recent_by_tag(self, tag: str, limit: int = 100) -> list[Entry]:
+    def list_recent_by_tag(
+        self,
+        tag: str,
+        limit: int = 100,
+        *,
+        sort: str = SORT_UPDATED,
+        include_archived: bool = False,
+        archived_only: bool = False,
+    ) -> list[Entry]:
         """Return recent entries that carry *tag* (case-insensitive)."""
         tag_lower = tag.lower()
+        where = "WHERE tags_text != ''"
+        if archived_only:
+            where += " AND archived_at IS NOT NULL"
+        elif not include_archived:
+            where += " AND archived_at IS NULL"
+        order = _order_by_clause(sort)
         rows = self._conn.execute(
-            """
-            SELECT * FROM entries
-            WHERE tags_text != ''
-            ORDER BY updated_at DESC, created_at DESC
-            """,
+            f"SELECT * FROM entries {where} {order}",
         ).fetchall()
         result: list[Entry] = []
         for row in rows:
@@ -184,17 +343,6 @@ class EntryRepository:
     def assign_to_project(
         self, entry_id: str, project_id: Optional[str]
     ) -> Optional[Entry]:
-        """Assign (or unassign) an entry to a project.
-
-        Guarantees:
-        * Clearing the project also clears ``chapter_id`` and
-          ``sequence_order``.
-        * Moving an entry to a *different* project detaches the chapter
-          and appends the entry to the new project's unchaptered bucket.
-        * Re-assigning to the *same* project is a no-op for ordering —
-          the entry keeps its existing ``chapter_id`` /
-          ``sequence_order`` so the user's tidying is not lost.
-        """
         entry = self.get(entry_id)
         if entry is None:
             return None
@@ -214,7 +362,7 @@ class EntryRepository:
             return self.get(entry_id)
 
         if entry.project_id == project_id:
-            return entry  # no-op: preserve ordering
+            return entry
 
         new_seq = self._next_sequence(project_id, None)
         self._conn.execute(
@@ -233,16 +381,6 @@ class EntryRepository:
     def assign_to_chapter(
         self, entry_id: str, chapter_id: Optional[str]
     ) -> Optional[Entry]:
-        """Move the entry between chapters / the unchaptered bucket.
-
-        * ``chapter_id is None`` moves the entry back to the current
-          project's unchaptered bucket and appends it to the end. If the
-          entry was already unchaptered the call is a no-op.
-        * Otherwise validates that ``chapter_id`` belongs to the entry's
-          current project; mismatches raise :class:`ValueError` rather
-          than silently re-parenting the entry.
-        * Re-assigning to the same chapter is a no-op.
-        """
         entry = self.get(entry_id)
         if entry is None:
             return None
@@ -251,7 +389,6 @@ class EntryRepository:
             if entry.chapter_id is None:
                 return entry
             if entry.project_id is None:
-                # Nothing meaningful to do; just ensure state is clean.
                 return entry
             new_seq = self._next_sequence(entry.project_id, None)
             self._conn.execute(
@@ -282,7 +419,7 @@ class EntryRepository:
             )
 
         if entry.chapter_id == chapter_id:
-            return entry  # no-op
+            return entry
 
         new_seq = self._next_sequence(entry.project_id, chapter_id)
         self._conn.execute(
@@ -303,258 +440,9 @@ class EntryRepository:
         chapter_id: Optional[str],
         ordered_ids: List[str],
     ) -> None:
-        """Rewrite ``sequence_order`` for every entry in a container.
-
-        ``chapter_id`` may be ``None`` to target the unchaptered bucket of
-        ``project_id``. Raises :class:`ValueError` if any id does not
-        belong to this container — the repository never silently moves
-        entries between containers on behalf of the caller.
-        """
         if chapter_id is None:
             existing = self.list_unchaptered_for_project(project_id)
         else:
-            # Ensure the chapter actually belongs to the project.
-            owner = self._conn.execute(
-                "SELECT project_id FROM chapters WHERE id = ?", (chapter_id,)
-            ).fetchone()
-            if owner is None or owner["project_id"] != project_id:
-                raise ValueError(
-                    f"chapter {chapter_id!r} is not in project {project_id!r}"
-                )
-            existing = self.list_for_chapter(chapter_id)
-
-        existing_ids = {e.id for e in existing}
-        if set(ordered_ids) != existing_ids:
-            raise ValueError(
-                "reorder_container requires exactly the entries of the "
-                "target container"
-            )
-        for index, eid in enumerate(ordered_ids):
-            self._conn.execute(
-                "UPDATE entries SET sequence_order = ? WHERE id = ?",
-                (index, eid),
-            )
-
-    def _next_sequence(
-        self, project_id: str, chapter_id: Optional[str]
-    ) -> int:
-        if chapter_id is None:
-            row = self._conn.execute(
-                """
-                SELECT COALESCE(MAX(sequence_order), -1) AS mx
-                  FROM entries
-                 WHERE project_id = ? AND chapter_id IS NULL
-                """,
-                (project_id,),
-            ).fetchone()
-        else:
-            row = self._conn.execute(
-                """
-                SELECT COALESCE(MAX(sequence_order), -1) AS mx
-                  FROM entries
-                 WHERE chapter_id = ?
-                """,
-                (chapter_id,),
-            ).fetchone()
-        return int(row["mx"]) + 1
-
-    def list_for_project(self, project_id: str) -> List[Entry]:
-        rows = self._conn.execute(
-            """
-            SELECT * FROM entries
-             WHERE project_id = ?
-             ORDER BY updated_at DESC, created_at DESC
-            """,
-            (project_id,),
-        ).fetchall()
-        return [_row_to_entry(r) for r in rows]
-
-    def list_for_chapter(self, chapter_id: str) -> List[Entry]:
-        rows = self._conn.execute(
-            """
-            SELECT * FROM entries
-             WHERE chapter_id = ?
-             ORDER BY CASE WHEN sequence_order IS NULL THEN 1 ELSE 0 END,
-                      sequence_order ASC,
-                      created_at ASC
-            """,
-            (chapter_id,),
-        ).fetchall()
-        return [_row_to_entry(r) for r in rows]
-
-    def list_unchaptered_for_project(self, project_id: str) -> List[Entry]:
-        rows = self._conn.execute(
-            """
-            SELECT * FROM entries
-             WHERE project_id = ? AND chapter_id IS NULL
-             ORDER BY CASE WHEN sequence_order IS NULL THEN 1 ELSE 0 END,
-                      sequence_order ASC,
-                      created_at ASC
-            """,
-            (project_id,),
-        ).fetchall()
-        return [_row_to_entry(r) for r in rows]
-
-    def delete(self, entry_id: str) -> bool:
-        cur = self._conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
-        return cur.rowcount > 0
-
-    # reads -------------------------------------------------------------
-    def get(self, entry_id: str) -> Optional[Entry]:
-        row = self._conn.execute(
-            "SELECT * FROM entries WHERE id = ?", (entry_id,)
-        ).fetchone()
-        return _row_to_entry(row) if row else None
-
-    def list_recent(self, limit: int = 100) -> List[Entry]:
-        rows = self._conn.execute(
-            """
-            SELECT * FROM entries
-            ORDER BY updated_at DESC, created_at DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
-        return [_row_to_entry(r) for r in rows]
-
-    def count(self) -> int:
-        row = self._conn.execute("SELECT COUNT(*) AS n FROM entries").fetchone()
-        return int(row["n"])
-
-    # project / chapter assignment (M5) ---------------------------------
-    def assign_to_project(
-        self, entry_id: str, project_id: Optional[str]
-    ) -> Optional[Entry]:
-        """Assign (or unassign) an entry to a project.
-
-        Guarantees:
-        * Clearing the project also clears ``chapter_id`` and
-          ``sequence_order``.
-        * Moving an entry to a *different* project detaches the chapter
-          and appends the entry to the new project's unchaptered bucket.
-        * Re-assigning to the *same* project is a no-op for ordering —
-          the entry keeps its existing ``chapter_id`` /
-          ``sequence_order`` so the user's tidying is not lost.
-        """
-        entry = self.get(entry_id)
-        if entry is None:
-            return None
-
-        if project_id is None:
-            self._conn.execute(
-                """
-                UPDATE entries
-                   SET project_id = NULL,
-                       chapter_id = NULL,
-                       sequence_order = NULL,
-                       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                 WHERE id = ?
-                """,
-                (entry_id,),
-            )
-            return self.get(entry_id)
-
-        if entry.project_id == project_id:
-            return entry  # no-op: preserve ordering
-
-        new_seq = self._next_sequence(project_id, None)
-        self._conn.execute(
-            """
-            UPDATE entries
-               SET project_id = ?,
-                   chapter_id = NULL,
-                   sequence_order = ?,
-                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-             WHERE id = ?
-            """,
-            (project_id, new_seq, entry_id),
-        )
-        return self.get(entry_id)
-
-    def assign_to_chapter(
-        self, entry_id: str, chapter_id: Optional[str]
-    ) -> Optional[Entry]:
-        """Move the entry between chapters / the unchaptered bucket.
-
-        * ``chapter_id is None`` moves the entry back to the current
-          project's unchaptered bucket and appends it to the end. If the
-          entry was already unchaptered the call is a no-op.
-        * Otherwise validates that ``chapter_id`` belongs to the entry's
-          current project; mismatches raise :class:`ValueError` rather
-          than silently re-parenting the entry.
-        * Re-assigning to the same chapter is a no-op.
-        """
-        entry = self.get(entry_id)
-        if entry is None:
-            return None
-
-        if chapter_id is None:
-            if entry.chapter_id is None:
-                return entry
-            if entry.project_id is None:
-                # Nothing meaningful to do; just ensure state is clean.
-                return entry
-            new_seq = self._next_sequence(entry.project_id, None)
-            self._conn.execute(
-                """
-                UPDATE entries
-                   SET chapter_id = NULL,
-                       sequence_order = ?,
-                       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                 WHERE id = ?
-                """,
-                (new_seq, entry_id),
-            )
-            return self.get(entry_id)
-
-        row = self._conn.execute(
-            "SELECT project_id FROM chapters WHERE id = ?", (chapter_id,)
-        ).fetchone()
-        if row is None:
-            raise ValueError(f"chapter {chapter_id!r} does not exist")
-        chapter_project_id = row["project_id"]
-        if entry.project_id is None:
-            raise ValueError(
-                "cannot assign a chapter to an entry without a project"
-            )
-        if entry.project_id != chapter_project_id:
-            raise ValueError(
-                "chapter belongs to a different project than the entry"
-            )
-
-        if entry.chapter_id == chapter_id:
-            return entry  # no-op
-
-        new_seq = self._next_sequence(entry.project_id, chapter_id)
-        self._conn.execute(
-            """
-            UPDATE entries
-               SET chapter_id = ?,
-                   sequence_order = ?,
-                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-             WHERE id = ?
-            """,
-            (chapter_id, new_seq, entry_id),
-        )
-        return self.get(entry_id)
-
-    def reorder_container(
-        self,
-        project_id: str,
-        chapter_id: Optional[str],
-        ordered_ids: List[str],
-    ) -> None:
-        """Rewrite ``sequence_order`` for every entry in a container.
-
-        ``chapter_id`` may be ``None`` to target the unchaptered bucket of
-        ``project_id``. Raises :class:`ValueError` if any id does not
-        belong to this container — the repository never silently moves
-        entries between containers on behalf of the caller.
-        """
-        if chapter_id is None:
-            existing = self.list_unchaptered_for_project(project_id)
-        else:
-            # Ensure the chapter actually belongs to the project.
             owner = self._conn.execute(
                 "SELECT project_id FROM chapters WHERE id = ?", (chapter_id,)
             ).fetchone()

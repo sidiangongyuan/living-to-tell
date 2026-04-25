@@ -23,6 +23,11 @@ SnapshotProvider = Callable[[], Optional[tuple[str, str, str, str]]]
 
 class AutosaveService(QObject):
     saved = Signal(str)
+    # Emitted when the user has unsaved edits pending the debounce timer.
+    # M7B: lets the UI show a "Unsaved changes" indicator.
+    dirty = Signal()
+    # Emitted right before a write hits the DB so the UI can show "Saving…".
+    saving = Signal(str)
 
     def __init__(
         self,
@@ -43,6 +48,7 @@ class AutosaveService(QObject):
 
     def mark_dirty(self) -> None:
         self._timer.start()
+        self.dirty.emit()
 
     def flush(self) -> None:
         snap = self._snapshot()
@@ -53,6 +59,7 @@ class AutosaveService(QObject):
         if prev == (title, body, tags_text):
             return
         tags = parse_tags(tags_text)
+        self.saving.emit(entry_id)
         if self._repo.update(entry_id, title=title, body=body, tags=tags) is not None:
             self._last_saved[entry_id] = (title, body, tags_text)
             self.saved.emit(entry_id)

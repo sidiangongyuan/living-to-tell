@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS entries (
     chapter_id     TEXT,
     sequence_order INTEGER,
     tags_text      TEXT NOT NULL DEFAULT '',
+    archived_at    TEXT,
     created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );

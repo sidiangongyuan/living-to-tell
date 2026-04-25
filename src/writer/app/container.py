@@ -59,6 +59,17 @@ def build_container(db_path: Optional[Path] = None) -> AppContainer:
     conn = open_and_initialize(db_path)
     settings_repo = SettingsRepository(conn)
     settings = Settings(settings_repo)
+
+    # One-shot opportunistic migration from env:OPENAI_API_KEY → codex for
+    # users who already run Codex locally. See app/codex_auth_migration.py
+    # for the exact gating rules. Failures must not block startup.
+    try:
+        from writer.app.codex_auth_migration import maybe_migrate_to_codex_auth
+
+        maybe_migrate_to_codex_auth(settings)
+    except Exception:  # noqa: BLE001
+        pass
+
     entry_repo = EntryRepository(conn)
     version_repo = VersionRepository(conn)
     reference_repo = ReferenceRepository(conn)

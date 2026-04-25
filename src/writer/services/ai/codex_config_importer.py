@@ -28,6 +28,7 @@ class CodexImportResult:
     base_url: Optional[str] = None
     model: Optional[str] = None
     wire_api: Optional[str] = None
+    requires_openai_auth: bool = False
 
     def is_empty(self) -> bool:
         return not (self.base_url or self.model or self.wire_api)
@@ -54,6 +55,7 @@ class CodexConfigImporter:
 
         base_url: Optional[str] = None
         wire_api: Optional[str] = None
+        requires_openai_auth = False
 
         providers = data.get("model_providers")
         if isinstance(providers, dict) and provider_key:
@@ -61,13 +63,23 @@ class CodexConfigImporter:
             if isinstance(chosen, dict):
                 base_url = _as_str(chosen.get("base_url"))
                 wire_api = _as_str(chosen.get("wire_api"))
+                requires_openai_auth = bool(
+                    chosen.get("requires_openai_auth", False)
+                )
 
         if base_url is None:
             base_url = _as_str(data.get("base_url"))
         if wire_api is None:
             wire_api = _as_str(data.get("wire_api"))
+        if not requires_openai_auth:
+            requires_openai_auth = bool(data.get("requires_openai_auth", False))
 
-        return CodexImportResult(base_url=base_url, model=model, wire_api=wire_api)
+        return CodexImportResult(
+            base_url=base_url,
+            model=model,
+            wire_api=wire_api,
+            requires_openai_auth=requires_openai_auth,
+        )
 
 
 def _as_str(value) -> Optional[str]:

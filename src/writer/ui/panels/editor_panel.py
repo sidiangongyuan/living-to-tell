@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -47,9 +48,22 @@ class EditorPanel(QWidget):
         self._body = QPlainTextEdit()
         self._body.setPlaceholderText(TR("editor.body_placeholder"))
         self._body.textChanged.connect(self._on_changed)
+        self._body.textChanged.connect(self._update_word_count)
+        self._body.selectionChanged.connect(self._update_word_count)
 
         self._meta = QLabel("")
         self._meta.setStyleSheet("color: gray; font-size: 11px;")
+
+        self._word_count = QLabel("")
+        self._word_count.setStyleSheet("color: gray; font-size: 11px;")
+        self._word_count.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+
+        bottom_row = QHBoxLayout()
+        bottom_row.setContentsMargins(0, 0, 0, 0)
+        bottom_row.addWidget(self._meta, 1)
+        bottom_row.addWidget(self._word_count, 0)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -57,10 +71,11 @@ class EditorPanel(QWidget):
         layout.addWidget(self._tags)
         layout.addWidget(self._tag_chips_widget)
         layout.addWidget(self._body, 1)
-        layout.addWidget(self._meta)
+        layout.addLayout(bottom_row)
 
         self._loading = False
         self.set_entry(None)
+        self._update_word_count()
 
     def set_entry(self, entry: Optional[Entry]) -> None:
         self._loading = True
@@ -157,3 +172,58 @@ class EditorPanel(QWidget):
         if entry.updated_at:
             parts.append(f"{updated_label} {entry.updated_at}")
         return "  |  ".join(parts)
+
+    # ------------------------------------------------------------------
+    # M7B: live word / character count
+    # ------------------------------------------------------------------
+
+    def _update_word_count(self) -> None:
+        body = self._body.toPlainText()
+        words = _count_words(body)
+        chars = len(body)
+        selected = self.selected_body_text()
+        if selected:
+            self._word_count.setText(
+                TR("editor.word_count_with_sel").format(
+                    words=words,
+                    chars=chars,
+                    sel_words=_count_words(selected),
+                    sel_chars=len(selected),
+                )
+            )
+        else:
+            self._word_count.setText(
+                TR("editor.word_count").format(words=words, chars=chars)
+            )
+
+
+def _count_words(text: str) -> int:
+    """Word count that treats CJK characters individually and splits
+    non-CJK runs on whitespace (matches the intuition for mixed CN/EN
+    drafts)."""
+    if not text:
+        return 0
+    total = 0
+    buffer: list[str] = []
+    for ch in text:
+        if _is_cjk(ch):
+            if buffer:
+                total += len("".join(buffer).split())
+                buffer.clear()
+            total += 1
+        else:
+            buffer.append(ch)
+    if buffer:
+        total += len("".join(buffer).split())
+    return total
+
+
+def _is_cjk(ch: str) -> bool:
+    code = ord(ch)
+    return (
+        0x4E00 <= code <= 0x9FFF      # CJK Unified Ideographs
+        or 0x3040 <= code <= 0x309F   # Hiragana
+        or 0x30A0 <= code <= 0x30FF   # Katakana
+        or 0xAC00 <= code <= 0xD7AF   # Hangul Syllables
+        or 0x3400 <= code <= 0x4DBF   # CJK Unified Ideographs Extension A
+    )

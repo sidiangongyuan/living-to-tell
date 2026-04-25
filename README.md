@@ -72,9 +72,27 @@ Open **AI → Settings…** inside the app and fill in:
 
 - **Base URL** — your OpenAI-compatible endpoint (e.g. `https://api.openai.com/v1`)
 - **Model** — model name (e.g. `gpt-4o-mini`)
-- **API key source** — `env:OPENAI_API_KEY` or `literal:<your-key>`
+- **API key source** — one of:
+  - `env:VAR` (e.g. `env:OPENAI_API_KEY`) — the app reads the referenced
+    environment variable at request time.
+  - `codex` — the app reads `~/.codex/auth.json` (your existing local
+    Codex credential file) at request time.
 
-You can also import a Codex-style `config.toml` via **AI → Settings… → Import Codex config**.
+  In **both** modes the raw key value is **never stored on disk by this
+  app** and never logged.
+
+Click **Test AI configuration** in the same dialog to validate your settings
+locally (no network call) — it checks that all required fields are filled
+and that the selected credential source resolves to a non-empty key.
+
+You can also import a Codex-style `config.toml` via
+**AI → Settings… → Import Codex config**. Only the endpoint (`base_url`),
+model, and wire protocol are imported — **API keys are never imported**.
+If the imported config declares `requires_openai_auth = true` and a usable
+`~/.codex/auth.json` exists on the machine, **API key source** is
+auto-switched to `codex` so you don't have to export any environment
+variable manually. Otherwise, set the corresponding environment variable
+yourself before invoking AI.
 
 ## Building for Windows
 

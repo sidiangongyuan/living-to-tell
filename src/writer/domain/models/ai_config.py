@@ -2,8 +2,14 @@
 
 Mirrors the small subset of fields the writer app needs from a Codex-style
 configuration. Credentials are not stored in this object — the API key is
-resolved at call time from the ``api_key_source`` (only ``env:VAR`` is
-supported in M3).
+resolved at call time from the ``api_key_source``.
+
+Supported values for ``api_key_source``:
+- ``env:VARNAME`` — read from ``os.environ[VARNAME]`` at request time.
+- ``codex``       — read from ``~/.codex/auth.json`` at request time.
+
+Both paths read the secret strictly at runtime; Writer never persists the
+key itself on disk.
 """
 from __future__ import annotations
 
@@ -23,3 +29,7 @@ class AiConfig:
         if self.api_key_source and self.api_key_source.startswith("env:"):
             return self.api_key_source.split(":", 1)[1].strip() or None
         return None
+
+    def uses_codex_auth(self) -> bool:
+        """True when the key should be read from a local Codex auth file."""
+        return (self.api_key_source or "").strip().lower() == "codex"

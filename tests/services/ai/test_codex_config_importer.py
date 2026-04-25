@@ -48,8 +48,13 @@ def test_credentials_are_not_exposed(tmp_path):
         """,
     )
     result = CodexConfigImporter().import_from(cfg)
-    # Result is a frozen dataclass with only base_url/model/wire_api fields.
-    assert set(result.__dataclass_fields__.keys()) == {"base_url", "model", "wire_api"}
+    # Result is a frozen dataclass with only safe, non-credential fields.
+    assert set(result.__dataclass_fields__.keys()) == {
+        "base_url",
+        "model",
+        "wire_api",
+        "requires_openai_auth",
+    }
 
 
 def test_flat_layout_fallback(tmp_path):

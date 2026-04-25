@@ -101,11 +101,24 @@ _CATALOG: dict[str, dict[str, str]] = {
             "Language change will take effect after restarting the application."
         ),
         "settings.key_only_env": (
-            "Only env:VAR is supported. The API key is never stored on disk."
+            "Use env:VAR or the literal string 'codex'. The API key is "
+            "never stored on disk."
         ),
         "settings.key_enter_var": "Enter an environment variable name after env:.",
         "settings.key_set": "✓ {var} is set in the current environment.",
         "settings.key_not_set": "⚠ {var} is not set. Export it before invoking AI.",
+        "settings.codex_auth_available": (
+            "✓ Local Codex auth available at {path}."
+        ),
+        "settings.codex_auth_missing_file": (
+            "⚠ No Codex auth file at {path}. Run Codex once or switch to env:VAR."
+        ),
+        "settings.codex_auth_missing_key": (
+            "⚠ Codex auth file at {path} has no OPENAI_API_KEY field."
+        ),
+        "settings.codex_auth_unreadable": (
+            "⚠ Codex auth file at {path} could not be read."
+        ),
         "settings.nothing_imported": "Nothing imported",
         "settings.nothing_imported_msg": (
             "No supported fields (base_url / model / wire_api) were found."
@@ -245,6 +258,71 @@ _CATALOG: dict[str, dict[str, str]] = {
         "action.polish": "Polish",
         "action.expand": "Expand",
         "action.continue": "Continue",
+        # ── AI preflight / config guidance (M7B) ───────────────────────────────
+        "dlg.ai_not_ready": "AI is not ready",
+        "settings.test_btn": "Test AI configuration",
+        "settings.test_ok_title": "AI configuration looks good",
+        "settings.test_ok_msg": (
+            "All required fields are set and the environment variable "
+            "holding the API key is present.\n\n"
+            "This does not send a network request — it only validates the "
+            "local configuration."
+        ),
+        "settings.test_fail_title": "AI configuration has issues",
+        "settings.codex_imported_title": "Codex config imported",
+        "settings.codex_imported_body": (
+            "Imported only: endpoint (base_url), model, wire protocol.\n\n"
+            "The API key was NOT imported. The app never stores API keys on "
+            "disk. Set an environment variable (for example OPENAI_API_KEY) "
+            "and make sure 'API key source' reads env:OPENAI_API_KEY."
+        ),
+        "settings.codex_imported_body_with_auth": (
+            "Imported endpoint (base_url), model, and wire protocol.\n\n"
+            "The imported config requires OpenAI auth, and a local Codex "
+            "auth file was found — 'API key source' has been set to 'codex' "
+            "automatically. The key is read from ~/.codex/auth.json at "
+            "request time and never stored by this app."
+        ),
+        # ── Fragment delete / batch (M7B) ──────────────────────────────────────
+        "list.delete_btn": "Delete",
+        "list.delete_tooltip": "Delete selected fragment(s)",
+        "list.archive_btn": "Archive",
+        "list.unarchive_btn": "Unarchive",
+        "list.sort_label": "Sort:",
+        "list.sort_updated": "Recently updated",
+        "list.sort_created": "Recently created",
+        "list.sort_title": "Title (A–Z)",
+        "list.show_archived": "Show archived",
+        "list.archived_badge": " [archived]",
+        "dlg.confirm_delete_title": "Delete fragment",
+        "dlg.confirm_delete_one": (
+            "Delete this fragment permanently?\n\nTitle: {title}\n\n"
+            "You can recover the most recent deletion via File → "
+            "Recover last deleted fragment."
+        ),
+        "dlg.confirm_delete_many": (
+            "Delete {count} fragments permanently?\n\nThis cannot be "
+            "undone from the list, but the most recent deletion is "
+            "recoverable via File → Recover last deleted fragment."
+        ),
+        # ── Save / recovery (M7B) ──────────────────────────────────────────────
+        "menu.save": "&Save",
+        "menu.recover_last_deleted": "Recover last deleted fragment",
+        "status.saved": "All changes saved",
+        "status.saving": "Saving…",
+        "status.unsaved": "Unsaved changes",
+        "status.no_entry": "",
+        "dlg.nothing_to_recover_title": "Nothing to recover",
+        "dlg.nothing_to_recover_msg": (
+            "No recently deleted fragment is available for recovery."
+        ),
+        "dlg.recovered_title": "Recovered",
+        "dlg.recovered_msg": "The deleted fragment has been restored.",
+        # ── Word count (M7B) ───────────────────────────────────────────────────
+        "editor.word_count": "{words} words · {chars} chars",
+        "editor.word_count_with_sel": (
+            "{words} words · {chars} chars  (selection: {sel_words} / {sel_chars})"
+        ),
     },
 
     "zh_CN": {
@@ -322,10 +400,14 @@ _CATALOG: dict[str, dict[str, str]] = {
         "settings.lang_zh_cn": "简体中文",
         "settings.restart_required_title": "需要重启",
         "settings.restart_required_msg": "语言设置将在重启应用后生效。",
-        "settings.key_only_env": "仅支持 env:VAR 格式。API 密钥不会存储在磁盘上。",
+        "settings.key_only_env": "支持 env:VAR 或字面量 'codex'。API 密钥不会存储在磁盘上。",
         "settings.key_enter_var": "请在 env: 后输入环境变量名称。",
         "settings.key_set": "✓ {var} 已在当前环境中设置。",
         "settings.key_not_set": "⚠ {var} 未设置。请在调用 AI 前先导出该变量。",
+        "settings.codex_auth_available": "✓ 已找到本地 Codex 认证：{path}。",
+        "settings.codex_auth_missing_file": "⚠ 未找到 Codex 认证文件：{path}。请先运行一次 Codex，或改用 env:VAR。",
+        "settings.codex_auth_missing_key": "⚠ Codex 认证文件 {path} 中未包含 OPENAI_API_KEY 字段。",
+        "settings.codex_auth_unreadable": "⚠ 无法读取 Codex 认证文件：{path}。",
         "settings.nothing_imported": "未导入任何内容",
         "settings.nothing_imported_msg": "未找到支持的字段（base_url / model / wire_api）。",
         "settings.imported": "导入成功",
@@ -453,6 +535,65 @@ _CATALOG: dict[str, dict[str, str]] = {
         "action.polish": "润色",
         "action.expand": "扩写",
         "action.continue": "续写",
+        # ── AI preflight / config guidance (M7B) ───────────────────────────────
+        "dlg.ai_not_ready": "AI 尚未就绪",
+        "settings.test_btn": "测试 AI 配置",
+        "settings.test_ok_title": "AI 配置看起来没问题",
+        "settings.test_ok_msg": (
+            "所需字段已填写，密钥环境变量也已设置。\n\n"
+            "本测试仅校验本地配置，不会发起网络请求。"
+        ),
+        "settings.test_fail_title": "AI 配置存在问题",
+        "settings.codex_imported_title": "已导入 Codex 配置",
+        "settings.codex_imported_body": (
+            "仅导入：endpoint（base_url）、model、接口协议（wire_api）。\n\n"
+            "API 密钥未被导入。本应用永不在磁盘上存储 API 密钥。"
+            "请设置环境变量（例如 OPENAI_API_KEY），并确保「API 密钥来源」"
+            "为 env:OPENAI_API_KEY。"
+        ),
+        "settings.codex_imported_body_with_auth": (
+            "已导入 endpoint（base_url）、model、接口协议（wire_api）。\n\n"
+            "导入的配置要求 OpenAI 认证，且检测到本地 Codex 认证文件——"
+            "「API 密钥来源」已自动设为 'codex'。密钥将在请求时从 "
+            "~/.codex/auth.json 读取，本应用不会持久化该值。"
+        ),
+        # ── Fragment delete / batch (M7B) ──────────────────────────────────────
+        "list.delete_btn": "删除",
+        "list.delete_tooltip": "删除所选片段",
+        "list.archive_btn": "归档",
+        "list.unarchive_btn": "取消归档",
+        "list.sort_label": "排序：",
+        "list.sort_updated": "最近更新",
+        "list.sort_created": "最近创建",
+        "list.sort_title": "标题（A–Z）",
+        "list.show_archived": "显示归档",
+        "list.archived_badge": "［已归档］",
+        "dlg.confirm_delete_title": "删除片段",
+        "dlg.confirm_delete_one": (
+            "要永久删除此片段吗？\n\n标题：{title}\n\n"
+            "可通过「文件 → 恢复最近删除的片段」找回最近一次的删除。"
+        ),
+        "dlg.confirm_delete_many": (
+            "要永久删除所选的 {count} 个片段吗？\n\n"
+            "此操作无法从列表直接撤销，但最近一次删除可通过"
+            "「文件 → 恢复最近删除的片段」找回。"
+        ),
+        # ── Save / recovery (M7B) ──────────────────────────────────────────────
+        "menu.save": "保存(&S)",
+        "menu.recover_last_deleted": "恢复最近删除的片段",
+        "status.saved": "所有更改已保存",
+        "status.saving": "保存中…",
+        "status.unsaved": "有未保存的更改",
+        "status.no_entry": "",
+        "dlg.nothing_to_recover_title": "没有可恢复的片段",
+        "dlg.nothing_to_recover_msg": "当前没有最近被删除的片段可供恢复。",
+        "dlg.recovered_title": "已恢复",
+        "dlg.recovered_msg": "已删除的片段已被恢复。",
+        # ── Word count (M7B) ───────────────────────────────────────────────────
+        "editor.word_count": "{words} 字 · {chars} 字符",
+        "editor.word_count_with_sel": (
+            "{words} 字 · {chars} 字符  （选中：{sel_words} / {sel_chars}）"
+        ),
     },
 }
 

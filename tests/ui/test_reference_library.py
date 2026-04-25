@@ -97,6 +97,11 @@ def test_main_window_passes_references_into_request(qtbot, container, monkeypatc
     from writer.ui import main_window as main_window_module
     from writer.ui.main_window import MainWindow
 
+    # M7B: preflight requires the API-key env var to be present before the
+    # rewrite is dispatched. The recording provider does not actually read
+    # the key, but the preflight does.
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only-not-real")
+
     captured: list = []
 
     class _RecordingProvider(AiProvider):
@@ -145,8 +150,14 @@ def test_main_window_passes_references_into_request(qtbot, container, monkeypatc
         def exec(self):
             return 1
 
+        def accept_mode(self):
+            return main_window_module.AcceptMode.FULL
+
         def accepted_text(self):
             return self._text
+
+        def accepted_selection_text(self):
+            return ""
 
     monkeypatch.setattr(
         main_window_module, "RewriteCompareDialog", _FakeCompareDialog
