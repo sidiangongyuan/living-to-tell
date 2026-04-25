@@ -15,6 +15,7 @@ from writer.services.ai.codex_auth import CodexAuthError, CodexAuthResolver
 from writer.services.ai.interfaces import (
     AiError,
     AiProvider,
+    ChatResponse,
     RewriteRequest,
     RewriteResponse,
 )
@@ -103,6 +104,41 @@ class OpenAiProvider(AiProvider):
         return RewriteResponse(
             content=text,
             model=self._config.model,
+            provider=self.name,
+            input_tokens=_safe_int(usage, "input_tokens"),
+            output_tokens=_safe_int(usage, "output_tokens"),
+            finish_reason=_safe_str(response, "finish_reason"),
+        )
+
+    # ------------------------------------------------------------------
+    # M10A: generic chat — used by AiTaskService for the new task engine.
+    # ------------------------------------------------------------------
+    def chat(self, messages, *, model=None) -> ChatResponse:
+        if self._config.wire_api != "responses":
+            raise AiError(
+                f"Unsupported wire_api '{self._config.wire_api}'. "
+                "M10A only supports 'responses'."
+            )
+        client = self._ensure_client()
+        used_model = model or self._config.model
+        try:
+            response = client.responses.create(
+                model=used_model,
+                input=list(messages),
+            )
+        except AiError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise AiError(f"AI request failed: {exc}") from exc
+
+        text = _extract_output_text(response)
+        if not text:
+            raise AiError("AI response contained no text output.")
+
+        usage = getattr(response, "usage", None)
+        return ChatResponse(
+            content=text,
+            model=used_model,
             provider=self.name,
             input_tokens=_safe_int(usage, "input_tokens"),
             output_tokens=_safe_int(usage, "output_tokens"),

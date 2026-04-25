@@ -21,6 +21,9 @@ ever silently overwriting the original text.
   the whole collection together
 - **Include fragment into work** — insert the selected text (or the whole
   fragment) into a chosen work section at an explicit insertion point
+- **AI Workspace** — a dedicated AI mode with Tools and Chat tabs,
+  scope-bound threads, manual context attachments, library Q&A, and safe
+  write-back into fragments or work sections
 - **AI rewrite** — Polish / Expand / Continue via OpenAI-compatible API
   - Side-by-side compare dialog with full accept or partial (selection) accept
 - **Reference library** — paste-in source material for AI context
@@ -29,6 +32,26 @@ ever silently overwriting the original text.
   collections as TXT / Markdown / DOCX
 - **Version history** — fragment AI acceptances and manual snapshots are
   tracked; works also support manual snapshots and restore-to-current
+
+## M10A Highlights
+
+M10A turns AI from a one-shot rewrite action into a scoped workspace:
+
+- **Top-level AI mode** — open AI as a first-class workspace mode instead of
+  a modal side path
+- **Tools + Chat split** — structured tasks for deterministic outputs, plus a
+  free-form chat tab bound to the current fragment, work, collection, or
+  global scope
+- **Safe write-back** — preview, replace fragment/selection/section, or save
+  results as a new fragment, with snapshots taken before destructive section
+  writes
+- **Source-backed library Q&A** — ask questions against attached material and
+  see citations in the result panel
+- **Manual context control** — attach extra fragments only when needed and
+  choose a thriftier or stronger model tier per run
+
+Cards and saved task templates are wired at the schema/repository layer in
+M10A, but their dedicated UI surface is still deferred.
 
 ## M8 Highlights
 
@@ -166,7 +189,8 @@ python -m PyInstaller writer.spec --noconfirm
 The build produces:
 
 - `dist\Writer\Writer.exe` — runnable one-folder Windows app bundle
-- `dist\Writer-portable.zip` — shareable portable package
+- `dist\Writer-<app-version>-portable.zip` — versioned release artifact
+- `dist\Writer-portable.zip` — stable alias to the latest built portable package
 
 Launch the unpacked bundle with:
 
@@ -192,6 +216,9 @@ dist\Writer\Writer.exe
 
 ## Release notes
 
+- [docs/m10a-release-notes.md](docs/m10a-release-notes.md) — M10A summary covering
+  the AI Workspace, structured AI tasks, scoped chat threads, source-backed
+  library Q&A, and safe write-back
 - [docs/m9a-release-notes.md](docs/m9a-release-notes.md) — M9A summary covering
   the visual shell upgrade, theme system, reachable empty states, and the
   fragment-to-work closure flow
@@ -208,6 +235,7 @@ Product and design docs live under [`docs/`](docs/):
 - `docs/product-requirements.md`
 - `docs/technical-approach.md`
 - `docs/development-plan.md`
+- `docs/m10a-release-notes.md`
 - `docs/m9a-release-notes.md`
 - `docs/m8-release-notes.md`
 

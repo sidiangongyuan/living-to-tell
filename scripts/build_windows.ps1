@@ -6,9 +6,27 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $specPath = Join-Path $repoRoot "writer.spec"
+$versionFile = Join-Path $repoRoot "src\writer\app\version.py"
 $distDir = Join-Path $repoRoot "dist"
 $bundleDir = Join-Path $distDir "Writer"
 $zipPath = Join-Path $distDir "Writer-portable.zip"
+
+function Get-AppVersion {
+    param(
+        [string]$VersionFilePath
+    )
+
+    if (-not (Test-Path $VersionFilePath)) {
+        throw "version.py not found at $VersionFilePath"
+    }
+
+    $content = Get-Content $VersionFilePath -Raw
+    $match = [regex]::Match($content, 'APP_VERSION\s*=\s*"([^"]+)"')
+    if (-not $match.Success) {
+        throw "Could not extract APP_VERSION from $VersionFilePath"
+    }
+    return $match.Groups[1].Value
+}
 
 function Compress-ArchiveWithRetry {
     param(
@@ -43,11 +61,15 @@ try {
         throw "writer.spec not found at $specPath"
     }
 
+    $appVersion = Get-AppVersion -VersionFilePath $versionFile
+    $versionedZipPath = Join-Path $distDir ("Writer-" + $appVersion + "-portable.zip")
+
     # Clean previous build artefacts so PyInstaller always does a full rebuild.
     foreach ($d in @("build", $bundleDir)) {
         if (Test-Path $d) { Remove-Item $d -Recurse -Force }
     }
     if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+    if (Test-Path $versionedZipPath) { Remove-Item $versionedZipPath -Force }
 
     & $PythonExe -m PyInstaller $specPath --noconfirm
     if ($LASTEXITCODE -ne 0) {
@@ -59,13 +81,16 @@ try {
         throw "Expected executable was not created: $exePath"
     }
 
-    Compress-ArchiveWithRetry -SourcePath (Join-Path $bundleDir "*") -DestinationPath $zipPath
+    Compress-ArchiveWithRetry -SourcePath (Join-Path $bundleDir "*") -DestinationPath $versionedZipPath
+    Copy-Item -Path $versionedZipPath -Destination $zipPath -Force
 
     Write-Output ""
     Write-Output "=== Build complete ==="
+    Write-Output "  Version: $appVersion"
     Write-Output "  Bundle : $bundleDir"
     Write-Output "  Exe    : $exePath"
-    Write-Output "  Zip    : $zipPath"
+    Write-Output "  Zip    : $versionedZipPath"
+    Write-Output "  Alias  : $zipPath"
     Write-Output ""
     Write-Output "The bundle uses a custom runtime hook (hooks/rthook_pyside6_dlls.py)"
     Write-Output "to add PySide6/ and shiboken6/ subdirectories to the DLL search path"

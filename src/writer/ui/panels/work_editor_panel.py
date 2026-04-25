@@ -208,6 +208,30 @@ class WorkEditorPanel(QWidget):
                 self._sections.setCurrentRow(i)
                 return
 
+    def current_work_id(self) -> Optional[str]:
+        """Return the work being edited, or ``None`` if no work is loaded."""
+        return self._work_id
+
+    def current_section_id(self) -> Optional[str]:
+        """Return the focused section id, or ``None`` if nothing is selected."""
+        return self._current_section_id
+
+    def current_section_content(self) -> str:
+        """Return the live editor text for the focused section."""
+        if self._current_section_id is None:
+            return ""
+        return self._editor.toPlainText()
+
+    def flush_pending(self) -> None:
+        """Force any debounced text edit to be persisted immediately.
+
+        Used by callers (e.g. AI workspace binding) that need the freshest
+        section body before reading it.
+        """
+        if self._editor_save_timer.isActive():
+            self._editor_save_timer.stop()
+            self._flush_section_content()
+
     # ------------------------------------------------------------------
     # Section list management
     # ------------------------------------------------------------------

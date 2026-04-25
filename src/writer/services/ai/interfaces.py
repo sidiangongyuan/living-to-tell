@@ -44,3 +44,27 @@ class AiProvider(ABC):
     @abstractmethod
     def rewrite(self, request: RewriteRequest) -> RewriteResponse:
         """Run a single rewrite call and return the generated text."""
+
+    def chat(
+        self,
+        messages: List[dict],
+        *,
+        model: Optional[str] = None,
+    ) -> "ChatResponse":
+        """Run a generic message-list call.
+
+        Default implementation raises ``NotImplementedError`` so legacy
+        providers can opt in. M10A's :class:`AiTaskService` requires it.
+        """
+        raise NotImplementedError("This provider does not implement chat().")
+
+
+@dataclass
+class ChatResponse:
+    content: str
+    model: str
+    provider: str
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    finish_reason: Optional[str] = None
+

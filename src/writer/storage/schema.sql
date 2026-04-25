@@ -227,3 +227,52 @@ CREATE VIRTUAL TABLE IF NOT EXISTS works_fts USING fts5(
     tokenize='unicode61'
 );
 
+
+-- ---------------------------------------------------------------------------
+-- Milestone 10A: AI workspace — threads, messages, cards, task templates.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS ai_threads (
+    id          TEXT PRIMARY KEY,
+    scope_kind  TEXT NOT NULL,           -- 'fragment' | 'work' | 'collection' | 'global'
+    scope_id    TEXT,                    -- nullable for 'global'
+    title       TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_threads_scope
+    ON ai_threads (scope_kind, scope_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS ai_messages (
+    id          TEXT PRIMARY KEY,
+    thread_id   TEXT NOT NULL REFERENCES ai_threads(id) ON DELETE CASCADE,
+    role        TEXT NOT NULL,           -- 'user' | 'assistant' | 'system'
+    content     TEXT NOT NULL,
+    meta_json   TEXT NOT NULL DEFAULT '{}',
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_messages_thread
+    ON ai_messages (thread_id, created_at);
+
+CREATE TABLE IF NOT EXISTS ai_cards (
+    id          TEXT PRIMARY KEY,
+    kind        TEXT NOT NULL,           -- 'style' | 'character' | 'setting'
+    name        TEXT NOT NULL DEFAULT '',
+    body        TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_cards_kind
+    ON ai_cards (kind, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS ai_task_templates (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL DEFAULT '',
+    task_type   TEXT NOT NULL,
+    params_json TEXT NOT NULL DEFAULT '{}',
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);

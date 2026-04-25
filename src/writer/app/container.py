@@ -16,12 +16,18 @@ from writer.app.settings import Settings
 from writer.services.ai.openai_provider import OpenAiProvider
 from writer.services.ai.prompt_builder import PromptBuilder
 from writer.services.ai.rewrite_service import RewriteService
+from writer.services.ai.task_prompt_builder import TaskPromptBuilder
+from writer.services.ai.task_service import AiTaskService
+from writer.services.ai.task_types import AiContextAttachment
+from writer.services.ai.thread_service import AiThreadService
 from writer.services.export import MarkdownExporter, TextExporter
 from writer.services.export.work_exporter import WorkExportService
 from writer.services.search_service import SearchService
 from writer.services.version_history_service import VersionHistoryService
 from writer.services.work_service import WorkService
 from writer.storage.database import open_and_initialize
+from writer.storage.repositories.ai_card_repository import AiCardRepository
+from writer.storage.repositories.ai_thread_repository import AiThreadRepository
 from writer.storage.repositories.chapter_repository import ChapterRepository
 from writer.storage.repositories.collection_repository import CollectionRepository
 from writer.storage.repositories.entry_repository import EntryRepository
@@ -66,6 +72,11 @@ class AppContainer:
     work_version_repository: WorkVersionRepository
     work_service: WorkService
     work_export_service: WorkExportService
+    # M10A: AI workspace
+    ai_thread_repository: AiThreadRepository
+    ai_card_repository: AiCardRepository
+    ai_task_service: AiTaskService
+    ai_thread_service: AiThreadService
 
     def close(self) -> None:
         try:
@@ -123,6 +134,48 @@ def build_container(db_path: Optional[Path] = None) -> AppContainer:
         work_repo, section_repo, collection_repo
     )
 
+    # ---- M10A: AI workspace -----------------------------------------
+    ai_thread_repo = AiThreadRepository(conn)
+    # Cards (style/character/setting) and saved task templates: schema
+    # and repository are wired so future milestones can land the UI
+    # without a migration. There is intentionally no card or template
+    # entry point in the M10A panel — that surface is deferred.
+    ai_card_repo = AiCardRepository(conn)
+    task_prompt_builder = TaskPromptBuilder()
+
+    def _library_search(query: str, limit: int):
+        # Provide library QA with up to ``limit`` candidate fragments
+        # (and a short body excerpt) as source attachments. Works /
+        # sections are also fair game; we keep the v1 implementation
+        # simple by routing through the existing entry FTS service.
+        results = []
+        try:
+            hits = search_service.search(query, limit=limit)
+        except Exception:  # noqa: BLE001 — searching must not break AI flow
+            hits = []
+        for entry in hits[:limit]:
+            body = entry.body or ""
+            excerpt = body[:1200]
+            results.append(
+                AiContextAttachment(
+                    kind="fragment",
+                    ref_id=entry.id,
+                    name=(entry.title or "(untitled fragment)") + f" [{entry.id[:8]}]",
+                    body=excerpt,
+                )
+            )
+        return results
+
+    ai_task_service = AiTaskService(
+        _provider_factory,
+        settings,
+        prompt_builder=task_prompt_builder,
+        library_search=_library_search,
+    )
+    ai_thread_service = AiThreadService(
+        ai_thread_repo, _provider_factory, ai_task_service
+    )
+
     return AppContainer(
         connection=conn,
         settings_repository=settings_repo,
@@ -145,4 +198,8 @@ def build_container(db_path: Optional[Path] = None) -> AppContainer:
         work_version_repository=work_version_repo,
         work_service=work_service,
         work_export_service=work_export_service,
+        ai_thread_repository=ai_thread_repo,
+        ai_card_repository=ai_card_repo,
+        ai_task_service=ai_task_service,
+        ai_thread_service=ai_thread_service,
     )

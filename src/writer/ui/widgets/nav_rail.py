@@ -63,6 +63,7 @@ class NavigationRail(QWidget):
         search_label: str,
         theme_label: str,
         settings_label: str,
+        ai_label: str = "AI",
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -75,6 +76,7 @@ class NavigationRail(QWidget):
         self._frag_btn = RailButton("✎", fragments_label)
         self._works_btn = RailButton("📚", works_label)
         self._coll_btn = RailButton("⊞", collections_label)
+        self._ai_btn = RailButton("✦", ai_label)
         self._search_btn = RailButton("⌕", search_label, checkable=False)
         self._theme_btn = RailButton("◑", theme_label, checkable=False)
         self._settings_btn = RailButton("⚙", settings_label, checkable=False)
@@ -82,7 +84,7 @@ class NavigationRail(QWidget):
         self._mode_group = QButtonGroup(self)
         self._mode_group.setExclusive(True)
         for idx, btn in enumerate(
-            (self._frag_btn, self._works_btn, self._coll_btn)
+            (self._frag_btn, self._works_btn, self._coll_btn, self._ai_btn)
         ):
             self._mode_group.addButton(btn, idx)
         self._mode_group.idClicked.connect(self.mode_changed.emit)
@@ -98,6 +100,7 @@ class NavigationRail(QWidget):
         layout.addWidget(self._frag_btn)
         layout.addWidget(self._works_btn)
         layout.addWidget(self._coll_btn)
+        layout.addWidget(self._ai_btn)
         layout.addSpacing(12)
         layout.addWidget(self._search_btn)
         layout.addStretch(1)
@@ -126,6 +129,10 @@ class NavigationRail(QWidget):
     @property
     def collections_button(self) -> QPushButton:
         return self._coll_btn
+
+    @property
+    def ai_button(self) -> QPushButton:
+        return self._ai_btn
 
     @property
     def search_button(self) -> QPushButton:

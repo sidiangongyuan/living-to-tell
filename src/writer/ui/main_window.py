@@ -47,7 +47,7 @@ from writer.app.settings import (
     KEY_CONTEXT_PANE_VISIBLE,
     KEY_THEME_MODE,
 )
-from writer.domain.enums import RewriteAction
+from writer.domain.enums import RewriteAction, AiThreadScope
 from writer.services.ai.interfaces import RewriteRequest, RewriteResponse
 from writer.services.autosave_service import AutosaveService
 from writer.storage.repositories.entry_repository import (
@@ -69,6 +69,7 @@ from writer.ui.panels.collections_panel import CollectionsPanel
 from writer.ui.panels.editor_panel import EditorPanel, _count_words
 from writer.ui.panels.fragment_list_panel import FragmentListPanel
 from writer.ui.panels.works_panel import WorksPanel
+from writer.ui.panels.ai_workspace_panel import AIWorkspacePanel, AiScope
 from writer.ui.rewrite_worker import RewriteWorker
 from writer.ui.theme import ThemeMode, apply_theme
 from writer.ui.widgets import ContextPane, NavigationRail
@@ -137,11 +138,14 @@ class MainWindow(QMainWindow):
         # ---- Other modes ----
         self._works_panel = WorksPanel(container)
         self._collections_panel = CollectionsPanel(container)
+        self._ai_workspace_panel = AIWorkspacePanel(container)
 
         self._stack = QStackedWidget()
         self._stack.addWidget(self._fragments_widget)  # 0
         self._stack.addWidget(self._works_panel)        # 1
         self._stack.addWidget(self._collections_panel)  # 2
+        self._stack.addWidget(self._ai_workspace_panel)  # 3
+        self._last_mode_before_ai = 0
 
         # ---- Context pane ----
         self._context_pane = ContextPane(
@@ -192,6 +196,7 @@ class MainWindow(QMainWindow):
             search_label=TR("rail.search"),
             theme_label=TR("rail.theme"),
             settings_label=TR("rail.settings"),
+            ai_label=TR("rail.ai"),
         )
         self._rail.mode_changed.connect(self._set_mode)
         self._rail.search_clicked.connect(self._on_global_search)
@@ -295,7 +300,7 @@ class MainWindow(QMainWindow):
             )
         except (TypeError, ValueError):
             persisted_mode = 0
-        self._set_mode(max(0, min(2, persisted_mode)))
+        self._set_mode(max(0, min(3, persisted_mode)))
 
     # --------------------------------------------------------------
     def _build_menu_bar(self) -> None:
@@ -926,6 +931,9 @@ class MainWindow(QMainWindow):
     # M8 Works / Collections / Search / Include
     # --------------------------------------------------------------
     def _set_mode(self, mode: int) -> None:
+        previous_mode = self._stack.currentIndex()
+        if mode == 3 and previous_mode != 3:
+            self._last_mode_before_ai = previous_mode
         self._stack.setCurrentIndex(mode)
         self._rail.set_active_mode(mode)
         # Persist the active mode so the next launch lands on the same view.
@@ -941,6 +949,124 @@ class MainWindow(QMainWindow):
         elif mode == 2:
             self._collections_panel.refresh_collections()
             self._refresh_collection_context_from_panel()
+        elif mode == 3:
+            self._bind_ai_workspace_scope()
+
+    def _bind_ai_workspace_scope(self) -> None:
+        """Hand the AI workspace whichever object is most relevant.
+
+        Preference: currently-edited fragment > currently-selected work
+        > currently-selected collection > GLOBAL.
+        """
+        def _bind_fragment_scope() -> bool:
+            entry_id = self._editor_panel.current_entry_id()
+            if entry_id is None:
+                return False
+            entry = self._container.entry_repository.get(entry_id)
+            if entry is None:
+                return False
+            self._autosave.flush()
+            entry = self._container.entry_repository.get(entry_id) or entry
+            sel_range = self._editor_panel.selection_range()
+            sel_text = self._editor_panel.selected_body_text()
+            sel_start, sel_end = (sel_range if sel_range else (None, None))
+            self._ai_workspace_panel.bind_scope(
+                AiScope(
+                    kind=AiThreadScope.FRAGMENT,
+                    ref_id=entry.id,
+                    name=(entry.title or TR("list.empty_fragment")).strip(),
+                    body=entry.body or "",
+                    selection_start=sel_start,
+                    selection_end=sel_end,
+                    selection_text=sel_text,
+                )
+            )
+            return True
+
+        def _bind_work_scope() -> bool:
+            try:
+                work_id = self._works_panel._current_work_id()  # noqa: SLF001
+            except Exception:  # noqa: BLE001
+                work_id = None
+            if not work_id:
+                return False
+            work = self._container.work_repository.get(work_id)
+            if work is None:
+                return False
+            section_id: Optional[str] = None
+            section_body = ""
+            try:
+                editor = self._works_panel._editor  # noqa: SLF001
+                editor.flush_pending()
+                section_id = editor.current_section_id()
+                if section_id is not None:
+                    section_body = editor.current_section_content()
+            except Exception:  # noqa: BLE001
+                section_id = None
+            if section_id is not None:
+                section_obj = self._container.work_section_repository.get(section_id)
+                section_label = (
+                    (section_obj.content or "").strip().splitlines()[0][:40]
+                    if section_obj and section_obj.content.strip()
+                    else f"section {section_id[:8]}"
+                )
+                self._ai_workspace_panel.bind_scope(
+                    AiScope(
+                        kind=AiThreadScope.WORK,
+                        ref_id=work.id,
+                        name=f"{work.title or '(untitled work)'} / {section_label}",
+                        body=section_body,
+                        work_id=work.id,
+                        section_id=section_id,
+                    )
+                )
+                return True
+            sections = self._container.work_section_repository.list_for_work(work_id)
+            body = "\n\n".join((s.content or "") for s in sections)
+            self._ai_workspace_panel.bind_scope(
+                AiScope(
+                    kind=AiThreadScope.WORK,
+                    ref_id=work.id,
+                    name=work.title or "(untitled work)",
+                    body=body,
+                    work_id=work.id,
+                )
+            )
+            return True
+
+        def _bind_collection_scope() -> bool:
+            try:
+                coll_id = self._collections_panel._current_collection_id()  # noqa: SLF001
+            except Exception:  # noqa: BLE001
+                coll_id = None
+            if not coll_id:
+                return False
+            coll = self._container.collection_repository.get(coll_id)
+            if coll is None:
+                return False
+            self._ai_workspace_panel.bind_scope(
+                AiScope(
+                    kind=AiThreadScope.COLLECTION,
+                    ref_id=coll.id,
+                    name=coll.title or "(untitled collection)",
+                    body=coll.summary or "",
+                )
+            )
+            return True
+
+        source_mode = self._last_mode_before_ai
+        binders = {
+            0: (_bind_fragment_scope, _bind_work_scope, _bind_collection_scope),
+            1: (_bind_work_scope, _bind_fragment_scope, _bind_collection_scope),
+            2: (_bind_collection_scope, _bind_fragment_scope, _bind_work_scope),
+        }.get(source_mode, (_bind_fragment_scope, _bind_work_scope, _bind_collection_scope))
+        for binder in binders:
+            if binder():
+                return
+        # 4. Global fallback.
+        self._ai_workspace_panel.bind_scope(
+            AiScope(kind=AiThreadScope.GLOBAL, ref_id=None, name="", body="")
+        )
 
     def _on_global_search(self) -> None:
         dlg = GlobalSearchDialog(self._container, parent=self)

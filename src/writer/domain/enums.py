@@ -17,6 +17,7 @@ class VersionType(str, Enum):
     AI_POLISH = "ai_polish"
     AI_EXPAND = "ai_expand"
     AI_CONTINUE = "ai_continue"
+    AI_OTHER = "ai_other"
     MANUAL_SNAPSHOT = "manual_snapshot"
 
 
@@ -74,3 +75,71 @@ class CurationStatus(str, Enum):
     def values(cls) -> list[str]:
         return [m.value for m in cls]
 
+
+
+# ---------------------------------------------------------------------------
+# Milestone 10A — AI workspace task model.
+# ---------------------------------------------------------------------------
+
+
+class AiTaskType(str, Enum):
+    """Structured AI task taxonomy used by the AI workspace.
+
+    ``polish``/``expand``/``continue`` are kept aligned with
+    :class:`RewriteAction` so the legacy quick-rewrite menu can dispatch
+    through the same engine without breaking compatibility.
+    """
+
+    POLISH = "polish"
+    EXPAND = "expand"
+    CONTINUE = "continue"
+    STYLE_TRANSFER = "style_transfer"
+    SUMMARIZE = "summarize"
+    OUTLINE = "outline"
+    TITLE = "title"
+    STRUCTURE_DIAGNOSE = "structure_diagnose"
+    CONSISTENCY_CHECK = "consistency_check"
+    LIBRARY_QA = "library_qa"
+
+
+class AiTargetKind(str, Enum):
+    """What the task operates on."""
+
+    SELECTION = "selection"            # current text selection inside a fragment
+    FRAGMENT = "fragment"              # entire fragment body
+    WORK_SECTION = "work_section"      # one section inside a work
+    WORK = "work"                      # whole work (read-only by default)
+    COLLECTION = "collection"          # whole collection (read-only)
+    PASTE = "paste"                    # ad-hoc text the user pastes in
+
+
+class AiOutputAction(str, Enum):
+    """Where a task's primary result is allowed to land."""
+
+    PREVIEW_ONLY = "preview_only"
+    REPLACE_SELECTION = "replace_selection"
+    REPLACE_FRAGMENT = "replace_fragment"
+    REPLACE_SECTION = "replace_section"
+    SAVE_AS_FRAGMENT = "save_as_fragment"
+    REPORT = "report"  # structured diagnostic report; never auto-applies
+
+
+class AiCardKind(str, Enum):
+    STYLE = "style"
+    CHARACTER = "character"
+    SETTING = "setting"
+
+
+class AiThreadScope(str, Enum):
+    FRAGMENT = "fragment"
+    WORK = "work"
+    COLLECTION = "collection"
+    GLOBAL = "global"
+
+
+class AiCostTier(str, Enum):
+    """Three-tier model template selector."""
+
+    THRIFTY = "thrifty"   # 省
+    BALANCED = "balanced"  # 平衡
+    STRONG = "strong"     # 强
