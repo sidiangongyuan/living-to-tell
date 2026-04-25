@@ -220,8 +220,13 @@ def test_archive_current_entry_switches_editor(qtbot, container) -> None:
 def test_archive_current_entry_creates_blank_when_only_one(
     qtbot, container
 ) -> None:
-    """If the archived entry was the only visible one, a fresh blank
-    fragment should be created so the editor never shows a hidden row."""
+    """M9A (revised): archiving the only visible fragment must NOT swap the
+    fragment workspace for the welcome card \u2014 the archived entry still
+    exists in the repository, so the user must keep access to the search
+    box, tag filter, and \"show archived\" toggle to recover it.
+
+    The welcome card only takes over when the repository is *truly* empty.
+    """
     repo = container.entry_repository
     only = repo.create(title="only-one")
 
@@ -232,13 +237,19 @@ def test_archive_current_entry_creates_blank_when_only_one(
 
     window._on_archive_requested(only.id, True)
 
-    loaded = window._editor_panel.current_entry_id()
-    assert loaded is not None
-    assert loaded != only.id
-    # The newly loaded entry is a fresh blank fragment, not archived.
-    fresh = repo.get(loaded)
-    assert fresh is not None
-    assert fresh.archived_at is None
+    # No new fragment was created behind the user's back.
+    assert window._editor_panel.current_entry_id() is None
+    # Workspace (index 0) stays visible because the repo is NOT empty;
+    # the entry was just archived.
+    assert window._fragments_stack.currentIndex() == 0
+    # Default list filters out archived entries; the toggle is still there.
+    visible = repo.list_recent()
+    assert visible == []
+    # The repo still contains the archived entry.
+    assert repo.count() == 1
+    archived = repo.get(only.id)
+    assert archived is not None
+    assert archived.archived_at is not None
 
 
 def test_recover_last_deleted_preserves_project_assignment(

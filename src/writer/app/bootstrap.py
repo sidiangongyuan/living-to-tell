@@ -47,6 +47,17 @@ def run(argv: Optional[List[str]] = None) -> int:
     except Exception:  # noqa: BLE001 — locale failure must not block startup
         pass
 
+    # M9A: install the visual theme before any widgets are constructed so
+    # the entire shell picks up the right palette / QSS on the first paint.
+    try:
+        from writer.app.settings import KEY_THEME_MODE, DEFAULT_THEME_MODE
+        from writer.ui.theme import ThemeMode, apply_theme
+
+        mode_raw = container.settings.get(KEY_THEME_MODE, DEFAULT_THEME_MODE)
+        apply_theme(app, ThemeMode.parse(mode_raw))
+    except Exception:  # noqa: BLE001 — theme failure must not block startup
+        pass
+
     try:
         window = create_main_window(container)
         window.show()

@@ -52,10 +52,10 @@ class EditorPanel(QWidget):
         self._body.selectionChanged.connect(self._update_word_count)
 
         self._meta = QLabel("")
-        self._meta.setStyleSheet("color: gray; font-size: 11px;")
+        self._meta.setObjectName("MetaLabel")
 
         self._word_count = QLabel("")
-        self._word_count.setStyleSheet("color: gray; font-size: 11px;")
+        self._word_count.setObjectName("MetaLabel")
         self._word_count.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )

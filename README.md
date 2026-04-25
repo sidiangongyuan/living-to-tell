@@ -192,6 +192,9 @@ dist\Writer\Writer.exe
 
 ## Release notes
 
+- [docs/m9a-release-notes.md](docs/m9a-release-notes.md) — M9A summary covering
+  the visual shell upgrade, theme system, reachable empty states, and the
+  fragment-to-work closure flow
 - [docs/m8-release-notes.md](docs/m8-release-notes.md) — M8 summary covering
   works, collections, unified search, inclusion flow, export formats, and
   current scope limits
@@ -205,5 +208,6 @@ Product and design docs live under [`docs/`](docs/):
 - `docs/product-requirements.md`
 - `docs/technical-approach.md`
 - `docs/development-plan.md`
+- `docs/m9a-release-notes.md`
 - `docs/m8-release-notes.md`
 

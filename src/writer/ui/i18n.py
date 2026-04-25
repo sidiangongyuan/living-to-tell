@@ -57,6 +57,100 @@ _CATALOG: dict[str, dict[str, str]] = {
         "toolbar.toggle_sidebar": "Toggle sidebar",
         "toolbar.language_switch": "中文",
         "toolbar.language_switch_tooltip": "Switch to Simplified Chinese (restart required)",
+        # ── M9A: shell / navigation rail ─────────────────────────────────────
+        "shell.brand": "Writer",
+        "rail.fragments": "Fragments",
+        "rail.works": "Works",
+        "rail.collections": "Collections",
+        "rail.search": "Search",
+        "rail.theme": "Theme",
+        "rail.settings": "Settings",
+        "shell.toggle_context_pane": "Toggle context panel",
+        # ── M9A: theme menu ──────────────────────────────────────────────────
+        "theme.menu_title": "Theme",
+        "theme.light": "Light",
+        "theme.dark": "Dark",
+        "theme.system": "Follow system",
+        # ── M9A: column titles ───────────────────────────────────────────────
+        "column.fragments": "Fragments",
+        "column.works": "Works",
+        "column.collections": "Collections",
+        # ── M9A: context pane ────────────────────────────────────────────────
+        "context.title_fragment": "Fragment",
+        "context.title_work": "Work",
+        "context.title_collection": "Collection",
+        "context.empty_title": "The context panel lives here.",
+        "context.empty_desc": (
+            "Pick a fragment, work, or collection and you'll see word counts, "
+            "status, exports, and other helpers here."
+        ),
+        "context.label_words": "Words",
+        "context.label_chars": "Characters",
+        "context.label_tags": "Tags",
+        "context.label_created": "Created",
+        "context.label_updated": "Updated",
+        "context.label_status": "Status",
+        "context.label_summary": "Summary",
+        "context.label_target": "Target",
+        "context.label_work_count": "Works in collection",
+        "context.action_polish": "Polish…",
+        "context.action_include": "Include in work…",
+        "context.action_versions": "Versions…",
+        "context.action_export_work": "Export…",
+        "context.action_export_collection": "Export…",
+        "context.no_value": "—",
+        "context.no_target": "No target set",
+        # ── M9A: empty states (welcome + per mode) ───────────────────────────
+        "empty.welcome_title": "Start with a single line.",
+        "empty.welcome_desc": (
+            "Write a fragment, then assemble fragments into a work, then "
+            "arrange works into a collection. Writer keeps all three in one "
+            "workspace."
+        ),
+        "empty.welcome_primary": "New fragment",
+        "empty.welcome_secondary": "New work",
+        "empty.fragments_title": "This is where raw material lives.",
+        "empty.fragments_desc": (
+            "Ideas, sentences, paragraphs, scenes — capture them as fragments "
+            "first. You can shape them into works later."
+        ),
+        "empty.fragments_primary": "New fragment",
+        "empty.fragments_secondary": "Open global search",
+        "empty.fragments_search_title": "No fragments matched.",
+        "empty.fragments_search_desc": (
+            "Try a different word, or search for a shorter snippet, title, "
+            "or tag."
+        ),
+        "empty.fragments_search_primary": "Clear search",
+        "empty.fragments_search_secondary": "Show all fragments",
+        "empty.works_title": "No works yet.",
+        "empty.works_desc": (
+            "When you're ready to gather scattered fragments into a finished "
+            "draft, this is where you start."
+        ),
+        "empty.works_primary": "New work",
+        "empty.works_secondary": "Include current fragment in a work",
+        "empty.work_unselected_title": "Pick a work, or start a new one.",
+        "empty.work_unselected_desc": (
+            "Works are for arranging chapters, restructuring, and saving "
+            "snapshots."
+        ),
+        "empty.work_unselected_primary": "New work",
+        "empty.work_unselected_secondary": "Show recent works",
+        "empty.collections_title": "Collections haven't started yet.",
+        "empty.collections_desc": (
+            "A collection is for ordering works and exporting them as a "
+            "set — short story collections, essay anthologies, themed bundles."
+        ),
+        "empty.collections_primary": "New collection",
+        "empty.collections_secondary": "Go organise a work first",
+        "empty.collection_unselected_title": "Pick a collection first.",
+        "empty.collection_unselected_desc": (
+            "Then you can reorder works inside it and prepare a single "
+            "consolidated export."
+        ),
+        "empty.collection_unselected_primary": "New collection",
+        "empty.collection_unselected_secondary": "View existing collections",
         # ── Dialogs / message boxes ───────────────────────────────────────────
         "dlg.nothing_to_rewrite": "Nothing to rewrite",
         "dlg.nothing_to_rewrite_msg": (
@@ -69,6 +163,11 @@ _CATALOG: dict[str, dict[str, str]] = {
         "dlg.no_project_msg": (
             "The current fragment isn't assigned to a project. "
             "Use File - Assign to Project first."
+        ),
+        "dlg.no_fragment_to_include_title": "No fragment to include",
+        "dlg.no_fragment_to_include_msg": (
+            "Open or create a fragment first, then come back and include "
+            "it in a work."
         ),
         "dlg.chapter_not_assigned": "Chapter not assigned",
         "dlg.chapter_not_assigned_msg": "Could not attach the fragment to that chapter:\n",
@@ -447,6 +546,75 @@ _CATALOG: dict[str, dict[str, str]] = {
         "toolbar.toggle_sidebar": "切换侧栏",
         "toolbar.language_switch": "EN",
         "toolbar.language_switch_tooltip": "切换到英文（重启后生效）",
+        # ── M9A：壳层 / 导航栏 ───────────────────────────────────────────────
+        "shell.brand": "Writer",
+        "rail.fragments": "片段",
+        "rail.works": "作品",
+        "rail.collections": "作品集",
+        "rail.search": "搜索",
+        "rail.theme": "主题",
+        "rail.settings": "设置",
+        "shell.toggle_context_pane": "显示/隐藏上下文栏",
+        # ── M9A：主题菜单 ────────────────────────────────────────────────────
+        "theme.menu_title": "主题",
+        "theme.light": "浅色",
+        "theme.dark": "深色",
+        "theme.system": "跟随系统",
+        # ── M9A：列标题 ──────────────────────────────────────────────────────
+        "column.fragments": "片段",
+        "column.works": "作品",
+        "column.collections": "作品集",
+        # ── M9A：上下文栏 ────────────────────────────────────────────────────
+        "context.title_fragment": "片段",
+        "context.title_work": "作品",
+        "context.title_collection": "作品集",
+        "context.empty_title": "这里会显示上下文。",
+        "context.empty_desc": "选中片段、作品或作品集后，你会在这里看到字数、状态、导出和其他辅助信息。",
+        "context.label_words": "字数",
+        "context.label_chars": "字符数",
+        "context.label_tags": "标签",
+        "context.label_created": "创建",
+        "context.label_updated": "更新",
+        "context.label_status": "状态",
+        "context.label_summary": "摘要",
+        "context.label_target": "目标字数",
+        "context.label_work_count": "作品数量",
+        "context.action_polish": "润色…",
+        "context.action_include": "收入作品…",
+        "context.action_versions": "版本…",
+        "context.action_export_work": "导出…",
+        "context.action_export_collection": "导出…",
+        "context.no_value": "—",
+        "context.no_target": "未设置目标字数",
+        # ── M9A：空状态 ──────────────────────────────────────────────────────
+        "empty.welcome_title": "从一句话开始。",
+        "empty.welcome_desc": "先写片段，再整理成作品，最后编成作品集。Writer 把这三步放在同一个工作台里。",
+        "empty.welcome_primary": "新建片段",
+        "empty.welcome_secondary": "新建作品",
+        "empty.fragments_title": "这里先放素材。",
+        "empty.fragments_desc": "灵感、句子、段落、场景，都可以先记成片段。以后再慢慢整理成作品。",
+        "empty.fragments_primary": "新建片段",
+        "empty.fragments_secondary": "打开全局搜索",
+        "empty.fragments_search_title": "没找到相关片段。",
+        "empty.fragments_search_desc": "换个词试试，或者搜索更短的片段、标题和标签。",
+        "empty.fragments_search_primary": "清空搜索",
+        "empty.fragments_search_secondary": "查看全部片段",
+        "empty.works_title": "还没有作品。",
+        "empty.works_desc": "当你准备把零散片段整理成完整稿件，就从这里开始。",
+        "empty.works_primary": "新建作品",
+        "empty.works_secondary": "从当前片段收入作品",
+        "empty.work_unselected_title": "选一个作品，或者新建一个。",
+        "empty.work_unselected_desc": "作品适合整理章节、调整结构、保存版本。",
+        "empty.work_unselected_primary": "新建作品",
+        "empty.work_unselected_secondary": "显示最近作品",
+        "empty.collections_title": "作品集还没开始。",
+        "empty.collections_desc": "作品集用来编排顺序、准备导出，适合小说集、散文集和专题合集。",
+        "empty.collections_primary": "新建作品集",
+        "empty.collections_secondary": "先去整理作品",
+        "empty.collection_unselected_title": "先选一个作品集。",
+        "empty.collection_unselected_desc": "然后你可以调整作品顺序，准备整组导出。",
+        "empty.collection_unselected_primary": "新建作品集",
+        "empty.collection_unselected_secondary": "查看已有作品集",
         # ── Dialogs / message boxes ───────────────────────────────────────────
         "dlg.nothing_to_rewrite": "没有可改写的内容",
         "dlg.nothing_to_rewrite_msg": "片段为空，请先写入内容或选中文本。",
@@ -455,6 +623,10 @@ _CATALOG: dict[str, dict[str, str]] = {
         "dlg.ai_failed": "AI 请求失败",
         "dlg.no_project": "未关联项目",
         "dlg.no_project_msg": "当前片段未分配到任何项目。请先使用「文件 - 分配到项目」。",
+        "dlg.no_fragment_to_include_title": "暂时还没有可收入的片段",
+        "dlg.no_fragment_to_include_msg": (
+            "先打开或新建一个片段，再回来把它收入作品。"
+        ),
         "dlg.chapter_not_assigned": "章节未分配",
         "dlg.chapter_not_assigned_msg": "无法将片段附加到该章节：\n",
         "dlg.export_failed": "导出失败",

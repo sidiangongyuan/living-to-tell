@@ -27,6 +27,12 @@ DEFAULT_LANGUAGE = "en"
 KEY_SPLITTER_SIZES = "ui.splitter_sizes"
 KEY_SIDEBAR_COLLAPSED = "ui.sidebar_collapsed"
 
+# M9A — visual shell upgrade
+KEY_THEME_MODE = "ui.theme_mode"
+KEY_CONTEXT_PANE_VISIBLE = "ui.context_pane_visible"
+KEY_ACTIVE_MODE = "ui.active_mode"
+DEFAULT_THEME_MODE = "system"
+
 SUPPORTED_WIRE_APIS = ("responses",)
 DEFAULT_WIRE_API = "responses"
 

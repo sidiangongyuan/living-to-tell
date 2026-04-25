@@ -55,13 +55,18 @@ def test_autosave_skips_when_no_active_entry(container) -> None:
 
 # MainWindow integration -------------------------------------------------
 def test_main_window_auto_creates_blank_when_db_is_empty(qtbot, container) -> None:
+    """Renamed semantics for M9A: an empty database must NOT auto-create a
+    fragment. Instead the welcome card takes over the work area and stays
+    visible until the user explicitly creates one."""
     assert container.entry_repository.count() == 0
     window = create_main_window(container)
     qtbot.addWidget(window)
     window.show()
-    assert container.entry_repository.count() == 1
-    entries = container.entry_repository.list_recent()
-    assert window._editor_panel.current_entry_id() == entries[0].id
+    # No silent fragment behind the welcome card.
+    assert container.entry_repository.count() == 0
+    assert window._editor_panel.current_entry_id() is None
+    # Welcome page (index 1) is shown instead of the splitter (index 0).
+    assert window._fragments_stack.currentIndex() == 1
 
 
 def test_main_window_new_fragment_action_appends_entry(qtbot, container) -> None:

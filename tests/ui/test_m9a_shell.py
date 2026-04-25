@@ -1,0 +1,558 @@
+"""M9A tests: theme system, shell layout, context pane, empty states."""
+from __future__ import annotations
+
+import pytest
+
+from writer.app.container import build_container
+
+
+@pytest.fixture()
+def container(isolated_data_dir):
+    c = build_container()
+    try:
+        yield c
+    finally:
+        c.close()
+
+
+# ---------------------------------------------------------------------------
+# Theme module
+# ---------------------------------------------------------------------------
+
+
+class TestThemeTokens:
+    def test_parse_theme_mode_handles_known_values(self):
+        from writer.ui.theme import ThemeMode
+
+        assert ThemeMode.parse("light") is ThemeMode.LIGHT
+        assert ThemeMode.parse("dark") is ThemeMode.DARK
+        assert ThemeMode.parse("system") is ThemeMode.SYSTEM
+
+    def test_parse_theme_mode_falls_back_to_system(self):
+        from writer.ui.theme import ThemeMode
+
+        assert ThemeMode.parse(None) is ThemeMode.SYSTEM
+        assert ThemeMode.parse("nonsense") is ThemeMode.SYSTEM
+
+    def test_light_and_dark_tokens_differ(self):
+        from writer.ui.theme import DARK_TOKENS, LIGHT_TOKENS
+
+        assert LIGHT_TOKENS.bg_window != DARK_TOKENS.bg_window
+        assert LIGHT_TOKENS.text_primary != DARK_TOKENS.text_primary
+
+    def test_build_qss_returns_non_empty_string(self):
+        from writer.ui.theme import LIGHT_TOKENS, build_qss
+
+        qss = build_qss(LIGHT_TOKENS)
+        assert isinstance(qss, str)
+        assert "#PrimaryButton" in qss or "PrimaryButton" in qss
+        assert len(qss) > 100
+
+
+# ---------------------------------------------------------------------------
+# Theme persistence via settings
+# ---------------------------------------------------------------------------
+
+
+class TestThemePersistence:
+    def test_apply_theme_mode_persists_setting(self, qtbot, container):
+        from writer.app.settings import KEY_THEME_MODE
+        from writer.ui.main_window import MainWindow
+        from writer.ui.theme import ThemeMode
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        window._apply_theme_mode(ThemeMode.DARK)  # noqa: SLF001
+        assert container.settings.get(KEY_THEME_MODE) == "dark"
+
+        window._apply_theme_mode(ThemeMode.LIGHT)  # noqa: SLF001
+        assert container.settings.get(KEY_THEME_MODE) == "light"
+
+
+# ---------------------------------------------------------------------------
+# Shell: rail + stack + context pane
+# ---------------------------------------------------------------------------
+
+
+class TestShellLayout:
+    def test_window_has_rail_and_context_pane(self, qtbot, container):
+        from writer.ui.main_window import MainWindow
+        from writer.ui.widgets import ContextPane, NavigationRail
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        assert window.findChild(NavigationRail) is not None
+        assert window.findChild(ContextPane) is not None
+
+    def test_rail_changes_stack_index(self, qtbot, container):
+        from writer.ui.main_window import MainWindow
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        window._set_mode(1)  # noqa: SLF001 — works mode
+        assert window._stack.currentIndex() == 1  # noqa: SLF001
+
+        window._set_mode(2)  # noqa: SLF001 — collections mode
+        assert window._stack.currentIndex() == 2  # noqa: SLF001
+
+    def test_active_mode_persists(self, qtbot, container):
+        from writer.app.settings import KEY_ACTIVE_MODE
+        from writer.ui.main_window import MainWindow
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        window._set_mode(1)  # noqa: SLF001
+        assert container.settings.get(KEY_ACTIVE_MODE) == "1"
+
+        # New window should restore mode 1.
+        window2 = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window2)
+        assert window2._stack.currentIndex() == 1  # noqa: SLF001
+
+    def test_context_pane_visibility_persists(self, qtbot, container):
+        from writer.app.settings import KEY_CONTEXT_PANE_VISIBLE
+        from writer.ui.main_window import MainWindow
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        # Default state is visible; toggling once should hide.
+        window._toggle_context_pane()  # noqa: SLF001
+        assert container.settings.get(KEY_CONTEXT_PANE_VISIBLE) == "false"
+
+        window2 = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window2)
+        # Persisted hidden flag should be honoured at construction.
+        assert window2._context_pane_visible is False  # noqa: SLF001
+
+    def test_window_still_has_toolbar_for_backcompat(self, qtbot, container):
+        from PySide6.QtWidgets import QToolBar
+
+        from writer.ui.main_window import MainWindow
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        assert len(window.findChildren(QToolBar)) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Empty states
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyStates:
+    def test_fragment_panel_shows_empty_card_when_no_entries(self, qtbot, container):
+        from writer.ui.panels.fragment_list_panel import FragmentListPanel
+
+        panel = FragmentListPanel()
+        qtbot.addWidget(panel)
+        panel.set_entries([])
+        # The panel uses an internal stack; index 1 is the empty page.
+        assert panel._stack.currentIndex() == 1  # noqa: SLF001
+
+    def test_fragment_search_empty_state_switches_copy(self, qtbot):
+        from writer.ui.i18n import TR
+        from writer.ui.panels.fragment_list_panel import FragmentListPanel
+
+        panel = FragmentListPanel()
+        qtbot.addWidget(panel)
+        # Simulate active search by typing into the search field, then call
+        # set_entries with an empty list (which is what main window does
+        # when search returns nothing).
+        panel._search.setText("zzzz_no_match_zzzz")  # noqa: SLF001
+        panel.set_entries([])
+
+        assert panel._stack.currentIndex() == 1  # noqa: SLF001
+        assert panel._empty_in_search_mode is True  # noqa: SLF001
+        assert (
+            panel._empty_card.primary_button.text()  # noqa: SLF001
+            == TR("empty.fragments_search_primary")
+        )
+
+    def test_works_panel_shows_empty_card_when_no_works(self, qtbot, container):
+        from writer.ui.panels.works_panel import WorksPanel
+
+        panel = WorksPanel(container)
+        qtbot.addWidget(panel)
+        assert panel._list_stack.currentIndex() == 1  # noqa: SLF001
+
+    def test_collections_panel_shows_empty_card_when_no_collections(
+        self, qtbot, container
+    ):
+        from writer.ui.panels.collections_panel import CollectionsPanel
+
+        panel = CollectionsPanel(container)
+        qtbot.addWidget(panel)
+        assert panel._collections_stack.currentIndex() == 1  # noqa: SLF001
+
+
+# ---------------------------------------------------------------------------
+# Context pane
+# ---------------------------------------------------------------------------
+
+
+class TestContextPane:
+    def test_context_pane_show_empty_switches_to_empty_page(self, qtbot, container):
+        from writer.ui.main_window import MainWindow
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        window._context_pane.show_empty()  # noqa: SLF001
+        assert window._context_pane._stack.currentIndex() == 0  # noqa: SLF001
+
+    def test_context_pane_shows_fragment_after_load(self, qtbot, container):
+        from writer.ui.main_window import MainWindow
+
+        entry = container.entry_repository.create(title="t", body="hello world")
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        window._load_entry(entry.id)  # noqa: SLF001
+        # Fragment page is index 1.
+        assert window._context_pane._stack.currentIndex() == 1  # noqa: SLF001
+
+
+# ---------------------------------------------------------------------------
+# M9A audit follow-up: empty-state CTAs, welcome/unselected reachability,
+# and theme-aware tag chips.
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyStateCTAs:
+    """All empty-state secondary CTAs must be wired to a real handler."""
+
+    def test_fragment_empty_secondary_emits_global_search(self, qtbot):
+        from writer.ui.panels.fragment_list_panel import FragmentListPanel
+
+        panel = FragmentListPanel()
+        qtbot.addWidget(panel)
+        panel.set_entries([])  # not in search mode
+        with qtbot.waitSignal(panel.global_search_requested, timeout=500):
+            panel._empty_card.secondary_button.click()  # noqa: SLF001
+
+    def test_works_empty_secondary_emits_include_fragment(self, qtbot, container):
+        from writer.ui.panels.works_panel import WorksPanel
+
+        panel = WorksPanel(container)
+        qtbot.addWidget(panel)
+        with qtbot.waitSignal(panel.include_fragment_requested, timeout=500):
+            panel._empty_card.secondary_button.click()  # noqa: SLF001
+
+    def test_collections_empty_secondary_emits_switch_to_works(
+        self, qtbot, container
+    ):
+        from writer.ui.panels.collections_panel import CollectionsPanel
+
+        panel = CollectionsPanel(container)
+        qtbot.addWidget(panel)
+        with qtbot.waitSignal(panel.switch_to_works_requested, timeout=500):
+            panel._collections_empty.secondary_button.click()  # noqa: SLF001
+
+
+class TestWelcomeAndUnselectedReachability:
+    """The welcome and per-mode unselected cards must actually be reachable
+    instead of being hidden behind auto-create / auto-select-row-0 logic."""
+
+    def test_main_window_empty_db_shows_welcome(self, qtbot, container):
+        from writer.ui.main_window import MainWindow
+
+        assert container.entry_repository.count() == 0
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        assert container.entry_repository.count() == 0
+        assert window._editor_panel.current_entry_id() is None  # noqa: SLF001
+        assert window._fragments_stack.currentIndex() == 1  # noqa: SLF001
+
+    def test_new_fragment_from_welcome_dismisses_welcome(self, qtbot, container):
+        from writer.ui.main_window import MainWindow
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        assert window._fragments_stack.currentIndex() == 1  # noqa: SLF001
+
+        window._on_new_fragment()  # noqa: SLF001
+        assert window._fragments_stack.currentIndex() == 0  # noqa: SLF001
+        assert container.entry_repository.count() == 1
+        assert window._editor_panel.current_entry_id() is not None  # noqa: SLF001
+
+    def test_works_panel_unselected_card_visible_when_no_selection(
+        self, qtbot, container
+    ):
+        from writer.ui.panels.works_panel import WorksPanel
+
+        container.work_repository.create(title="Pre-existing")
+        panel = WorksPanel(container)
+        qtbot.addWidget(panel)
+
+        # No work auto-selected; right side shows the unselected card.
+        assert panel._list.currentRow() == -1  # noqa: SLF001
+        assert panel._right_stack.currentIndex() == 1  # noqa: SLF001
+
+        panel._list.setCurrentRow(0)  # noqa: SLF001
+        assert panel._right_stack.currentIndex() == 0  # noqa: SLF001
+
+    def test_collections_panel_unselected_card_visible_when_no_selection(
+        self, qtbot, container
+    ):
+        from writer.ui.panels.collections_panel import CollectionsPanel
+
+        container.collection_repository.create(name="Pre-existing")
+        panel = CollectionsPanel(container)
+        qtbot.addWidget(panel)
+
+        # No collection auto-selected; right side shows the unselected card.
+        assert panel._collections.currentRow() == -1  # noqa: SLF001
+        assert panel._right_stack.currentIndex() == 1  # noqa: SLF001
+
+        panel._collections.setCurrentRow(0)  # noqa: SLF001
+        assert panel._right_stack.currentIndex() == 0  # noqa: SLF001
+
+    def test_include_fragment_from_works_empty_warns_when_no_current(
+        self, qtbot, container, monkeypatch
+    ):
+        """If the user clicks 'Include current fragment' while there is no
+        current fragment loaded, MainWindow shows an informational dialog
+        rather than silently doing nothing."""
+        from PySide6.QtWidgets import QMessageBox
+
+        from writer.ui.main_window import MainWindow
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        called = {"count": 0}
+
+        def fake_info(*args, **kwargs):
+            called["count"] += 1
+            return QMessageBox.StandardButton.Ok
+
+        monkeypatch.setattr(QMessageBox, "information", fake_info)
+
+        window._on_include_fragment_from_empty_state()  # noqa: SLF001
+        assert called["count"] == 1
+
+
+class TestThemeConsolidation:
+    """No hardcoded grey colors; all status / meta / dialog-note / no-results
+    labels rely on object-name driven QSS, and tag chips adapt to dark mode."""
+
+    def test_status_label_uses_object_name(self, qtbot, container):
+        from writer.ui.main_window import MainWindow
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        assert (
+            window._save_status_label.objectName() == "StatusLabel"  # noqa: SLF001
+        )
+
+    def test_editor_meta_labels_use_object_name(self, qtbot, container):
+        from writer.ui.panels.editor_panel import EditorPanel
+
+        panel = EditorPanel()
+        qtbot.addWidget(panel)
+        assert panel._meta.objectName() == "MetaLabel"  # noqa: SLF001
+        assert panel._word_count.objectName() == "MetaLabel"  # noqa: SLF001
+
+    def test_tag_style_sheet_is_theme_aware(self, qtbot):
+        # qtbot ensures a QApplication exists for apply_theme.
+        from PySide6.QtWidgets import QApplication
+
+        from writer.ui.tag_colors import tag_style_sheet
+        from writer.ui.theme import ThemeMode, apply_theme
+
+        app = QApplication.instance()
+        try:
+            apply_theme(app, ThemeMode.LIGHT)
+            light = tag_style_sheet("python")
+            apply_theme(app, ThemeMode.DARK)
+            dark = tag_style_sheet("python")
+        finally:
+            apply_theme(app, ThemeMode.LIGHT)
+
+        assert light != dark
+        assert "border" in dark.lower()
+
+
+# ---------------------------------------------------------------------------
+# M9A blocker-fix follow-up:
+#   1) welcome state must trigger ONLY when the entry repo is truly empty
+#   2) Works empty-state secondary CTA must form a real closure
+# ---------------------------------------------------------------------------
+
+
+class TestWelcomeTriggerCondition:
+    """Welcome card appears only when ``entry_repository.count() == 0``."""
+
+    def test_empty_db_shows_welcome(self, qtbot, container):
+        from writer.ui.main_window import MainWindow
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        assert window._fragments_stack.currentIndex() == 1  # noqa: SLF001
+
+    def test_only_archived_entries_does_not_show_welcome(
+        self, qtbot, container
+    ):
+        """If the repo only contains archived entries, the workspace must
+        stay visible so the user can flip "show archived" and find them."""
+        from writer.ui.main_window import MainWindow
+
+        repo = container.entry_repository
+        e = repo.create(title="archived-one")
+        repo.set_archived(e.id, True)
+        assert repo.count() == 1
+        # Sanity: default list (without archived) is empty.
+        assert repo.list_recent() == []
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        # Workspace (splitter), NOT welcome.
+        assert window._fragments_stack.currentIndex() == 0  # noqa: SLF001
+
+    def test_archive_last_visible_keeps_workspace_when_repo_not_empty(
+        self, qtbot, container
+    ):
+        from writer.ui.main_window import MainWindow
+
+        repo = container.entry_repository
+        only = repo.create(title="only-one")
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        window._load_entry(only.id)  # noqa: SLF001
+
+        window._on_archive_requested(only.id, True)  # noqa: SLF001
+
+        # Repo still has the archived entry, so workspace must stay.
+        assert repo.count() == 1
+        assert window._fragments_stack.currentIndex() == 0  # noqa: SLF001
+
+    def test_delete_last_entry_finally_shows_welcome(
+        self, qtbot, container, monkeypatch
+    ):
+        from PySide6.QtWidgets import QMessageBox
+
+        from writer.ui.main_window import MainWindow
+
+        repo = container.entry_repository
+        e = repo.create(title="last")
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        window._load_entry(e.id)  # noqa: SLF001
+
+        # Auto-confirm the delete dialog.
+        monkeypatch.setattr(
+            QMessageBox,
+            "question",
+            lambda *a, **k: QMessageBox.StandardButton.Yes,
+        )
+
+        window._on_delete_requested([e.id])  # noqa: SLF001
+
+        assert repo.count() == 0
+        assert window._fragments_stack.currentIndex() == 1  # noqa: SLF001
+
+
+class TestWorksEmptyCTAClosure:
+    """The Works-empty secondary CTA must drive the include flow to a real
+    completion path, not stop at "no works yet"."""
+
+    def test_no_current_fragment_shows_info_dialog(
+        self, qtbot, container, monkeypatch
+    ):
+        from PySide6.QtWidgets import QMessageBox
+
+        from writer.ui.main_window import MainWindow
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        assert window._editor_panel.current_entry_id() is None  # noqa: SLF001
+
+        called = {"info": 0}
+
+        def fake_info(*a, **k):
+            called["info"] += 1
+            return QMessageBox.StandardButton.Ok
+
+        monkeypatch.setattr(QMessageBox, "information", fake_info)
+
+        # No work should be created in the no-current-fragment branch.
+        window._on_include_fragment_from_empty_state()  # noqa: SLF001
+        assert called["info"] == 1
+        assert container.work_repository.count() == 0
+
+    def test_with_current_fragment_but_no_work_auto_creates_and_opens_dialog(
+        self, qtbot, container, monkeypatch
+    ):
+        """User has a fragment, no works exist. CTA must:
+          * auto-create a work,
+          * then open the IncludeFragmentDialog with that work as a target.
+        """
+        from PySide6.QtWidgets import QDialog
+
+        from writer.ui import main_window as mw_module
+        from writer.ui.main_window import MainWindow
+
+        repo = container.entry_repository
+        entry = repo.create(title="frag", body="payload")
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        window._load_entry(entry.id)  # noqa: SLF001
+        assert container.work_repository.count() == 0
+
+        # Capture dialog construction; auto-reject so the dialog does not
+        # actually run a modal loop.
+        constructed = {"count": 0, "work_count_at_open": None}
+
+        class _StubDialog:
+            def __init__(self, container_arg, entry_arg, default_text=None, parent=None):
+                constructed["count"] += 1
+                constructed["work_count_at_open"] = (
+                    container_arg.work_repository.count()
+                )
+                self.included_outcome = None
+
+            def exec(self):
+                return QDialog.DialogCode.Rejected
+
+        monkeypatch.setattr(mw_module, "IncludeFragmentDialog", _StubDialog)
+
+        window._on_include_fragment_from_empty_state()  # noqa: SLF001
+
+        # A work was bootstrapped before the include dialog opened.
+        assert container.work_repository.count() == 1
+        assert constructed["count"] == 1
+        assert constructed["work_count_at_open"] == 1
+
+    def test_with_existing_work_does_not_create_extra_one(
+        self, qtbot, container, monkeypatch
+    ):
+        from PySide6.QtWidgets import QDialog
+
+        from writer.ui import main_window as mw_module
+        from writer.ui.main_window import MainWindow
+
+        container.work_repository.create(title="Pre-existing")
+        entry = container.entry_repository.create(title="frag", body="body")
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        window._load_entry(entry.id)  # noqa: SLF001
+
+        class _StubDialog:
+            def __init__(self, *a, **k):
+                self.included_outcome = None
+
+            def exec(self):
+                return QDialog.DialogCode.Rejected
+
+        monkeypatch.setattr(mw_module, "IncludeFragmentDialog", _StubDialog)
+
+        before = container.work_repository.count()
+        window._on_include_fragment_from_empty_state()  # noqa: SLF001
+        after = container.work_repository.count()
+        assert after == before  # no extra auto-creation

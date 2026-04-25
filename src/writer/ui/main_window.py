@@ -1,9 +1,13 @@
 """Main application window.
 
-Redesigned for M7A as a focus-writing shell: the editor is the primary
-surface, the sidebar is collapsible and its width is persisted. A command
-palette (Ctrl+P) gives quick access to all menu actions. Language and
-splitter state are persisted in the settings database.
+Redesigned for M9A as a four-column shell:
+
+    [navigation rail] [list column] [main work area] [context pane]
+
+The rail stays narrow and always visible, so the user can switch between
+Fragments / Works / Collections without hunting for tabs. The right-side
+context pane is collapsible and its visibility is persisted, alongside
+the splitter sizes that already existed before M9A.
 
 UI code never touches SQLite directly; everything goes through the
 container's repositories and services.
@@ -14,26 +18,35 @@ import json
 from typing import Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMenu,
     QMenuBar,
     QMessageBox,
     QProgressDialog,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QStatusBar,
     QToolBar,
+    QVBoxLayout,
     QWidget,
 )
 
 from writer.app.container import AppContainer
 from writer.app.locale import LOCALE_EN, LOCALE_ZH_CN
+from writer.app.settings import (
+    DEFAULT_THEME_MODE,
+    KEY_ACTIVE_MODE,
+    KEY_CONTEXT_PANE_VISIBLE,
+    KEY_THEME_MODE,
+)
 from writer.domain.enums import RewriteAction
 from writer.services.ai.interfaces import RewriteRequest, RewriteResponse
 from writer.services.autosave_service import AutosaveService
@@ -53,15 +66,17 @@ from writer.ui.dialogs.settings_dialog import SettingsDialog
 from writer.ui.dialogs.version_history_dialog import VersionHistoryDialog
 from writer.ui.i18n import TR, rewrite_action_label
 from writer.ui.panels.collections_panel import CollectionsPanel
-from writer.ui.panels.editor_panel import EditorPanel
+from writer.ui.panels.editor_panel import EditorPanel, _count_words
 from writer.ui.panels.fragment_list_panel import FragmentListPanel
 from writer.ui.panels.works_panel import WorksPanel
 from writer.ui.rewrite_worker import RewriteWorker
+from writer.ui.theme import ThemeMode, apply_theme
+from writer.ui.widgets import ContextPane, NavigationRail
 
 _SPLITTER_SIZES_KEY = "ui.splitter_sizes"
 _SIDEBAR_COLLAPSED_KEY = "ui.sidebar_collapsed"
-_DEFAULT_SIDEBAR_WIDTH = 280
-_DEFAULT_EDITOR_WIDTH = 820
+_DEFAULT_SIDEBAR_WIDTH = 300
+_DEFAULT_EDITOR_WIDTH = 760
 
 
 class MainWindow(QMainWindow):
@@ -76,8 +91,9 @@ class MainWindow(QMainWindow):
         self._container = container
 
         self.setWindowTitle("Writer")
-        self.resize(1100, 680)
+        self.resize(1280, 780)
 
+        # ---- Fragments mode panels (preserve attribute names for tests) ----
         self._list_panel = FragmentListPanel()
         self._editor_panel = EditorPanel()
 
@@ -87,22 +103,143 @@ class MainWindow(QMainWindow):
         self._splitter.setStretchFactor(0, 0)
         self._splitter.setStretchFactor(1, 1)
         self._splitter.splitterMoved.connect(self._on_splitter_moved)
-
-        # Restore persisted splitter sizes (or fall back to defaults)
         self._sidebar_collapsed = False
         self._restore_splitter_state()
 
-        # M8 mode-switching central widget. The existing fragment splitter
-        # is mode 0; works panel mode 1; collections panel mode 2.
-        self._fragments_widget = self._splitter
+        # M9A: when the fragment library is genuinely empty we want the
+        # welcome card to take over the whole work area instead of an
+        # auto-created blank fragment masking it. Wrap the fragments
+        # splitter in a QStackedWidget [splitter, welcome_card] and flip
+        # based on entry count.
+        from writer.ui.widgets.empty_state import EmptyStateCard
+
+        self._welcome_card = EmptyStateCard(
+            TR("empty.welcome_title"),
+            TR("empty.welcome_desc"),
+            primary_label=TR("empty.welcome_primary"),
+            primary_callback=self._on_new_fragment,
+            secondary_label=TR("empty.welcome_secondary"),
+            secondary_callback=self._on_welcome_new_work,
+        )
+        welcome_wrap = QWidget()
+        welcome_wrap.setObjectName("WriterWorkspaceOverlay")
+        wl = QVBoxLayout(welcome_wrap)
+        wl.setContentsMargins(48, 64, 48, 48)
+        wl.addWidget(self._welcome_card)
+        wl.addStretch(1)
+
+        self._fragments_stack = QStackedWidget()
+        self._fragments_stack.addWidget(self._splitter)   # 0 — workspace
+        self._fragments_stack.addWidget(welcome_wrap)      # 1 — welcome card
+        # Preserve the historical attribute name for the outer mode stack.
+        self._fragments_widget = self._fragments_stack
+
+        # ---- Other modes ----
         self._works_panel = WorksPanel(container)
         self._collections_panel = CollectionsPanel(container)
+
         self._stack = QStackedWidget()
         self._stack.addWidget(self._fragments_widget)  # 0
         self._stack.addWidget(self._works_panel)        # 1
         self._stack.addWidget(self._collections_panel)  # 2
 
-        self.setCentralWidget(self._stack)
+        # ---- Context pane ----
+        self._context_pane = ContextPane(
+            empty_title=TR("context.empty_title"),
+            empty_description=TR("context.empty_desc"),
+            meta_labels={
+                "words": TR("context.label_words"),
+                "chars": TR("context.label_chars"),
+                "tags": TR("context.label_tags"),
+                "created": TR("context.label_created"),
+                "updated": TR("context.label_updated"),
+                "status": TR("context.label_status"),
+                "summary": TR("context.label_summary"),
+                "target": TR("context.label_target"),
+                "work_count": TR("context.label_work_count"),
+            },
+            action_labels={
+                "polish": TR("context.action_polish"),
+                "include": TR("context.action_include"),
+                "versions": TR("context.action_versions"),
+                "export_work": TR("context.action_export_work"),
+                "export_collection": TR("context.action_export_collection"),
+            },
+        )
+        # Wire context-pane action buttons to existing handlers.
+        self._context_pane.fragment_polish_button.clicked.connect(
+            lambda: self._on_rewrite(RewriteAction.POLISH)
+        )
+        self._context_pane.fragment_include_button.clicked.connect(
+            self._on_include_fragment
+        )
+        self._context_pane.work_versions_button.clicked.connect(
+            self._on_open_work_versions_from_context
+        )
+        self._context_pane.work_export_button.clicked.connect(
+            self._on_export_current_work_from_context
+        )
+        self._context_pane.collection_export_button.clicked.connect(
+            self._on_export_current_collection_from_context
+        )
+
+        # ---- Navigation rail ----
+        self._rail = NavigationRail(
+            brand_text=TR("shell.brand"),
+            fragments_label=TR("rail.fragments"),
+            works_label=TR("rail.works"),
+            collections_label=TR("rail.collections"),
+            search_label=TR("rail.search"),
+            theme_label=TR("rail.theme"),
+            settings_label=TR("rail.settings"),
+        )
+        self._rail.mode_changed.connect(self._set_mode)
+        self._rail.search_clicked.connect(self._on_global_search)
+        self._rail.theme_clicked.connect(self._on_open_theme_menu)
+        self._rail.settings_clicked.connect(self._on_open_settings)
+
+        # ---- Outer shell splitter (rail | content_stack | context_pane) ----
+        self._main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._main_splitter.setObjectName("WriterShellSplitter")
+        self._main_splitter.setHandleWidth(1)
+        self._main_splitter.setChildrenCollapsible(False)
+
+        # Wrap the stack so it can take an object name for QSS.
+        self._main_area = QWidget()
+        self._main_area.setObjectName("WriterMain")
+        main_layout = QHBoxLayout(self._main_area)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        main_layout.addWidget(self._stack)
+
+        self._main_splitter.addWidget(self._rail)
+        self._main_splitter.addWidget(self._main_area)
+        self._main_splitter.addWidget(self._context_pane)
+        self._main_splitter.setStretchFactor(0, 0)
+        self._main_splitter.setStretchFactor(1, 1)
+        self._main_splitter.setStretchFactor(2, 0)
+        # Rail width is fixed by NavigationRail itself; just give sensible
+        # initial widths to the other two columns.
+        self._main_splitter.setSizes([
+            NavigationRail.RAIL_WIDTH,
+            900,
+            ContextPane.DEFAULT_WIDTH,
+        ])
+
+        shell = QWidget()
+        shell.setObjectName("WriterShell")
+        shell_layout = QHBoxLayout(shell)
+        shell_layout.setContentsMargins(0, 0, 0, 0)
+        shell_layout.setSpacing(0)
+        shell_layout.addWidget(self._main_splitter)
+        self.setCentralWidget(shell)
+
+        # Restore context-pane visibility.
+        self._context_pane_visible = (
+            self._container.settings.get(KEY_CONTEXT_PANE_VISIBLE, "true") != "false"
+        )
+        if not self._context_pane_visible:
+            self._context_pane.setVisible(False)
 
         self._autosave = AutosaveService(
             container.entry_repository,
@@ -121,6 +258,19 @@ class MainWindow(QMainWindow):
         self._list_panel.sort_changed.connect(self._on_sort_changed)
         self._list_panel.show_archived_changed.connect(self._on_show_archived_changed)
         self._editor_panel.content_changed.connect(self._on_editor_changed)
+        self._editor_panel.content_changed.connect(self._refresh_fragment_context)
+        self._works_panel.work_selected.connect(self._on_work_selected_for_context)
+        self._collections_panel.collection_selected.connect(
+            self._on_collection_selected_for_context
+        )
+        # M9A: empty-state CTAs that need cross-panel routing.
+        self._list_panel.global_search_requested.connect(self._on_global_search)
+        self._works_panel.include_fragment_requested.connect(
+            self._on_include_fragment_from_empty_state
+        )
+        self._collections_panel.switch_to_works_requested.connect(
+            lambda: self._set_mode(1)
+        )
         self._autosave.saved.connect(self._on_autosaved)
         self._autosave.dirty.connect(self._on_autosave_dirty)
         self._autosave.saving.connect(self._on_autosave_saving)
@@ -135,7 +285,17 @@ class MainWindow(QMainWindow):
         self._build_menu_bar()
         self._build_toolbar()
         self._build_status_bar()
+        self._apply_editor_object_names()
         self._initial_load()
+
+        # Restore the persisted active mode (default Fragments).
+        try:
+            persisted_mode = int(
+                self._container.settings.get(KEY_ACTIVE_MODE, "0") or 0
+            )
+        except (TypeError, ValueError):
+            persisted_mode = 0
+        self._set_mode(max(0, min(2, persisted_mode)))
 
     # --------------------------------------------------------------
     def _build_menu_bar(self) -> None:
@@ -241,51 +401,41 @@ class MainWindow(QMainWindow):
 
     # --------------------------------------------------------------
     def _build_toolbar(self) -> None:
+        """Slim secondary toolbar.
+
+        With the navigation rail covering mode switching, the toolbar only
+        carries small utility actions: context-pane toggle and the language
+        quick-switch button. We keep it as a real ``QToolBar`` so existing
+        infrastructure (and the M7A test that asserts at least one toolbar
+        exists) keeps working.
+        """
         toolbar = QToolBar("Quick actions", self)
         toolbar.setMovable(False)
         toolbar.setFloatable(False)
+        toolbar.setObjectName("WriterTopToolbar")
 
-        # Sidebar toggle button
-        self._sidebar_btn = QPushButton("◀")
-        self._sidebar_btn.setToolTip(TR("toolbar.toggle_sidebar"))
-        self._sidebar_btn.setFixedWidth(28)
-        self._sidebar_btn.clicked.connect(self._toggle_sidebar)
-        toolbar.addWidget(self._sidebar_btn)
+        # Toggle context-pane button (replaces the old "◀" sidebar toggle —
+        # the keystroke and persisted key live on for backwards compat).
+        self._context_toggle_btn = QPushButton("⇆")
+        self._context_toggle_btn.setObjectName("GhostButton")
+        self._context_toggle_btn.setToolTip(TR("shell.toggle_context_pane"))
+        self._context_toggle_btn.setFixedWidth(36)
+        self._context_toggle_btn.clicked.connect(self._toggle_context_pane)
+        toolbar.addWidget(self._context_toggle_btn)
 
-        # M8 mode-switch buttons.
-        self._mode_fragments_btn = QPushButton(TR("toolbar.mode_fragments"))
-        self._mode_fragments_btn.setCheckable(True)
-        self._mode_fragments_btn.setChecked(True)
-        self._mode_fragments_btn.clicked.connect(lambda: self._set_mode(0))
-        toolbar.addWidget(self._mode_fragments_btn)
-        self._mode_works_btn = QPushButton(TR("toolbar.mode_works"))
-        self._mode_works_btn.setCheckable(True)
-        self._mode_works_btn.clicked.connect(lambda: self._set_mode(1))
-        toolbar.addWidget(self._mode_works_btn)
-        self._mode_collections_btn = QPushButton(TR("toolbar.mode_collections"))
-        self._mode_collections_btn.setCheckable(True)
-        self._mode_collections_btn.clicked.connect(lambda: self._set_mode(2))
-        toolbar.addWidget(self._mode_collections_btn)
+        # Legacy attribute name kept so older tests / call sites still work.
+        self._sidebar_btn = self._context_toggle_btn
 
-        # M8 global search button.
-        self._search_btn = QPushButton(TR("toolbar.global_search"))
-        self._search_btn.clicked.connect(self._on_global_search)
-        toolbar.addWidget(self._search_btn)
-
-        # Spacer to push language button to the right
+        # Spacer to push the language button to the right.
         spacer = QWidget()
-        spacer.setSizePolicy(
-            spacer.sizePolicy().horizontalPolicy(),
-            spacer.sizePolicy().verticalPolicy(),
-        )
-        from PySide6.QtWidgets import QSizePolicy
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
 
-        # Language quick-switch button
+        # Language quick-switch button.
         self._lang_btn = QPushButton(TR("toolbar.language_switch"))
+        self._lang_btn.setObjectName("GhostButton")
         self._lang_btn.setToolTip(TR("toolbar.language_switch_tooltip"))
-        self._lang_btn.setFixedWidth(40)
+        self._lang_btn.setFixedWidth(48)
         self._lang_btn.clicked.connect(self._on_toggle_language)
         toolbar.addWidget(self._lang_btn)
 
@@ -395,7 +545,7 @@ class MainWindow(QMainWindow):
     def _build_status_bar(self) -> None:
         status: QStatusBar = self.statusBar()
         self._save_status_label = QLabel("")
-        self._save_status_label.setStyleSheet("color: gray; padding: 0 8px;")
+        self._save_status_label.setObjectName("StatusLabel")
         status.addPermanentWidget(self._save_status_label)
         self._set_save_status("saved")
 
@@ -412,16 +562,91 @@ class MainWindow(QMainWindow):
     def _initial_load(self) -> None:
         repo = self._container.entry_repository
         if repo.count() == 0:
-            entry = repo.create()
+            # M9A: do NOT auto-create a placeholder fragment. Leave the DB
+            # empty so the welcome card on the workspace surface is the
+            # first thing the user sees. The user clicking the welcome
+            # card's primary CTA goes through ``_on_new_fragment`` like
+            # any other "new fragment" entry point.
             self._refresh_tag_filter()
-            self._list_panel.set_entries([entry], select_id=entry.id)
-            self._load_entry(entry.id)
+            self._list_panel.set_entries([])
+            self._editor_panel.set_entry(None)
+            self._show_fragments_welcome()
+            return
+        entries = repo.list_recent()
+        if not entries:
+            # Repo has only archived (or otherwise filtered-out) entries.
+            # Keep the workspace visible \u2014 the user can flip "show
+            # archived" to recover them \u2014 but leave the editor empty.
+            self._refresh_tag_filter()
+            self._list_panel.set_entries([])
+            self._editor_panel.set_entry(None)
+            self._show_fragments_workspace()
+            return
+        first = entries[0]
+        self._refresh_tag_filter()
+        self._list_panel.set_entries(entries, select_id=first.id)
+        self._load_entry(first.id)
+        self._show_fragments_workspace()
+
+    def _show_fragments_welcome(self) -> None:
+        """Switch the fragments-mode area to the welcome card."""
+        self._fragments_stack.setCurrentIndex(1)
+
+    def _show_fragments_workspace(self) -> None:
+        """Switch the fragments-mode area to the normal list+editor splitter."""
+        self._fragments_stack.setCurrentIndex(0)
+
+    def _apply_fragments_workspace_visibility(self) -> None:
+        """Pick welcome vs. normal workspace based on whether the entry
+        repository is **truly empty** — not whether the current visible
+        list happens to be empty.
+
+        The welcome card replaces the entire fragments work area, including
+        the search box, tag filter, and the "show archived" toggle. So we
+        must only show it when there is genuinely nothing to manage. If the
+        repo still contains archived (or otherwise filtered-out) entries,
+        we keep the normal workspace visible so the user can flip the
+        "show archived" switch and recover them.
+        """
+        if self._container.entry_repository.count() == 0:
+            self._show_fragments_welcome()
         else:
-            entries = repo.list_recent()
-            first = entries[0]
-            self._refresh_tag_filter()
-            self._list_panel.set_entries(entries, select_id=first.id)
-            self._load_entry(first.id)
+            self._show_fragments_workspace()
+
+    def _on_welcome_new_work(self) -> None:
+        """Welcome card secondary CTA: jump to Works mode and create one."""
+        self._set_mode(1)
+        self._works_panel._on_new_work()  # noqa: SLF001 — reuse existing handler
+
+    def _on_include_fragment_from_empty_state(self) -> None:
+        """Works empty-state secondary CTA: drive the full include-fragment
+        loop to completion, even when the user has no work yet.
+
+        Closure rules:
+          * No current fragment → clear informational dialog (the user
+            must open or create a fragment first).
+          * Has a current fragment but no works at all → auto-create a
+            work, select it, then open the include dialog so the
+            fragment can land in the freshly created work.
+          * Has a current fragment and existing works → just open the
+            include dialog (it already lists the works).
+        """
+        if self._editor_panel.current_entry_id() is None:
+            QMessageBox.information(
+                self,
+                TR("dlg.no_fragment_to_include_title"),
+                TR("dlg.no_fragment_to_include_msg"),
+            )
+            return
+        # If no works exist yet, bootstrap one so the include dialog has a
+        # legitimate target. We reuse WorksPanel._on_new_work which already
+        # creates + refreshes + selects the new work.
+        if self._container.work_repository.count() == 0:
+            self._works_panel._on_new_work()  # noqa: SLF001
+        # Switch back to fragments mode so the user can see the fragment
+        # they are about to include, then run the existing include flow.
+        self._set_mode(0)
+        self._on_include_fragment()
 
     def _refresh_tag_filter(self) -> None:
         tags = self._container.entry_repository.list_all_tags()
@@ -462,12 +687,14 @@ class MainWindow(QMainWindow):
         entry = self._container.entry_repository.get(entry_id)
         if entry is None:
             self._editor_panel.set_entry(None)
+            self._refresh_fragment_context()
             return
         from writer.storage.repositories.entry_repository import serialize_tags
         self._editor_panel.set_entry(entry)
         self._autosave.remember_clean(
             entry.id, entry.title, entry.body, serialize_tags(entry.tags)
         )
+        self._refresh_fragment_context()
 
     # --------------------------------------------------------------
     def _snapshot_for_autosave(self) -> Optional[tuple[str, str, str, str]]:
@@ -495,6 +722,8 @@ class MainWindow(QMainWindow):
         self._list_panel.reset_tag_filter()
         self._refresh_list(select_id=entry.id)
         self._load_entry(entry.id)
+        # M9A: leaving the welcome state once the user has at least one entry.
+        self._show_fragments_workspace()
         # Auto-focus the body editor so the user can start writing immediately
         self._editor_panel.focus_body()
 
@@ -558,10 +787,15 @@ class MainWindow(QMainWindow):
                 self._refresh_list(select_id=remaining[0].id)
                 self._load_entry(remaining[0].id)
             else:
-                new_entry = repo.create()
+                # No visible (unarchived) entries left, but the repo may
+                # still contain archived ones. Only flip to the welcome
+                # card when the repo is truly empty; otherwise keep the
+                # workspace shown so the user can toggle "show archived"
+                # and find their content again.
                 self._refresh_tag_filter()
-                self._refresh_list(select_id=new_entry.id)
-                self._load_entry(new_entry.id)
+                self._list_panel.set_entries([])
+                self._editor_panel.set_entry(None)
+                self._apply_fragments_workspace_visibility()
         else:
             self._refresh_list(select_id=entry_id)
 
@@ -609,7 +843,8 @@ class MainWindow(QMainWindow):
         self._deleted_trash = snapshots
 
         # If the editor was showing one of the deleted entries, load a
-        # fresh one (next recent, or create a new blank entry).
+        # fresh one (next recent), or fall back to the welcome state when
+        # the library is now empty.
         current_id = self._editor_panel.current_entry_id()
         if current_id in entry_ids or current_id is None:
             remaining = repo.list_recent(
@@ -620,10 +855,13 @@ class MainWindow(QMainWindow):
                 self._refresh_list(select_id=remaining[0].id)
                 self._load_entry(remaining[0].id)
             else:
-                new_entry = repo.create()
+                # Library may be truly empty (welcome card) or only have
+                # archived entries that are filtered out (keep workspace
+                # shown so the user can toggle "show archived").
                 self._refresh_tag_filter()
-                self._refresh_list(select_id=new_entry.id)
-                self._load_entry(new_entry.id)
+                self._list_panel.set_entries([])
+                self._editor_panel.set_entry(None)
+                self._apply_fragments_workspace_visibility()
         else:
             self._refresh_tag_filter()
             self._refresh_list(select_id=current_id)
@@ -689,13 +927,20 @@ class MainWindow(QMainWindow):
     # --------------------------------------------------------------
     def _set_mode(self, mode: int) -> None:
         self._stack.setCurrentIndex(mode)
-        self._mode_fragments_btn.setChecked(mode == 0)
-        self._mode_works_btn.setChecked(mode == 1)
-        self._mode_collections_btn.setChecked(mode == 2)
-        if mode == 1:
+        self._rail.set_active_mode(mode)
+        # Persist the active mode so the next launch lands on the same view.
+        try:
+            self._container.settings.set(KEY_ACTIVE_MODE, str(mode))
+        except Exception:  # noqa: BLE001 — settings issues must not crash UI
+            pass
+        if mode == 0:
+            self._refresh_fragment_context()
+        elif mode == 1:
             self._works_panel.refresh(preserve_selection=True)
+            self._refresh_work_context_from_panel()
         elif mode == 2:
             self._collections_panel.refresh_collections()
+            self._refresh_collection_context_from_panel()
 
     def _on_global_search(self) -> None:
         dlg = GlobalSearchDialog(self._container, parent=self)
@@ -1063,6 +1308,192 @@ class MainWindow(QMainWindow):
             entry_id, title, outcome.new_body, self._editor_panel.tags_text()
         )
         self._refresh_list(select_id=entry_id)
+
+    # --------------------------------------------------------------
+    # M9A: shell helpers — theme menu, context pane, context refresh
+    # --------------------------------------------------------------
+    def _apply_editor_object_names(self) -> None:
+        """Tag editor sub-widgets so the global QSS can style them."""
+        try:
+            self._editor_panel._body.setObjectName("FragmentBody")
+            self._editor_panel._title.setObjectName("EditorTitle")
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self._works_panel._editor._editor.setObjectName("WorkBody")
+            self._works_panel._editor._title.setObjectName("EditorTitle")
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _toggle_context_pane(self) -> None:
+        self._context_pane_visible = not self._context_pane_visible
+        self._context_pane.setVisible(self._context_pane_visible)
+        try:
+            self._container.settings.set(
+                KEY_CONTEXT_PANE_VISIBLE,
+                "true" if self._context_pane_visible else "false",
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _on_open_theme_menu(self) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        menu = QMenu(self)
+        group = QActionGroup(menu)
+        group.setExclusive(True)
+        current_raw = self._container.settings.get(
+            KEY_THEME_MODE, DEFAULT_THEME_MODE
+        )
+        current_mode = ThemeMode.parse(current_raw)
+        for label_key, mode in (
+            ("theme.light", ThemeMode.LIGHT),
+            ("theme.dark", ThemeMode.DARK),
+            ("theme.system", ThemeMode.SYSTEM),
+        ):
+            act = QAction(TR(label_key), menu)
+            act.setCheckable(True)
+            act.setChecked(mode is current_mode)
+            act.triggered.connect(
+                lambda _checked=False, m=mode: self._apply_theme_mode(m)
+            )
+            group.addAction(act)
+            menu.addAction(act)
+        # Anchor the menu just below the rail's theme button.
+        btn = self._rail.theme_button
+        pos = btn.mapToGlobal(btn.rect().bottomRight())
+        menu.exec(pos)
+
+    def _apply_theme_mode(self, mode: ThemeMode) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            apply_theme(app, mode)
+        try:
+            self._container.settings.set(KEY_THEME_MODE, mode.value)
+        except Exception:  # noqa: BLE001
+            pass
+
+    # ------- Context-pane refresh helpers -------
+    def _refresh_fragment_context(self) -> None:
+        if self._stack.currentIndex() != 0:
+            return
+        entry_id = self._editor_panel.current_entry_id()
+        if not entry_id:
+            self._context_pane.show_empty(
+                TR("context.empty_title"), TR("context.empty_desc")
+            )
+            return
+        title = self._editor_panel.title_text().strip() or TR(
+            "list.empty_fragment"
+        )
+        body = self._editor_panel.body_text()
+        words = _count_words(body)
+        chars = len(body)
+        tags = self._editor_panel.tags_text().strip() or TR("context.no_value")
+        entry = self._container.entry_repository.get(entry_id)
+        if entry is None:
+            self._context_pane.show_empty(
+                TR("context.empty_title"), TR("context.empty_desc")
+            )
+            return
+        status = (
+            TR("list.archived_badge").strip(" []")
+            if entry.archived_at
+            else TR("context.no_value")
+        )
+        self._context_pane.show_fragment(
+            title=title,
+            words=str(words),
+            chars=str(chars),
+            tags=tags,
+            created=entry.created_at or TR("context.no_value"),
+            updated=entry.updated_at or TR("context.no_value"),
+            status=status,
+        )
+
+    def _on_work_selected_for_context(self, work_id: str) -> None:
+        self._refresh_work_context(work_id)
+
+    def _refresh_work_context_from_panel(self) -> None:
+        wid = self._works_panel._current_work_id()
+        if wid:
+            self._refresh_work_context(wid)
+        else:
+            self._context_pane.show_empty(
+                TR("context.empty_title"), TR("context.empty_desc")
+            )
+
+    def _refresh_work_context(self, work_id: str) -> None:
+        if self._stack.currentIndex() != 1:
+            return
+        work = self._container.work_repository.get(work_id)
+        if work is None:
+            self._context_pane.show_empty(
+                TR("context.empty_title"), TR("context.empty_desc")
+            )
+            return
+        words = self._container.work_service.compute_word_count(work_id)
+        target = (
+            str(work.target_word_count)
+            if work.target_word_count
+            else TR("context.no_target")
+        )
+        self._context_pane.show_work(
+            title=work.title or TR("works.untitled"),
+            summary=work.summary or TR("context.no_value"),
+            status=TR(f"work.status.{work.status}"),
+            words=str(words),
+            target=target,
+            updated=work.updated_at or TR("context.no_value"),
+        )
+
+    def _on_collection_selected_for_context(self, collection_id: str) -> None:
+        self._refresh_collection_context(collection_id)
+
+    def _refresh_collection_context_from_panel(self) -> None:
+        cid = self._collections_panel._current_collection_id()
+        if cid:
+            self._refresh_collection_context(cid)
+        else:
+            self._context_pane.show_empty(
+                TR("context.empty_title"), TR("context.empty_desc")
+            )
+
+    def _refresh_collection_context(self, collection_id: str) -> None:
+        if self._stack.currentIndex() != 2:
+            return
+        coll = self._container.collection_repository.get(collection_id)
+        if coll is None:
+            self._context_pane.show_empty(
+                TR("context.empty_title"), TR("context.empty_desc")
+            )
+            return
+        works = self._container.collection_repository.list_works(collection_id)
+        total_words = sum(
+            self._container.work_service.compute_word_count(w.id) for w in works
+        )
+        self._context_pane.show_collection(
+            title=coll.name or TR("collections.untitled"),
+            work_count=str(len(works)),
+            words=str(total_words),
+        )
+
+    # ------- Context-pane action shortcuts -------
+    def _on_open_work_versions_from_context(self) -> None:
+        wid = self._works_panel._current_work_id()
+        if not wid:
+            return
+        self._works_panel._editor._on_open_versions()
+
+    def _on_export_current_work_from_context(self) -> None:
+        if self._works_panel._current_work_id():
+            self._works_panel._on_export_work()
+
+    def _on_export_current_collection_from_context(self) -> None:
+        if self._collections_panel._current_collection_id():
+            self._collections_panel._on_export_collection()
 
     # --------------------------------------------------------------
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt signature)

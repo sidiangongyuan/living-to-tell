@@ -70,7 +70,7 @@ class RewriteCompareDialog(QDialog):
 
         notice = QLabel(TR("compare.notice"))
         notice.setWordWrap(True)
-        notice.setStyleSheet("color: gray;")
+        notice.setObjectName("DialogNote")
 
         # Button row (manual layout for three buttons)
         self._accept_btn = QPushButton(TR("compare.accept_btn"))

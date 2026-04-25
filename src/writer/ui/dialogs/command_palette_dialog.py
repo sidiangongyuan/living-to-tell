@@ -53,8 +53,8 @@ class CommandPaletteDialog(QDialog):
         self._list.itemActivated.connect(self._on_activate)
 
         self._no_results = QLabel(TR("cmd.no_results"))
+        self._no_results.setObjectName("NoResultsLabel")
         self._no_results.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._no_results.setStyleSheet("color: #888; font-size: 12px; padding: 16px;")
         self._no_results.hide()
 
         layout = QVBoxLayout(self)

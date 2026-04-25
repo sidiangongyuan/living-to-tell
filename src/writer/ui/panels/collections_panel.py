@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSplitter,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -20,10 +21,15 @@ from PySide6.QtWidgets import (
 from writer.app.container import AppContainer
 from writer.ui.dialogs.work_picker_dialog import WorkPickerDialog
 from writer.ui.i18n import TR
+from writer.ui.widgets.empty_state import EmptyStateCard
 
 
 class CollectionsPanel(QWidget):
     collection_selected = Signal(str)
+    # M9A: emitted by the empty-state "Go organise a work first" CTA so
+    # the parent can switch the active mode to Works without the panel
+    # needing a back-reference.
+    switch_to_works_requested = Signal()
 
     def __init__(self, container: AppContainer, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -34,10 +40,12 @@ class CollectionsPanel(QWidget):
         self._collections.itemSelectionChanged.connect(self._on_collection_changed)
 
         self._new_btn = QPushButton(TR("collections.new"))
+        self._new_btn.setObjectName("PrimaryButton")
         self._new_btn.clicked.connect(self._on_new_collection)
         self._rename_btn = QPushButton(TR("collections.rename"))
         self._rename_btn.clicked.connect(self._on_rename_collection)
         self._delete_btn = QPushButton(TR("collections.delete"))
+        self._delete_btn.setObjectName("DangerButton")
         self._delete_btn.clicked.connect(self._on_delete_collection)
 
         coll_btns = QHBoxLayout()
@@ -45,12 +53,36 @@ class CollectionsPanel(QWidget):
             coll_btns.addWidget(b)
         coll_btns.addStretch(1)
 
+        self._collections_empty = EmptyStateCard(
+            TR("empty.collections_title"),
+            TR("empty.collections_desc"),
+            primary_label=TR("empty.collections_primary"),
+            primary_callback=self._on_new_collection,
+            secondary_label=TR("empty.collections_secondary"),
+            secondary_callback=self.switch_to_works_requested.emit,
+        )
+        coll_empty_wrap = QWidget()
+        cew = QVBoxLayout(coll_empty_wrap)
+        cew.setContentsMargins(8, 16, 8, 16)
+        cew.addWidget(self._collections_empty)
+        cew.addStretch(1)
+
+        self._collections_stack = QStackedWidget()
+        self._collections_stack.addWidget(self._collections)   # 0
+        self._collections_stack.addWidget(coll_empty_wrap)      # 1
+
+        self._column_title = QLabel(TR("column.collections"))
+        self._column_title.setObjectName("ColumnTitle")
+
         left = QWidget()
+        left.setObjectName("WriterListColumn")
         ll = QVBoxLayout(left)
-        ll.setContentsMargins(4, 4, 4, 4)
+        ll.setContentsMargins(16, 16, 16, 16)
+        ll.setSpacing(8)
+        ll.addWidget(self._column_title)
         ll.addLayout(coll_btns)
         ll.addWidget(QLabel(TR("collections.label")))
-        ll.addWidget(self._collections, 1)
+        ll.addWidget(self._collections_stack, 1)
 
         # Right: works in selected collection
         self._works = QListWidget()
@@ -86,9 +118,25 @@ class CollectionsPanel(QWidget):
         rl.addWidget(QLabel(TR("collections.works_label")))
         rl.addWidget(self._works, 1)
 
+        # M9A: right-side "no collection picked" card.
+        self._collection_unselected_card = EmptyStateCard(
+            TR("empty.collection_unselected_title"),
+            TR("empty.collection_unselected_desc"),
+            primary_label=TR("empty.collection_unselected_primary"),
+            primary_callback=self._on_new_collection,
+        )
+        unselected_wrap = QWidget()
+        uw = QVBoxLayout(unselected_wrap)
+        uw.setContentsMargins(32, 48, 32, 32)
+        uw.addWidget(self._collection_unselected_card)
+        uw.addStretch(1)
+        self._right_stack = QStackedWidget()
+        self._right_stack.addWidget(right)             # 0 — works area
+        self._right_stack.addWidget(unselected_wrap)    # 1 — unselected card
+
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(left)
-        splitter.addWidget(right)
+        splitter.addWidget(self._right_stack)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([300, 700])
@@ -109,15 +157,28 @@ class CollectionsPanel(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, c.id)
             self._collections.addItem(item)
         self._collections.blockSignals(False)
+        if self._collections.count() == 0:
+            self._collections_stack.setCurrentIndex(1)
+        else:
+            self._collections_stack.setCurrentIndex(0)
+        # M9A: only restore an explicit previous selection. Do NOT auto-pick
+        # row 0 — leaves the "pick a collection first" empty state reachable.
         if previous is not None:
             for i in range(self._collections.count()):
                 if self._collections.item(i).data(Qt.ItemDataRole.UserRole) == previous:
                     self._collections.setCurrentRow(i)
+                    self._update_right_stack()
                     return
-        if self._collections.count() > 0:
-            self._collections.setCurrentRow(0)
+        self._collections.clearSelection()
+        self._collections.setCurrentRow(-1)
+        self._refresh_works()
+        self._update_right_stack()
+
+    def _update_right_stack(self) -> None:
+        if self._current_collection_id():
+            self._right_stack.setCurrentIndex(0)
         else:
-            self._refresh_works()
+            self._right_stack.setCurrentIndex(1)
 
     def _refresh_works(self) -> None:
         self._works.blockSignals(True)
@@ -143,6 +204,7 @@ class CollectionsPanel(QWidget):
 
     def _on_collection_changed(self) -> None:
         self._refresh_works()
+        self._update_right_stack()
         cid = self._current_collection_id()
         if cid:
             self.collection_selected.emit(cid)
@@ -160,6 +222,7 @@ class CollectionsPanel(QWidget):
             if self._collections.item(i).data(Qt.ItemDataRole.UserRole) == c.id:
                 self._collections.setCurrentRow(i)
                 break
+        self._update_right_stack()
 
     def _on_rename_collection(self) -> None:
         cid = self._current_collection_id()

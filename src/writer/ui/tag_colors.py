@@ -62,8 +62,29 @@ def get_tag_color(tag: str) -> tuple[str, str]:
 
 
 def tag_style_sheet(tag: str) -> str:
-    """Return a QSS snippet suitable for a small tag badge label."""
+    """Return a QSS snippet suitable for a small tag badge label.
+
+    Theme-aware: in light mode we use the pastel background + dark text
+    pair from the palette; in dark mode we invert (deep tinted background
+    + light text) and add a subtle border so the chip stays legible
+    against the dark surface.
+    """
     bg, fg = get_tag_color(tag)
+    try:
+        from writer.ui.theme import ThemeMode, current_mode, current_tokens
+
+        if current_mode() is ThemeMode.DARK:
+            tokens = current_tokens()
+            # Use the original "text" hex as the chip background (a deep
+            # saturated tone that holds up against the dark surface) and
+            # the original pastel as foreground text.
+            return (
+                f"background-color: {fg}; color: {bg}; "
+                f"border: 1px solid {tokens.border}; "
+                "border-radius: 3px; padding: 1px 5px; font-size: 11px;"
+            )
+    except Exception:  # noqa: BLE001 — never let a chip break the UI
+        pass
     return (
         f"background-color: {bg}; color: {fg}; "
         "border-radius: 3px; padding: 1px 5px; font-size: 11px;"

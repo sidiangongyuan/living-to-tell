@@ -167,6 +167,9 @@ def test_collections_panel_create_and_add_work(qtbot, container):
     assert panel._collections.count() == 1
 
     container.collection_repository.add_work(coll.id, work.id)
+    # M9A: collections list no longer auto-selects row 0; pick the
+    # collection explicitly before refreshing the works subpanel.
+    panel._collections.setCurrentRow(0)
     panel._refresh_works()
     assert panel._works.count() == 1
 

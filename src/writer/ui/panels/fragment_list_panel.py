@@ -30,6 +30,7 @@ from writer.storage.repositories.entry_repository import (
 )
 from writer.ui.i18n import TR
 from writer.ui.tag_colors import get_tag_color
+from writer.ui.widgets.empty_state import EmptyStateCard
 
 
 class _TagDotDelegate(QStyledItemDelegate):
@@ -79,9 +80,19 @@ class FragmentListPanel(QWidget):
     archive_requested = Signal(str, bool)  # (entry_id, archived?)
     sort_changed = Signal(str)             # SORT_* constant
     show_archived_changed = Signal(bool)
+    # M9A: explicit signal for the empty-state "Open global search" CTA so
+    # the parent (MainWindow) can route it to the existing global-search
+    # dialog without the panel needing a back-reference.
+    global_search_requested = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        self.setObjectName("WriterListColumn")
+
+        # Column title — gives the second pane a clear identity in the
+        # M9A shell where the navigation rail no longer carries text.
+        self._column_title = QLabel(TR("column.fragments"))
+        self._column_title.setObjectName("ColumnTitle")
 
         self._search = QLineEdit()
         self._search.setPlaceholderText(TR("list.search_placeholder"))
@@ -89,10 +100,12 @@ class FragmentListPanel(QWidget):
         self._search.textChanged.connect(self.search_changed)
 
         self._new_button = QPushButton(TR("list.new_button"))
+        self._new_button.setObjectName("PrimaryButton")
         self._new_button.setToolTip(TR("list.new_button_tooltip"))
         self._new_button.clicked.connect(self.new_requested)
 
         self._delete_button = QPushButton(TR("list.delete_btn"))
+        self._delete_button.setObjectName("DangerButton")
         self._delete_button.setToolTip(TR("list.delete_tooltip"))
         self._delete_button.setEnabled(False)
         self._delete_button.clicked.connect(self._emit_delete)
@@ -132,20 +145,33 @@ class FragmentListPanel(QWidget):
         self._list.customContextMenuRequested.connect(self._on_context_menu)
         self._list.itemSelectionChanged.connect(self._on_selection_changed)
 
-        # Empty state label shown when the list is empty
-        self._empty_label = QLabel(TR("list.empty_state"))
-        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_label.setStyleSheet(
-            "color: #888888; font-size: 13px; padding: 24px;"
+        # Empty state card — shown when the list is empty (different copy
+        # for "no fragments yet" vs "search came back empty").
+        self._empty_in_search_mode = False
+        self._empty_card = EmptyStateCard(
+            TR("empty.fragments_title"),
+            TR("empty.fragments_desc"),
+            primary_label=TR("empty.fragments_primary"),
+            primary_callback=self._on_empty_primary,
+            secondary_label=TR("empty.fragments_secondary"),
+            secondary_callback=self._on_empty_secondary,
         )
-        self._empty_label.setWordWrap(True)
+
+        # Wrapper widget so we can centre the card with margin and stretch.
+        empty_wrap = QWidget()
+        empty_wrap_layout = QVBoxLayout(empty_wrap)
+        empty_wrap_layout.setContentsMargins(8, 16, 8, 16)
+        empty_wrap_layout.addWidget(self._empty_card)
+        empty_wrap_layout.addStretch(1)
 
         self._stack = QStackedWidget()
         self._stack.addWidget(self._list)        # index 0
-        self._stack.addWidget(self._empty_label)  # index 1
+        self._stack.addWidget(empty_wrap)        # index 1
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(8)
+        layout.addWidget(self._column_title)
         layout.addLayout(top)
         layout.addWidget(self._tag_combo)
         layout.addLayout(sort_row)
@@ -216,15 +242,39 @@ class FragmentListPanel(QWidget):
                 self.entry_selected.emit(current_id)
         self._update_delete_enabled()
 
-        # Show empty-state label when there are no results
+        # Show empty-state card when there are no results
         self._stack.setCurrentIndex(0 if entries else 1)
         if not entries:
             search = self._search.text().strip()
             tag = self.current_tag_filter()
             if search or tag:
-                self._empty_label.setText(TR("list.empty_search"))
+                self._empty_in_search_mode = True
+                self._empty_card.set_text(
+                    TR("empty.fragments_search_title"),
+                    TR("empty.fragments_search_desc"),
+                )
+                if self._empty_card.primary_button is not None:
+                    self._empty_card.primary_button.setText(
+                        TR("empty.fragments_search_primary")
+                    )
+                if self._empty_card.secondary_button is not None:
+                    self._empty_card.secondary_button.setText(
+                        TR("empty.fragments_search_secondary")
+                    )
             else:
-                self._empty_label.setText(TR("list.empty_state"))
+                self._empty_in_search_mode = False
+                self._empty_card.set_text(
+                    TR("empty.fragments_title"),
+                    TR("empty.fragments_desc"),
+                )
+                if self._empty_card.primary_button is not None:
+                    self._empty_card.primary_button.setText(
+                        TR("empty.fragments_primary")
+                    )
+                if self._empty_card.secondary_button is not None:
+                    self._empty_card.secondary_button.setText(
+                        TR("empty.fragments_secondary")
+                    )
 
     def current_entry_id(self) -> Optional[str]:
         return self._current_id()
@@ -288,6 +338,25 @@ class FragmentListPanel(QWidget):
 
     def _on_sort_changed(self, _index: int) -> None:
         self.sort_changed.emit(self.current_sort())
+
+    # ------------------------------------------------------------------
+    # Empty-state CTAs
+    # ------------------------------------------------------------------
+    def _on_empty_primary(self) -> None:
+        if self._empty_in_search_mode:
+            self.clear_search()
+            self.reset_tag_filter()
+        else:
+            self.new_requested.emit()
+
+    def _on_empty_secondary(self) -> None:
+        if self._empty_in_search_mode:
+            # "Show all fragments" — clear filters; same effect.
+            self.clear_search()
+            self.reset_tag_filter()
+        else:
+            # "Open global search" — let the parent handle it.
+            self.global_search_requested.emit()
 
     def _on_context_menu(self, pos) -> None:
         item = self._list.itemAt(pos)

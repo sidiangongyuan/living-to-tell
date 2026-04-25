@@ -82,7 +82,7 @@ class SettingsDialog(QDialog):
         self._api_key_source.setPlaceholderText("env:OPENAI_API_KEY")
 
         self._key_status = QLabel()
-        self._key_status.setStyleSheet("color: gray;")
+        self._key_status.setObjectName("MetaLabel")
         self._refresh_key_status()
         self._api_key_source.textChanged.connect(self._refresh_key_status)
 

@@ -41,8 +41,11 @@ def test_main_window_constructs_and_shows(qtbot, container) -> None:
     assert "&File" in titles
     assert "&AI" in titles
     assert "&Help" in titles
-    # M2: editor must be populated by the auto-created blank fragment.
-    assert window._editor_panel.current_entry_id() is not None
+    # M9A: an empty database must NOT auto-create a fragment. Instead the
+    # welcome card takes over the work area and the editor stays unloaded.
+    assert window._editor_panel.current_entry_id() is None
+    assert container.entry_repository.count() == 0
+    assert window._fragments_stack.currentIndex() == 1
 
 
 # ---------------------------------------------------------------------------
