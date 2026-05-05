@@ -1,313 +1,137 @@
 # Writer
 
+[中文](README.zh-CN.md) · English
+
 [![Tests](https://github.com/sidiangongyuan/writer/actions/workflows/tests.yml/badge.svg)](https://github.com/sidiangongyuan/writer/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB.svg)
+![Windows](https://img.shields.io/badge/Windows-portable-0078D4.svg)
 
-A minimal Windows desktop personal writing tool. Capture short fragments,
-search and filter them, and optionally apply lightweight AI rewrites without
-ever silently overwriting the original text.
+**A local-first writing desk for fragments, long-form drafts, references, and AI-assisted rewriting.**
 
-> **Status: internal alpha (dev build)** — all core writing features are
-> working and daily-usable, but this is not a final release. Expect rough
-> edges in packaging and UI polish.
+Writer is built for people who collect scenes, notes, images-in-words, and half-formed ideas before they know what the final piece is. It keeps your writing local, gives fragments a path into longer works, and lets AI help only when you explicitly ask.
 
-## Open-source readiness
+> Status: **alpha, daily-usable but still evolving**. The core writing flow, exports, version history, and AI workspace are working; expect more UI polish before a stable release.
 
-- License: MIT, see [LICENSE](LICENSE).
-- Security policy: see [SECURITY.md](SECURITY.md) before reporting bugs that
-  involve credentials, OAuth, local databases, or private writing content.
-- CI: pushes and pull requests run the Windows Python 3.12 test suite via
-  [GitHub Actions](.github/workflows/tests.yml).
-- Public docs use placeholders for local proxy ports and credential names;
-  real API keys, OAuth tokens, account emails, project IDs, SQLite databases,
-  build outputs, and personal writing data should never be committed.
+## Why Writer?
 
-## Features
+- **Fragments first** — capture short pieces quickly, then search, tag, and reuse them.
+- **Grow into works** — organize fragments into works, sections, collections, and exportable manuscripts.
+- **AI that respects drafts** — preview results, write back safely, and keep snapshots before destructive changes.
+- **Local by default** — your SQLite database stays on your machine; API keys and OAuth tokens are read only at request time.
+- **Gemini OAuth support** — reuse a local Gemini CLI login, switch Gemini 3 / 2.5 text models, and inspect tier/quota status.
+- **Portable Windows app** — build or download a zip, unzip it, and run `Writer.exe`.
 
-- **Fragment editor** — write and edit short text fragments with autosave
-- **Recent fragments list** — quickly switch between fragments
-- **Full-text search** — SQLite FTS5 search across fragments, plus a global
-  search dialog for fragments and works
-- **Tags & tag filter** — tag fragments and filter the list by tag
-- **Works** — create longer-form pieces with title, summary, tags, status,
-  target word count, and ordered sections
-- **Collections** — organise multiple works into an ordered set and export
-  the whole collection together
-- **Include fragment into work** — insert the selected text (or the whole
-  fragment) into a chosen work section at an explicit insertion point
-- **AI Workspace** — a dedicated AI mode with Tools and Chat tabs,
-  scope-bound threads, manual context attachments, library Q&A, and safe
-  write-back into fragments or work sections
-- **Gemini CLI / OAuth integration** — reuse local Gemini CLI OAuth login,
-  switch Gemini models, persist a proxy, and query Gemini Code Assist tier /
-  quota status without storing raw OAuth tokens in Writer
-- **AI rewrite** — Polish / Expand / Continue via OpenAI-compatible API
-  - Side-by-side compare dialog with full accept or partial (selection) accept
-- **Reference library** — paste-in source material for AI context
-- **Projects & chapters** — organise fragments into projects with chapters
-- **Export** — fragments and projects as Markdown / plain text; works and
-  collections as TXT / Markdown / DOCX
-- **Version history** — fragment AI acceptances and manual snapshots are
-  tracked; works also support manual snapshots and restore-to-current
+## What you can do today
 
-## Screenshots and roadmap
+| Area | Highlights |
+| --- | --- |
+| Writing | Fragment editor, autosave, tags, full-text search, version history |
+| Long form | Works, ordered sections, collections, TXT / Markdown / DOCX export |
+| References | Reference library with typed material for characters, locations, settings, and excerpts |
+| AI workspace | Polish, expand, continue, summarize, outline, style transfer, library Q&A, scoped chat |
+| AI providers | GPT / OpenAI-compatible APIs, native Gemini API keys, Gemini CLI / OAuth |
+| Safety | Compare before accepting, snapshots before write-back, no stored raw AI keys |
 
-Public screenshots should be captured only from a clean demo profile. See
-[docs/screenshots/README.md](docs/screenshots/README.md) for the screenshot
-checklist and suggested captures.
+## Screenshots
 
-The current alpha roadmap is tracked in [docs/roadmap.md](docs/roadmap.md).
+Screenshots should be generated from a clean demo profile so private writing and credentials never appear in the repository. See [docs/screenshots/README.md](docs/screenshots/README.md) for the checklist.
 
-## M10A Highlights
+## Download
 
-M10A turns AI from a one-shot rewrite action into a scoped workspace:
+The recommended public distribution format is a **Windows portable zip**.
 
-- **Top-level AI mode** — open AI as a first-class workspace mode instead of
-  a modal side path
-- **Tools + Chat split** — structured tasks for deterministic outputs, plus a
-  free-form chat tab bound to the current fragment, work, collection, or
-  global scope
-- **Safe write-back** — preview, replace fragment/selection/section, or save
-  results as a new fragment, with snapshots taken before destructive section
-  writes
-- **Source-backed library Q&A** — ask questions against attached material and
-  see citations in the result panel
-- **Manual context control** — attach extra fragments only when needed and
-  choose a thriftier or stronger model tier per run
+- If a GitHub Release is available, download `Writer-<version>-portable.zip` from the release assets.
+- If you are testing the latest branch, use the **Build Windows Portable** GitHub Action artifact.
+- To build locally, run the packaging command in [Build from source](#build-from-source).
 
-Cards and saved task templates are wired at the schema/repository layer in
-M10A, but their dedicated UI surface is still deferred.
+After downloading, unzip the archive and launch `Writer.exe` inside the `Writer` folder.
 
-## M10B Highlights
+## Quick start from source
 
-M10B makes Gemini OAuth usable as a first-class AI provider:
-
-- **Direct Gemini OAuth path** — Writer reuses the saved Gemini CLI OAuth
-  refresh token, then calls Gemini Code Assist directly instead of shelling
-  out to `gemini --prompt`
-- **Model presets** — pick common OpenAI / Gemini / Gemini CLI OAuth models
-  from a preset dropdown while keeping custom model text available
-- **Proxy-aware packaged app** — set a Gemini CLI proxy such as
-  `http://127.0.0.1:PORT`; Writer persists it and uses it for OAuth refresh
-  plus Code Assist requests
-- **Tier / quota check** — Settings can show Gemini account, project, tier,
-  paid tier, and itemized credits when the service exposes them
-- **Context estimate fix** — AI's estimated context count now updates for
-  bound fragment/work scopes, pasted text, and attachments
-
-## M8 Highlights
-
-M8 adds a second writing layer above fragments:
-
-- **Works mode** — write longer-form pieces as ordered sections (`body` and
-  `heading` blocks) instead of keeping everything as loose fragments
-- **Collections mode** — assemble multiple works into a book-like or
-  anthology-like order, then export the whole collection with a generated
-  table of contents
-- **Fragment inclusion flow** — send a fragment into a work through a review
-  dialog, edit the inserted text before confirming, and choose the insertion
-  point inside the target section preview
-- **Unified search** — search fragments and works from one dialog and jump
-  directly to the matching fragment or work section
-
-Current M8 scope is intentionally plain-text-first: no rich text, no PDF
-typesetting, and no book front-matter system yet.
-
-## Run locally (source)
-
-Requires Python 3.12+ on Windows.  The project is developed against a
-`conda` environment but a plain `venv` works equally well.
+Requirements: Windows + Python 3.12+.
 
 ```powershell
-# one-time setup
 pip install -e .[dev]
-
-# launch
 writer
+```
 
-# alternative (no console script needed)
+Alternative launch command:
+
+```powershell
 python -m writer.main
 ```
 
-## Run tests
+Run tests:
 
 ```powershell
-pytest
-# or for quieter output:
-pytest -q
+python -m pytest
 ```
 
-## Keyboard shortcuts
-
-- `Ctrl+N` — new fragment
-- `Ctrl+P` — command palette
-- `Ctrl+S` — save current fragment
-- `Ctrl+Shift+F` — global search
-- `Ctrl+Shift+I` — include current fragment into a work
-
-## Build a Windows package
-
-See [Building for Windows](#building-for-windows) below.
-
-## Data directory
-
-User data (SQLite database) is stored in the platform user-data directory
-via [`platformdirs`](https://github.com/platformdirs/platformdirs):
-
-| Platform | Default location |
-|----------|-----------------|
-| Windows  | `%APPDATA%\Writer\Writer\` |
-
-Override the location for development or testing:
+## Build from source
 
 ```powershell
-$env:WRITER_DATA_DIR = "C:\my\custom\path"
-writer
+.\scripts\build_windows.ps1 -PythonExe D:\path\to\python.exe
 ```
 
-## AI configuration
-
-Open **AI → Settings…** inside the app and fill in:
-
-- **Provider** — choose GPT / OpenAI, Gemini, or Gemini CLI / OAuth.
-- **Base URL** — your OpenAI-compatible endpoint (e.g. `https://api.openai.com/v1`)
-- **Model** — model name (e.g. `gpt-4o-mini`, `gemini-3.1-pro-preview`,
-  `gemini-2.5-flash`, or `gemini-cli-default`). Use **Model preset** to
-  switch common text-generation models quickly; custom model text is still
-  accepted for newly released models.
-- **API key source** — one of:
-  - `env:VAR` (e.g. `env:OPENAI_API_KEY`) — the app reads the referenced
-    environment variable at request time.
-  - `codex` — the app reads `~/.codex/auth.json` (your existing local
-    Codex credential file) at request time.
-  - `gemini` — the app reads `~/.gemini/.env` at request time for native
-    Gemini API-key usage.
-  - `gemini-cli` — the app reuses the local Gemini CLI OAuth login. Writer
-    reads the saved CLI OAuth refresh token at request time, refreshes a short
-    lived access token, and calls Gemini Code Assist directly. The raw OAuth
-    token is not stored in Writer settings.
-
-  In **both** modes the raw key value is **never stored on disk by this
-  app** and never logged.
-
-For **Gemini CLI / OAuth**, set **Gemini CLI proxy** if your network requires
-one, for example `http://127.0.0.1:PORT`. Click **Check Gemini quota** to read
-the active Gemini account, Code Assist project, tier, paid tier, and any
-itemized credits returned by the service. Some Gemini tiers report usage as
-included / not itemized rather than a numeric remaining quota.
-
-Writer's prose/chat UI targets text-generation models. Media, embedding,
-Live API, robotics, and other specialized Gemini models may require different
-request shapes and are not surfaced as presets, but the custom model field lets
-advanced users try compatible text models as Google releases them.
-
-Click **Test AI configuration** in the same dialog to validate your settings.
-For environment/API-key providers this is local validation; for Gemini CLI /
-OAuth, the quota check is the live network check.
-
-You can also import a Codex-style `config.toml` via
-**AI → Settings… → Import Codex config**. Only the endpoint (`base_url`),
-model, and wire protocol are imported — **API keys are never imported**.
-If the imported config declares `requires_openai_auth = true` and a usable
-`~/.codex/auth.json` exists on the machine, **API key source** is
-auto-switched to `codex` so you don't have to export any environment
-variable manually. Otherwise, set the corresponding environment variable
-yourself before invoking AI.
-
-## Building for Windows
-
-The current release format is a portable Windows bundle, not a traditional
-installer. After building, you can either run the unpacked folder directly or
-share the generated zip file.
-
-### Prerequisites
-
-```powershell
-pip install -e .[dev]   # installs PyInstaller alongside dev tools
-```
-
-### Build
-
-Recommended:
-
-```powershell
-.\scripts\build_windows.ps1 -PythonExe D:\anaconda\envs\writer\python.exe
-```
-
-If your active environment already has the right `python` on PATH, this also
-works:
+If your active environment already has the correct Python on `PATH`:
 
 ```powershell
 .\scripts\build_windows.ps1
 ```
 
-Manual fallback:
+Build outputs:
 
-```powershell
-python -m PyInstaller writer.spec --noconfirm
-```
+- `dist\Writer\Writer.exe` — unpacked portable app
+- `dist\Writer-<version>-portable.zip` — versioned zip for releases
+- `dist\Writer-portable.zip` — stable alias for local testing
 
-### Output
+## AI setup
 
-The build produces:
+Open **Settings** in the app and choose an AI provider:
 
-- `dist\Writer\Writer.exe` — runnable one-folder Windows app bundle
-- `dist\Writer-<app-version>-portable.zip` — versioned release artifact
-- `dist\Writer-portable.zip` — stable alias to the latest built portable package
+- **GPT / OpenAI** — use `env:OPENAI_API_KEY` or another OpenAI-compatible endpoint.
+- **Gemini** — use `env:GEMINI_API_KEY` or a local `~/.gemini/.env` file.
+- **Gemini CLI / OAuth** — reuse an existing Gemini CLI OAuth login; Writer refreshes a short-lived access token at request time and calls Gemini Code Assist directly.
 
-Launch the unpacked bundle with:
+Gemini CLI / OAuth supports common text-generation presets such as:
 
-```powershell
-dist\Writer\Writer.exe
-```
+- `gemini-3.1-pro-preview`
+- `gemini-3-flash-preview`
+- `gemini-3.1-flash-lite-preview`
+- `gemini-2.5-pro`
+- `gemini-2.5-flash`
+- `gemini-2.5-flash-lite`
 
-> **Note:** PyInstaller 6.x places bundled data under `dist\Writer\_internal\`.
-> The first build takes a few minutes while PyInstaller collects PySide6.
-> Subsequent builds are faster.
+The model field remains editable, so compatible future text models can be tried without a code change. Media, embedding, Live API, robotics, and other specialized Gemini models usually need different request shapes and are not exposed as Writer presets.
 
-### What is bundled
+## Privacy and security
 
-- All `writer` package source
-- `writer/storage/schema.sql`
-- PySide6 Qt runtime (plugins, translations, libraries)
-- `python-docx` and its runtime dependencies for work / collection DOCX export
-- `hooks/rthook_pyside6_dlls.py` — custom runtime hook that adds `PySide6/`
-  and `shiboken6/` subdirectories to the Windows DLL search path via
-  `os.add_dll_directory()`. This is required on Python 3.8+ where the legacy
-  `PATH` environment variable is no longer used for extension-module DLL
-  resolution.
+Writer is local-first, but AI providers still receive the text you send to them. Review prompts before running AI tasks if your writing is sensitive.
 
-## Release notes
+Writer should never commit or store in Git:
 
-- [docs/m10b-release-notes.md](docs/m10b-release-notes.md) — M10B summary covering
-  direct Gemini CLI OAuth, model presets, proxy persistence, quota/tier
-  visibility, and the AI context estimate fix
-- [docs/m10a-release-notes.md](docs/m10a-release-notes.md) — M10A summary covering
-  the AI Workspace, structured AI tasks, scoped chat threads, source-backed
-  library Q&A, and safe write-back
-- [docs/m9a-release-notes.md](docs/m9a-release-notes.md) — M9A summary covering
-  the visual shell upgrade, theme system, reachable empty states, and the
-  fragment-to-work closure flow
-- [docs/m8-release-notes.md](docs/m8-release-notes.md) — M8 summary covering
-  works, collections, unified search, inclusion flow, export formats, and
-  current scope limits
+- real API keys
+- OAuth access / refresh / ID tokens
+- account emails or cloud project IDs
+- local SQLite databases
+- private writing content
+- generated `dist/` or `build/` artifacts
 
-## Design docs
+See [SECURITY.md](SECURITY.md) for reporting and contributor rules.
 
-Product and design docs live under [`docs/`](docs/):
+## Roadmap and changelog
 
-- `docs/basic-design.md`
-- `docs/roadmap.md`
-- `docs/screenshots/README.md`
-- `docs/implementation-handoff.md`
-- `docs/product-requirements.md`
-- `docs/technical-approach.md`
-- `docs/development-plan.md`
-- `docs/m10b-release-notes.md`
-- `docs/m10a-release-notes.md`
-- `docs/m9a-release-notes.md`
-- `docs/m8-release-notes.md`
+- [CHANGELOG.md](CHANGELOG.md) — product-facing release history
+- [docs/roadmap.md](docs/roadmap.md) — alpha-to-beta roadmap
+- [docs/screenshots/README.md](docs/screenshots/README.md) — screenshot checklist
+
+## Contributing
+
+Pull requests are welcome while the project is alpha. Please keep changes product-facing and avoid committing internal prompts, local test data, credentials, generated builds, or private writing samples.
+
+CI runs the Windows Python 3.12 test suite with GitHub Actions: [.github/workflows/tests.yml](.github/workflows/tests.yml).
 
 ## License
 
 Writer is released under the MIT License. See [LICENSE](LICENSE).
-
