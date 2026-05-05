@@ -15,11 +15,18 @@ from writer.app.container import build_container
 from writer.app.settings import (
     KEY_AI_BASE_URL,
     KEY_AI_MODEL,
+    KEY_AI_PROVIDER,
     KEY_AI_WIRE_API,
 )
 from writer.services.ai.codex_config_importer import (
     CodexConfigImporter,
     CodexImportResult,
+)
+from writer.services.ai.gemini_auth import (
+    GEMINI_AUTH_SOURCE,
+    GeminiAuthResolver,
+    GeminiConfigImporter,
+    GeminiImportResult,
 )
 from writer.ui.dialogs.rewrite_compare_dialog import RewriteCompareDialog
 from writer.ui.dialogs.settings_dialog import SettingsDialog
@@ -40,7 +47,16 @@ class _StubImporter(CodexConfigImporter):
         return self._result
 
 
+class _StubGeminiImporter(GeminiConfigImporter):
+    def __init__(self, result: GeminiImportResult):
+        self._result = result
+
+    def import_default(self):  # noqa: D401
+        return self._result
+
+
 def test_settings_dialog_loads_initial_values(qtbot, container):
+    container.settings.set(KEY_AI_PROVIDER, "gemini")
     container.settings.set(KEY_AI_BASE_URL, "https://orig.example/v1")
     container.settings.set(KEY_AI_MODEL, "orig-model")
     container.settings.set(KEY_AI_WIRE_API, "responses")
@@ -49,6 +65,7 @@ def test_settings_dialog_loads_initial_values(qtbot, container):
     qtbot.addWidget(dialog)
 
     assert dialog._base_url.text() == "https://orig.example/v1"  # noqa: SLF001
+    assert dialog._provider_combo.currentData() == "gemini"  # noqa: SLF001
     assert dialog._model.text() == "orig-model"  # noqa: SLF001
     assert dialog._wire_api.currentText() == "responses"  # noqa: SLF001
 
@@ -57,17 +74,83 @@ def test_settings_dialog_accept_persists_changes(qtbot, container):
     dialog = SettingsDialog(container.settings)
     qtbot.addWidget(dialog)
 
+    dialog._provider_combo.setCurrentIndex(dialog._provider_combo.findData("gemini"))  # noqa: SLF001
     dialog._base_url.setText("https://new.example/v1")  # noqa: SLF001
     dialog._model.setText("new-model")  # noqa: SLF001
     dialog._wire_api.setCurrentText("responses")  # noqa: SLF001
-    dialog._api_key_source.setText("env:WRITER_CUSTOM_KEY")  # noqa: SLF001
+    dialog._api_key_source.setText("env:GEMINI_API_KEY")  # noqa: SLF001
     dialog._on_accept()  # noqa: SLF001
 
     cfg = container.settings.load_ai_config()
+    assert cfg.provider_key() == "gemini"
     assert cfg.base_url == "https://new.example/v1"
     assert cfg.model == "new-model"
     assert cfg.wire_api == "responses"
-    assert cfg.api_key_source == "env:WRITER_CUSTOM_KEY"
+    assert cfg.api_key_source == "env:GEMINI_API_KEY"
+
+
+def test_settings_dialog_accept_persists_gemini_cli_provider(qtbot, container):
+    dialog = SettingsDialog(container.settings)
+    qtbot.addWidget(dialog)
+
+    dialog._provider_combo.setCurrentIndex(  # noqa: SLF001
+        dialog._provider_combo.findData("gemini_cli")  # noqa: SLF001
+    )
+    dialog._on_accept()  # noqa: SLF001
+
+    cfg = container.settings.load_ai_config()
+    assert cfg.provider_key() == "gemini_cli"
+    assert cfg.base_url is None
+    assert cfg.model == "gemini-cli-default"
+    assert cfg.api_key_source == "gemini-cli"
+
+
+def test_settings_dialog_model_preset_updates_model(qtbot, container):
+    dialog = SettingsDialog(container.settings)
+    qtbot.addWidget(dialog)
+
+    dialog._provider_combo.setCurrentIndex(  # noqa: SLF001
+        dialog._provider_combo.findData("gemini_cli")  # noqa: SLF001
+    )
+    idx = dialog._model_preset_combo.findData("gemini-2.5-flash")  # noqa: SLF001
+    assert idx >= 0
+    dialog._model_preset_combo.setCurrentIndex(idx)  # noqa: SLF001
+
+    assert dialog._model.text() == "gemini-2.5-flash"  # noqa: SLF001
+
+
+def test_settings_dialog_gemini_quota_button_updates_status(
+    qtbot, container, monkeypatch
+):
+    from writer.services.ai.gemini_cli_provider import GeminiCliQuotaStatus
+    import writer.ui.dialogs.settings_dialog as settings_dialog_mod
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(
+        settings_dialog_mod,
+        "gemini_cli_quota_status",
+        lambda **kwargs: GeminiCliQuotaStatus(
+            True,
+            account="a@example.com",
+            project_id="project-123",
+            current_tier="Gemini Code Assist",
+            paid_tier="Google One AI Pro",
+            credits="included / not itemized",
+        ),
+    )
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *a, **k: QMessageBox.StandardButton.Ok
+    )
+    dialog = SettingsDialog(container.settings)
+    qtbot.addWidget(dialog)
+    dialog._provider_combo.setCurrentIndex(  # noqa: SLF001
+        dialog._provider_combo.findData("gemini_cli")  # noqa: SLF001
+    )
+
+    dialog._on_check_gemini_cli_quota()  # noqa: SLF001
+
+    assert "a@example.com" in dialog._key_status.text()  # noqa: SLF001
+    assert "project-123" in dialog._key_status.text()  # noqa: SLF001
 
 
 def test_settings_dialog_rejects_empty_model(qtbot, container, monkeypatch):
@@ -110,9 +193,43 @@ def test_settings_dialog_codex_import_populates_fields(qtbot, container, monkeyp
     )
     dialog._on_import_codex()  # noqa: SLF001
 
+    assert dialog._provider_combo.currentData() == "openai"  # noqa: SLF001
     assert dialog._base_url.text() == "https://imported.example/v1"  # noqa: SLF001
     assert dialog._model.text() == "imported-model"  # noqa: SLF001
     assert dialog._wire_api.currentText() == "responses"  # noqa: SLF001
+
+
+def test_settings_dialog_gemini_import_populates_fields(
+    qtbot, container, monkeypatch, tmp_path
+):
+    importer = _StubGeminiImporter(
+        GeminiImportResult(
+            base_url="https://gemini.example/v1",
+            model="gemini-3.1-pro",
+            wire_api="responses",
+        )
+    )
+    env_file = tmp_path / ".env"
+    env_file.write_text("GEMINI_API_KEY=gm-test\n", encoding="utf-8")
+    dialog = SettingsDialog(
+        container.settings,
+        gemini_importer=importer,
+        gemini_auth=GeminiAuthResolver(path=env_file),
+    )
+    qtbot.addWidget(dialog)
+
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *a, **k: QMessageBox.StandardButton.Ok
+    )
+    dialog._on_import_gemini()  # noqa: SLF001
+
+    assert dialog._provider_combo.currentData() == "gemini"  # noqa: SLF001
+    assert dialog._base_url.text() == "https://gemini.example/v1"  # noqa: SLF001
+    assert dialog._model.text() == "gemini-3.1-pro"  # noqa: SLF001
+    assert dialog._wire_api.currentText() == "responses"  # noqa: SLF001
+    assert dialog._api_key_source.text() == GEMINI_AUTH_SOURCE  # noqa: SLF001
 
 
 def test_compare_dialog_returns_edited_text(qtbot):

@@ -94,6 +94,17 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "NOT NULL DEFAULT 'unsorted'"
         )
 
+    # M-RefTypes: typed reference passages.
+    ref_cols = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(reference_passages)")
+    }
+    if "kind" not in ref_cols:
+        conn.execute(
+            "ALTER TABLE reference_passages ADD COLUMN kind TEXT "
+            "NOT NULL DEFAULT 'excerpt'"
+        )
+
 
 def _backfill_sequence_order(conn: sqlite3.Connection) -> None:
     """Assign a stable per-container sequence_order to every entry that

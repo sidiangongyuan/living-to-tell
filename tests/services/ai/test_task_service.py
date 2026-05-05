@@ -116,6 +116,45 @@ def test_attachments_are_inlined_with_a_label() -> None:
     assert "A is a wizard." in user_content
 
 
+def test_polish_with_style_demands_single_direct_rewrite_only() -> None:
+    builder = TaskPromptBuilder()
+    request = AiTaskRequest(
+        task_type=AiTaskType.POLISH,
+        target_kind=AiTargetKind.PASTE,
+        text="She had brown hair.",
+        style="Camus style",
+        intensity="medium",
+        preserve_voice=True,
+    )
+    msgs = builder.build_messages(request)
+    system_content = msgs[0]["content"]
+    user_content = msgs[-1]["content"]
+    assert "freeform rewriting prompt" in system_content
+    assert "author-by-author variants" in system_content
+    assert "Return exactly one final rewritten passage." in user_content
+    assert "No heading, no explanation" in user_content
+    assert "multiple authors or traits" in user_content
+
+
+def test_medium_polish_with_style_allows_richer_short_paragraph_output() -> None:
+    builder = TaskPromptBuilder()
+    request = AiTaskRequest(
+        task_type=AiTaskType.POLISH,
+        target_kind=AiTargetKind.PASTE,
+        text="She had brown hair.",
+        style="Camus",
+        intensity="medium",
+        preserve_voice=True,
+    )
+    msgs = builder.build_messages(request)
+    system_content = msgs[0]["content"]
+    user_content = msgs[-1]["content"]
+    assert "more than synonym substitution" in system_content
+    assert "short paragraph" in system_content
+    assert "do not add specific new facts" in system_content
+    assert "do not return only a slightly smoother sentence" in user_content
+
+
 # ---------------------------------------------------------------------------
 # Task service tests
 # ---------------------------------------------------------------------------

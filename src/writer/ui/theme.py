@@ -598,9 +598,197 @@ QLabel#NoResultsLabel {{
     padding: 16px;
 }}
 
+/* ------- AI workspace ------- */
+QWidget#AIWorkspacePanel,
+QWidget#AIToolsTab,
+QWidget#AIChatTab,
+QWidget#AIToolsRight,
+QWidget#AIToolsViewport {{
+    background: {t.bg_main};
+    color: {t.text_primary};
+}}
+QTabWidget#AIWorkspaceTabs::pane {{
+    background: {t.bg_main};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_lg}px;
+    top: -1px;
+}}
+QTabWidget#AIWorkspaceTabs QTabBar::tab {{
+    background: {t.bg_window};
+    color: {t.text_secondary};
+    border: 1px solid {t.border};
+    border-bottom: none;
+    border-top-left-radius: {t.radius_md}px;
+    border-top-right-radius: {t.radius_md}px;
+    padding: 7px 16px;
+    margin-right: 4px;
+}}
+QTabWidget#AIWorkspaceTabs QTabBar::tab:selected {{
+    background: {t.bg_main};
+    color: {t.text_primary};
+    font-weight: 600;
+}}
+QScrollArea#AIToolsScroll {{
+    background: {t.bg_main};
+    border: none;
+}}
+QFrame#AIParamsBox,
+QFrame#AIAdvancedBox {{
+    background: {t.bg_card};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_lg}px;
+    padding: 10px;
+}}
+QFrame#AIParamsBox QLabel,
+QFrame#AIAdvancedBox QLabel {{
+    color: {t.text_secondary};
+}}
+QWidget#AIWorkspacePanel QCheckBox {{
+    color: {t.text_primary};
+}}
+QLabel#AIScopeLabel,
+QLabel#AIChatScope,
+QLabel#AIAttachLabel,
+QLabel#AIResultLabel {{
+    color: {t.text_primary};
+    font-weight: 600;
+}}
+QLabel#AIStyleHint,
+QLabel#AIStylePresetLabel,
+QLabel#AIAttachEmpty,
+QLabel#AIAttachTotal,
+QLabel#AIStatusLabel,
+QLabel#AIResultMeta,
+QLabel#AICitationsLabel,
+QLabel#AIChatAttach {{
+    color: {t.text_muted};
+    font-size: {t.fs_meta}px;
+}}
+QPushButton#AIStylePresetButton {{
+    background: {t.bg_window};
+    color: {t.text_secondary};
+    border: 1px solid {t.border};
+    padding: 4px 8px;
+    min-height: 18px;
+}}
+QPushButton#AIStylePresetButton:hover {{
+    background: {t.hover_bg};
+    color: {t.text_primary};
+}}
+QPushButton#AIRunButton {{
+    background: {t.accent};
+    color: {t.text_on_accent};
+    border-color: {t.accent};
+    font-weight: 600;
+}}
+QPushButton#AIRunButton:hover {{
+    background: {t.accent_hover};
+    border-color: {t.accent_hover};
+}}
+QTextEdit#AIResultView,
+QTextEdit#AIChatMessages {{
+    background: {t.bg_input};
+    color: {t.text_primary};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_lg}px;
+}}
+QWidget#AIWorkspacePanel QComboBox QAbstractItemView {{
+    background: {t.bg_card};
+    color: {t.text_primary};
+    border: 1px solid {t.border};
+    selection-background-color: {t.selected_bg};
+    selection-color: {t.text_primary};
+}}
+
 /* ------- Workspace-area overlay cards (welcome / unselected) ------- */
 QWidget#WriterWorkspaceOverlay {{
     background: {t.bg_main};
+}}
+
+/* ------- Dates panel ------- */
+QWidget#DatesPanel {{
+    background: {t.bg_main};
+    color: {t.text_primary};
+}}
+QCalendarWidget#DatesCalendar {{
+    background: {t.bg_card};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_lg}px;
+    selection-background-color: {t.accent};
+    selection-color: {t.text_on_accent};
+    alternate-background-color: {t.bg_list};
+}}
+QCalendarWidget#DatesCalendar QWidget {{
+    color: {t.text_primary};
+}}
+QCalendarWidget#DatesCalendar QToolButton {{
+    background: transparent;
+    color: {t.text_primary};
+    border: none;
+    padding: 4px 10px;
+    border-radius: {t.radius_sm}px;
+}}
+QCalendarWidget#DatesCalendar QToolButton:hover {{
+    background: {t.hover_bg};
+}}
+QCalendarWidget#DatesCalendar QAbstractItemView:enabled {{
+    background: {t.bg_card};
+    color: {t.text_primary};
+    selection-background-color: {t.accent};
+    selection-color: {t.text_on_accent};
+}}
+QCalendarWidget#DatesCalendar QAbstractItemView:disabled {{
+    color: {t.text_muted};
+}}
+QListWidget#DatesEntryList {{
+    background: {t.bg_list};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_md}px;
+}}
+QLabel#DatesHeader {{
+    color: {t.text_primary};
+    font-size: {t.fs_panel_title}px;
+    font-weight: 600;
+    padding: 4px 0;
+}}
+QLabel#DatesSummary {{
+    color: {t.text_muted};
+    font-size: {t.fs_meta}px;
+}}
+QPushButton#DatesGoTodayBtn {{
+    background: transparent;
+    color: {t.accent};
+    border: 1px solid {t.border};
+}}
+QPushButton#DatesGoTodayBtn:hover {{
+    background: {t.hover_bg};
+    border-color: {t.accent};
+}}
+QPushButton#DatesNewTodayBtn {{
+    background: {t.accent};
+    color: {t.text_on_accent};
+    border-color: {t.accent};
+    font-weight: 600;
+}}
+QPushButton#DatesNewTodayBtn:hover {{
+    background: {t.accent_hover};
+    border-color: {t.accent_hover};
+}}
+
+/* ------- Merge-to-draft dialog ------- */
+QDialog#MergeToDraftDialog,
+QDialog#AppendTagsDialog {{
+    background: {t.bg_window};
+    color: {t.text_primary};
+}}
+QPlainTextEdit#MergePreview {{
+    background: {t.bg_input};
+    color: {t.text_primary};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_md}px;
+    padding: 12px 14px;
+    font-size: {t.fs_list_main}px;
+    line-height: 150%;
 }}
 """.strip()
 

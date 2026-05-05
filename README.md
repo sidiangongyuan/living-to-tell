@@ -24,6 +24,9 @@ ever silently overwriting the original text.
 - **AI Workspace** — a dedicated AI mode with Tools and Chat tabs,
   scope-bound threads, manual context attachments, library Q&A, and safe
   write-back into fragments or work sections
+- **Gemini CLI / OAuth integration** — reuse local Gemini CLI OAuth login,
+  switch Gemini models, persist a proxy, and query Gemini Code Assist tier /
+  quota status without storing raw OAuth tokens in Writer
 - **AI rewrite** — Polish / Expand / Continue via OpenAI-compatible API
   - Side-by-side compare dialog with full accept or partial (selection) accept
 - **Reference library** — paste-in source material for AI context
@@ -52,6 +55,23 @@ M10A turns AI from a one-shot rewrite action into a scoped workspace:
 
 Cards and saved task templates are wired at the schema/repository layer in
 M10A, but their dedicated UI surface is still deferred.
+
+## M10B Highlights
+
+M10B makes Gemini OAuth usable as a first-class AI provider:
+
+- **Direct Gemini OAuth path** — Writer reuses the saved Gemini CLI OAuth
+  refresh token, then calls Gemini Code Assist directly instead of shelling
+  out to `gemini --prompt`
+- **Model presets** — pick common OpenAI / Gemini / Gemini CLI OAuth models
+  from a preset dropdown while keeping custom model text available
+- **Proxy-aware packaged app** — set a Gemini CLI proxy such as
+  `http://127.0.0.1:PORT`; Writer persists it and uses it for OAuth refresh
+  plus Code Assist requests
+- **Tier / quota check** — Settings can show Gemini account, project, tier,
+  paid tier, and itemized credits when the service exposes them
+- **Context estimate fix** — AI's estimated context count now updates for
+  bound fragment/work scopes, pasted text, and attachments
 
 ## M8 Highlights
 
@@ -127,20 +147,41 @@ writer
 
 Open **AI → Settings…** inside the app and fill in:
 
+- **Provider** — choose GPT / OpenAI, Gemini, or Gemini CLI / OAuth.
 - **Base URL** — your OpenAI-compatible endpoint (e.g. `https://api.openai.com/v1`)
-- **Model** — model name (e.g. `gpt-4o-mini`)
+- **Model** — model name (e.g. `gpt-4o-mini`, `gemini-3.1-pro-preview`,
+  `gemini-2.5-flash`, or `gemini-cli-default`). Use **Model preset** to
+  switch common text-generation models quickly; custom model text is still
+  accepted for newly released models.
 - **API key source** — one of:
   - `env:VAR` (e.g. `env:OPENAI_API_KEY`) — the app reads the referenced
     environment variable at request time.
   - `codex` — the app reads `~/.codex/auth.json` (your existing local
     Codex credential file) at request time.
+  - `gemini` — the app reads `~/.gemini/.env` at request time for native
+    Gemini API-key usage.
+  - `gemini-cli` — the app reuses the local Gemini CLI OAuth login. Writer
+    reads the saved CLI OAuth refresh token at request time, refreshes a short
+    lived access token, and calls Gemini Code Assist directly. The raw OAuth
+    token is not stored in Writer settings.
 
   In **both** modes the raw key value is **never stored on disk by this
   app** and never logged.
 
-Click **Test AI configuration** in the same dialog to validate your settings
-locally (no network call) — it checks that all required fields are filled
-and that the selected credential source resolves to a non-empty key.
+For **Gemini CLI / OAuth**, set **Gemini CLI proxy** if your network requires
+one, for example `http://127.0.0.1:PORT`. Click **Check Gemini quota** to read
+the active Gemini account, Code Assist project, tier, paid tier, and any
+itemized credits returned by the service. Some Gemini tiers report usage as
+included / not itemized rather than a numeric remaining quota.
+
+Writer's prose/chat UI targets text-generation models. Media, embedding,
+Live API, robotics, and other specialized Gemini models may require different
+request shapes and are not surfaced as presets, but the custom model field lets
+advanced users try compatible text models as Google releases them.
+
+Click **Test AI configuration** in the same dialog to validate your settings.
+For environment/API-key providers this is local validation; for Gemini CLI /
+OAuth, the quota check is the live network check.
 
 You can also import a Codex-style `config.toml` via
 **AI → Settings… → Import Codex config**. Only the endpoint (`base_url`),
@@ -216,6 +257,9 @@ dist\Writer\Writer.exe
 
 ## Release notes
 
+- [docs/m10b-release-notes.md](docs/m10b-release-notes.md) — M10B summary covering
+  direct Gemini CLI OAuth, model presets, proxy persistence, quota/tier
+  visibility, and the AI context estimate fix
 - [docs/m10a-release-notes.md](docs/m10a-release-notes.md) — M10A summary covering
   the AI Workspace, structured AI tasks, scoped chat threads, source-backed
   library Q&A, and safe write-back
@@ -235,6 +279,7 @@ Product and design docs live under [`docs/`](docs/):
 - `docs/product-requirements.md`
 - `docs/technical-approach.md`
 - `docs/development-plan.md`
+- `docs/m10b-release-notes.md`
 - `docs/m10a-release-notes.md`
 - `docs/m9a-release-notes.md`
 - `docs/m8-release-notes.md`

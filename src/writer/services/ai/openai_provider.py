@@ -12,6 +12,7 @@ from typing import Optional
 
 from writer.domain.models.ai_config import AiConfig
 from writer.services.ai.codex_auth import CodexAuthError, CodexAuthResolver
+from writer.services.ai.gemini_auth import GeminiAuthError, GeminiAuthResolver
 from writer.services.ai.interfaces import (
     AiError,
     AiProvider,
@@ -34,11 +35,13 @@ class OpenAiProvider(AiProvider):
         *,
         client=None,
         codex_auth: Optional[CodexAuthResolver] = None,
+        gemini_auth: Optional[GeminiAuthResolver] = None,
     ) -> None:
         self._config = config
         self._prompts = prompt_builder
         self._client = client  # injectable for tests
         self._codex_auth = codex_auth  # injectable for tests; lazy default
+        self._gemini_auth = gemini_auth  # injectable for tests; lazy default
 
     def _resolve_api_key(self) -> str:
         if self._config.uses_codex_auth():
@@ -50,12 +53,19 @@ class OpenAiProvider(AiProvider):
                 # the key value (see codex_auth._extract_key).
                 raise AiError(str(exc)) from exc
 
+        if self._config.uses_gemini_auth():
+            resolver = self._gemini_auth or GeminiAuthResolver()
+            try:
+                return resolver.read_api_key()
+            except GeminiAuthError as exc:
+                raise AiError(str(exc)) from exc
+
         env_var = self._config.env_var_name()
         if not env_var:
             raise AiError(
                 "API key source is not configured. Set api_key_source to "
                 "env:OPENAI_API_KEY (or similar), or to 'codex' to reuse "
-                "~/.codex/auth.json."
+                "~/.codex/auth.json, or to 'gemini' to reuse ~/.gemini/.env."
             )
         api_key = os.environ.get(env_var, "").strip()
         if not api_key:
@@ -104,7 +114,7 @@ class OpenAiProvider(AiProvider):
         return RewriteResponse(
             content=text,
             model=self._config.model,
-            provider=self.name,
+            provider=self._provider_name(),
             input_tokens=_safe_int(usage, "input_tokens"),
             output_tokens=_safe_int(usage, "output_tokens"),
             finish_reason=_safe_str(response, "finish_reason"),
@@ -139,11 +149,14 @@ class OpenAiProvider(AiProvider):
         return ChatResponse(
             content=text,
             model=used_model,
-            provider=self.name,
+            provider=self._provider_name(),
             input_tokens=_safe_int(usage, "input_tokens"),
             output_tokens=_safe_int(usage, "output_tokens"),
             finish_reason=_safe_str(response, "finish_reason"),
         )
+
+    def _provider_name(self) -> str:
+        return self._config.provider_key()
 
 
 def _safe_int(obj, name: str) -> Optional[int]:

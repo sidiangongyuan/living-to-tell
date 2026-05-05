@@ -20,6 +20,14 @@ KEY_AI_BASE_URL = "ai.base_url"
 KEY_AI_MODEL = "ai.model"
 KEY_AI_API_KEY_SOURCE = "ai.api_key_source"
 KEY_AI_WIRE_API = "ai.wire_api"
+KEY_AI_PROVIDER = "ai.provider"
+KEY_AI_GEMINI_CLI_PROXY = "ai.gemini_cli_proxy"
+
+DEFAULT_GEMINI_CLI_MODEL = "gemini-cli-default"
+OPENAI_DEFAULT_MODELS = ("gpt-4o-mini",)
+
+RUNTIME_AUTH_SOURCES = ("codex", "gemini", "gemini-cli")
+SUPPORTED_AI_PROVIDERS = ("openai", "gemini", "gemini_cli")
 
 KEY_LANGUAGE = "ui.language"
 DEFAULT_LANGUAGE = "en"
@@ -65,16 +73,33 @@ class Settings:
     def ai_wire_api(self) -> Optional[str]:
         return self._repo.get(KEY_AI_WIRE_API)
 
+    @property
+    def ai_provider(self) -> Optional[str]:
+        return self._repo.get(KEY_AI_PROVIDER)
+
+    @property
+    def ai_gemini_cli_proxy(self) -> Optional[str]:
+        return self._repo.get(KEY_AI_GEMINI_CLI_PROXY)
+
     # ------------------------------------------------------------------
     def load_ai_config(self) -> AiConfig:
         """Build an :class:`AiConfig` from persisted settings, with defaults."""
         defaults = AiConfig()
+        provider_name = _normalize_provider_name(
+            self._repo.get(KEY_AI_PROVIDER),
+            api_key_source=self._repo.get(KEY_AI_API_KEY_SOURCE),
+            default=defaults.provider_name,
+        )
+        model = self._repo.get(KEY_AI_MODEL) or defaults.model
+        if provider_name == "gemini_cli" and model.strip().lower() in OPENAI_DEFAULT_MODELS:
+            model = DEFAULT_GEMINI_CLI_MODEL
         return AiConfig(
-            provider_name=defaults.provider_name,
+            provider_name=provider_name,
             base_url=self._repo.get(KEY_AI_BASE_URL) or defaults.base_url,
             wire_api=self._repo.get(KEY_AI_WIRE_API) or defaults.wire_api,
-            model=self._repo.get(KEY_AI_MODEL) or defaults.model,
+            model=model,
             api_key_source=self._repo.get(KEY_AI_API_KEY_SOURCE) or defaults.api_key_source,
+            gemini_cli_proxy=self._repo.get(KEY_AI_GEMINI_CLI_PROXY) or None,
         )
 
     def save_ai_config(self, config: AiConfig) -> None:
@@ -105,18 +130,36 @@ class Settings:
             )
         if (
             api_key_source
-            and api_key_source.lower() != "codex"
+            and api_key_source.lower() not in RUNTIME_AUTH_SOURCES
             and not api_key_source.startswith("env:")
         ):
             raise ValueError(
                 "api_key_source must be either env:VARNAME "
-                "(for example env:OPENAI_API_KEY) or the literal string "
-                "'codex' (to reuse ~/.codex/auth.json)."
+                "(for example env:OPENAI_API_KEY), the literal string "
+                "'codex' (to reuse ~/.codex/auth.json), 'gemini' "
+                "(to reuse ~/.gemini/.env), or 'gemini-cli' "
+                "(to reuse Gemini CLI OAuth)."
             )
 
+        provider_name = _normalize_provider_name(
+            config.provider_name,
+            api_key_source=config.api_key_source,
+            default=AiConfig().provider_name,
+        )
+        if provider_name not in SUPPORTED_AI_PROVIDERS:
+            raise ValueError(
+                f"provider_name must be one of {SUPPORTED_AI_PROVIDERS}."
+            )
+
+        self._repo.set(KEY_AI_PROVIDER, provider_name)
         self._repo.set(KEY_AI_WIRE_API, wire_api)
         self._repo.set(KEY_AI_MODEL, config.model)
         self._repo.set(KEY_AI_API_KEY_SOURCE, config.api_key_source)
+        proxy = (config.gemini_cli_proxy or "").strip()
+        if proxy:
+            self._repo.set(KEY_AI_GEMINI_CLI_PROXY, proxy)
+        else:
+            self._repo.delete(KEY_AI_GEMINI_CLI_PROXY)
 
     # ------------------------------------------------------------------
     @property
@@ -127,3 +170,20 @@ class Settings:
         if locale not in SUPPORTED_LOCALES:
             raise ValueError(f"Unsupported language: {locale!r}")
         self._repo.set(KEY_LANGUAGE, locale)
+
+
+def _normalize_provider_name(
+    provider_name: Optional[str],
+    *,
+    api_key_source: Optional[str],
+    default: str,
+) -> str:
+    raw = (provider_name or "").strip().lower()
+    if raw in SUPPORTED_AI_PROVIDERS:
+        return raw
+    source = (api_key_source or "").strip().lower()
+    if source == "gemini-cli":
+        return "gemini_cli"
+    if source == "gemini":
+        return "gemini"
+    return default

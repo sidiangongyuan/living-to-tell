@@ -43,7 +43,8 @@ class NavigationRail(QWidget):
     """Vertical rail with mode buttons + bottom utility buttons.
 
     Emits ``mode_changed(int)`` when one of the registered mode buttons is
-    activated (0=Fragments, 1=Works, 2=Collections by convention).
+    activated. Mode index convention (M-Dates):
+      0=Dates, 1=Fragments, 2=Works, 3=Collections, 4=AI.
     """
 
     mode_changed = Signal(int)
@@ -64,6 +65,7 @@ class NavigationRail(QWidget):
         theme_label: str,
         settings_label: str,
         ai_label: str = "AI",
+        dates_label: str = "Dates",
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -73,6 +75,7 @@ class NavigationRail(QWidget):
         self._brand = QLabel(brand_text)
         self._brand.setObjectName("RailBrand")
 
+        self._dates_btn = RailButton("📅", dates_label)
         self._frag_btn = RailButton("✎", fragments_label)
         self._works_btn = RailButton("📚", works_label)
         self._coll_btn = RailButton("⊞", collections_label)
@@ -84,7 +87,13 @@ class NavigationRail(QWidget):
         self._mode_group = QButtonGroup(self)
         self._mode_group.setExclusive(True)
         for idx, btn in enumerate(
-            (self._frag_btn, self._works_btn, self._coll_btn, self._ai_btn)
+            (
+                self._dates_btn,
+                self._frag_btn,
+                self._works_btn,
+                self._coll_btn,
+                self._ai_btn,
+            )
         ):
             self._mode_group.addButton(btn, idx)
         self._mode_group.idClicked.connect(self.mode_changed.emit)
@@ -97,6 +106,7 @@ class NavigationRail(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(4)
         layout.addWidget(self._brand)
+        layout.addWidget(self._dates_btn)
         layout.addWidget(self._frag_btn)
         layout.addWidget(self._works_btn)
         layout.addWidget(self._coll_btn)
@@ -107,7 +117,7 @@ class NavigationRail(QWidget):
         layout.addWidget(self._theme_btn)
         layout.addWidget(self._settings_btn)
 
-        self._frag_btn.setChecked(True)
+        self._dates_btn.setChecked(True)
 
     # ------------------------------------------------------------------
     def set_active_mode(self, mode: int) -> None:
@@ -121,6 +131,10 @@ class NavigationRail(QWidget):
     @property
     def fragments_button(self) -> QPushButton:
         return self._frag_btn
+
+    @property
+    def dates_button(self) -> QPushButton:
+        return self._dates_btn
 
     @property
     def works_button(self) -> QPushButton:

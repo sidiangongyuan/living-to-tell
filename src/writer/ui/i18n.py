@@ -59,6 +59,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "toolbar.language_switch_tooltip": "Switch to Simplified Chinese (restart required)",
         # ── M9A: shell / navigation rail ─────────────────────────────────────
         "shell.brand": "Writer",
+        "rail.dates": "Dates",
         "rail.fragments": "Fragments",
         "rail.works": "Works",
         "rail.collections": "Collections",
@@ -83,6 +84,21 @@ _CATALOG: dict[str, dict[str, str]] = {
         "context.empty_desc": (
             "Pick a fragment, work, or collection and you'll see word counts, "
             "status, exports, and other helpers here."
+        ),
+        "context.empty_title_work": "Pick a work to inspect.",
+        "context.empty_desc_work": (
+            "Select a work on the left to see its summary, word count, target, "
+            "and export actions here."
+        ),
+        "context.empty_title_collection": "Pick a collection to inspect.",
+        "context.empty_desc_collection": (
+            "Select a collection on the left to see its work count, total words, "
+            "and export actions here."
+        ),
+        "context.empty_title_ai": "AI is using global context.",
+        "context.empty_desc_ai": (
+            "Open AI from a fragment, work, or collection to bind that object "
+            "here. If nothing is selected, AI stays in global mode."
         ),
         "context.label_words": "Words",
         "context.label_chars": "Characters",
@@ -187,11 +203,43 @@ _CATALOG: dict[str, dict[str, str]] = {
         "settings.title": "Settings",
         "settings.tab_ai": "AI",
         "settings.tab_ui": "Appearance",
+        "settings.provider": "Provider",
+        "settings.provider_openai": "GPT / OpenAI",
+        "settings.provider_gemini": "Gemini",
+        "settings.provider_gemini_cli": "Gemini CLI / OAuth",
         "settings.base_url": "Base URL",
         "settings.model": "Model",
+        "settings.model_preset": "Model preset",
+        "settings.model_preset_custom": "Custom / keep current",
         "settings.wire_api": "Wire API",
         "settings.api_key_source": "API key source",
         "settings.import_codex": "Import from Codex config…",
+            "settings.import_gemini": "Use local Gemini config",
+        "settings.gemini_cli_base_url_hint": "Not used by Gemini CLI / OAuth",
+            "settings.gemini_cli_proxy": "Gemini CLI proxy",
+            "settings.gemini_cli_proxy_auto": "auto / inherited",
+            "settings.gemini_cli_unknown_account": "unknown account",
+            "settings.gemini_cli_available": "✓ Gemini CLI found: {path}.",
+            "settings.gemini_cli_ready": (
+                "✓ Gemini CLI found: {path}. OAuth account: {account}. "
+                "Proxy: {proxy}. Writer will reuse the saved Gemini CLI login."
+            ),
+            "settings.gemini_cli_auth_missing": (
+                "⚠ Gemini CLI OAuth login was not found at {path}. Run Gemini CLI "
+                "login once, then retry. If you need a proxy, set {proxy_env} or "
+                "fill the Gemini CLI proxy field."
+            ),
+            "settings.gemini_cli_quota_btn": "Check Gemini quota",
+            "settings.gemini_cli_quota_title": "Gemini quota / tier",
+            "settings.gemini_cli_quota_status": (
+                "Account: {account}\n"
+                "Project: {project}\n"
+                "Current tier: {current_tier}\n"
+                "Paid tier: {paid_tier}\n"
+                "Credits: {credits}"
+            ),
+            "settings.gemini_cli_quota_unavailable": "⚠ Gemini quota unavailable: {reason}",
+        "settings.gemini_cli_missing": "⚠ Gemini CLI was not found. Install it with npm install -g @google/gemini-cli.",
         "settings.language_label": "Language",
         "settings.lang_en": "English",
         "settings.lang_zh_cn": "简体中文",
@@ -200,7 +248,7 @@ _CATALOG: dict[str, dict[str, str]] = {
             "Language change will take effect after restarting the application."
         ),
         "settings.key_only_env": (
-            "Use env:VAR or the literal string 'codex'. The API key is "
+              "Use env:VAR or the literal string 'codex' / 'gemini'. The API key is "
             "never stored on disk."
         ),
         "settings.key_enter_var": "Enter an environment variable name after env:.",
@@ -218,6 +266,18 @@ _CATALOG: dict[str, dict[str, str]] = {
         "settings.codex_auth_unreadable": (
             "⚠ Codex auth file at {path} could not be read."
         ),
+            "settings.gemini_auth_available": (
+                "✓ Local Gemini config available at {path}."
+            ),
+            "settings.gemini_auth_missing_file": (
+                "⚠ No Gemini env file at {path}. Run Gemini setup once or switch to env:VAR."
+            ),
+            "settings.gemini_auth_missing_key": (
+                "⚠ Gemini env file at {path} has no GEMINI_API_KEY entry."
+            ),
+            "settings.gemini_auth_unreadable": (
+                "⚠ Gemini env file at {path} could not be read."
+            ),
         "settings.nothing_imported": "Nothing imported",
         "settings.nothing_imported_msg": (
             "No supported fields (base_url / model / wire_api) were found."
@@ -229,6 +289,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "settings.invalid_setting": "Invalid setting",
         "settings.codex_select_title": "Select Codex config.toml",
         "settings.codex_import_failed": "Import failed",
+            "settings.gemini_import_failed": "Gemini import failed",
         # ── Rewrite compare dialog ─────────────────────────────────────────────
         "compare.original_label": "Original",
         "compare.generated_label_base": "AI rewrite (editable before accepting)",
@@ -382,6 +443,15 @@ _CATALOG: dict[str, dict[str, str]] = {
             "automatically. The key is read from ~/.codex/auth.json at "
             "request time and never stored by this app."
         ),
+            "settings.gemini_imported_title": "Gemini config imported",
+            "settings.gemini_imported_body": (
+                "Imported endpoint (base_url), model, and wire protocol from ~/.gemini/.env.\n\n"
+                "No API key was copied into Writer. If you want Writer to read the same Gemini key at runtime, make sure ~/.gemini/.env contains GEMINI_API_KEY and then set 'API key source' to 'gemini'."
+            ),
+            "settings.gemini_imported_body_with_auth": (
+                "Imported endpoint (base_url), model, and wire protocol from ~/.gemini/.env.\n\n"
+                "A usable local Gemini key was detected, so 'API key source' has been switched to 'gemini'. Writer will read the key at runtime without copying it into its own settings database."
+            ),
         # ── Fragment delete / batch (M7B) ──────────────────────────────────────
         "list.delete_btn": "Delete",
         "list.delete_tooltip": "Delete selected fragment(s)",
@@ -548,7 +618,25 @@ _CATALOG: dict[str, dict[str, str]] = {
         # params
         "ai.params.basic": "Parameters",
         "ai.params.advanced": "Advanced",
-        "ai.params.style": "Style preset",
+        "ai.params.style": "Style instruction",
+        "ai.params.style_placeholder": "e.g. Camus, more restrained, more imagistic",
+        "ai.params.style_placeholder.polish": "e.g. more natural, more concise, keep my voice",
+        "ai.params.style_placeholder.expand": "e.g. add sensory details, expand into one short paragraph",
+        "ai.params.style_placeholder.continue": "e.g. continue quietly, add a small turn, do not summarize",
+        "ai.params.style_placeholder.style_transfer": "e.g. Camus, more restrained, more imagistic",
+        "ai.params.style_hint.default": "Optional task instruction.",
+        "ai.params.style_hint.polish": "Polish presets focus on wording and texture without changing the facts.",
+        "ai.params.style_hint.expand": "Expand presets focus on adding concrete detail while preserving the original premise.",
+        "ai.params.style_hint.continue": "Continue presets focus on what happens next and the direction of motion.",
+        "ai.params.style_hint.style_transfer": "Style-transfer presets intentionally use author and writing-goal shortcuts.",
+        "ai.params.quick_presets": "Quick presets",
+        "ai.params.style_presets.polish_values": "more natural|more concise|more literary|keep a spoken feel|reduce explanation",
+        "ai.params.style_presets.expand_values": "add sensory detail|add inner monologue|add environmental detail|turn into a short paragraph|do not invent new facts",
+        "ai.params.style_presets.continue_values": "follow the current tone|move the action forward|add a subtle turn|keep some ambiguity|do not summarize",
+        "ai.params.style_authors": "Author shortcuts",
+        "ai.params.style_goals": "Writing goals",
+        "ai.params.style_authors_values": "Camus|Marquez|Hesse|Borges|Hemingway|Kafka|Poe|Ishiguro|Paustovsky|Maugham",
+        "ai.params.style_goals_values": "more concise|more restrained|more imagistic|colder tone",
         "ai.params.intensity": "Intensity",
         "ai.params.cost_tier": "Cost tier",
         "ai.params.extra_instructions": "Extra instructions",
@@ -563,11 +651,14 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.attachments.add_fragment": "Add fragment…",
         "ai.attachments.add_card": "Add card…",
         "ai.attachments.remove": "Remove",
+        "ai.attachments.current_target": "The current fragment is already the target. Attachments are only for extra reference.",
+        "ai.attachments.already_added": "This fragment is already attached.",
         "ai.attachments.total": "Estimated context: {chars} chars",
         "ai.attachments.heavy_warning": "Context is large; cost and latency may be high.",
         # results
         "ai.results.title": "Result",
         "ai.results.empty": "Run a task to see the result here.",
+        "ai.results.provider_label": "Provider",
         "ai.results.model_label": "Model",
         "ai.results.tokens_label": "Tokens",
         "ai.results.citations_label": "Citations",
@@ -576,6 +667,13 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.results.run": "Run",
         "ai.results.rerun": "Run again",
         "ai.results.apply": "Apply",
+        "ai.results.apply_ready": "Apply the current result to the selected destination.",
+        "ai.results.apply_disabled_no_result": "Run a task first.",
+        "ai.results.apply_disabled_preview": (
+            "Apply becomes available only when Output destination is set to "
+            "replace the selection, fragment, or section."
+        ),
+        "ai.status.running_provider": "Running {provider}…",
         "ai.results.save_fragment": "Save as fragment",
         "ai.results.send_to_chat": "Send to chat",
         # chat
@@ -605,6 +703,42 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.dlg.saved_as_fragment": "Saved as a new fragment.",
         "ai.dlg.snapshot_taken": "Snapshot saved before write.",
         "ai.dlg.cannot_apply": "This output destination is not available for the current target.",
+        # ── M-Dates: daily writing view ──────────────────────────────────────
+        "dates.title": "Dates",
+        "dates.today_label": "Today",
+        "dates.go_today": "Today",
+        "dates.empty_day": "No fragments on this day yet.",
+        "dates.day_count_format": "{count} fragments",
+        "dates.day_count_one": "1 fragment",
+        "dates.day_words_format": "{words} words",
+        "dates.new_today_btn": "+ New today",
+        "dates.append_tags_btn": "Append tags…",
+        "dates.merge_btn": "Merge as draft…",
+        "dates.append_tags_title": "Append tags",
+        "dates.append_tags_msg": "Tags to append to {count} selected fragments (comma-separated):",
+        "dates.append_tags_done": "Appended tags to {count} fragments.",
+        "dates.merge_title": "Merge as draft",
+        "dates.merge_select_msg": "Pick at least one fragment to merge.",
+        "dates.merge_output_label": "Output type",
+        "dates.merge_output_prose": "Prose draft",
+        "dates.merge_output_section": "Work-section draft",
+        "dates.merge_output_outline": "Outline / structured",
+        "dates.merge_run": "Run AI",
+        "dates.merge_running": "Running…",
+        "dates.merge_save_as_fragment": "Save as new fragment",
+        "dates.merge_close": "Close",
+        "dates.merge_sources_label": "Sources",
+        "dates.merge_preview_placeholder": "AI output will appear here.",
+        "dates.merge_saved": "Saved merged draft as a new fragment.",
+        "dates.merge_failed": "AI merge failed: {error}",
+        # ── M-RefTypes: typed references ─────────────────────────────────────
+        "reflib.kind_label": "Kind",
+        "reflib.kind_filter_label": "Kind filter",
+        "reflib.kind_filter_all": "All",
+        "reflib.kind_character": "Character",
+        "reflib.kind_location": "Location",
+        "reflib.kind_setting": "Setting",
+        "reflib.kind_excerpt": "Excerpt",
     },
 
     "zh_CN": {
@@ -648,6 +782,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "toolbar.language_switch_tooltip": "切换到英文（重启后生效）",
         # ── M9A：壳层 / 导航栏 ───────────────────────────────────────────────
         "shell.brand": "Writer",
+        "rail.dates": "日期",
         "rail.fragments": "片段",
         "rail.works": "作品",
         "rail.collections": "作品集",
@@ -670,6 +805,12 @@ _CATALOG: dict[str, dict[str, str]] = {
         "context.title_collection": "作品集",
         "context.empty_title": "这里会显示上下文。",
         "context.empty_desc": "选中片段、作品或作品集后，你会在这里看到字数、状态、导出和其他辅助信息。",
+        "context.empty_title_work": "先选一个作品。",
+        "context.empty_desc_work": "在左侧选中作品后，这里会显示摘要、字数、目标字数和导出操作。",
+        "context.empty_title_collection": "先选一个作品集。",
+        "context.empty_desc_collection": "在左侧选中作品集后，这里会显示作品数量、总字数和导出操作。",
+        "context.empty_title_ai": "AI 当前是全局上下文。",
+        "context.empty_desc_ai": "从片段、作品或作品集进入 AI 时，这里会显示绑定对象；如果当前没有选中对象，AI 会保持全局模式。",
         "context.label_words": "字数",
         "context.label_chars": "字符数",
         "context.label_tags": "标签",
@@ -745,17 +886,48 @@ _CATALOG: dict[str, dict[str, str]] = {
         "settings.title": "设置",
         "settings.tab_ai": "AI",
         "settings.tab_ui": "外观",
+        "settings.provider": "提供方",
+        "settings.provider_openai": "GPT / OpenAI",
+        "settings.provider_gemini": "Gemini",
+        "settings.provider_gemini_cli": "Gemini CLI / OAuth",
         "settings.base_url": "Base URL",
         "settings.model": "模型",
+        "settings.model_preset": "模型预设",
+        "settings.model_preset_custom": "自定义 / 保持当前",
         "settings.wire_api": "接口协议",
         "settings.api_key_source": "API 密钥来源",
         "settings.import_codex": "从 Codex 配置导入…",
+            "settings.import_gemini": "使用本地 Gemini 配置",
+        "settings.gemini_cli_base_url_hint": "Gemini CLI / OAuth 不使用 Base URL",
+            "settings.gemini_cli_proxy": "Gemini CLI 代理",
+            "settings.gemini_cli_proxy_auto": "自动 / 继承",
+            "settings.gemini_cli_unknown_account": "未知账号",
+            "settings.gemini_cli_available": "✓ 已找到 Gemini CLI：{path}。",
+            "settings.gemini_cli_ready": (
+                "✓ 已找到 Gemini CLI：{path}。OAuth 账号：{account}。"
+                "代理：{proxy}。Writer 会复用已保存的 Gemini CLI 登录。"
+            ),
+            "settings.gemini_cli_auth_missing": (
+                "⚠ 未找到 Gemini CLI OAuth 登录信息：{path}。请先完成一次 Gemini CLI 登录。"
+                "如果需要代理，请设置 {proxy_env}，或填写 Gemini CLI 代理。"
+            ),
+            "settings.gemini_cli_quota_btn": "查看 Gemini 额度",
+            "settings.gemini_cli_quota_title": "Gemini 额度 / 档位",
+            "settings.gemini_cli_quota_status": (
+                "账号：{account}\n"
+                "项目：{project}\n"
+                "当前档位：{current_tier}\n"
+                "付费档位：{paid_tier}\n"
+                "额度：{credits}"
+            ),
+            "settings.gemini_cli_quota_unavailable": "⚠ 无法读取 Gemini 额度：{reason}",
+        "settings.gemini_cli_missing": "⚠ 未找到 Gemini CLI。请先运行 npm install -g @google/gemini-cli。",
         "settings.language_label": "语言",
         "settings.lang_en": "English",
         "settings.lang_zh_cn": "简体中文",
         "settings.restart_required_title": "需要重启",
         "settings.restart_required_msg": "语言设置将在重启应用后生效。",
-        "settings.key_only_env": "支持 env:VAR 或字面量 'codex'。API 密钥不会存储在磁盘上。",
+        "settings.key_only_env": "支持 env:VAR 或字面量 'codex' / 'gemini'。API 密钥不会存储在磁盘上。",
         "settings.key_enter_var": "请在 env: 后输入环境变量名称。",
         "settings.key_set": "✓ {var} 已在当前环境中设置。",
         "settings.key_not_set": "⚠ {var} 未设置。请在调用 AI 前先导出该变量。",
@@ -763,6 +935,10 @@ _CATALOG: dict[str, dict[str, str]] = {
         "settings.codex_auth_missing_file": "⚠ 未找到 Codex 认证文件：{path}。请先运行一次 Codex，或改用 env:VAR。",
         "settings.codex_auth_missing_key": "⚠ Codex 认证文件 {path} 中未包含 OPENAI_API_KEY 字段。",
         "settings.codex_auth_unreadable": "⚠ 无法读取 Codex 认证文件：{path}。",
+            "settings.gemini_auth_available": "✓ 已找到本地 Gemini 配置：{path}。",
+            "settings.gemini_auth_missing_file": "⚠ 未找到 Gemini 环境文件：{path}。请先完成 Gemini 配置，或改用 env:VAR。",
+            "settings.gemini_auth_missing_key": "⚠ Gemini 环境文件 {path} 中未包含 GEMINI_API_KEY。",
+            "settings.gemini_auth_unreadable": "⚠ 无法读取 Gemini 环境文件：{path}。",
         "settings.nothing_imported": "未导入任何内容",
         "settings.nothing_imported_msg": "未找到支持的字段（base_url / model / wire_api）。",
         "settings.imported": "导入成功",
@@ -772,6 +948,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "settings.invalid_setting": "设置无效",
         "settings.codex_select_title": "选择 Codex config.toml",
         "settings.codex_import_failed": "导入失败",
+            "settings.gemini_import_failed": "Gemini 导入失败",
         # ── Rewrite compare dialog ─────────────────────────────────────────────
         "compare.original_label": "原文",
         "compare.generated_label_base": "AI 改写结果（接受前可编辑）",
@@ -912,6 +1089,15 @@ _CATALOG: dict[str, dict[str, str]] = {
             "「API 密钥来源」已自动设为 'codex'。密钥将在请求时从 "
             "~/.codex/auth.json 读取，本应用不会持久化该值。"
         ),
+            "settings.gemini_imported_title": "Gemini 配置已导入",
+            "settings.gemini_imported_body": (
+                "已从 ~/.gemini/.env 导入 endpoint（base_url）、model、接口协议（wire_api）。\n\n"
+                "API 密钥不会被复制到 Writer。若希望 Writer 在运行时复用同一 Gemini 密钥，请确保 ~/.gemini/.env 中存在 GEMINI_API_KEY，然后将「API 密钥来源」设为 gemini。"
+            ),
+            "settings.gemini_imported_body_with_auth": (
+                "已从 ~/.gemini/.env 导入 endpoint（base_url）、model、接口协议（wire_api）。\n\n"
+                "检测到可用的本地 Gemini 密钥，因此「API 密钥来源」已切换为 gemini。Writer 会在运行时读取该密钥，不会复制到自己的设置数据库中。"
+            ),
         # ── Fragment delete / batch (M7B) ──────────────────────────────────────
         "list.delete_btn": "删除",
         "list.delete_tooltip": "删除所选片段",
@@ -1075,7 +1261,25 @@ _CATALOG: dict[str, dict[str, str]] = {
         # params
         "ai.params.basic": "参数",
         "ai.params.advanced": "高级",
-        "ai.params.style": "风格预设",
+        "ai.params.style": "风格要求",
+        "ai.params.style_placeholder": "例如：加缪，更克制，更有意象",
+        "ai.params.style_placeholder.polish": "例如：更自然、更凝练，保留我的语气",
+        "ai.params.style_placeholder.expand": "例如：增加感官细节，扩成一个短段落",
+        "ai.params.style_placeholder.continue": "例如：平静续写，加入轻微转折，不要总结",
+        "ai.params.style_placeholder.style_transfer": "例如：加缪，更克制，更有意象",
+        "ai.params.style_hint.default": "可选的任务指令。",
+        "ai.params.style_hint.polish": "润色预设关注措辞和质感，不改变事实。",
+        "ai.params.style_hint.expand": "扩写预设关注补充具体细节，同时保留原始前提。",
+        "ai.params.style_hint.continue": "续写预设关注接下来发生什么，以及叙事推进方向。",
+        "ai.params.style_hint.style_transfer": "风格迁移才使用作家和写法目标快捷预设。",
+        "ai.params.quick_presets": "快捷预设",
+        "ai.params.style_presets.polish_values": "更自然|更凝练|更有文学感|保留口语感|减少解释",
+        "ai.params.style_presets.expand_values": "补足感官细节|增加心理描写|增加环境描写|展开成短段落|不新增具体事实",
+        "ai.params.style_presets.continue_values": "顺着当前语气|推进下一步动作|加入轻微转折|保留留白|不要总结",
+        "ai.params.style_authors": "作家快捷预设",
+        "ai.params.style_goals": "写法目标",
+        "ai.params.style_authors_values": "加缪|马尔克斯|黑塞|博尔赫斯|海明威|卡夫卡|爱伦坡|石黑一雄|帕乌斯托夫斯基|毛姆",
+        "ai.params.style_goals_values": "更凝练|更克制|更有意象|更冷峻",
         "ai.params.intensity": "强度",
         "ai.params.cost_tier": "档位",
         "ai.params.extra_instructions": "附加指令",
@@ -1090,11 +1294,14 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.attachments.add_fragment": "添加片段…",
         "ai.attachments.add_card": "添加卡片…",
         "ai.attachments.remove": "移除",
+        "ai.attachments.current_target": "当前片段已经是目标正文，附件只用于额外参考。",
+        "ai.attachments.already_added": "这个片段已经在附件里了。",
         "ai.attachments.total": "估算上下文：{chars} 字符",
         "ai.attachments.heavy_warning": "上下文较大，开销与延迟可能较高。",
         # results
         "ai.results.title": "结果",
         "ai.results.empty": "运行任务后将在此查看结果。",
+        "ai.results.provider_label": "提供方",
         "ai.results.model_label": "模型",
         "ai.results.tokens_label": "Token",
         "ai.results.citations_label": "引用",
@@ -1103,6 +1310,10 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.results.run": "运行",
         "ai.results.rerun": "再来一版",
         "ai.results.apply": "应用",
+        "ai.results.apply_ready": "把当前结果写回到所选落地位置。",
+        "ai.results.apply_disabled_no_result": "请先运行一次任务。",
+        "ai.results.apply_disabled_preview": "只有把“结果落地”改成替换选区、替换当前片段或替换作品节块时，才可以应用。",
+        "ai.status.running_provider": "正在调用 {provider}…",
         "ai.results.save_fragment": "存为片段",
         "ai.results.send_to_chat": "发到对话",
         # chat
@@ -1132,6 +1343,42 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.dlg.saved_as_fragment": "已保存为新片段。",
         "ai.dlg.snapshot_taken": "已在写入前生成快照。",
         "ai.dlg.cannot_apply": "当前目标不支持该结果落地方式。",
+        # ── M-Dates: daily writing view ──────────────────────────────────────
+        "dates.title": "日期",
+        "dates.today_label": "今天",
+        "dates.go_today": "回到今天",
+        "dates.empty_day": "这一天还没有片段。",
+        "dates.day_count_format": "{count} 个片段",
+        "dates.day_count_one": "1 个片段",
+        "dates.day_words_format": "{words} 字",
+        "dates.new_today_btn": "+ 今日新片段",
+        "dates.append_tags_btn": "批量加标签…",
+        "dates.merge_btn": "合并为草稿…",
+        "dates.append_tags_title": "批量加标签",
+        "dates.append_tags_msg": "为选中的 {count} 个片段追加标签（逗号分隔）：",
+        "dates.append_tags_done": "已为 {count} 个片段追加标签。",
+        "dates.merge_title": "AI 合并为草稿",
+        "dates.merge_select_msg": "请至少选择一个片段。",
+        "dates.merge_output_label": "输出类型",
+        "dates.merge_output_prose": "整段散文草稿",
+        "dates.merge_output_section": "作品节块草稿",
+        "dates.merge_output_outline": "提纲 / 结构化整理",
+        "dates.merge_run": "运行 AI",
+        "dates.merge_running": "运行中…",
+        "dates.merge_save_as_fragment": "保存为新片段",
+        "dates.merge_close": "关闭",
+        "dates.merge_sources_label": "来源",
+        "dates.merge_preview_placeholder": "AI 输出将显示在这里。",
+        "dates.merge_saved": "已将合并草稿保存为新片段。",
+        "dates.merge_failed": "AI 合并失败：{error}",
+        # ── M-RefTypes: typed references ─────────────────────────────────────
+        "reflib.kind_label": "类型",
+        "reflib.kind_filter_label": "按类型筛选",
+        "reflib.kind_filter_all": "全部",
+        "reflib.kind_character": "人物",
+        "reflib.kind_location": "地点",
+        "reflib.kind_setting": "设定",
+        "reflib.kind_excerpt": "素材摘录",
     },
 }
 

@@ -7,7 +7,23 @@ before any writer module reads it.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
+
+# Local-only Python<3.11 dev shim: alias ``tomli`` as ``tomllib`` so the
+# codebase (which targets Python 3.12) remains importable in the Anaconda
+# 3.10 interpreter used for ad-hoc test runs. No effect when ``tomllib`` is
+# already importable.
+if "tomllib" not in sys.modules:
+    try:
+        import tomllib  # type: ignore[unused-ignore]  # noqa: F401
+    except ModuleNotFoundError:
+        try:
+            import tomli as _tomli  # type: ignore[import-not-found]
+        except ImportError:
+            pass
+        else:
+            sys.modules["tomllib"] = _tomli
 
 import pytest
 

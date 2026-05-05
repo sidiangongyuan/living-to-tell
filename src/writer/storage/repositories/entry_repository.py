@@ -5,12 +5,100 @@ update ``updated_at`` so the recent list ordering reflects the latest edit.
 """
 from __future__ import annotations
 
+import calendar
 import sqlite3
 import uuid
-from typing import List, Optional
+from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Dict, List, Optional
 
 from writer.domain.enums import EntryType
 from writer.domain.models.entry import Entry
+
+
+# ---------------------------------------------------------------------------
+# Date / day-bucket helpers (M-Dates)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DailyStat:
+    """Aggregated stats for one local calendar day."""
+
+    entry_count: int
+    total_word_count: int
+    has_curated: bool  # True if any entry on that day is curated (not 'unsorted')
+
+
+def _parse_iso_utc(s: str) -> Optional[datetime]:
+    """Parse an entry's ``created_at`` ISO timestamp into an aware UTC datetime.
+
+    Returns ``None`` for malformed strings rather than raising — that way a
+    bad row never breaks the whole month view.
+    """
+    if not s:
+        return None
+    try:
+        # Storage uses ``...Z``; ``fromisoformat`` accepts ``+00:00``.
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _local_day_utc_bounds(day: date) -> tuple[str, str]:
+    """Return (lower_inclusive, upper_exclusive) UTC ISO strings that bracket
+    a generous superset of the local calendar day.
+
+    We use the local timezone of the running process. Storage strings sort
+    lexicographically because they're padded ISO-8601 UTC.
+    """
+    local_tz = datetime.now().astimezone().tzinfo
+    start_local = datetime.combine(day, time.min).replace(tzinfo=local_tz)
+    end_local = datetime.combine(day, time.max).replace(tzinfo=local_tz)
+    start_utc = start_local.astimezone(timezone.utc)
+    end_utc = (end_local + timedelta(microseconds=1)).astimezone(timezone.utc)
+    fmt = "%Y-%m-%dT%H:%M:%S.000Z"
+    return start_utc.strftime(fmt), end_utc.strftime(fmt)
+
+
+def _utc_iso_to_local_date(s: str) -> Optional[date]:
+    dt = _parse_iso_utc(s)
+    if dt is None:
+        return None
+    return dt.astimezone().date()
+
+
+def _word_count(body: str) -> int:
+    """Lightweight word/CJK character count.
+
+    Splits on whitespace for ASCII-ish input and counts CJK code points
+    individually. Matches the spirit of :func:`writer.ui.panels.editor_panel._count_words`
+    without a UI-side import.
+    """
+    if not body:
+        return 0
+    total = 0
+    buf: list[str] = []
+    for ch in body:
+        if "\u4e00" <= ch <= "\u9fff" or "\u3400" <= ch <= "\u4dbf":
+            if buf:
+                token = "".join(buf).strip()
+                if token:
+                    total += 1
+                buf = []
+            total += 1
+        else:
+            buf.append(ch)
+    if buf:
+        for token in "".join(buf).split():
+            if token.strip():
+                total += 1
+    return total
 
 
 # ---------------------------------------------------------------------------
@@ -315,6 +403,113 @@ class EntryRepository:
     def count(self) -> int:
         row = self._conn.execute("SELECT COUNT(*) AS n FROM entries").fetchone()
         return int(row["n"])
+
+    # date-bucket queries (M-Dates) -------------------------------------
+    def list_by_local_date(
+        self,
+        day: date,
+        *,
+        sort: str = SORT_UPDATED,
+        include_archived: bool = False,
+    ) -> List[Entry]:
+        """Return entries whose ``created_at`` falls on the given local day.
+
+        The decision is made in the running process' local timezone — the
+        feature is explicitly described as "本机本地时间". Storage stays in
+        UTC; we filter by a UTC bracket and then verify each row's local
+        date precisely (DST and timezone-offset edges).
+        """
+        lower, upper = _local_day_utc_bounds(day)
+        where = "WHERE created_at >= ? AND created_at < ?"
+        if not include_archived:
+            where += " AND archived_at IS NULL"
+        order = _order_by_clause(sort)
+        rows = self._conn.execute(
+            f"SELECT * FROM entries {where} {order}",
+            (lower, upper),
+        ).fetchall()
+        result: List[Entry] = []
+        for row in rows:
+            local_d = _utc_iso_to_local_date(row["created_at"])
+            if local_d == day:
+                result.append(_row_to_entry(row))
+        return result
+
+    def daily_stats_for_month(
+        self, year: int, month: int, *, include_archived: bool = False
+    ) -> Dict[date, DailyStat]:
+        """Return a ``{date: DailyStat}`` map for the given local month.
+
+        Days with zero entries are omitted from the map so callers can do
+        a simple ``stats.get(d)`` lookup.
+        """
+        first = date(year, month, 1)
+        last_day_of_month = calendar.monthrange(year, month)[1]
+        last = date(year, month, last_day_of_month)
+        # Bracket: from start of first local day to start of day-after-last.
+        lower, _ = _local_day_utc_bounds(first)
+        _, upper = _local_day_utc_bounds(last)
+        where = "WHERE created_at >= ? AND created_at < ?"
+        if not include_archived:
+            where += " AND archived_at IS NULL"
+        rows = self._conn.execute(
+            f"SELECT created_at, body, curation_status FROM entries {where}",
+            (lower, upper),
+        ).fetchall()
+        buckets: Dict[date, list[sqlite3.Row]] = {}
+        for row in rows:
+            local_d = _utc_iso_to_local_date(row["created_at"])
+            if local_d is None or local_d.year != year or local_d.month != month:
+                continue
+            buckets.setdefault(local_d, []).append(row)
+        out: Dict[date, DailyStat] = {}
+        for d, rs in buckets.items():
+            words = sum(_word_count(r["body"] or "") for r in rs)
+            curated = any(
+                (r["curation_status"] or "unsorted") != "unsorted" for r in rs
+            )
+            out[d] = DailyStat(
+                entry_count=len(rs),
+                total_word_count=words,
+                has_curated=curated,
+            )
+        return out
+
+    def append_tags(
+        self, entry_id: str, tags_to_add: list[str]
+    ) -> Optional[Entry]:
+        """Append ``tags_to_add`` to the entry without overwriting existing tags.
+
+        Tags are deduplicated case-insensitively while preserving the
+        original casing of whichever tag was seen first. Returns the
+        updated entry, or ``None`` if the entry does not exist. Calling
+        with an empty / whitespace-only list is a no-op (returns the
+        unchanged entry).
+        """
+        entry = self.get(entry_id)
+        if entry is None:
+            return None
+        cleaned = [t.strip() for t in tags_to_add if t and t.strip()]
+        if not cleaned:
+            return entry
+        seen = {t.lower() for t in entry.tags}
+        merged = list(entry.tags)
+        for t in cleaned:
+            if t.lower() not in seen:
+                seen.add(t.lower())
+                merged.append(t)
+        if len(merged) == len(entry.tags):
+            return entry
+        self._conn.execute(
+            """
+            UPDATE entries
+               SET tags_text = ?,
+                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE id = ?
+            """,
+            (serialize_tags(merged), entry_id),
+        )
+        return self.get(entry_id)
 
     # tag queries -------------------------------------------------------
     def list_all_tags(self) -> list[str]:

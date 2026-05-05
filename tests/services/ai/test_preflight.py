@@ -119,3 +119,63 @@ def test_codex_source_passes_when_auth_available(tmp_path) -> None:
         codex_auth=resolver,
     )
     assert issues == []
+
+
+def test_gemini_source_blocks_when_env_missing(tmp_path) -> None:
+    from writer.services.ai.gemini_auth import GeminiAuthResolver
+
+    resolver = GeminiAuthResolver(path=tmp_path / "no-such.env")
+    issues = preflight_rewrite(
+        _config(api_key_source="gemini"),
+        "hello",
+        has_entry=True,
+        environ={},
+        gemini_auth=resolver,
+    )
+    assert any(i.code == "missing_gemini_auth" for i in issues)
+
+
+def test_gemini_source_passes_when_env_available(tmp_path) -> None:
+    from writer.services.ai.gemini_auth import GeminiAuthResolver
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "GEMINI_API_KEY=gm-test\n"
+        "GOOGLE_GEMINI_BASE_URL=https://example.test/gemini\n",
+        encoding="utf-8",
+    )
+    resolver = GeminiAuthResolver(path=env_file)
+    issues = preflight_rewrite(
+        _config(api_key_source="gemini"),
+        "hello",
+        has_entry=True,
+        environ={},
+        gemini_auth=resolver,
+    )
+    assert issues == []
+
+
+def test_gemini_cli_source_passes_when_command_available(monkeypatch) -> None:
+    import writer.services.ai.preflight as preflight_mod
+
+    monkeypatch.setattr(preflight_mod, "find_gemini_cli", lambda: "gemini.cmd")
+    issues = preflight_rewrite(
+        _config(provider_name="gemini_cli", api_key_source="gemini-cli"),
+        "hello",
+        has_entry=True,
+        environ={},
+    )
+    assert issues == []
+
+
+def test_gemini_cli_source_blocks_when_command_missing(monkeypatch) -> None:
+    import writer.services.ai.preflight as preflight_mod
+
+    monkeypatch.setattr(preflight_mod, "find_gemini_cli", lambda: None)
+    issues = preflight_rewrite(
+        _config(provider_name="gemini_cli", api_key_source="gemini-cli"),
+        "hello",
+        has_entry=True,
+        environ={},
+    )
+    assert any(i.code == "missing_gemini_cli" for i in issues)

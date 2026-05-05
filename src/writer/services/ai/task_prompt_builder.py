@@ -21,6 +21,14 @@ from writer.domain.enums import AiTaskType
 from writer.services.ai.task_types import AiContextAttachment, AiTaskRequest
 
 
+_REWRITE_TASKS = {
+    AiTaskType.POLISH,
+    AiTaskType.EXPAND,
+    AiTaskType.CONTINUE,
+    AiTaskType.STYLE_TRANSFER,
+}
+
+
 _EN_SYSTEM: Dict[AiTaskType, str] = {
     AiTaskType.POLISH: (
         "You are a restrained prose polishing assistant. Lightly improve "
@@ -152,38 +160,78 @@ class TaskPromptBuilder:
             raise ValueError(f"Unknown task type: {task_type}") from exc
 
     def build_messages(self, request: AiTaskRequest) -> List[Dict[str, str]]:
+        is_zh = current_locale() == LOCALE_ZH_CN
         system = self.system_prompt(request.task_type)
-        if request.preserve_voice:
-            system += " Strictly preserve the author's voice."
+        if request.task_type is AiTaskType.POLISH:
+            system += _polish_guidance(request, is_zh)
+        if request.style:
+            system += _style_guidance(is_zh)
+            if request.preserve_voice:
+                system += _style_voice_guidance(is_zh)
+        elif request.preserve_voice:
+            system += (
+                " 严格保留原文的叙述声音。"
+                if is_zh else
+                " Strictly preserve the author's voice."
+            )
         if not request.preserve_meaning:
-            system += " You MAY adjust the original meaning if requested."
+            system += (
+                " 如用户明确要求，可以调整原意。"
+                if is_zh else
+                " You MAY adjust the original meaning if requested."
+            )
 
         user_parts: List[str] = []
         if request.style:
-            user_parts.append(f"Target style: {request.style}")
+            user_parts.append(
+                ("目标风格：" if is_zh else "Target style: ") + request.style
+            )
         if request.intensity:
-            user_parts.append(f"Edit intensity: {request.intensity}")
+            user_parts.append(
+                ("改写强度：" if is_zh else "Edit intensity: ")
+                + request.intensity
+            )
         if request.must_keep_terms:
             user_parts.append(
-                "Must-keep terms (do not paraphrase away): "
+                (
+                    "必须保留的词语（不要改写掉）："
+                    if is_zh else
+                    "Must-keep terms (do not paraphrase away): "
+                )
                 + ", ".join(request.must_keep_terms)
             )
         if request.forbid_terms:
             user_parts.append(
-                "Forbidden terms (do not include): "
+                (
+                    "禁用词（不要出现）："
+                    if is_zh else
+                    "Forbidden terms (do not include): "
+                )
                 + ", ".join(request.forbid_terms)
             )
         if request.extra_instructions:
-            user_parts.append("Extra instructions: " + request.extra_instructions)
+            user_parts.append(
+                ("附加要求：" if is_zh else "Extra instructions: ")
+                + request.extra_instructions
+            )
         if request.max_output_chars:
             user_parts.append(
-                f"Keep the output within about {request.max_output_chars} characters."
+                (
+                    f"输出尽量控制在约 {request.max_output_chars} 个字符以内。"
+                    if is_zh else
+                    f"Keep the output within about {request.max_output_chars} characters."
+                )
             )
 
-        if request.attachments:
-            user_parts.append(_format_attachments(request.attachments))
+        if request.task_type in _REWRITE_TASKS:
+            user_parts.append(_rewrite_output_contract(is_zh))
+        if request.task_type is AiTaskType.POLISH:
+            user_parts.append(_polish_output_guidance(request, is_zh))
 
-        user_parts.append("Subject text:\n" + request.text)
+        if request.attachments:
+            user_parts.append(_format_attachments(request.attachments, is_zh=is_zh))
+
+        user_parts.append(("待处理文本：\n" if is_zh else "Subject text:\n") + request.text)
 
         return [
             {"role": "system", "content": system},
@@ -191,9 +239,15 @@ class TaskPromptBuilder:
         ]
 
 
-def _format_attachments(attachments: List[AiContextAttachment]) -> str:
+def _format_attachments(
+    attachments: List[AiContextAttachment], *, is_zh: bool
+) -> str:
     """Render attachments as a labelled source pack the model can cite by name."""
-    blocks = ["Source attachments (cite by name when relevant):"]
+    blocks = [
+        "来源附件（需要时按名称引用）："
+        if is_zh else
+        "Source attachments (cite by name when relevant):"
+    ]
     for att in attachments:
         header = f"[{att.kind}] {att.name}"
         body = att.body.strip()
@@ -201,3 +255,109 @@ def _format_attachments(attachments: List[AiContextAttachment]) -> str:
             continue
         blocks.append(f"--- {header} ---\n{body}")
     return "\n\n".join(blocks)
+
+
+def _style_guidance(is_zh: bool) -> str:
+    if is_zh:
+        return (
+            " 如果提供了风格要求，请把它视为一个自由输入的改写提示词，而不是固定预设。"
+            "无论里面写了多少作家名字、写法特征或气质要求，都直接落实到一版最终正文里，"
+            "不要拆成按作家分别输出的多个版本。"
+        )
+    return (
+        " If a style instruction is provided, treat it as a freeform rewriting prompt, "
+        "not as a fixed preset. Even if it names multiple authors or multiple stylistic "
+        "traits, apply them directly in a single final passage instead of producing "
+        "author-by-author variants."
+    )
+
+
+def _style_voice_guidance(is_zh: bool) -> str:
+    if is_zh:
+        return " 保留原句的核心意思、观察角度和场景事实，但允许文气向目标风格靠拢。"
+    return (
+        " Preserve the original meaning, scene facts, and narrative stance, but allow "
+        "the prose texture to move toward the requested style."
+    )
+
+
+def _rewrite_output_contract(is_zh: bool) -> str:
+    if is_zh:
+        return "\n".join(
+            [
+                "输出要求：",
+                "- 只返回一个最终改写版本。",
+                "- 不要标题、不要解释、不要分点、不要附带风格解析。",
+                "- 即使风格要求里写了多个作家或多个特征，也只返回一版最终结果。",
+                "- 直接输出改写后的正文，不要加引号。",
+            ]
+        )
+    return "\n".join(
+        [
+            "Output rules:",
+            "- Return exactly one final rewritten passage.",
+            "- No heading, no explanation, no bullet list, and no style analysis.",
+            "- Even if the style instruction mentions multiple authors or traits, still return only one final result.",
+            "- Output the rewritten prose directly, with no quotation marks.",
+        ]
+    )
+
+
+def _polish_guidance(request: AiTaskRequest, is_zh: bool) -> str:
+    intensity = (request.intensity or "").strip().lower()
+    has_style = bool((request.style or "").strip())
+    if is_zh:
+        if intensity == "strong":
+            return (
+                " 这次润色允许做较大幅度的句式重组、节奏重塑和意象增强。"
+                "在不改动核心事实、人物关系和场景信息的前提下，可以把原句扩写成更完整的一小段。"
+            )
+        if intensity == "medium":
+            return (
+                " 这次润色不要只做同义词替换。请做明显的句式和节奏调整；"
+                "如果原文很短，且给了风格要求，可以在不添加具体新事实的前提下，"
+                "把它写成更有质感的一两句或一个短段落。"
+            )
+        if has_style:
+            return (
+                " 如果给了风格要求，不要只做表面润色；即使保持克制，也要让语言纹理明显向该风格靠拢。"
+            )
+        return ""
+    if intensity == "strong":
+        return (
+            " This polish pass may substantially recast sentence structure, rhythm, and imagery. "
+            "As long as the core facts, relationships, and scene information remain intact, the output may expand into a fuller short paragraph."
+        )
+    if intensity == "medium":
+        return (
+            " This polish pass should do more than synonym substitution. Make noticeable changes to sentence shape and cadence; "
+            "if the source is very short and a style instruction is provided, you may turn it into one or two richer sentences or a short paragraph, "
+            "as long as you do not add specific new facts."
+        )
+    if has_style:
+        return (
+            " If a style instruction is present, do more than surface polish; even in a restrained pass, the prose texture should clearly move toward that style."
+        )
+    return ""
+
+
+def _polish_output_guidance(request: AiTaskRequest, is_zh: bool) -> str:
+    intensity = (request.intensity or "").strip().lower()
+    has_style = bool((request.style or "").strip())
+    if is_zh:
+        if intensity in {"medium", "strong"} and has_style:
+            return (
+                "润色补充要求：如果原文很短，不要只给一个更顺一点的短句；"
+                "可以把它写成更丰富的短段落，但不要凭空增加明确的新人物、事件或设定。"
+            )
+        if intensity in {"medium", "strong"}:
+            return "润色补充要求：做明显改写，不要停留在最小幅度修辞替换。"
+        return ""
+    if intensity in {"medium", "strong"} and has_style:
+        return (
+            "Polish addendum: if the source is very short, do not return only a slightly smoother sentence; "
+            "you may render it as a richer short paragraph, but do not invent explicit new characters, events, or setting facts."
+        )
+    if intensity in {"medium", "strong"}:
+        return "Polish addendum: make a noticeable rewrite, not just the smallest possible wording swap."
+    return ""

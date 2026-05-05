@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
 )
 
 from writer.app.container import AppContainer
+from writer.app.locale import LOCALE_ZH_CN, current_locale
 from writer.domain.enums import (
     AiCostTier,
     AiOutputAction,
@@ -162,6 +163,39 @@ _OUTPUT_LABEL_KEY: dict[AiOutputAction, str] = {
     AiOutputAction.REPORT: "ai.output.report",
 }
 
+_STYLE_TASKS: set[AiTaskType] = {
+    AiTaskType.POLISH,
+    AiTaskType.EXPAND,
+    AiTaskType.CONTINUE,
+    AiTaskType.STYLE_TRANSFER,
+}
+
+_INTENSITY_TASKS: set[AiTaskType] = {
+    AiTaskType.POLISH,
+    AiTaskType.EXPAND,
+    AiTaskType.STYLE_TRANSFER,
+}
+
+_TASK_STYLE_HINT_KEY: dict[AiTaskType, str] = {
+    AiTaskType.POLISH: "ai.params.style_hint.polish",
+    AiTaskType.EXPAND: "ai.params.style_hint.expand",
+    AiTaskType.CONTINUE: "ai.params.style_hint.continue",
+    AiTaskType.STYLE_TRANSFER: "ai.params.style_hint.style_transfer",
+}
+
+_TASK_STYLE_PLACEHOLDER_KEY: dict[AiTaskType, str] = {
+    AiTaskType.POLISH: "ai.params.style_placeholder.polish",
+    AiTaskType.EXPAND: "ai.params.style_placeholder.expand",
+    AiTaskType.CONTINUE: "ai.params.style_placeholder.continue",
+    AiTaskType.STYLE_TRANSFER: "ai.params.style_placeholder.style_transfer",
+}
+
+_TASK_STYLE_PRESET_VALUES_KEY: dict[AiTaskType, str] = {
+    AiTaskType.POLISH: "ai.params.style_presets.polish_values",
+    AiTaskType.EXPAND: "ai.params.style_presets.expand_values",
+    AiTaskType.CONTINUE: "ai.params.style_presets.continue_values",
+}
+
 
 # Output destinations available per scope kind (UI-side filter; service
 # layer does no enforcement on this).
@@ -192,6 +226,25 @@ def _scope_to_attachment_kind(scope: AiScope) -> str:
     }[scope.kind]
 
 
+def _preset_values(key: str) -> List[str]:
+    return [item.strip() for item in TR(key).split("|") if item.strip()]
+
+
+def _chunked(values: List[str], size: int) -> List[List[str]]:
+    return [values[i : i + size] for i in range(0, len(values), size)]
+
+
+def _display_provider_name(provider: str) -> str:
+    key = (provider or "").strip().lower()
+    if key == "gemini_cli":
+        return "Gemini CLI / OAuth"
+    if key == "gemini":
+        return "Gemini"
+    if key == "openai":
+        return "GPT / OpenAI"
+    return provider or ""
+
+
 # ---------------------------------------------------------------------------
 # Tools tab
 # ---------------------------------------------------------------------------
@@ -205,12 +258,16 @@ class AIToolsTab(QWidget):
 
     def __init__(self, container: AppContainer, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        self.setObjectName("AIToolsTab")
         self._container = container
         self._scope: Optional[AiScope] = None
         self._attachments: List[AiContextAttachment] = []
         self._last_response: Optional[AiTaskResponse] = None
         self._last_request: Optional[AiTaskRequest] = None
         self._worker: Optional[AiTaskWorker] = None
+        self._style_preset_buttons: dict[str, QPushButton] = {}
+        self._style_author_presets = _preset_values("ai.params.style_authors_values")
+        self._style_goal_presets = _preset_values("ai.params.style_goals_values")
 
         # ---- Left: task list ----
         self._task_list = QListWidget()
@@ -225,6 +282,7 @@ class AIToolsTab(QWidget):
 
         # ---- Right: form + results ----
         right = QWidget()
+        right.setObjectName("AIToolsRight")
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(12, 12, 12, 12)
         right_layout.setSpacing(8)
@@ -262,12 +320,31 @@ class AIToolsTab(QWidget):
         params_form.addRow(TR("ai.output.label"), self._output_combo)
 
         self._style_edit = QLineEdit()
-        params_form.addRow(TR("ai.params.style"), self._style_edit)
+        self._style_edit.setPlaceholderText(TR("ai.params.style_placeholder.polish"))
+        self._style_field = QWidget()
+        self._style_field.setObjectName("AIStyleField")
+        self._style_field_layout = QVBoxLayout(self._style_field)
+        self._style_field_layout.setContentsMargins(0, 0, 0, 0)
+        self._style_field_layout.setSpacing(4)
+        self._style_field_layout.addWidget(self._style_edit)
+        self._style_hint_label = QLabel("")
+        self._style_hint_label.setObjectName("AIStyleHint")
+        self._style_hint_label.setWordWrap(True)
+        self._style_field_layout.addWidget(self._style_hint_label)
+        self._style_presets_box = QWidget()
+        self._style_presets_box.setObjectName("AIStylePresets")
+        self._style_presets_layout = QVBoxLayout(self._style_presets_box)
+        self._style_presets_layout.setContentsMargins(0, 0, 0, 0)
+        self._style_presets_layout.setSpacing(4)
+        self._style_field_layout.addWidget(self._style_presets_box)
+        params_form.addRow(TR("ai.params.style"), self._style_field)
+        self._style_field_label = params_form.labelForField(self._style_field)
 
         self._intensity_combo = QComboBox()
         for label, value in (("—", ""), ("light", "light"), ("medium", "medium"), ("strong", "strong")):
             self._intensity_combo.addItem(label, value)
         params_form.addRow(TR("ai.params.intensity"), self._intensity_combo)
+        self._intensity_label = params_form.labelForField(self._intensity_combo)
 
         right_layout.addWidget(params_box)
 
@@ -310,6 +387,8 @@ class AIToolsTab(QWidget):
         self._paste_edit.setVisible(False)
         right_layout.addWidget(self._paste_edit)
         self._target_combo.currentIndexChanged.connect(self._on_target_changed)
+        self._paste_edit.textChanged.connect(self._refresh_attachments_view)
+        self._output_combo.currentIndexChanged.connect(self._refresh_apply_button_state)
 
         # Attachments
         attach_label = QLabel(TR("ai.attachments.title"))
@@ -375,6 +454,7 @@ class AIToolsTab(QWidget):
         action_row = QHBoxLayout()
         self._apply_btn = QPushButton(TR("ai.results.apply"))
         self._apply_btn.setEnabled(False)
+        self._apply_btn.setToolTip(TR("ai.results.apply_disabled_no_result"))
         self._apply_btn.clicked.connect(self._on_apply)
         action_row.addWidget(self._apply_btn)
         self._save_fragment_btn = QPushButton(TR("ai.results.save_fragment"))
@@ -384,14 +464,18 @@ class AIToolsTab(QWidget):
         self._send_chat_btn = QPushButton(TR("ai.results.send_to_chat"))
         self._send_chat_btn.setEnabled(False)
         self._send_chat_btn.clicked.connect(self._on_send_to_chat)
+        self._send_chat_btn.setVisible(False)
         action_row.addWidget(self._send_chat_btn)
         action_row.addStretch(1)
         right_layout.addLayout(action_row)
 
         # ---- Splitter ----
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setObjectName("AIToolsSplitter")
         splitter.addWidget(self._task_list)
         right_scroll = QScrollArea()
+        right_scroll.setObjectName("AIToolsScroll")
+        right_scroll.viewport().setObjectName("AIToolsViewport")
         right_scroll.setWidgetResizable(True)
         right_scroll.setWidget(right)
         splitter.addWidget(right_scroll)
@@ -404,7 +488,9 @@ class AIToolsTab(QWidget):
         outer.addWidget(splitter)
 
         self._refresh_output_combo()
+        self._refresh_task_params()
         self._refresh_attachments_view()
+        self._refresh_apply_button_state()
 
     # ---- public API ----
     def bind_scope(self, scope: AiScope) -> None:
@@ -413,7 +499,11 @@ class AIToolsTab(QWidget):
         self._refresh_output_combo()
         # Reset target default per scope.
         target_default = {
-            AiThreadScope.FRAGMENT: AiTargetKind.FRAGMENT,
+            AiThreadScope.FRAGMENT: (
+                AiTargetKind.SELECTION
+                if scope.has_selection and bool(scope.selection_text.strip())
+                else AiTargetKind.FRAGMENT
+            ),
             AiThreadScope.WORK: AiTargetKind.WORK,
             AiThreadScope.COLLECTION: AiTargetKind.COLLECTION,
             AiThreadScope.GLOBAL: AiTargetKind.PASTE,
@@ -421,6 +511,8 @@ class AIToolsTab(QWidget):
         idx = self._target_combo.findData(target_default)
         if idx >= 0:
             self._target_combo.setCurrentIndex(idx)
+        self._refresh_attachments_view()
+        self._refresh_apply_button_state()
 
     # ---- internal ----
     def _update_scope_label(self) -> None:
@@ -436,6 +528,94 @@ class AIToolsTab(QWidget):
 
     def _on_task_changed(self, *_args) -> None:
         self._refresh_output_combo()
+        self._refresh_task_params()
+        self._refresh_send_to_chat_button()
+
+    def _refresh_task_params(self) -> None:
+        task = self._current_task_type()
+        show_style = task in _STYLE_TASKS
+        self._style_field.setVisible(show_style)
+        if self._style_field_label is not None:
+            self._style_field_label.setVisible(show_style)
+
+        show_intensity = task in _INTENSITY_TASKS
+        self._intensity_combo.setVisible(show_intensity)
+        if self._intensity_label is not None:
+            self._intensity_label.setVisible(show_intensity)
+
+        if not show_style:
+            self._rebuild_style_preset_sections([])
+            return
+
+        self._style_edit.setPlaceholderText(
+            TR(_TASK_STYLE_PLACEHOLDER_KEY.get(task, "ai.params.style_placeholder"))
+        )
+        self._style_hint_label.setText(
+            TR(_TASK_STYLE_HINT_KEY.get(task, "ai.params.style_hint.default"))
+        )
+        self._rebuild_style_preset_sections(self._style_sections_for_task(task))
+
+    def _style_sections_for_task(self, task: AiTaskType) -> List[tuple[str, List[str]]]:
+        if task is AiTaskType.STYLE_TRANSFER:
+            return [
+                (TR("ai.params.style_authors"), self._style_author_presets),
+                (TR("ai.params.style_goals"), self._style_goal_presets),
+            ]
+        values_key = _TASK_STYLE_PRESET_VALUES_KEY.get(task)
+        if values_key:
+            return [(TR("ai.params.quick_presets"), _preset_values(values_key))]
+        return []
+
+    def _rebuild_style_preset_sections(self, sections: List[tuple[str, List[str]]]) -> None:
+        self._style_preset_buttons = {}
+        while self._style_presets_layout.count():
+            item = self._style_presets_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        for title, values in sections:
+            if values:
+                self._style_presets_layout.addWidget(
+                    self._build_style_preset_section(title, values)
+                )
+        self._style_presets_box.setVisible(bool(sections))
+
+    def _build_style_preset_section(self, title: str, values: List[str]) -> QWidget:
+        section = QWidget()
+        section.setObjectName("AIStylePresetSection")
+        layout = QVBoxLayout(section)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+
+        label = QLabel(title)
+        label.setObjectName("AIStylePresetLabel")
+        layout.addWidget(label)
+
+        for row_values in _chunked(values, 5):
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(4)
+            for value in row_values:
+                button = QPushButton(value)
+                button.setObjectName("AIStylePresetButton")
+                button.setFlat(True)
+                button.clicked.connect(
+                    lambda _checked=False, preset=value: self._append_style_preset(preset)
+                )
+                self._style_preset_buttons[value] = button
+                row.addWidget(button)
+            row.addStretch(1)
+            layout.addLayout(row)
+        return section
+
+    def _append_style_preset(self, value: str) -> None:
+        current = self._style_edit.text().strip()
+        if not current:
+            self._style_edit.setText(value)
+        elif value not in {part.strip() for part in current.replace(",", "，").split("，") if part.strip()}:
+            separator = "，" if current_locale() == LOCALE_ZH_CN else ", "
+            self._style_edit.setText(current + separator + value)
+        self._style_edit.setFocus()
 
     def _on_toggle_advanced(self, checked: bool) -> None:
         self._advanced_box.setVisible(checked)
@@ -446,6 +626,7 @@ class AIToolsTab(QWidget):
         target = _combo_enum(self._target_combo, AiTargetKind, AiTargetKind.PASTE)
         self._paste_edit.setVisible(target == AiTargetKind.PASTE)
         self._refresh_output_combo()
+        self._refresh_attachments_view()
 
     def _refresh_output_combo(self) -> None:
         prev = self._output_combo.currentData()
@@ -497,6 +678,27 @@ class AIToolsTab(QWidget):
         if idx < 0:
             idx = 0
         self._output_combo.setCurrentIndex(idx)
+        self._refresh_apply_button_state()
+
+    def _refresh_apply_button_state(self) -> None:
+        out = _combo_enum(
+            self._output_combo, AiOutputAction, AiOutputAction.PREVIEW_ONLY
+        )
+        has_result = self._last_response is not None and bool(
+            self._result_view.toPlainText().strip()
+        )
+        can_apply = has_result and out in {
+            AiOutputAction.REPLACE_FRAGMENT,
+            AiOutputAction.REPLACE_SELECTION,
+            AiOutputAction.REPLACE_SECTION,
+        }
+        self._apply_btn.setEnabled(can_apply)
+        if can_apply:
+            self._apply_btn.setToolTip(TR("ai.results.apply_ready"))
+        elif not has_result:
+            self._apply_btn.setToolTip(TR("ai.results.apply_disabled_no_result"))
+        else:
+            self._apply_btn.setToolTip(TR("ai.results.apply_disabled_preview"))
 
     def _current_task_type(self) -> AiTaskType:
         item = self._task_list.currentItem()
@@ -520,9 +722,7 @@ class AIToolsTab(QWidget):
         self._attach_list.setVisible(has_any)
         self._attach_empty_label.setVisible(not has_any)
         # total
-        total = sum(a.size_chars for a in self._attachments)
-        if self._scope is not None:
-            total += len(self._scope.body)
+        total = self._estimated_context_chars()
         self._attach_total_label.setText(
             TR("ai.attachments.total").format(chars=total)
         )
@@ -534,14 +734,47 @@ class AIToolsTab(QWidget):
             self._attach_total_label.setToolTip("")
         self._remove_attach_btn.setEnabled(self._attach_list.currentItem() is not None)
 
-    def _on_add_fragment_attachment(self) -> None:
-        from writer.ui.dialogs.fragment_picker_dialog import FragmentPickerDialog  # lazy
-        dlg = FragmentPickerDialog(self._container, parent=self)
-        if dlg.exec() != dlg.DialogCode.Accepted:
-            return
-        entry = dlg.selected_entry
-        if entry is None:
-            return
+    def _estimated_context_chars(self) -> int:
+        total = sum(a.size_chars for a in self._attachments)
+        scope = self._scope
+        target = _combo_enum(self._target_combo, AiTargetKind, AiTargetKind.PASTE)
+        if target == AiTargetKind.PASTE:
+            total += len(self._paste_edit.toPlainText())
+        elif scope is not None and target == AiTargetKind.SELECTION:
+            total += len(scope.selection_text if scope.has_selection else "")
+        elif scope is not None and target == AiTargetKind.WORK_SECTION:
+            total += len(scope.body if scope.has_section else "")
+        elif scope is not None:
+            total += len(scope.body)
+        return total
+
+    def _current_target_uses_fragment(self, entry_id: str) -> bool:
+        if self._scope is None or self._scope.kind is not AiThreadScope.FRAGMENT:
+            return False
+        target = _combo_enum(self._target_combo, AiTargetKind, AiTargetKind.PASTE)
+        return (
+            target in {AiTargetKind.FRAGMENT, AiTargetKind.SELECTION}
+            and self._scope.ref_id == entry_id
+        )
+
+    def _has_attachment(self, *, kind: str, ref_id: str) -> bool:
+        return any(att.kind == kind and att.ref_id == ref_id for att in self._attachments)
+
+    def _try_add_fragment_attachment(self, entry) -> bool:
+        if self._current_target_uses_fragment(entry.id):
+            QMessageBox.information(
+                self,
+                TR("ai.attachments.title"),
+                TR("ai.attachments.current_target"),
+            )
+            return False
+        if self._has_attachment(kind="fragment", ref_id=entry.id):
+            QMessageBox.information(
+                self,
+                TR("ai.attachments.title"),
+                TR("ai.attachments.already_added"),
+            )
+            return False
         self._attachments.append(
             AiContextAttachment(
                 kind="fragment",
@@ -551,6 +784,17 @@ class AIToolsTab(QWidget):
             )
         )
         self._refresh_attachments_view()
+        return True
+
+    def _on_add_fragment_attachment(self) -> None:
+        from writer.ui.dialogs.fragment_picker_dialog import FragmentPickerDialog  # lazy
+        dlg = FragmentPickerDialog(self._container, parent=self)
+        if dlg.exec() != dlg.DialogCode.Accepted:
+            return
+        entry = dlg.selected_entry
+        if entry is None:
+            return
+        self._try_add_fragment_attachment(entry)
 
     def _on_remove_attachment(self) -> None:
         row = self._attach_list.currentRow()
@@ -598,7 +842,11 @@ class AIToolsTab(QWidget):
             return None
 
         max_out = self._max_output_spin.value() or None
-        intensity_val = self._intensity_combo.currentData() or None
+        intensity_val = (
+            self._intensity_combo.currentData() or None
+            if self._intensity_combo.isVisible()
+            else None
+        )
 
         must_keep = [t.strip() for t in self._must_keep_edit.text().split(",") if t.strip()]
         forbid = [t.strip() for t in self._forbid_edit.text().split(",") if t.strip()]
@@ -626,7 +874,11 @@ class AIToolsTab(QWidget):
             target_kind=target,
             text=text,
             target_ref_id=target_ref,
-            style=self._style_edit.text().strip() or None,
+            style=(
+                self._style_edit.text().strip() or None
+                if self._style_field.isVisible()
+                else None
+            ),
             intensity=intensity_val,
             extra_instructions=extra,
             max_output_chars=max_out,
@@ -647,7 +899,16 @@ class AIToolsTab(QWidget):
             return
         # Disable run button while in flight.
         self._run_btn.setEnabled(False)
-        self._status_label.setText("…")
+        provider = self._container.settings.load_ai_config().provider_key()
+        self._status_label.setText(
+            TR("ai.status.running_provider").format(
+                provider=_display_provider_name(provider)
+            )
+        )
+        self._last_response = None
+        self._refresh_apply_button_state()
+        self._send_chat_btn.setVisible(False)
+        self._send_chat_btn.setEnabled(False)
         self._last_request = request
 
         worker = AiTaskWorker(self._container.ai_task_service, request, parent=self)
@@ -667,6 +928,10 @@ class AIToolsTab(QWidget):
         )
         self._result_view.setPlainText(rendered if rendered is not None else response.content)
         meta_parts = []
+        if response.provider:
+            meta_parts.append(
+                f"{TR('ai.results.provider_label')}: {_display_provider_name(response.provider)}"
+            )
         if response.model:
             meta_parts.append(f"{TR('ai.results.model_label')}: {response.model}")
         if response.input_tokens is not None or response.output_tokens is not None:
@@ -684,23 +949,22 @@ class AIToolsTab(QWidget):
         else:
             self._citations_label.setVisible(False)
 
-        # Apply button enablement.
-        out = _combo_enum(
-            self._output_combo, AiOutputAction, AiOutputAction.PREVIEW_ONLY
-        )
-        can_apply = out in {
-            AiOutputAction.REPLACE_FRAGMENT,
-            AiOutputAction.REPLACE_SELECTION,
-            AiOutputAction.REPLACE_SECTION,
-        }
-        self._apply_btn.setEnabled(can_apply)
+        self._refresh_apply_button_state()
         self._save_fragment_btn.setEnabled(True)
-        self._send_chat_btn.setEnabled(True)
+        self._refresh_send_to_chat_button()
 
     def _result_task_type(self) -> AiTaskType:
         if self._last_request is not None:
             return self._last_request.task_type
         return self._current_task_type()
+
+    def _refresh_send_to_chat_button(self) -> None:
+        can_send = (
+            self._last_response is not None
+            and bool(self._result_view.toPlainText().strip())
+        )
+        self._send_chat_btn.setVisible(can_send)
+        self._send_chat_btn.setEnabled(can_send)
 
     def _render_structured(
         self,
@@ -845,6 +1109,7 @@ class AIChatTab(QWidget):
 
     def __init__(self, container: AppContainer, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        self.setObjectName("AIChatTab")
         self._container = container
         self._scope: Optional[AiScope] = None
         self._thread_id: Optional[str] = None
@@ -1077,12 +1342,14 @@ class AIWorkspacePanel(QWidget):
 
     def __init__(self, container: AppContainer, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        self.setObjectName("AIWorkspacePanel")
         self._container = container
         self._scope: Optional[AiScope] = None
 
         self._tools_tab = AIToolsTab(container, self)
         self._chat_tab = AIChatTab(container, self)
         self._tabs = QTabWidget()
+        self._tabs.setObjectName("AIWorkspaceTabs")
         self._tabs.addTab(self._tools_tab, TR("ai.tab_tools"))
         self._tabs.addTab(self._chat_tab, TR("ai.tab_chat"))
 
@@ -1119,3 +1386,7 @@ class AIWorkspacePanel(QWidget):
     @property
     def tabs(self) -> QTabWidget:
         return self._tabs
+
+    @property
+    def scope(self) -> Optional[AiScope]:
+        return self._scope

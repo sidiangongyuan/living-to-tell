@@ -88,3 +88,34 @@ def test_codex_source_raises_ai_error_when_missing(tmp_path):
     provider = OpenAiProvider(config, PromptBuilder(), codex_auth=resolver)
     with pytest.raises(AiError):
         provider._resolve_api_key()
+
+
+def test_gemini_source_routes_to_resolver(tmp_path):
+    from writer.services.ai.gemini_auth import GeminiAuthResolver
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "GEMINI_API_KEY=gm-test\n"
+        "GOOGLE_GEMINI_BASE_URL=https://example.test/gemini\n",
+        encoding="utf-8",
+    )
+    resolver = GeminiAuthResolver(path=env_file)
+    config = AiConfig(api_key_source="gemini")
+    provider = OpenAiProvider(config, PromptBuilder(), gemini_auth=resolver)
+    assert provider._resolve_api_key() == "gm-test"
+
+
+def test_explicit_gemini_provider_name_sets_provider_name():
+    client = _FakeClient("gemini output")
+    config = AiConfig(
+        provider_name="gemini",
+        model="gemini-3.1-pro",
+        api_key_source="gemini",
+    )
+    provider = OpenAiProvider(config, PromptBuilder(), client=client)
+
+    response = provider.rewrite(
+        RewriteRequest(action=RewriteAction.POLISH, text="hi")
+    )
+
+    assert response.provider == "gemini"

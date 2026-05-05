@@ -80,6 +80,17 @@ _DEFAULT_SIDEBAR_WIDTH = 300
 _DEFAULT_EDITOR_WIDTH = 760
 
 
+# Mode-stack indices. Dates was added at index 0 in M-Dates, shifting
+# every other mode up by one. Tests and code that referenced the old
+# integer indices have been migrated to these names.
+MODE_DATES = 0
+MODE_FRAGMENTS = 1
+MODE_WORKS = 2
+MODE_COLLECTIONS = 3
+MODE_AI = 4
+_MODE_COUNT = 5
+
+
 class MainWindow(QMainWindow):
     def __init__(
         self,
@@ -140,12 +151,17 @@ class MainWindow(QMainWindow):
         self._collections_panel = CollectionsPanel(container)
         self._ai_workspace_panel = AIWorkspacePanel(container)
 
+        # M-Dates: top-level dates / daily-writing view.
+        from writer.ui.panels.dates_panel import DatesPanel
+        self._dates_panel = DatesPanel(container)
+
         self._stack = QStackedWidget()
-        self._stack.addWidget(self._fragments_widget)  # 0
-        self._stack.addWidget(self._works_panel)        # 1
-        self._stack.addWidget(self._collections_panel)  # 2
-        self._stack.addWidget(self._ai_workspace_panel)  # 3
-        self._last_mode_before_ai = 0
+        self._stack.addWidget(self._dates_panel)            # 0 — Dates
+        self._stack.addWidget(self._fragments_widget)       # 1 — Fragments
+        self._stack.addWidget(self._works_panel)            # 2 — Works
+        self._stack.addWidget(self._collections_panel)      # 3 — Collections
+        self._stack.addWidget(self._ai_workspace_panel)     # 4 — AI workspace
+        self._last_mode_before_ai = MODE_FRAGMENTS
 
         # ---- Context pane ----
         self._context_pane = ContextPane(
@@ -190,6 +206,7 @@ class MainWindow(QMainWindow):
         # ---- Navigation rail ----
         self._rail = NavigationRail(
             brand_text=TR("shell.brand"),
+            dates_label=TR("rail.dates"),
             fragments_label=TR("rail.fragments"),
             works_label=TR("rail.works"),
             collections_label=TR("rail.collections"),
@@ -274,11 +291,19 @@ class MainWindow(QMainWindow):
             self._on_include_fragment_from_empty_state
         )
         self._collections_panel.switch_to_works_requested.connect(
-            lambda: self._set_mode(1)
+            lambda: self._set_mode(MODE_WORKS)
         )
         self._autosave.saved.connect(self._on_autosaved)
         self._autosave.dirty.connect(self._on_autosave_dirty)
         self._autosave.saving.connect(self._on_autosave_saving)
+
+        # M-Dates: route Dates-panel actions through the shell so the
+        # editor opens, autosave flushes, and the fragments list refreshes
+        # consistently.
+        self._dates_panel.entry_picked.connect(self._on_dates_entry_picked)
+        self._dates_panel.new_today_requested.connect(self._on_dates_new_today)
+        self._dates_panel.append_tags_requested.connect(self._on_dates_append_tags)
+        self._dates_panel.merge_requested.connect(self._on_dates_merge)
 
         # M7B: in-memory trash for the most recent deletions. Each entry is
         # a dict with title/body/tags; survives until the app closes.
@@ -293,14 +318,17 @@ class MainWindow(QMainWindow):
         self._apply_editor_object_names()
         self._initial_load()
 
-        # Restore the persisted active mode (default Fragments).
+        # Restore the persisted active mode (default Dates so users land on
+        # today's writing view; falling back gracefully if the stored
+        # index pre-dates the M-Dates shift and is out of range).
         try:
             persisted_mode = int(
-                self._container.settings.get(KEY_ACTIVE_MODE, "0") or 0
+                self._container.settings.get(KEY_ACTIVE_MODE, str(MODE_DATES))
+                or MODE_DATES
             )
         except (TypeError, ValueError):
-            persisted_mode = 0
-        self._set_mode(max(0, min(3, persisted_mode)))
+            persisted_mode = MODE_DATES
+        self._set_mode(max(0, min(_MODE_COUNT - 1, persisted_mode)))
 
     # --------------------------------------------------------------
     def _build_menu_bar(self) -> None:
@@ -358,29 +386,14 @@ class MainWindow(QMainWindow):
         global_search_action = QAction(TR("menu.global_search"), self)
         global_search_action.triggered.connect(self._on_global_search)
         file_menu.addAction(global_search_action)
+        references_action = QAction(TR("menu.references"), self)
+        references_action.triggered.connect(self._on_open_reference_library)
+        file_menu.addAction(references_action)
         file_menu.addSeparator()
         quit_action = QAction(TR("menu.quit"), self)
         quit_action.setShortcut("Ctrl+Q")
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
-
-        ai_menu = menu_bar.addMenu(TR("menu.ai"))
-        polish_action = QAction(TR("menu.polish"), self)
-        polish_action.triggered.connect(lambda: self._on_rewrite(RewriteAction.POLISH))
-        ai_menu.addAction(polish_action)
-        expand_action = QAction(TR("menu.expand"), self)
-        expand_action.triggered.connect(lambda: self._on_rewrite(RewriteAction.EXPAND))
-        ai_menu.addAction(expand_action)
-        continue_action = QAction(TR("menu.continue"), self)
-        continue_action.triggered.connect(lambda: self._on_rewrite(RewriteAction.CONTINUE))
-        ai_menu.addAction(continue_action)
-        ai_menu.addSeparator()
-        references_action = QAction(TR("menu.references"), self)
-        references_action.triggered.connect(self._on_open_reference_library)
-        ai_menu.addAction(references_action)
-        settings_action = QAction(TR("menu.settings"), self)
-        settings_action.triggered.connect(self._on_open_settings)
-        ai_menu.addAction(settings_action)
 
         help_menu = menu_bar.addMenu(TR("menu.help"))
         about_action = QAction(TR("menu.about"), self)
@@ -620,7 +633,7 @@ class MainWindow(QMainWindow):
 
     def _on_welcome_new_work(self) -> None:
         """Welcome card secondary CTA: jump to Works mode and create one."""
-        self._set_mode(1)
+        self._set_mode(MODE_WORKS)
         self._works_panel._on_new_work()  # noqa: SLF001 — reuse existing handler
 
     def _on_include_fragment_from_empty_state(self) -> None:
@@ -650,7 +663,7 @@ class MainWindow(QMainWindow):
             self._works_panel._on_new_work()  # noqa: SLF001
         # Switch back to fragments mode so the user can see the fragment
         # they are about to include, then run the existing include flow.
-        self._set_mode(0)
+        self._set_mode(MODE_FRAGMENTS)
         self._on_include_fragment()
 
     def _refresh_tag_filter(self) -> None:
@@ -928,11 +941,84 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     # --------------------------------------------------------------
+    # M-Dates: signals from DatesPanel
+    # --------------------------------------------------------------
+    def _on_dates_entry_picked(self, entry_id: str) -> None:
+        """Open a fragment from the Dates view in the editor."""
+        self._autosave.flush()
+        self._set_mode(MODE_FRAGMENTS)
+        self._list_panel.clear_search()
+        self._list_panel.reset_tag_filter()
+        self._refresh_list(select_id=entry_id)
+        self._load_entry(entry_id)
+        self._show_fragments_workspace()
+        self._editor_panel.focus_body()
+
+    def _on_dates_new_today(self) -> None:
+        """Quick-create today's entry from the Dates view, then open it.
+
+        We deliberately rely on ``EntryRepository.create``'s default
+        ``created_at`` (which is ``strftime('now')`` server-side). The
+        spec is explicit: do NOT introduce a manual writing-date field.
+        """
+        self._autosave.flush()
+        entry = self._container.entry_repository.create()
+        # Refresh dates panel badges + list so the new entry appears today.
+        self._dates_panel.refresh(select_entry_id=entry.id)
+        # Then jump to the editor.
+        self._on_dates_entry_picked(entry.id)
+
+    def _on_dates_append_tags(self, entry_ids: list) -> None:
+        from writer.ui.dialogs.append_tags_dialog import AppendTagsDialog
+
+        if not entry_ids:
+            return
+        dlg = AppendTagsDialog(count=len(entry_ids), parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        tags = dlg.tags()
+        if not tags:
+            return
+        self._autosave.flush()
+        repo = self._container.entry_repository
+        touched = 0
+        for eid in entry_ids:
+            if repo.append_tags(eid, tags) is not None:
+                touched += 1
+        # Reload UIs that may show tags.
+        self._dates_panel.refresh()
+        self._refresh_tag_filter()
+        self._refresh_list(select_id=self._editor_panel.current_entry_id())
+        self._set_save_status("saved")
+        QMessageBox.information(
+            self,
+            TR("dates.append_tags_title"),
+            TR("dates.append_tags_done").format(count=touched),
+        )
+
+    def _on_dates_merge(self, entry_ids: list) -> None:
+        from writer.ui.dialogs.merge_to_draft_dialog import MergeToDraftDialog
+
+        if not entry_ids:
+            return
+        repo = self._container.entry_repository
+        entries = [e for e in (repo.get(i) for i in entry_ids) if e is not None]
+        if not entries:
+            return
+        dlg = MergeToDraftDialog(self._container, entries, parent=self)
+        dlg.saved.connect(self._on_dates_merge_saved)
+        dlg.exec()
+
+    def _on_dates_merge_saved(self, new_entry_id: str) -> None:
+        self._dates_panel.refresh(select_entry_id=new_entry_id)
+        self._refresh_tag_filter()
+
+    # --------------------------------------------------------------
     # M8 Works / Collections / Search / Include
     # --------------------------------------------------------------
     def _set_mode(self, mode: int) -> None:
         previous_mode = self._stack.currentIndex()
-        if mode == 3 and previous_mode != 3:
+        if mode == MODE_AI and previous_mode != MODE_AI:
             self._last_mode_before_ai = previous_mode
         self._stack.setCurrentIndex(mode)
         self._rail.set_active_mode(mode)
@@ -941,16 +1027,19 @@ class MainWindow(QMainWindow):
             self._container.settings.set(KEY_ACTIVE_MODE, str(mode))
         except Exception:  # noqa: BLE001 — settings issues must not crash UI
             pass
-        if mode == 0:
+        if mode == MODE_DATES:
+            self._dates_panel.refresh()
+        elif mode == MODE_FRAGMENTS:
             self._refresh_fragment_context()
-        elif mode == 1:
+        elif mode == MODE_WORKS:
             self._works_panel.refresh(preserve_selection=True)
             self._refresh_work_context_from_panel()
-        elif mode == 2:
+        elif mode == MODE_COLLECTIONS:
             self._collections_panel.refresh_collections()
             self._refresh_collection_context_from_panel()
-        elif mode == 3:
+        elif mode == MODE_AI:
             self._bind_ai_workspace_scope()
+            self._refresh_ai_context_from_panel()
 
     def _bind_ai_workspace_scope(self) -> None:
         """Hand the AI workspace whichever object is most relevant.
@@ -1056,9 +1145,10 @@ class MainWindow(QMainWindow):
 
         source_mode = self._last_mode_before_ai
         binders = {
-            0: (_bind_fragment_scope, _bind_work_scope, _bind_collection_scope),
-            1: (_bind_work_scope, _bind_fragment_scope, _bind_collection_scope),
-            2: (_bind_collection_scope, _bind_fragment_scope, _bind_work_scope),
+            MODE_DATES: (_bind_fragment_scope, _bind_work_scope, _bind_collection_scope),
+            MODE_FRAGMENTS: (_bind_fragment_scope, _bind_work_scope, _bind_collection_scope),
+            MODE_WORKS: (_bind_work_scope, _bind_fragment_scope, _bind_collection_scope),
+            MODE_COLLECTIONS: (_bind_collection_scope, _bind_fragment_scope, _bind_work_scope),
         }.get(source_mode, (_bind_fragment_scope, _bind_work_scope, _bind_collection_scope))
         for binder in binders:
             if binder():
@@ -1068,16 +1158,92 @@ class MainWindow(QMainWindow):
             AiScope(kind=AiThreadScope.GLOBAL, ref_id=None, name="", body="")
         )
 
+    def _refresh_ai_context_from_panel(self) -> None:
+        if self._stack.currentIndex() != MODE_AI:
+            return
+        scope = self._ai_workspace_panel.scope
+        if scope is None or scope.kind is AiThreadScope.GLOBAL or not scope.ref_id:
+            self._show_mode_empty_context(MODE_AI)
+            return
+        if scope.kind is AiThreadScope.FRAGMENT:
+            entry = self._container.entry_repository.get(scope.ref_id)
+            if entry is None:
+                self._show_mode_empty_context(MODE_AI)
+                return
+            body = entry.body or ""
+            self._context_pane.show_fragment(
+                title=(entry.title or TR("list.empty_fragment")).strip(),
+                words=str(_count_words(body)),
+                chars=str(len(body)),
+                tags=", ".join(entry.tags) or TR("context.no_value"),
+                created=entry.created_at or TR("context.no_value"),
+                updated=entry.updated_at or TR("context.no_value"),
+                status=(
+                    TR("list.archived_badge").strip(" []")
+                    if entry.archived_at
+                    else TR("context.no_value")
+                ),
+            )
+            return
+        if scope.kind is AiThreadScope.WORK:
+            work_id = scope.work_id or scope.ref_id
+            work = self._container.work_repository.get(work_id)
+            if work is None:
+                self._show_mode_empty_context(MODE_AI)
+                return
+            self._context_pane.show_work(
+                title=work.title or TR("works.untitled"),
+                summary=work.summary or TR("context.no_value"),
+                status=TR(f"work.status.{work.status}"),
+                words=str(self._container.work_service.compute_word_count(work_id)),
+                target=(
+                    str(work.target_word_count)
+                    if work.target_word_count
+                    else TR("context.no_target")
+                ),
+                updated=work.updated_at or TR("context.no_value"),
+            )
+            return
+        if scope.kind is AiThreadScope.COLLECTION:
+            coll = self._container.collection_repository.get(scope.ref_id)
+            if coll is None:
+                self._show_mode_empty_context(MODE_AI)
+                return
+            works = self._container.collection_repository.list_works(scope.ref_id)
+            total_words = sum(
+                self._container.work_service.compute_word_count(work.id)
+                for work in works
+            )
+            self._context_pane.show_collection(
+                title=coll.name or TR("collections.untitled"),
+                work_count=str(len(works)),
+                words=str(total_words),
+            )
+            return
+        self._show_mode_empty_context(MODE_AI)
+
+    def _show_mode_empty_context(self, mode: Optional[int] = None) -> None:
+        actual_mode = self._stack.currentIndex() if mode is None else mode
+        title_key, desc_key = {
+            MODE_WORKS: ("context.empty_title_work", "context.empty_desc_work"),
+            MODE_COLLECTIONS: (
+                "context.empty_title_collection",
+                "context.empty_desc_collection",
+            ),
+            MODE_AI: ("context.empty_title_ai", "context.empty_desc_ai"),
+        }.get(actual_mode, ("context.empty_title", "context.empty_desc"))
+        self._context_pane.show_empty(TR(title_key), TR(desc_key))
+
     def _on_global_search(self) -> None:
         dlg = GlobalSearchDialog(self._container, parent=self)
         if dlg.exec() != QDialog.DialogCode.Accepted or dlg.selected_hit is None:
             return
         hit = dlg.selected_hit
         if hit.kind == "fragment":
-            self._set_mode(0)
+            self._set_mode(MODE_FRAGMENTS)
             self._refresh_list(select_id=hit.id)
         elif hit.kind == "work":
-            self._set_mode(1)
+            self._set_mode(MODE_WORKS)
             self._works_panel.select_work_section(hit.id, hit.section_id)
 
     def _on_include_fragment(self) -> None:
@@ -1503,13 +1669,11 @@ class MainWindow(QMainWindow):
 
     # ------- Context-pane refresh helpers -------
     def _refresh_fragment_context(self) -> None:
-        if self._stack.currentIndex() != 0:
+        if self._stack.currentIndex() != MODE_FRAGMENTS:
             return
         entry_id = self._editor_panel.current_entry_id()
         if not entry_id:
-            self._context_pane.show_empty(
-                TR("context.empty_title"), TR("context.empty_desc")
-            )
+            self._show_mode_empty_context(MODE_FRAGMENTS)
             return
         title = self._editor_panel.title_text().strip() or TR(
             "list.empty_fragment"
@@ -1520,9 +1684,7 @@ class MainWindow(QMainWindow):
         tags = self._editor_panel.tags_text().strip() or TR("context.no_value")
         entry = self._container.entry_repository.get(entry_id)
         if entry is None:
-            self._context_pane.show_empty(
-                TR("context.empty_title"), TR("context.empty_desc")
-            )
+            self._show_mode_empty_context(MODE_FRAGMENTS)
             return
         status = (
             TR("list.archived_badge").strip(" []")
@@ -1547,18 +1709,14 @@ class MainWindow(QMainWindow):
         if wid:
             self._refresh_work_context(wid)
         else:
-            self._context_pane.show_empty(
-                TR("context.empty_title"), TR("context.empty_desc")
-            )
+            self._show_mode_empty_context(MODE_WORKS)
 
     def _refresh_work_context(self, work_id: str) -> None:
-        if self._stack.currentIndex() != 1:
+        if self._stack.currentIndex() != MODE_WORKS:
             return
         work = self._container.work_repository.get(work_id)
         if work is None:
-            self._context_pane.show_empty(
-                TR("context.empty_title"), TR("context.empty_desc")
-            )
+            self._show_mode_empty_context(MODE_WORKS)
             return
         words = self._container.work_service.compute_word_count(work_id)
         target = (
@@ -1583,18 +1741,14 @@ class MainWindow(QMainWindow):
         if cid:
             self._refresh_collection_context(cid)
         else:
-            self._context_pane.show_empty(
-                TR("context.empty_title"), TR("context.empty_desc")
-            )
+            self._show_mode_empty_context(MODE_COLLECTIONS)
 
     def _refresh_collection_context(self, collection_id: str) -> None:
-        if self._stack.currentIndex() != 2:
+        if self._stack.currentIndex() != MODE_COLLECTIONS:
             return
         coll = self._container.collection_repository.get(collection_id)
         if coll is None:
-            self._context_pane.show_empty(
-                TR("context.empty_title"), TR("context.empty_desc")
-            )
+            self._show_mode_empty_context(MODE_COLLECTIONS)
             return
         works = self._container.collection_repository.list_works(collection_id)
         total_words = sum(

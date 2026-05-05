@@ -42,6 +42,13 @@ def _stub_container_provider(container, provider: AiProvider) -> None:
     container.ai_thread_service._provider_factory = lambda: provider  # noqa: SLF001
 
 
+def _row_for_task(tab, task: AiTaskType) -> int:
+    return next(
+        i for i in range(tab._task_list.count())  # noqa: SLF001
+        if tab._task_list.item(i).data(0x0100) == task
+    )
+
+
 @pytest.fixture()
 def container(isolated_data_dir):
     c = build_container()
@@ -62,7 +69,8 @@ def test_main_window_has_four_rail_modes_including_ai(qtbot, container):
     window = MainWindow(container, autosave_debounce_ms=50)
     qtbot.addWidget(window)
 
-    assert window._stack.count() == 4  # noqa: SLF001
+    # M-Dates added a new mode at the front, so the stack now has five.
+    assert window._stack.count() == 5  # noqa: SLF001
     rail = window._rail  # noqa: SLF001
     assert rail.ai_button is not None
     assert rail.ai_button.isCheckable()
@@ -75,8 +83,8 @@ def test_set_mode_three_binds_ai_workspace_to_global_when_nothing_selected(
 
     window = MainWindow(container, autosave_debounce_ms=50)
     qtbot.addWidget(window)
-    window._set_mode(3)  # noqa: SLF001
-    assert window._stack.currentIndex() == 3  # noqa: SLF001
+    window._set_mode(4)  # noqa: SLF001
+    assert window._stack.currentIndex() == 4  # noqa: SLF001
     panel = window._ai_workspace_panel  # noqa: SLF001
     # Tabs widget should have exactly two tabs.
     assert panel.tabs.count() == 2
@@ -91,7 +99,7 @@ def test_set_mode_three_binds_ai_workspace_to_open_fragment(
     window = MainWindow(container, autosave_debounce_ms=50)
     qtbot.addWidget(window)
     window._editor_panel.set_entry(entry)  # noqa: SLF001
-    window._set_mode(3)  # noqa: SLF001
+    window._set_mode(4)  # noqa: SLF001
 
     panel = window._ai_workspace_panel  # noqa: SLF001
     scope = panel._scope  # noqa: SLF001
@@ -135,6 +143,189 @@ def test_tools_tab_runs_polish_via_stub_provider(qtbot, container):
     response = container.ai_task_service.generate(request)
     assert response.content == "POLISHED"
     assert provider.calls
+
+
+def test_polish_result_shows_send_to_chat_action(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    provider = _StubProvider("POLISHED")
+    _stub_container_provider(container, provider)
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(
+            kind=AiThreadScope.GLOBAL,
+            ref_id=None,
+            name="",
+            body="plain text",
+        )
+    )
+    tab._paste_edit.setPlainText("plain text")  # noqa: SLF001
+
+    request = tab._build_request()  # noqa: SLF001
+    response = container.ai_task_service.generate(request)
+    tab._last_request = request  # noqa: SLF001
+    tab._on_task_succeeded(response)  # noqa: SLF001
+
+    assert tab._send_chat_btn.isHidden() is False  # noqa: SLF001
+
+
+def test_result_meta_shows_provider_and_model(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    provider = _StubProvider("POLISHED")
+    _stub_container_provider(container, provider)
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(AiScope(AiThreadScope.GLOBAL, None, "", "plain text"))
+    tab._paste_edit.setPlainText("plain text")  # noqa: SLF001
+
+    request = tab._build_request()  # noqa: SLF001
+    response = container.ai_task_service.generate(request)
+    tab._last_request = request  # noqa: SLF001
+    tab._on_task_succeeded(response)  # noqa: SLF001
+
+    assert "Provider" in tab._meta_label.text()  # noqa: SLF001
+    assert "stub" in tab._meta_label.text()  # noqa: SLF001
+    assert "Model" in tab._meta_label.text()  # noqa: SLF001
+
+
+def test_apply_button_updates_when_output_destination_changes_after_result(
+    qtbot, container
+):
+    from writer.ui.i18n import TR
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    entry = container.entry_repository.create(title="X", body="hello world")
+    provider = _StubProvider("POLISHED")
+    _stub_container_provider(container, provider)
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(
+            kind=AiThreadScope.FRAGMENT,
+            ref_id=entry.id,
+            name=entry.title or "X",
+            body=entry.body or "",
+        )
+    )
+
+    request = tab._build_request()  # noqa: SLF001
+    response = container.ai_task_service.generate(request)
+    tab._last_request = request  # noqa: SLF001
+    tab._on_task_succeeded(response)  # noqa: SLF001
+
+    assert tab._apply_btn.isEnabled() is False  # noqa: SLF001
+    assert tab._apply_btn.toolTip() == TR("ai.results.apply_disabled_preview")  # noqa: SLF001
+
+    repl_idx = tab._output_combo.findData(AiOutputAction.REPLACE_FRAGMENT)  # noqa: SLF001
+    tab._output_combo.setCurrentIndex(repl_idx)  # noqa: SLF001
+
+    assert tab._apply_btn.isEnabled() is True  # noqa: SLF001
+    assert tab._apply_btn.toolTip() == TR("ai.results.apply_ready")  # noqa: SLF001
+
+
+def test_library_qa_result_shows_send_to_chat_action(qtbot, container):
+    import json
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    payload = {"answer": "Alice", "citations": []}
+    provider = _StubProvider(json.dumps(payload))
+    _stub_container_provider(container, provider)
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(AiScope(AiThreadScope.GLOBAL, None, "", ""))
+    qa_row = next(
+        i for i in range(tab._task_list.count())  # noqa: SLF001
+        if tab._task_list.item(i).data(0x0100) == AiTaskType.LIBRARY_QA
+    )
+    tab._task_list.setCurrentRow(qa_row)  # noqa: SLF001
+    paste_idx = tab._target_combo.findData(AiTargetKind.PASTE)  # noqa: SLF001
+    tab._target_combo.setCurrentIndex(paste_idx)  # noqa: SLF001
+    tab._paste_edit.setPlainText("who?")  # noqa: SLF001
+
+    request = tab._build_request()  # noqa: SLF001
+    response = container.ai_task_service.generate(request)
+    tab._last_request = request  # noqa: SLF001
+    tab._on_task_succeeded(response)  # noqa: SLF001
+
+    assert tab._send_chat_btn.isHidden() is False  # noqa: SLF001
+
+
+def test_style_preset_buttons_append_into_style_input(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.STYLE_TRANSFER))  # noqa: SLF001
+
+    first_author = tab._style_author_presets[0]  # noqa: SLF001
+    first_goal = tab._style_goal_presets[0]  # noqa: SLF001
+    separator = ", "
+
+    tab._style_preset_buttons[first_author].click()  # noqa: SLF001
+    tab._style_preset_buttons[first_goal].click()  # noqa: SLF001
+
+    assert tab._style_edit.text() == first_author + separator + first_goal  # noqa: SLF001
+
+
+def test_task_switch_updates_style_presets_and_relevant_fields(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+
+    polish_presets = set(tab._style_preset_buttons)  # noqa: SLF001
+    assert polish_presets
+    assert not tab._style_field.isHidden()  # noqa: SLF001
+    assert not tab._intensity_combo.isHidden()  # noqa: SLF001
+
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.EXPAND))  # noqa: SLF001
+    expand_presets = set(tab._style_preset_buttons)  # noqa: SLF001
+    assert expand_presets
+    assert expand_presets != polish_presets
+
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.CONTINUE))  # noqa: SLF001
+    continue_presets = set(tab._style_preset_buttons)  # noqa: SLF001
+    assert continue_presets
+    assert continue_presets != expand_presets
+    assert tab._intensity_combo.isHidden()  # noqa: SLF001
+
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.STYLE_TRANSFER))  # noqa: SLF001
+    assert tab._style_author_presets[0] in tab._style_preset_buttons  # noqa: SLF001
+    assert tab._style_goal_presets[0] in tab._style_preset_buttons  # noqa: SLF001
+    assert not tab._intensity_combo.isHidden()  # noqa: SLF001
+
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.SUMMARIZE))  # noqa: SLF001
+    assert tab._style_field.isHidden()  # noqa: SLF001
+    assert tab._intensity_combo.isHidden()  # noqa: SLF001
+
+
+def test_current_fragment_is_not_readded_as_attachment(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+    import writer.ui.panels.ai_workspace_panel as panel_mod
+
+    entry = container.entry_repository.create(title="X", body="body")
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(
+            kind=AiThreadScope.FRAGMENT,
+            ref_id=entry.id,
+            name=entry.title or "X",
+            body=entry.body or "",
+        )
+    )
+    panel_mod.QMessageBox.information = lambda *a, **k: None  # type: ignore[assignment]
+
+    added = tab._try_add_fragment_attachment(entry)  # noqa: SLF001
+
+    assert added is False
+    assert tab._attachments == []  # noqa: SLF001
 
 
 def test_tools_tab_library_qa_resolves_citations_through_real_service(
@@ -376,6 +567,59 @@ def test_selection_target_uses_scope_selection_text(qtbot, container):
     assert AiOutputAction.REPLACE_SELECTION in out_values
 
 
+def test_bind_scope_defaults_to_selection_when_fragment_has_selection(
+    qtbot, container
+):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(
+            kind=AiThreadScope.FRAGMENT,
+            ref_id="frag-1",
+            name="F",
+            body="hello world hello again",
+            selection_start=6,
+            selection_end=11,
+            selection_text="world",
+        )
+    )
+
+    request = tab._build_request()  # noqa: SLF001
+    assert request is not None
+    assert request.target_kind == AiTargetKind.SELECTION
+    assert request.text == "world"
+
+
+def test_context_estimate_refreshes_after_scope_bind(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(
+            kind=AiThreadScope.FRAGMENT,
+            ref_id="frag-1",
+            name="F",
+            body="hello world",
+        )
+    )
+
+    assert "11" in tab._attach_total_label.text()  # noqa: SLF001
+
+
+def test_context_estimate_tracks_paste_text(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(AiScope(AiThreadScope.GLOBAL, None, "", ""))
+    tab._paste_edit.setPlainText("abcde")  # noqa: SLF001
+
+    assert "5" in tab._attach_total_label.text()  # noqa: SLF001
+
+
 def test_replace_fragment_apply_actually_writes_fragment_body(qtbot, container):
     """Bug #1 + #4: REPLACE_FRAGMENT path must route through apply_to_fragment
     (this verifies the `out is AiOutputAction.X` -> `==` fix is in effect)."""
@@ -476,9 +720,9 @@ def test_main_window_binds_section_scope_when_section_focused(qtbot, container):
 
     window = MainWindow(container, autosave_debounce_ms=50)
     qtbot.addWidget(window)
-    window._set_mode(1)  # works mode  # noqa: SLF001
+    window._set_mode(2)  # works mode  # noqa: SLF001
     window._works_panel.select_work_section(work.id, section.id)  # noqa: SLF001
-    window._set_mode(3)  # noqa: SLF001
+    window._set_mode(4)  # noqa: SLF001
 
     scope = window._ai_workspace_panel._scope  # noqa: SLF001
     assert scope is not None
@@ -486,6 +730,36 @@ def test_main_window_binds_section_scope_when_section_focused(qtbot, container):
     assert scope.work_id == work.id
     assert scope.section_id == section.id
     assert "section body text" in scope.body
+
+
+def test_main_window_keeps_fragment_selection_when_reentering_ai(qtbot, container):
+    from PySide6.QtGui import QTextCursor
+
+    from writer.ui.main_window import MainWindow, MODE_AI, MODE_FRAGMENTS
+
+    entry = container.entry_repository.create(title="t", body="alpha beta gamma")
+
+    window = MainWindow(container, autosave_debounce_ms=50)
+    qtbot.addWidget(window)
+    window._set_mode(MODE_FRAGMENTS)  # noqa: SLF001
+    window._load_entry(entry.id)  # noqa: SLF001
+
+    body_edit = window._editor_panel._body  # noqa: SLF001
+    cursor = body_edit.textCursor()
+    cursor.setPosition(6)
+    cursor.setPosition(10, QTextCursor.MoveMode.KeepAnchor)
+    body_edit.setTextCursor(cursor)
+
+    window._set_mode(MODE_AI)  # noqa: SLF001
+    window._set_mode(MODE_FRAGMENTS)  # noqa: SLF001
+    window._set_mode(MODE_AI)  # noqa: SLF001
+
+    tab = window._ai_workspace_panel.tools_tab  # noqa: SLF001
+    request = tab._build_request()  # noqa: SLF001
+
+    assert request is not None
+    assert request.target_kind == AiTargetKind.SELECTION
+    assert request.text == "beta"
 
 
 def test_main_window_section_scope_replace_section_path_reachable(qtbot, container):
@@ -502,9 +776,9 @@ def test_main_window_section_scope_replace_section_path_reachable(qtbot, contain
 
     window = MainWindow(container, autosave_debounce_ms=50)
     qtbot.addWidget(window)
-    window._set_mode(1)  # noqa: SLF001
+    window._set_mode(2)  # noqa: SLF001
     window._works_panel.select_work_section(work.id, section.id)  # noqa: SLF001
-    window._set_mode(3)  # noqa: SLF001
+    window._set_mode(4)  # noqa: SLF001
 
     tab = window._ai_workspace_panel.tools_tab  # noqa: SLF001
     sec_idx = tab._target_combo.findData(AiTargetKind.WORK_SECTION)  # noqa: SLF001
@@ -553,9 +827,9 @@ def test_main_window_prefers_work_section_over_stale_fragment_when_entering_ai(
     window = MainWindow(container, autosave_debounce_ms=50)
     qtbot.addWidget(window)
     window._editor_panel.set_entry(entry)  # noqa: SLF001
-    window._set_mode(1)  # noqa: SLF001
+    window._set_mode(2)  # noqa: SLF001
     window._works_panel.select_work_section(work.id, section.id)  # noqa: SLF001
-    window._set_mode(3)  # noqa: SLF001
+    window._set_mode(4)  # noqa: SLF001
 
     scope = window._ai_workspace_panel._scope  # noqa: SLF001
     assert scope is not None

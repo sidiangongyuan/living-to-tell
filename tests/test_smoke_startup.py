@@ -39,7 +39,7 @@ def test_main_window_constructs_and_shows(qtbot, container) -> None:
     assert window.windowTitle() == "Writer"
     titles = {action.text() for action in window.menuBar().actions()}
     assert "&File" in titles
-    assert "&AI" in titles
+    assert "&AI" not in titles
     assert "&Help" in titles
     # M9A: an empty database must NOT auto-create a fragment. Instead the
     # welcome card takes over the work area and the editor stays unloaded.

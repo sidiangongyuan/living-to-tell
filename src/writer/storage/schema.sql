@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS entries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_entries_updated_at ON entries (updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_entries_created_at ON entries (created_at DESC);
 
 CREATE TABLE IF NOT EXISTS entry_versions (
     id           TEXT PRIMARY KEY,
@@ -72,6 +73,7 @@ CREATE TABLE IF NOT EXISTS reference_passages (
     source_author TEXT NOT NULL DEFAULT '',
     content       TEXT NOT NULL,
     tags          TEXT NOT NULL DEFAULT '',
+    kind          TEXT NOT NULL DEFAULT 'excerpt',
     created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );

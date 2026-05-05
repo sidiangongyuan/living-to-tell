@@ -48,6 +48,23 @@ class TestThemeTokens:
         assert "#PrimaryButton" in qss or "PrimaryButton" in qss
         assert len(qss) > 100
 
+    def test_build_qss_styles_ai_workspace_surfaces(self):
+        from writer.ui.theme import LIGHT_TOKENS, build_qss
+
+        qss = build_qss(LIGHT_TOKENS)
+
+        assert "AIWorkspacePanel" in qss
+        assert "AIToolsRight" in qss
+        assert LIGHT_TOKENS.bg_main in qss
+
+    def test_build_qss_styles_ai_combo_popups_for_readability(self):
+        from writer.ui.theme import LIGHT_TOKENS, build_qss
+
+        qss = build_qss(LIGHT_TOKENS)
+
+        assert "QWidget#AIWorkspacePanel QComboBox QAbstractItemView" in qss
+        assert LIGHT_TOKENS.bg_card in qss
+
 
 # ---------------------------------------------------------------------------
 # Theme persistence via settings
@@ -92,11 +109,11 @@ class TestShellLayout:
         window = MainWindow(container, autosave_debounce_ms=50)
         qtbot.addWidget(window)
 
-        window._set_mode(1)  # noqa: SLF001 — works mode
-        assert window._stack.currentIndex() == 1  # noqa: SLF001
-
-        window._set_mode(2)  # noqa: SLF001 — collections mode
+        window._set_mode(2)  # noqa: SLF001 — works mode
         assert window._stack.currentIndex() == 2  # noqa: SLF001
+
+        window._set_mode(3)  # noqa: SLF001 — collections mode
+        assert window._stack.currentIndex() == 3  # noqa: SLF001
 
     def test_active_mode_persists(self, qtbot, container):
         from writer.app.settings import KEY_ACTIVE_MODE
@@ -104,13 +121,13 @@ class TestShellLayout:
 
         window = MainWindow(container, autosave_debounce_ms=50)
         qtbot.addWidget(window)
-        window._set_mode(1)  # noqa: SLF001
-        assert container.settings.get(KEY_ACTIVE_MODE) == "1"
+        window._set_mode(2)  # noqa: SLF001
+        assert container.settings.get(KEY_ACTIVE_MODE) == "2"
 
-        # New window should restore mode 1.
+        # New window should restore mode 2 (works).
         window2 = MainWindow(container, autosave_debounce_ms=50)
         qtbot.addWidget(window2)
-        assert window2._stack.currentIndex() == 1  # noqa: SLF001
+        assert window2._stack.currentIndex() == 2  # noqa: SLF001
 
     def test_context_pane_visibility_persists(self, qtbot, container):
         from writer.app.settings import KEY_CONTEXT_PANE_VISIBLE
@@ -204,15 +221,92 @@ class TestContextPane:
         assert window._context_pane._stack.currentIndex() == 0  # noqa: SLF001
 
     def test_context_pane_shows_fragment_after_load(self, qtbot, container):
-        from writer.ui.main_window import MainWindow
+        from writer.ui.main_window import MainWindow, MODE_FRAGMENTS
 
         entry = container.entry_repository.create(title="t", body="hello world")
         window = MainWindow(container, autosave_debounce_ms=50)
         qtbot.addWidget(window)
 
+        window._set_mode(MODE_FRAGMENTS)  # noqa: SLF001
         window._load_entry(entry.id)  # noqa: SLF001
-        # Fragment page is index 1.
         assert window._context_pane._stack.currentIndex() == 1  # noqa: SLF001
+
+    def test_context_pane_shows_work_in_works_mode(self, qtbot, container):
+        from writer.ui.main_window import MainWindow, MODE_WORKS
+
+        work = container.work_repository.create(title="W", summary="sum")
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        window._set_mode(MODE_WORKS)  # noqa: SLF001
+        window._refresh_work_context(work.id)  # noqa: SLF001
+
+        assert window._context_pane._stack.currentIndex() == 2  # noqa: SLF001
+
+    def test_context_pane_shows_collection_in_collections_mode(self, qtbot, container):
+        from writer.ui.main_window import MainWindow, MODE_COLLECTIONS
+
+        collection = container.collection_repository.create(name="C")
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        window._set_mode(MODE_COLLECTIONS)  # noqa: SLF001
+        window._refresh_collection_context(collection.id)  # noqa: SLF001
+
+        assert window._context_pane._stack.currentIndex() == 3  # noqa: SLF001
+
+    def test_context_pane_shows_work_specific_empty_copy_without_selection(
+        self, qtbot, container
+    ):
+        from writer.ui.i18n import TR
+        from writer.ui.main_window import MainWindow, MODE_WORKS
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        window._set_mode(MODE_WORKS)  # noqa: SLF001
+
+        assert window._context_pane._stack.currentIndex() == 0  # noqa: SLF001
+        assert window._context_pane._empty._title.text() == TR("context.empty_title_work")  # noqa: SLF001
+
+    def test_context_pane_shows_collection_specific_empty_copy_without_selection(
+        self, qtbot, container
+    ):
+        from writer.ui.i18n import TR
+        from writer.ui.main_window import MainWindow, MODE_COLLECTIONS
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        window._set_mode(MODE_COLLECTIONS)  # noqa: SLF001
+
+        assert window._context_pane._stack.currentIndex() == 0  # noqa: SLF001
+        assert window._context_pane._empty._title.text() == TR("context.empty_title_collection")  # noqa: SLF001
+
+    def test_context_pane_shows_ai_bound_fragment_in_ai_mode(self, qtbot, container):
+        from writer.ui.main_window import MainWindow, MODE_AI
+
+        entry = container.entry_repository.create(title="AI Entry", body="hello ai")
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        window._editor_panel.set_entry(entry)  # noqa: SLF001
+        window._set_mode(MODE_AI)  # noqa: SLF001
+
+        assert window._context_pane._stack.currentIndex() == 1  # noqa: SLF001
+        assert window._context_pane._title.text() == "AI Entry"  # noqa: SLF001
+
+    def test_context_pane_shows_ai_global_empty_copy_when_unbound(self, qtbot, container):
+        from writer.ui.i18n import TR
+        from writer.ui.main_window import MainWindow, MODE_AI
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        window._set_mode(MODE_AI)  # noqa: SLF001
+
+        assert window._context_pane._stack.currentIndex() == 0  # noqa: SLF001
+        assert window._context_pane._empty._title.text() == TR("context.empty_title_ai")  # noqa: SLF001
 
 
 # ---------------------------------------------------------------------------

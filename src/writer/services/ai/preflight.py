@@ -7,8 +7,8 @@ Checks, in order:
   1. Target text is non-empty.
   2. Model is configured.
   3. wire_api is supported.
-  4. api_key_source is a valid env:VAR string.
-  5. Environment variable exists and is non-empty.
+    4. api_key_source is supported (env:VAR / codex / gemini).
+    5. The selected runtime credential source is available.
 
 Each failure carries a short user-facing message describing *what* is
 missing and *where* to fix it.
@@ -22,6 +22,12 @@ from typing import List, Optional
 from writer.app.settings import SUPPORTED_WIRE_APIS
 from writer.domain.models.ai_config import AiConfig
 from writer.services.ai.codex_auth import CODEX_AUTH_SOURCE, CodexAuthResolver
+from writer.services.ai.gemini_cli_provider import (
+    GEMINI_CLI_AUTH_SOURCE,
+    GEMINI_CLI_PROVIDER,
+    find_gemini_cli,
+)
+from writer.services.ai.gemini_auth import GEMINI_AUTH_SOURCE, GeminiAuthResolver
 
 
 @dataclass(frozen=True)
@@ -37,6 +43,7 @@ def preflight_rewrite(
     has_entry: bool = True,
     environ: Optional[dict] = None,
     codex_auth: Optional[CodexAuthResolver] = None,
+    gemini_auth: Optional[GeminiAuthResolver] = None,
 ) -> List[PreflightIssue]:
     """Return a list of blocking issues for a rewrite call.
 
@@ -116,14 +123,59 @@ def preflight_rewrite(
                     ),
                 )
             )
+    elif source.lower() == GEMINI_AUTH_SOURCE:
+        resolver = gemini_auth if gemini_auth is not None else GeminiAuthResolver()
+        status = resolver.status()
+        if not status.available:
+            reason_map = {
+                "missing_file": (
+                    f"Gemini env file was not found at {status.path}. "
+                    "Create ~/.gemini/.env (or re-run the Gemini CLI setup) "
+                    "before relying on the gemini credential source. "
+                    "Alternatively switch API key source back to env:VARNAME "
+                    "in AI → Settings."
+                ),
+                "missing_key": (
+                    f"Gemini env file at {status.path} has no non-empty "
+                    "GEMINI_API_KEY entry. Refresh the Gemini CLI config, "
+                    "or switch API key source to env:VARNAME."
+                ),
+                "unreadable": (
+                    f"Gemini env file at {status.path} could not be parsed. "
+                    "Check file permissions or regenerate the file."
+                ),
+            }
+            issues.append(
+                PreflightIssue(
+                    "missing_gemini_auth",
+                    reason_map.get(
+                        status.reason,
+                        f"Gemini auth at {status.path} is unavailable.",
+                    ),
+                )
+            )
+    elif source.lower() == GEMINI_CLI_AUTH_SOURCE or config.provider_key() == GEMINI_CLI_PROVIDER:
+        configured = (env.get("WRITER_GEMINI_CLI_COMMAND", "") or "").strip()
+        found = configured or find_gemini_cli()
+        if not found:
+            issues.append(
+                PreflightIssue(
+                    "missing_gemini_cli",
+                    "Gemini CLI was not found. Install it with `npm install -g "
+                    "@google/gemini-cli`, or add gemini.cmd to PATH before "
+                    "using the Gemini CLI / OAuth provider.",
+                )
+            )
     elif not source.startswith("env:"):
         issues.append(
             PreflightIssue(
                 "bad_key_source",
                 "API key source must be either env:VARNAME or the literal "
-                "string 'codex'. Open AI → Settings and set, for example, "
+                "string 'codex', 'gemini', or 'gemini-cli'. Open AI → Settings and set, for example, "
                 "env:OPENAI_API_KEY, or switch to 'codex' to reuse "
-                "~/.codex/auth.json. The key itself is never stored on disk.",
+                "~/.codex/auth.json, 'gemini' to reuse ~/.gemini/.env, "
+                "or 'gemini-cli' to reuse Gemini CLI OAuth. "
+                "The key itself is never stored on disk.",
             )
         )
     else:
