@@ -26,6 +26,9 @@ moving quickly.
   errors.
 - Stabilize the AI task template and card UI that is currently repository-level
   only.
+- Improve the AI revision workflow so quick actions open editable settings,
+  rewrite-style results show original text beside AI output, and task parameters
+  remain isolated per task. See [AI Revision Workflow Plan](ai-revision-workflow.md).
 
 ## Later candidates
 
@@ -35,6 +38,8 @@ moving quickly.
 - Optional cloud sync adapter, kept separate from the local-first core.
 - Plugin-style AI provider adapters.
 - Better token counting using provider-native count-token endpoints.
+- Rich tracked-changes review mode for AI edits, with muted deletions and
+  highlighted additions.
 
 ## Non-goals for the current alpha
 

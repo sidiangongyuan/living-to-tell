@@ -124,6 +124,7 @@ See [SECURITY.md](SECURITY.md) for reporting and contributor rules.
 
 - [CHANGELOG.md](CHANGELOG.md) — product-facing release history
 - [docs/roadmap.md](docs/roadmap.md) — alpha-to-beta roadmap
+- [docs/ai-revision-workflow.md](docs/ai-revision-workflow.md) — planned AI compare / revision workflow
 - [docs/screenshots/README.md](docs/screenshots/README.md) — screenshot checklist
 
 ## Contributing
