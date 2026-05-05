@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from writer.app.global_hotkeys import GlobalHotkeyManager, MOD_ALT, MOD_CONTROL, WM_HOTKEY
+from writer.app.global_hotkeys import (
+    GlobalHotkeyManager,
+    MOD_ALT,
+    MOD_CONTROL,
+    VK_OEM_3,
+    WM_HOTKEY,
+)
 
 
 class _FakeWindow:
@@ -18,6 +24,14 @@ def test_parse_hotkey_ctrl_alt_letter() -> None:
     assert vk == ord("W")
 
 
+def test_parse_hotkey_ctrl_alt_backquote_key() -> None:
+    for sequence in ("Ctrl+Alt+`", "Ctrl+Alt+·", "Ctrl+Alt+Backquote"):
+        modifiers, vk = GlobalHotkeyManager.parse_hotkey(sequence)
+
+        assert modifiers == MOD_CONTROL | MOD_ALT
+        assert vk == VK_OEM_3
+
+
 def test_register_hotkey_success_and_dispatch() -> None:
     calls: list[tuple[int, int, int, int]] = []
     activated: list[str] = []
@@ -31,11 +45,11 @@ def test_register_hotkey_success_and_dispatch() -> None:
 
     assert manager.register_hotkey(
         name="quick_capture",
-        sequence="Ctrl+Alt+W",
+        sequence="Ctrl+Alt+`",
         callback=lambda: activated.append("quick_capture"),
     )
 
-    assert calls == [(1234, 1, MOD_CONTROL | MOD_ALT, ord("W"))]
+    assert calls == [(1234, 1, MOD_CONTROL | MOD_ALT, VK_OEM_3)]
     assert manager.handle_native_message(WM_HOTKEY, 1) is True
     assert activated == ["quick_capture"]
 

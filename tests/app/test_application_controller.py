@@ -94,9 +94,24 @@ def test_controller_registers_both_default_hotkeys(qtbot, container):
     qtbot.waitUntil(lambda: len(hotkeys.registrations) == 2)
     assert hotkeys.host_window is controller.main_window
     assert hotkeys.registrations == [
-        ("quick_capture", "Ctrl+Alt+W"),
+        ("quick_capture", "Ctrl+Alt+`"),
         ("main_window", "Ctrl+Alt+M"),
     ]
+
+    controller.shutdown()
+
+
+def test_controller_maps_legacy_quick_capture_hotkey_to_new_default(qtbot, container):
+    from writer.app.settings import KEY_QUICK_CAPTURE_GLOBAL_HOTKEY
+
+    container.settings.set(KEY_QUICK_CAPTURE_GLOBAL_HOTKEY, "Ctrl+Alt+W")
+    hotkeys = DummyHotkeyManager()
+    controller = _build_controller(container, hotkeys=hotkeys)
+
+    controller.start()
+
+    qtbot.waitUntil(lambda: len(hotkeys.registrations) == 2)
+    assert hotkeys.registrations[0] == ("quick_capture", "Ctrl+Alt+`")
 
     controller.shutdown()
 

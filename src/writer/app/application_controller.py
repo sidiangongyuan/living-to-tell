@@ -19,6 +19,7 @@ from writer.app.settings import (
     KEY_QUICK_CAPTURE_GLOBAL_HOTKEY,
     KEY_QUICK_CAPTURE_LAST_ENTRY_ID,
     KEY_QUICK_CAPTURE_MAIN_WINDOW_HOTKEY,
+    LEGACY_QUICK_CAPTURE_GLOBAL_HOTKEY,
 )
 from writer.ui.i18n import TR
 from writer.ui.main_window import MainWindow
@@ -140,6 +141,8 @@ class ApplicationController(QObject):
             KEY_QUICK_CAPTURE_GLOBAL_HOTKEY,
             DEFAULT_QUICK_CAPTURE_GLOBAL_HOTKEY,
         ) or DEFAULT_QUICK_CAPTURE_GLOBAL_HOTKEY
+        if quick_sequence.strip().casefold() == LEGACY_QUICK_CAPTURE_GLOBAL_HOTKEY.casefold():
+            quick_sequence = DEFAULT_QUICK_CAPTURE_GLOBAL_HOTKEY
         main_sequence = self._container.settings.get(
             KEY_QUICK_CAPTURE_MAIN_WINDOW_HOTKEY,
             DEFAULT_QUICK_CAPTURE_MAIN_WINDOW_HOTKEY,

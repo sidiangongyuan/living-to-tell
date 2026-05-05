@@ -34,6 +34,17 @@ _MODIFIERS = {
 }
 
 _VK_F_KEYS = {f"F{i}": 0x6F + i for i in range(1, 25)}
+VK_OEM_3 = 0xC0
+_VK_SPECIAL_KEYS = {
+    "`": VK_OEM_3,
+    "~": VK_OEM_3,
+    "·": VK_OEM_3,
+    "BACKQUOTE": VK_OEM_3,
+    "GRAVE": VK_OEM_3,
+    "OEM3": VK_OEM_3,
+    "OEM_3": VK_OEM_3,
+    "OEM-3": VK_OEM_3,
+}
 
 
 @dataclass
@@ -171,4 +182,6 @@ class GlobalHotkeyManager(QObject):
             return modifiers, ord(key)
         if key in _VK_F_KEYS:
             return modifiers, _VK_F_KEYS[key]
+        if key in _VK_SPECIAL_KEYS:
+            return modifiers, _VK_SPECIAL_KEYS[key]
         raise ValueError(f"Unsupported hotkey key {key!r} in {sequence!r}")
