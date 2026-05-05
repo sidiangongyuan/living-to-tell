@@ -1,5 +1,7 @@
 # Writer
 
+[![Tests](https://github.com/sidiangongyuan/writer/actions/workflows/tests.yml/badge.svg)](https://github.com/sidiangongyuan/writer/actions/workflows/tests.yml)
+
 A minimal Windows desktop personal writing tool. Capture short fragments,
 search and filter them, and optionally apply lightweight AI rewrites without
 ever silently overwriting the original text.
@@ -7,6 +9,17 @@ ever silently overwriting the original text.
 > **Status: internal alpha (dev build)** — all core writing features are
 > working and daily-usable, but this is not a final release. Expect rough
 > edges in packaging and UI polish.
+
+## Open-source readiness
+
+- License: MIT, see [LICENSE](LICENSE).
+- Security policy: see [SECURITY.md](SECURITY.md) before reporting bugs that
+  involve credentials, OAuth, local databases, or private writing content.
+- CI: pushes and pull requests run the Windows Python 3.12 test suite via
+  [GitHub Actions](.github/workflows/tests.yml).
+- Public docs use placeholders for local proxy ports and credential names;
+  real API keys, OAuth tokens, account emails, project IDs, SQLite databases,
+  build outputs, and personal writing data should never be committed.
 
 ## Features
 
@@ -35,6 +48,14 @@ ever silently overwriting the original text.
   collections as TXT / Markdown / DOCX
 - **Version history** — fragment AI acceptances and manual snapshots are
   tracked; works also support manual snapshots and restore-to-current
+
+## Screenshots and roadmap
+
+Public screenshots should be captured only from a clean demo profile. See
+[docs/screenshots/README.md](docs/screenshots/README.md) for the screenshot
+checklist and suggested captures.
+
+The current alpha roadmap is tracked in [docs/roadmap.md](docs/roadmap.md).
 
 ## M10A Highlights
 
@@ -275,6 +296,8 @@ dist\Writer\Writer.exe
 Product and design docs live under [`docs/`](docs/):
 
 - `docs/basic-design.md`
+- `docs/roadmap.md`
+- `docs/screenshots/README.md`
 - `docs/implementation-handoff.md`
 - `docs/product-requirements.md`
 - `docs/technical-approach.md`
@@ -283,4 +306,8 @@ Product and design docs live under [`docs/`](docs/):
 - `docs/m10a-release-notes.md`
 - `docs/m9a-release-notes.md`
 - `docs/m8-release-notes.md`
+
+## License
+
+Writer is released under the MIT License. See [LICENSE](LICENSE).
 
