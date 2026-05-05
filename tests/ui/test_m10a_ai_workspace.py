@@ -271,7 +271,7 @@ def test_style_preset_buttons_append_into_style_input(qtbot, container):
     assert tab._style_edit.text() == first_author + separator + first_goal  # noqa: SLF001
 
 
-def test_style_preset_buttons_keep_readable_height(qtbot, container):
+def test_style_preset_buttons_keep_readable_size(qtbot, container):
     from writer.ui.panels.ai_workspace_panel import AIToolsTab
 
     tab = AIToolsTab(container)
@@ -279,7 +279,8 @@ def test_style_preset_buttons_keep_readable_height(qtbot, container):
 
     assert tab._style_preset_buttons  # noqa: SLF001
     for button in tab._style_preset_buttons.values():  # noqa: SLF001
-        assert button.minimumHeight() >= 30
+        assert button.minimumHeight() >= max(button.fontMetrics().height() + 16, 36)
+        assert button.minimumWidth() >= button.fontMetrics().horizontalAdvance(button.text()) + 48
 
 
 def test_task_switch_updates_style_presets_and_relevant_fields(qtbot, container):

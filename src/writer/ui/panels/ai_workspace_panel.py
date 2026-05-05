@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, List
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QLayout,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -204,8 +205,6 @@ _TASK_STYLE_PRESET_VALUES_KEY: dict[AiTaskType, str] = {
     AiTaskType.CONTINUE: "ai.params.style_presets.continue_values",
 }
 
-_STYLE_PRESETS_PER_ROW = 3
-
 
 # Output destinations available per scope kind (UI-side filter; service
 # layer does no enforcement on this).
@@ -240,10 +239,6 @@ def _preset_values(key: str) -> List[str]:
     return [item.strip() for item in TR(key).split("|") if item.strip()]
 
 
-def _chunked(values: List[str], size: int) -> List[List[str]]:
-    return [values[i : i + size] for i in range(0, len(values), size)]
-
-
 def _display_provider_name(provider: str) -> str:
     key = (provider or "").strip().lower()
     if key == "gemini_cli":
@@ -253,6 +248,79 @@ def _display_provider_name(provider: str) -> str:
     if key == "openai":
         return "GPT / OpenAI"
     return provider or ""
+
+
+class _FlowLayout(QLayout):
+    """Wrap preset buttons to the next row instead of squeezing text."""
+
+    def __init__(self, parent: Optional[QWidget] = None, spacing: int = 6) -> None:
+        super().__init__(parent)
+        self._items = []
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setSpacing(spacing)
+
+    def addItem(self, item) -> None:  # type: ignore[override]
+        self._items.append(item)
+
+    def count(self) -> int:  # type: ignore[override]
+        return len(self._items)
+
+    def itemAt(self, index: int):  # type: ignore[override]
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index: int):  # type: ignore[override]
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self):  # type: ignore[override]
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self) -> bool:  # type: ignore[override]
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # type: ignore[override]
+        return self._do_layout(QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect: QRect) -> None:  # type: ignore[override]
+        super().setGeometry(rect)
+        self._do_layout(rect, test_only=False)
+
+    def sizeHint(self) -> QSize:  # type: ignore[override]
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:  # type: ignore[override]
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        margins = self.contentsMargins()
+        size += QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+        return size
+
+    def _do_layout(self, rect: QRect, *, test_only: bool) -> int:
+        x = rect.x()
+        y = rect.y()
+        line_height = 0
+        space_x = max(self.spacing(), 0)
+        space_y = max(self.spacing(), 0)
+        effective_right = rect.x() + rect.width()
+
+        for item in self._items:
+            hint = item.sizeHint().expandedTo(item.minimumSize())
+            next_x = x + hint.width() + space_x
+            if next_x - space_x > effective_right and line_height > 0:
+                x = rect.x()
+                y += line_height + space_y
+                next_x = x + hint.width() + space_x
+                line_height = 0
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x = next_x
+            line_height = max(line_height, hint.height())
+
+        return y + line_height - rect.y()
 
 
 # ---------------------------------------------------------------------------
@@ -721,24 +789,24 @@ class AIToolsTab(QWidget):
         label.setObjectName("AIStylePresetLabel")
         layout.addWidget(label)
 
-        for row_values in _chunked(values, _STYLE_PRESETS_PER_ROW):
-            row = QHBoxLayout()
-            row.setContentsMargins(0, 0, 0, 0)
-            row.setSpacing(4)
-            for value in row_values:
-                button = QPushButton(value)
-                button.setObjectName("AIStylePresetButton")
-                button.setFlat(True)
-                button.setMinimumHeight(30)
-                button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
-                button.setToolTip(value)
-                button.clicked.connect(
-                    lambda _checked=False, preset=value: self._append_style_preset(preset)
-                )
-                self._style_preset_buttons[value] = button
-                row.addWidget(button)
-            row.addStretch(1)
-            layout.addLayout(row)
+        buttons_layout = _FlowLayout(spacing=6)
+        layout.addLayout(buttons_layout)
+        for value in values:
+            button = QPushButton(value)
+            button.setObjectName("AIStylePresetButton")
+            button.setFlat(True)
+            button.ensurePolished()
+            text_width = button.fontMetrics().horizontalAdvance(value)
+            text_height = button.fontMetrics().height()
+            button.setMinimumWidth(max(button.sizeHint().width(), text_width + 48))
+            button.setMinimumHeight(max(button.sizeHint().height(), text_height + 16, 36))
+            button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+            button.setToolTip(value)
+            button.clicked.connect(
+                lambda _checked=False, preset=value: self._append_style_preset(preset)
+            )
+            self._style_preset_buttons[value] = button
+            buttons_layout.addWidget(button)
         return section
 
     def _append_style_preset(self, value: str) -> None:
