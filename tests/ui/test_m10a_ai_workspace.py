@@ -5,14 +5,12 @@ provider factory is monkey-patched to a stub.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 import pytest
 
 from writer.app.container import build_container
 from writer.domain.enums import AiCostTier, AiThreadScope, AiTaskType, AiTargetKind, AiOutputAction
 from writer.services.ai.interfaces import AiProvider, ChatResponse, RewriteResponse
-from writer.services.ai.task_types import AiContextAttachment, AiTaskRequest
+from writer.services.ai.task_types import AiContextAttachment
 
 
 class _StubProvider(AiProvider):
@@ -271,6 +269,17 @@ def test_style_preset_buttons_append_into_style_input(qtbot, container):
     tab._style_preset_buttons[first_goal].click()  # noqa: SLF001
 
     assert tab._style_edit.text() == first_author + separator + first_goal  # noqa: SLF001
+
+
+def test_style_preset_buttons_keep_readable_height(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+
+    assert tab._style_preset_buttons  # noqa: SLF001
+    for button in tab._style_preset_buttons.values():  # noqa: SLF001
+        assert button.minimumHeight() >= 30
 
 
 def test_task_switch_updates_style_presets_and_relevant_fields(qtbot, container):
@@ -624,7 +633,6 @@ def test_replace_fragment_apply_actually_writes_fragment_body(qtbot, container):
     """Bug #1 + #4: REPLACE_FRAGMENT path must route through apply_to_fragment
     (this verifies the `out is AiOutputAction.X` -> `==` fix is in effect)."""
     from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
-    from writer.services.ai.task_types import AiTaskResponse
 
     entry = container.entry_repository.create(title="t", body="orig body")
     provider = _StubProvider("REPLACED")

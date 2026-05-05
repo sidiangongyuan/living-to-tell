@@ -668,8 +668,8 @@ QPushButton#AIStylePresetButton {{
     background: {t.bg_window};
     color: {t.text_secondary};
     border: 1px solid {t.border};
-    padding: 4px 8px;
-    min-height: 18px;
+    padding: 5px 10px;
+    min-height: 26px;
 }}
 QPushButton#AIStylePresetButton:hover {{
     background: {t.hover_bg};

@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QTabWidget,
@@ -202,6 +203,8 @@ _TASK_STYLE_PRESET_VALUES_KEY: dict[AiTaskType, str] = {
     AiTaskType.EXPAND: "ai.params.style_presets.expand_values",
     AiTaskType.CONTINUE: "ai.params.style_presets.continue_values",
 }
+
+_STYLE_PRESETS_PER_ROW = 3
 
 
 # Output destinations available per scope kind (UI-side filter; service
@@ -718,7 +721,7 @@ class AIToolsTab(QWidget):
         label.setObjectName("AIStylePresetLabel")
         layout.addWidget(label)
 
-        for row_values in _chunked(values, 5):
+        for row_values in _chunked(values, _STYLE_PRESETS_PER_ROW):
             row = QHBoxLayout()
             row.setContentsMargins(0, 0, 0, 0)
             row.setSpacing(4)
@@ -726,6 +729,9 @@ class AIToolsTab(QWidget):
                 button = QPushButton(value)
                 button.setObjectName("AIStylePresetButton")
                 button.setFlat(True)
+                button.setMinimumHeight(30)
+                button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+                button.setToolTip(value)
                 button.clicked.connect(
                     lambda _checked=False, preset=value: self._append_style_preset(preset)
                 )
