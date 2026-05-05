@@ -111,6 +111,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "context.label_work_count": "Works in collection",
         "context.action_polish": "AI Polish…",
         "context.action_include": "Include in work…",
+        "context.action_save_specimen": "Save as specimen…",
         "context.action_versions": "Versions…",
         "context.action_export_work": "Export…",
         "context.action_export_collection": "Export…",
@@ -744,6 +745,23 @@ _CATALOG: dict[str, dict[str, str]] = {
         "reflib.kind_location": "Location",
         "reflib.kind_setting": "Setting",
         "reflib.kind_excerpt": "Excerpt",
+        # ── M-StyleSpecimen: usage kind + personal note ───────────────────────
+        "reflib.usage_kind_label": "Usage",
+        "reflib.usage_kind_filter_all": "All uses",
+        "reflib.usage_kind_style": "Style / Prose",
+        "reflib.usage_kind_imagery": "Imagery",
+        "reflib.usage_kind_technique": "Technique",
+        "reflib.usage_kind_character": "Character",
+        "reflib.usage_kind_setting": "Setting",
+        "reflib.usage_kind_other": "Other",
+        "reflib.personal_note_label": "Personal note",
+        "specimen.save_dialog_title": "Save as Style Specimen",
+        "specimen.picker_title": "Add Style Specimens",
+        "specimen.save_btn": "Save specimen",
+        "specimen.body_label": "Specimen text",
+        "specimen.similar_label": "Similar specimens",
+        "specimen.saved_msg": "Saved to the style specimen library.",
+        "ai.attachments.add_specimen": "Add specimen…",
     },
 
     "zh_CN": {
@@ -827,6 +845,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "context.label_work_count": "作品数量",
         "context.action_polish": "AI 润色…",
         "context.action_include": "收入作品…",
+        "context.action_save_specimen": "收藏为文脉标本…",
         "context.action_versions": "版本…",
         "context.action_export_work": "导出…",
         "context.action_export_collection": "导出…",
@@ -997,7 +1016,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         # ── Projects Dialog ────────────────────────────────────────────────────
         "projects.title": "项目管理",
         # ── Reference Library Dialog ───────────────────────────────────────────
-        "reflib.title": "参考库",
+        "reflib.title": "文脉标本库",
         # ── Reference Picker Dialog ────────────────────────────────────────────
         "refpicker.title": "附加参考文献",
         "refpicker.hint": "勾选要作为风格参考的段落（可选）。",
@@ -1389,6 +1408,23 @@ _CATALOG: dict[str, dict[str, str]] = {
         "reflib.kind_location": "地点",
         "reflib.kind_setting": "设定",
         "reflib.kind_excerpt": "素材摘录",
+        # ── M-StyleSpecimen: usage kind + personal note ───────────────────────
+        "reflib.usage_kind_label": "用途",
+        "reflib.usage_kind_filter_all": "全部用途",
+        "reflib.usage_kind_style": "文风/笔法",
+        "reflib.usage_kind_imagery": "意象/意境",
+        "reflib.usage_kind_technique": "结构/手法",
+        "reflib.usage_kind_character": "人物塑造",
+        "reflib.usage_kind_setting": "场景氛围",
+        "reflib.usage_kind_other": "其他",
+        "reflib.personal_note_label": "读书笔记",
+        "specimen.save_dialog_title": "收藏为文脉标本",
+        "specimen.picker_title": "添加文脉标本",
+        "specimen.save_btn": "收藏",
+        "specimen.body_label": "标本文本",
+        "specimen.similar_label": "相似标本推荐",
+        "specimen.saved_msg": "已收藏到文脉标本库。",
+        "ai.attachments.add_specimen": "添加文脉标本…",
     },
 }
 

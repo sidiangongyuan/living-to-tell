@@ -14,8 +14,10 @@ from typing import List, Optional
 
 from writer.domain.models.reference_passage import (
     REFERENCE_KIND_EXCERPT,
+    USAGE_KIND_STYLE,
     ReferencePassage,
     normalise_kind,
+    normalise_usage_kind,
 )
 
 
@@ -28,6 +30,8 @@ def _row_to_reference(row: sqlite3.Row) -> ReferencePassage:
         content=row["content"],
         tags=row["tags"],
         kind=normalise_kind(row["kind"] if "kind" in keys else None),
+        usage_kind=normalise_usage_kind(row["usage_kind"] if "usage_kind" in keys else None),
+        personal_note=row["personal_note"] if "personal_note" in keys else "",
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -62,6 +66,8 @@ class ReferenceRepository:
         source_author: str = "",
         tags: str = "",
         kind: str = REFERENCE_KIND_EXCERPT,
+        usage_kind: str = USAGE_KIND_STYLE,
+        personal_note: str = "",
     ) -> ReferencePassage:
         if not source_title.strip():
             raise ValueError("source_title is required")
@@ -71,8 +77,8 @@ class ReferenceRepository:
         self._conn.execute(
             """
             INSERT INTO reference_passages
-                (id, source_title, source_author, content, tags, kind)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (id, source_title, source_author, content, tags, kind, usage_kind, personal_note)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 new_id,
@@ -81,6 +87,8 @@ class ReferenceRepository:
                 content,
                 tags.strip(),
                 normalise_kind(kind),
+                normalise_usage_kind(usage_kind),
+                personal_note,
             ),
         )
         loaded = self.get(new_id)
@@ -96,6 +104,8 @@ class ReferenceRepository:
         source_author: str = "",
         tags: str = "",
         kind: str = REFERENCE_KIND_EXCERPT,
+        usage_kind: str = USAGE_KIND_STYLE,
+        personal_note: str = "",
     ) -> Optional[ReferencePassage]:
         if not source_title.strip():
             raise ValueError("source_title is required")
@@ -109,6 +119,8 @@ class ReferenceRepository:
                    content = ?,
                    tags = ?,
                    kind = ?,
+                   usage_kind = ?,
+                   personal_note = ?,
                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
              WHERE id = ?
             """,
@@ -118,6 +130,8 @@ class ReferenceRepository:
                 content,
                 tags.strip(),
                 normalise_kind(kind),
+                normalise_usage_kind(usage_kind),
+                personal_note,
                 ref_id,
             ),
         )
@@ -139,27 +153,27 @@ class ReferenceRepository:
         return _row_to_reference(row) if row else None
 
     def list_recent(
-        self, limit: int = 200, *, kind: Optional[str] = None
+        self, limit: int = 200, *, kind: Optional[str] = None, usage_kind: Optional[str] = None
     ) -> List[ReferencePassage]:
+        conditions = []
+        params: list = []
         if kind is not None:
-            rows = self._conn.execute(
-                """
-                SELECT * FROM reference_passages
-                 WHERE kind = ?
-                 ORDER BY updated_at DESC, created_at DESC
-                 LIMIT ?
-                """,
-                (kind, limit),
-            ).fetchall()
-        else:
-            rows = self._conn.execute(
-                """
-                SELECT * FROM reference_passages
-                ORDER BY updated_at DESC, created_at DESC
-                LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
+            conditions.append("kind = ?")
+            params.append(kind)
+        if usage_kind is not None:
+            conditions.append("usage_kind = ?")
+            params.append(usage_kind)
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        params.append(limit)
+        rows = self._conn.execute(
+            f"""
+            SELECT * FROM reference_passages
+            {where}
+            ORDER BY updated_at DESC, created_at DESC
+            LIMIT ?
+            """,
+            tuple(params),
+        ).fetchall()
         return [_row_to_reference(r) for r in rows]
 
     def list_by_kind(
@@ -185,33 +199,29 @@ class ReferenceRepository:
         return int(row["n"])
 
     def search(
-        self, query: str, limit: int = 200, *, kind: Optional[str] = None
+        self, query: str, limit: int = 200, *, kind: Optional[str] = None, usage_kind: Optional[str] = None
     ) -> List[ReferencePassage]:
         expr = _build_match_expression(query)
         if expr is None:
             return []
+        conditions = ["reference_passages_fts MATCH ?"]
+        params: list = [expr]
         if kind is not None:
-            rows = self._conn.execute(
-                """
-                SELECT r.*
-                  FROM reference_passages_fts f
-                  JOIN reference_passages r ON r.rowid = f.rowid
-                 WHERE reference_passages_fts MATCH ? AND r.kind = ?
-                 ORDER BY r.updated_at DESC
-                 LIMIT ?
-                """,
-                (expr, kind, limit),
-            ).fetchall()
-        else:
-            rows = self._conn.execute(
-                """
-                SELECT r.*
-                  FROM reference_passages_fts f
-                  JOIN reference_passages r ON r.rowid = f.rowid
-                 WHERE reference_passages_fts MATCH ?
-                 ORDER BY r.updated_at DESC
-                 LIMIT ?
-                """,
-                (expr, limit),
-            ).fetchall()
+            conditions.append("r.kind = ?")
+            params.append(kind)
+        if usage_kind is not None:
+            conditions.append("r.usage_kind = ?")
+            params.append(usage_kind)
+        params.append(limit)
+        rows = self._conn.execute(
+            f"""
+            SELECT r.*
+              FROM reference_passages_fts f
+              JOIN reference_passages r ON r.rowid = f.rowid
+             WHERE {" AND ".join(conditions)}
+             ORDER BY r.updated_at DESC
+             LIMIT ?
+            """,
+            tuple(params),
+        ).fetchall()
         return [_row_to_reference(r) for r in rows]

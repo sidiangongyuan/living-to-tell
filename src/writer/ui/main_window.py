@@ -108,6 +108,9 @@ class MainWindow(QMainWindow):
         # ---- Fragments mode panels (preserve attribute names for tests) ----
         self._list_panel = FragmentListPanel()
         self._editor_panel = EditorPanel()
+        self._editor_panel.save_specimen_requested.connect(
+            self._on_save_style_specimen
+        )
 
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self._splitter.addWidget(self._list_panel)
@@ -181,6 +184,7 @@ class MainWindow(QMainWindow):
             action_labels={
                 "polish": TR("context.action_polish"),
                 "include": TR("context.action_include"),
+                "save_specimen": TR("context.action_save_specimen"),
                 "versions": TR("context.action_versions"),
                 "export_work": TR("context.action_export_work"),
                 "export_collection": TR("context.action_export_collection"),
@@ -192,6 +196,9 @@ class MainWindow(QMainWindow):
         )
         self._context_pane.fragment_include_button.clicked.connect(
             self._on_include_fragment
+        )
+        self._context_pane.fragment_save_specimen_button.clicked.connect(
+            self._on_save_style_specimen
         )
         self._context_pane.work_versions_button.clicked.connect(
             self._on_open_work_versions_from_context
@@ -1294,6 +1301,32 @@ class MainWindow(QMainWindow):
             # Refresh fragment list so the curation badge updates.
             self._refresh_list(select_id=entry_id)
 
+    def _on_save_style_specimen(self) -> None:
+        entry_id = self._editor_panel.current_entry_id()
+        if entry_id is None:
+            return
+        self._autosave.flush()
+        entry = self._container.entry_repository.get(entry_id)
+        if entry is None:
+            return
+        from writer.ui.dialogs.save_specimen_dialog import SaveSpecimenDialog
+
+        selected = self._editor_panel.selected_body_text()
+        dlg = SaveSpecimenDialog(
+            self._container.reference_repository,
+            default_body=selected or entry.body or "",
+            default_source_title=entry.title or "",
+            default_tags=serialize_tags(entry.tags),
+            parent=self,
+        )
+        if dlg.exec() != QDialog.DialogCode.Accepted or dlg.saved_passage is None:
+            return
+        QMessageBox.information(
+            self,
+            TR("specimen.save_dialog_title"),
+            TR("specimen.saved_msg"),
+        )
+
     # --------------------------------------------------------------
     # Projects / assignment / export / version history
     # --------------------------------------------------------------
@@ -1651,8 +1684,6 @@ class MainWindow(QMainWindow):
             pass
 
     def _on_open_theme_menu(self) -> None:
-        from PySide6.QtWidgets import QApplication
-
         menu = QMenu(self)
         group = QActionGroup(menu)
         group.setExclusive(True)

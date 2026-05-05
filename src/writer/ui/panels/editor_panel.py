@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPlainTextEdit,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -22,6 +23,7 @@ from writer.ui.tag_colors import tag_style_sheet
 
 class EditorPanel(QWidget):
     content_changed = Signal()
+    save_specimen_requested = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -47,12 +49,19 @@ class EditorPanel(QWidget):
 
         self._body = QPlainTextEdit()
         self._body.setPlaceholderText(TR("editor.body_placeholder"))
+        self._body.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._body.textChanged.connect(self._on_changed)
         self._body.textChanged.connect(self._update_word_count)
+        self._body.textChanged.connect(self._refresh_save_specimen_state)
         self._body.selectionChanged.connect(self._update_word_count)
+        self._body.customContextMenuRequested.connect(self._on_body_context_menu)
 
         self._meta = QLabel("")
         self._meta.setObjectName("MetaLabel")
+
+        self._save_specimen_btn = QPushButton(TR("context.action_save_specimen"))
+        self._save_specimen_btn.setObjectName("GhostButton")
+        self._save_specimen_btn.clicked.connect(self.save_specimen_requested.emit)
 
         self._word_count = QLabel("")
         self._word_count.setObjectName("MetaLabel")
@@ -63,6 +72,7 @@ class EditorPanel(QWidget):
         bottom_row = QHBoxLayout()
         bottom_row.setContentsMargins(0, 0, 0, 0)
         bottom_row.addWidget(self._meta, 1)
+        bottom_row.addWidget(self._save_specimen_btn, 0)
         bottom_row.addWidget(self._word_count, 0)
 
         layout = QVBoxLayout(self)
@@ -76,6 +86,7 @@ class EditorPanel(QWidget):
         self._loading = False
         self.set_entry(None)
         self._update_word_count()
+        self._refresh_save_specimen_state()
 
     def set_entry(self, entry: Optional[Entry]) -> None:
         self._loading = True
@@ -98,6 +109,7 @@ class EditorPanel(QWidget):
                 self.setEnabled(True)
         finally:
             self._loading = False
+        self._refresh_save_specimen_state()
 
     def focus_body(self) -> None:
         """Move keyboard focus to the body editor and place cursor at end."""
@@ -133,6 +145,10 @@ class EditorPanel(QWidget):
         cursor = self._body.textCursor()
         return cursor.selectedText().replace("\u2029", "\n") if cursor.hasSelection() else ""
 
+    @property
+    def save_specimen_button(self) -> QPushButton:
+        return self._save_specimen_btn
+
     def replace_body(self, new_body: str) -> None:
         self._loading = True
         try:
@@ -144,6 +160,24 @@ class EditorPanel(QWidget):
         if self._loading or self._entry_id is None:
             return
         self.content_changed.emit()
+
+    def _can_save_specimen(self) -> bool:
+        return self._entry_id is not None and bool(self._body.toPlainText().strip())
+
+    def _refresh_save_specimen_state(self) -> None:
+        self._save_specimen_btn.setEnabled(self._can_save_specimen())
+
+    def _create_body_context_menu(self, pos):
+        menu = self._body.createStandardContextMenu(pos)
+        menu.addSeparator()
+        action = menu.addAction(TR("context.action_save_specimen"))
+        action.setEnabled(self._can_save_specimen())
+        action.triggered.connect(self.save_specimen_requested.emit)
+        return menu
+
+    def _on_body_context_menu(self, pos) -> None:
+        menu = self._create_body_context_menu(pos)
+        menu.exec(self._body.mapToGlobal(pos))
 
     def _update_tag_chips(self, text: str = "") -> None:
         """Rebuild tag chip labels from the tags QLineEdit."""

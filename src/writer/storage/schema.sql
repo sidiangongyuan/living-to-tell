@@ -74,6 +74,8 @@ CREATE TABLE IF NOT EXISTS reference_passages (
     content       TEXT NOT NULL,
     tags          TEXT NOT NULL DEFAULT '',
     kind          TEXT NOT NULL DEFAULT 'excerpt',
+    usage_kind    TEXT NOT NULL DEFAULT 'style',
+    personal_note TEXT NOT NULL DEFAULT '',
     created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
@@ -86,26 +88,96 @@ CREATE VIRTUAL TABLE IF NOT EXISTS reference_passages_fts USING fts5(
     source_author,
     content,
     tags,
+    usage_kind,
+    personal_note,
     content='reference_passages',
     content_rowid='rowid',
     tokenize='unicode61'
 );
 
 CREATE TRIGGER IF NOT EXISTS reference_passages_ai AFTER INSERT ON reference_passages BEGIN
-    INSERT INTO reference_passages_fts(rowid, source_title, source_author, content, tags)
-    VALUES (new.rowid, new.source_title, new.source_author, new.content, new.tags);
+    INSERT INTO reference_passages_fts(
+        rowid,
+        source_title,
+        source_author,
+        content,
+        tags,
+        usage_kind,
+        personal_note
+    )
+    VALUES (
+        new.rowid,
+        new.source_title,
+        new.source_author,
+        new.content,
+        new.tags,
+        new.usage_kind,
+        new.personal_note
+    );
 END;
 
 CREATE TRIGGER IF NOT EXISTS reference_passages_ad AFTER DELETE ON reference_passages BEGIN
-    INSERT INTO reference_passages_fts(reference_passages_fts, rowid, source_title, source_author, content, tags)
-    VALUES ('delete', old.rowid, old.source_title, old.source_author, old.content, old.tags);
+    INSERT INTO reference_passages_fts(
+        reference_passages_fts,
+        rowid,
+        source_title,
+        source_author,
+        content,
+        tags,
+        usage_kind,
+        personal_note
+    )
+    VALUES (
+        'delete',
+        old.rowid,
+        old.source_title,
+        old.source_author,
+        old.content,
+        old.tags,
+        old.usage_kind,
+        old.personal_note
+    );
 END;
 
 CREATE TRIGGER IF NOT EXISTS reference_passages_au AFTER UPDATE ON reference_passages BEGIN
-    INSERT INTO reference_passages_fts(reference_passages_fts, rowid, source_title, source_author, content, tags)
-    VALUES ('delete', old.rowid, old.source_title, old.source_author, old.content, old.tags);
-    INSERT INTO reference_passages_fts(rowid, source_title, source_author, content, tags)
-    VALUES (new.rowid, new.source_title, new.source_author, new.content, new.tags);
+    INSERT INTO reference_passages_fts(
+        reference_passages_fts,
+        rowid,
+        source_title,
+        source_author,
+        content,
+        tags,
+        usage_kind,
+        personal_note
+    )
+    VALUES (
+        'delete',
+        old.rowid,
+        old.source_title,
+        old.source_author,
+        old.content,
+        old.tags,
+        old.usage_kind,
+        old.personal_note
+    );
+    INSERT INTO reference_passages_fts(
+        rowid,
+        source_title,
+        source_author,
+        content,
+        tags,
+        usage_kind,
+        personal_note
+    )
+    VALUES (
+        new.rowid,
+        new.source_title,
+        new.source_author,
+        new.content,
+        new.tags,
+        new.usage_kind,
+        new.personal_note
+    );
 END;
 
 -- Milestone 5: projects and chapters.

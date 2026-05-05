@@ -104,6 +104,158 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "ALTER TABLE reference_passages ADD COLUMN kind TEXT "
             "NOT NULL DEFAULT 'excerpt'"
         )
+    # M-StyleSpecimen: usage kind + personal note for style specimens.
+    added_usage_kind = False
+    if "usage_kind" not in ref_cols:
+        conn.execute(
+            "ALTER TABLE reference_passages ADD COLUMN usage_kind TEXT "
+            "NOT NULL DEFAULT 'style'"
+        )
+        added_usage_kind = True
+    added_personal_note = False
+    if "personal_note" not in ref_cols:
+        conn.execute(
+            "ALTER TABLE reference_passages ADD COLUMN personal_note TEXT "
+            "NOT NULL DEFAULT ''"
+        )
+        added_personal_note = True
+    _ensure_reference_passages_fts_schema(
+        conn,
+        force_rebuild=added_usage_kind or added_personal_note,
+    )
+
+
+def _ensure_reference_passages_fts_schema(
+    conn: sqlite3.Connection, *, force_rebuild: bool = False
+) -> None:
+    """Upgrade the reference-passage FTS table when its column layout changes.
+
+    ``CREATE VIRTUAL TABLE IF NOT EXISTS`` leaves older FTS tables untouched, so
+    adding searchable columns requires an explicit rebuild on upgraded
+    databases.
+    """
+    fts_cols = {
+        row["name"] for row in conn.execute("PRAGMA table_info(reference_passages_fts)")
+    }
+    expected = {
+        "source_title",
+        "source_author",
+        "content",
+        "tags",
+        "usage_kind",
+        "personal_note",
+    }
+    if expected.issubset(fts_cols) and not force_rebuild:
+        return
+
+    conn.executescript(
+        """
+        DROP TRIGGER IF EXISTS reference_passages_ai;
+        DROP TRIGGER IF EXISTS reference_passages_ad;
+        DROP TRIGGER IF EXISTS reference_passages_au;
+        DROP TABLE IF EXISTS reference_passages_fts;
+
+        CREATE VIRTUAL TABLE reference_passages_fts USING fts5(
+            source_title,
+            source_author,
+            content,
+            tags,
+            usage_kind,
+            personal_note,
+            content='reference_passages',
+            content_rowid='rowid',
+            tokenize='unicode61'
+        );
+
+        CREATE TRIGGER reference_passages_ai AFTER INSERT ON reference_passages BEGIN
+            INSERT INTO reference_passages_fts(
+                rowid,
+                source_title,
+                source_author,
+                content,
+                tags,
+                usage_kind,
+                personal_note
+            )
+            VALUES (
+                new.rowid,
+                new.source_title,
+                new.source_author,
+                new.content,
+                new.tags,
+                new.usage_kind,
+                new.personal_note
+            );
+        END;
+
+        CREATE TRIGGER reference_passages_ad AFTER DELETE ON reference_passages BEGIN
+            INSERT INTO reference_passages_fts(
+                reference_passages_fts,
+                rowid,
+                source_title,
+                source_author,
+                content,
+                tags,
+                usage_kind,
+                personal_note
+            )
+            VALUES (
+                'delete',
+                old.rowid,
+                old.source_title,
+                old.source_author,
+                old.content,
+                old.tags,
+                old.usage_kind,
+                old.personal_note
+            );
+        END;
+
+        CREATE TRIGGER reference_passages_au AFTER UPDATE ON reference_passages BEGIN
+            INSERT INTO reference_passages_fts(
+                reference_passages_fts,
+                rowid,
+                source_title,
+                source_author,
+                content,
+                tags,
+                usage_kind,
+                personal_note
+            )
+            VALUES (
+                'delete',
+                old.rowid,
+                old.source_title,
+                old.source_author,
+                old.content,
+                old.tags,
+                old.usage_kind,
+                old.personal_note
+            );
+            INSERT INTO reference_passages_fts(
+                rowid,
+                source_title,
+                source_author,
+                content,
+                tags,
+                usage_kind,
+                personal_note
+            )
+            VALUES (
+                new.rowid,
+                new.source_title,
+                new.source_author,
+                new.content,
+                new.tags,
+                new.usage_kind,
+                new.personal_note
+            );
+        END;
+        """
+    )
+    conn.execute(
+        "INSERT INTO reference_passages_fts(reference_passages_fts) VALUES ('rebuild')"
+    )
 
 
 def _backfill_sequence_order(conn: sqlite3.Connection) -> None:

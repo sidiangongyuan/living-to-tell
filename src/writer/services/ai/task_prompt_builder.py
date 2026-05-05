@@ -180,6 +180,12 @@ class TaskPromptBuilder:
                 if is_zh else
                 " You MAY adjust the original meaning if requested."
             )
+        # Add specimen constraints when style specimens are attached.
+        has_specimens = any(
+            a.kind == "style_specimen" for a in (request.attachments or [])
+        )
+        if has_specimens and request.task_type in _REWRITE_TASKS:
+            system += _specimen_constraint(is_zh)
 
         user_parts: List[str] = []
         if request.style:
@@ -361,3 +367,27 @@ def _polish_output_guidance(request: AiTaskRequest, is_zh: bool) -> str:
     if intensity in {"medium", "strong"}:
         return "Polish addendum: make a noticeable rewrite, not just the smallest possible wording swap."
     return ""
+
+
+def _specimen_constraint(is_zh: bool) -> str:
+    """Constraint injected into the system prompt when style specimens are attached."""
+    if is_zh:
+        return (
+            "\n\n【文脉标本使用规则】已为你提供若干文脉标本（style_specimen）作为风格、"
+            "意象或手法参考。请严格遵守以下规则：\n"
+            "1. 不得照搬标本中的原句或原段，哪怕改动极小；\n"
+            "2. 不得将标本中的具体事实、专有名词或人物移植到输出文本；\n"
+            "3. 只借鉴标本的文风肌理、意象营造方式和叙述手法，将其化入你的输出；\n"
+            "4. 最终输出必须在事实层面忠实于待处理文本，而非标本。"
+        )
+    return (
+        "\n\n[Style Specimen Usage Rules] You have been provided with one or more style"
+        " specimens as reference for prose style, imagery, or technique. Follow these"
+        " rules strictly:\n"
+        "1. Do NOT copy sentences or passages from the specimens verbatim or near-verbatim.\n"
+        "2. Do NOT transplant specific facts, named entities, or characters from a specimen"
+        " into the output.\n"
+        "3. Borrow ONLY the prose texture, imagery patterns, and narrative technique."
+        " Absorb them into your output without direct quotation.\n"
+        "4. The output must remain factually faithful to the subject text, not the specimens."
+    )

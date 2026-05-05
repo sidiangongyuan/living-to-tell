@@ -98,8 +98,11 @@ class ContextPane(QWidget):
         self._frag_polish_btn.setObjectName("GhostButton")
         self._frag_include_btn = QPushButton(action_labels["include"])
         self._frag_include_btn.setObjectName("GhostButton")
+        self._frag_save_specimen_btn = QPushButton(action_labels["save_specimen"])
+        self._frag_save_specimen_btn.setObjectName("GhostButton")
         self._frag_actions_row.addWidget(self._frag_polish_btn)
         self._frag_actions_row.addWidget(self._frag_include_btn)
+        self._frag_actions_row.addWidget(self._frag_save_specimen_btn)
         self._frag_actions_row.addStretch(1)
         frag_layout.addLayout(self._frag_actions_row)
         frag_layout.addStretch(1)
@@ -232,6 +235,10 @@ class ContextPane(QWidget):
     @property
     def fragment_include_button(self) -> QPushButton:
         return self._frag_include_btn
+
+    @property
+    def fragment_save_specimen_button(self) -> QPushButton:
+        return self._frag_save_specimen_btn
 
     @property
     def work_versions_button(self) -> QPushButton:

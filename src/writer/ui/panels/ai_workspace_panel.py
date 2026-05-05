@@ -11,7 +11,6 @@ Top-level workspace mode that hosts two tabs:
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Optional, List
 
@@ -416,6 +415,9 @@ class AIToolsTab(QWidget):
         self._add_fragment_btn = QPushButton(TR("ai.attachments.add_fragment"))
         self._add_fragment_btn.clicked.connect(self._on_add_fragment_attachment)
         attach_btn_row.addWidget(self._add_fragment_btn)
+        self._add_specimen_btn = QPushButton(TR("ai.attachments.add_specimen"))
+        self._add_specimen_btn.clicked.connect(self._on_add_specimen_attachment)
+        attach_btn_row.addWidget(self._add_specimen_btn)
         self._remove_attach_btn = QPushButton(TR("ai.attachments.remove"))
         self._remove_attach_btn.clicked.connect(self._on_remove_attachment)
         self._remove_attach_btn.setEnabled(False)
@@ -927,6 +929,51 @@ class AIToolsTab(QWidget):
         if entry is None:
             return
         self._try_add_fragment_attachment(entry)
+
+    def _on_add_specimen_attachment(self) -> None:
+        from writer.ui.dialogs.specimen_picker_dialog import SpecimenPickerDialog  # lazy
+        repo = self._container.reference_repository
+        dlg = SpecimenPickerDialog(
+            repo,
+            recommended_text=self._current_subject_text_for_recommendation(),
+            parent=self,
+        )
+        if dlg.exec() != dlg.DialogCode.Accepted:
+            return
+        passages = dlg.selected_passages
+        for passage in passages:
+            if self._has_attachment(kind="style_specimen", ref_id=passage.id):
+                continue
+            from writer.ui.panels.reference_library_panel import _usage_kind_label
+            note_part = f"\n点评：{passage.personal_note}" if passage.personal_note else ""
+            body = (
+                f"{passage.content}\n\n"
+                f"来源：{passage.source_title}"
+                + (f"  {passage.source_author}" if passage.source_author else "")
+                + f"\n用途：{_usage_kind_label(passage.usage_kind)}"
+                + note_part
+            )
+            self._attachments.append(
+                AiContextAttachment(
+                    kind="style_specimen",
+                    ref_id=passage.id,
+                    name=passage.display_label(),
+                    body=body,
+                )
+            )
+        if passages:
+            self._refresh_attachments_view()
+
+    def _current_subject_text_for_recommendation(self) -> str:
+        scope = self._scope
+        target = _combo_enum(self._target_combo, AiTargetKind, AiTargetKind.PASTE)
+        if target == AiTargetKind.PASTE:
+            return self._paste_edit.toPlainText()
+        if scope is None:
+            return ""
+        if target == AiTargetKind.SELECTION:
+            return scope.selection_text if scope.has_selection else self._paste_edit.toPlainText()
+        return scope.body
 
     def _on_remove_attachment(self) -> None:
         row = self._attach_list.currentRow()

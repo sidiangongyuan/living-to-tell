@@ -27,6 +27,31 @@ def normalise_kind(value: Optional[str]) -> str:
     return REFERENCE_KIND_EXCERPT
 
 
+# Usage kinds for style specimens (文脉标本用途).
+USAGE_KIND_STYLE = "style"
+USAGE_KIND_IMAGERY = "imagery"
+USAGE_KIND_TECHNIQUE = "technique"
+USAGE_KIND_CHARACTER = "character"
+USAGE_KIND_SETTING = "setting"
+USAGE_KIND_OTHER = "other"
+
+USAGE_KINDS: tuple[str, ...] = (
+    USAGE_KIND_STYLE,
+    USAGE_KIND_IMAGERY,
+    USAGE_KIND_TECHNIQUE,
+    USAGE_KIND_CHARACTER,
+    USAGE_KIND_SETTING,
+    USAGE_KIND_OTHER,
+)
+
+
+def normalise_usage_kind(value: Optional[str]) -> str:
+    """Map any unknown usage_kind to ``"style"`` (the safe default)."""
+    if value and value in USAGE_KINDS:
+        return value
+    return USAGE_KIND_STYLE
+
+
 @dataclass
 class ReferencePassage:
     id: str
@@ -35,6 +60,8 @@ class ReferencePassage:
     source_author: str = ""
     tags: str = ""
     kind: str = REFERENCE_KIND_EXCERPT
+    usage_kind: str = USAGE_KIND_STYLE
+    personal_note: str = ""
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 

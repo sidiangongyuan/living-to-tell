@@ -32,8 +32,11 @@ from writer.domain.models.reference_passage import (
     REFERENCE_KIND_LOCATION,
     REFERENCE_KIND_SETTING,
     REFERENCE_KINDS,
+    USAGE_KINDS,
+    USAGE_KIND_STYLE,
     ReferencePassage,
     normalise_kind,
+    normalise_usage_kind,
 )
 from writer.storage.repositories.reference_repository import ReferenceRepository
 from writer.ui.i18n import TR
@@ -47,9 +50,22 @@ _KIND_LABEL_KEYS = {
     REFERENCE_KIND_EXCERPT: "reflib.kind_excerpt",
 }
 
+_USAGE_KIND_LABEL_KEYS = {
+    "style": "reflib.usage_kind_style",
+    "imagery": "reflib.usage_kind_imagery",
+    "technique": "reflib.usage_kind_technique",
+    "character": "reflib.usage_kind_character",
+    "setting": "reflib.usage_kind_setting",
+    "other": "reflib.usage_kind_other",
+}
+
 
 def _kind_label(kind: str) -> str:
     return TR(_KIND_LABEL_KEYS.get(normalise_kind(kind), "reflib.kind_excerpt"))
+
+
+def _usage_kind_label(usage_kind: str) -> str:
+    return TR(_USAGE_KIND_LABEL_KEYS.get(usage_kind, "reflib.usage_kind_style"))
 
 
 class _RefTagDotDelegate(QStyledItemDelegate):
@@ -100,6 +116,12 @@ class ReferenceLibraryPanel(QWidget):
         for kind in REFERENCE_KINDS:
             self._kind_filter_combo.addItem(_kind_label(kind), kind)
 
+        self._usage_kind_filter_combo = QComboBox()
+        self._usage_kind_filter_combo.setObjectName("RefUsageKindFilter")
+        self._usage_kind_filter_combo.addItem(TR("reflib.usage_kind_filter_all"), None)
+        for uk in USAGE_KINDS:
+            self._usage_kind_filter_combo.addItem(_usage_kind_label(uk), uk)
+
         self._list = QListWidget()
         self._list.setItemDelegate(_RefTagDotDelegate(self._list))
         self._new_btn = QPushButton(TR("rlp.new_btn"))
@@ -114,11 +136,16 @@ class ReferenceLibraryPanel(QWidget):
         kind_filter_row.addWidget(QLabel(TR("reflib.kind_filter_label")))
         kind_filter_row.addWidget(self._kind_filter_combo, 1)
 
+        usage_filter_row = QHBoxLayout()
+        usage_filter_row.addWidget(QLabel(TR("reflib.usage_kind_label")))
+        usage_filter_row.addWidget(self._usage_kind_filter_combo, 1)
+
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.addWidget(self._search)
         left_layout.addLayout(kind_filter_row)
+        left_layout.addLayout(usage_filter_row)
         left_layout.addWidget(self._list, 1)
         left_layout.addLayout(left_buttons)
 
@@ -130,6 +157,14 @@ class ReferenceLibraryPanel(QWidget):
         self._kind_combo.setObjectName("RefKindCombo")
         for kind in REFERENCE_KINDS:
             self._kind_combo.addItem(_kind_label(kind), kind)
+        self._usage_kind_combo = QComboBox()
+        self._usage_kind_combo.setObjectName("RefUsageKindCombo")
+        for uk in USAGE_KINDS:
+            self._usage_kind_combo.addItem(_usage_kind_label(uk), uk)
+        self._personal_note_edit = QPlainTextEdit()
+        self._personal_note_edit.setObjectName("RefPersonalNote")
+        self._personal_note_edit.setPlaceholderText(TR("reflib.personal_note_label"))
+        self._personal_note_edit.setMaximumHeight(80)
         self._content_edit = QPlainTextEdit()
         self._save_btn = QPushButton(TR("rlp.save_btn"))
 
@@ -142,8 +177,12 @@ class ReferenceLibraryPanel(QWidget):
         right_layout.addWidget(self._author_edit)
         right_layout.addWidget(QLabel(TR("reflib.kind_label")))
         right_layout.addWidget(self._kind_combo)
+        right_layout.addWidget(QLabel(TR("reflib.usage_kind_label")))
+        right_layout.addWidget(self._usage_kind_combo)
         right_layout.addWidget(QLabel(TR("rlp.tags_label")))
         right_layout.addWidget(self._tags_edit)
+        right_layout.addWidget(QLabel(TR("reflib.personal_note_label")))
+        right_layout.addWidget(self._personal_note_edit)
         right_layout.addWidget(QLabel(TR("rlp.content_label")))
         right_layout.addWidget(self._content_edit, 1)
         save_row = QHBoxLayout()
@@ -164,6 +203,7 @@ class ReferenceLibraryPanel(QWidget):
         # wiring
         self._search.textChanged.connect(self._on_search_changed)
         self._kind_filter_combo.currentIndexChanged.connect(self._on_search_changed)
+        self._usage_kind_filter_combo.currentIndexChanged.connect(self._on_search_changed)
         self._list.currentItemChanged.connect(self._on_current_changed)
         self._new_btn.clicked.connect(self._on_new)
         self._delete_btn.clicked.connect(self._on_delete)
@@ -175,13 +215,17 @@ class ReferenceLibraryPanel(QWidget):
     def _current_kind_filter(self) -> Optional[str]:
         return self._kind_filter_combo.currentData()
 
+    def _current_usage_kind_filter(self) -> Optional[str]:
+        return self._usage_kind_filter_combo.currentData()
+
     def refresh(self, *, select_id: Optional[str] = None) -> None:
         query = self._search.text().strip()
         kind = self._current_kind_filter()
+        usage_kind = self._current_usage_kind_filter()
         if query:
-            items = self._repo.search(query, kind=kind)
+            items = self._repo.search(query, kind=kind, usage_kind=usage_kind)
         else:
-            items = self._repo.list_recent(kind=kind)
+            items = self._repo.list_recent(kind=kind, usage_kind=usage_kind)
         self._list.blockSignals(True)
         try:
             self._list.clear()
@@ -213,6 +257,12 @@ class ReferenceLibraryPanel(QWidget):
         if idx < 0:
             idx = self._kind_combo.findData(REFERENCE_KIND_EXCERPT)
         self._kind_combo.setCurrentIndex(max(0, idx))
+        usage_kind = normalise_usage_kind(passage.usage_kind if passage else USAGE_KIND_STYLE)
+        uidx = self._usage_kind_combo.findData(usage_kind)
+        if uidx < 0:
+            uidx = self._usage_kind_combo.findData(USAGE_KIND_STYLE)
+        self._usage_kind_combo.setCurrentIndex(max(0, uidx))
+        self._personal_note_edit.setPlainText(passage.personal_note if passage else "")
         self._content_edit.setPlainText(passage.content if passage else "")
         self._delete_btn.setEnabled(passage is not None)
 
@@ -233,8 +283,11 @@ class ReferenceLibraryPanel(QWidget):
         self._author_edit.clear()
         self._tags_edit.clear()
         self._content_edit.clear()
+        self._personal_note_edit.clear()
         idx = self._kind_combo.findData(REFERENCE_KIND_EXCERPT)
         self._kind_combo.setCurrentIndex(max(0, idx))
+        uidx = self._usage_kind_combo.findData(USAGE_KIND_STYLE)
+        self._usage_kind_combo.setCurrentIndex(max(0, uidx))
         self._delete_btn.setEnabled(False)
         self._title_edit.setFocus()
 
@@ -250,6 +303,8 @@ class ReferenceLibraryPanel(QWidget):
         author = self._author_edit.text()
         tags = self._tags_edit.text()
         kind = normalise_kind(self._kind_combo.currentData())
+        usage_kind = normalise_usage_kind(self._usage_kind_combo.currentData())
+        personal_note = self._personal_note_edit.toPlainText()
         try:
             if self._current_id is None:
                 passage = self._repo.create(
@@ -258,6 +313,8 @@ class ReferenceLibraryPanel(QWidget):
                     content=content,
                     tags=tags,
                     kind=kind,
+                    usage_kind=usage_kind,
+                    personal_note=personal_note,
                 )
             else:
                 passage = self._repo.update(
@@ -267,6 +324,8 @@ class ReferenceLibraryPanel(QWidget):
                     content=content,
                     tags=tags,
                     kind=kind,
+                    usage_kind=usage_kind,
+                    personal_note=personal_note,
                 )
         except ValueError as err:
             QMessageBox.warning(self, TR("rlp.invalid_ref"), str(err))
