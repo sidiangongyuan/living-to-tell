@@ -952,3 +952,361 @@ def test_structured_result_uses_originating_task_even_if_user_switches_task(
 
     assert tab._result_view.toPlainText() == "Alice"  # noqa: SLF001
 
+
+# ---------------------------------------------------------------------------
+# Phase 1 — Context-pane "AI Polish" routes to AI workspace (no direct AI
+# call), compare layout, task parameter isolation, apply-button labels.
+# ---------------------------------------------------------------------------
+
+
+def test_context_pane_polish_button_opens_ai_workspace_not_rewrite(qtbot, container):
+    """Clicking context-pane 'AI Polish' must switch to AI workspace mode
+    without calling _on_rewrite (which would fire an immediate AI request).
+    """
+    from writer.ui.main_window import MainWindow, MODE_AI, MODE_FRAGMENTS
+
+    entry = container.entry_repository.create(title="My frag", body="hello world")
+
+    window = MainWindow(container, autosave_debounce_ms=50)
+    qtbot.addWidget(window)
+    window._set_mode(MODE_FRAGMENTS)  # noqa: SLF001
+    window._load_entry(entry.id)  # noqa: SLF001
+
+    # Track whether the old _on_rewrite path is triggered.
+    rewrite_called = []
+
+    def _spy(*args, **kwargs):
+        rewrite_called.append(True)
+
+    window._on_rewrite = _spy  # noqa: SLF001
+
+    # Simulate clicking the context-pane polish button.
+    window._context_pane.fragment_polish_button.click()  # noqa: SLF001
+
+    # Must switch to AI workspace.
+    assert window._stack.currentIndex() == MODE_AI  # noqa: SLF001
+    # Must NOT have called the old _on_rewrite path.
+    assert rewrite_called == [], "old _on_rewrite must not be called"
+
+
+def test_context_pane_polish_selects_polish_task_in_ai_workspace(qtbot, container):
+    """After clicking context-pane polish, the AI workspace tools tab must
+    have POLISH selected and be on the Tools (index 0) tab."""
+    from writer.ui.main_window import MainWindow, MODE_AI, MODE_FRAGMENTS
+
+    entry = container.entry_repository.create(title="Frag", body="some text")
+
+    window = MainWindow(container, autosave_debounce_ms=50)
+    qtbot.addWidget(window)
+    window._set_mode(MODE_FRAGMENTS)  # noqa: SLF001
+    window._load_entry(entry.id)  # noqa: SLF001
+    window._context_pane.fragment_polish_button.click()  # noqa: SLF001
+
+    assert window._stack.currentIndex() == MODE_AI  # noqa: SLF001
+    # Tools tab is index 0.
+    assert window._ai_workspace_panel.tabs.currentIndex() == 0  # noqa: SLF001
+    # POLISH must be selected.
+    tab = window._ai_workspace_panel.tools_tab  # noqa: SLF001
+    assert tab._current_task_type() == AiTaskType.POLISH  # noqa: SLF001
+
+
+def test_context_pane_polish_defaults_to_selection_when_selection_exists(
+    qtbot, container
+):
+    """If the fragment editor has a live selection, AI workspace must default
+    target_kind to SELECTION (not FRAGMENT) when entering via context pane."""
+    from PySide6.QtGui import QTextCursor
+    from writer.ui.main_window import MainWindow, MODE_FRAGMENTS
+
+    entry = container.entry_repository.create(title="Frag", body="alpha beta gamma")
+
+    window = MainWindow(container, autosave_debounce_ms=50)
+    qtbot.addWidget(window)
+    window._set_mode(MODE_FRAGMENTS)  # noqa: SLF001
+    window._load_entry(entry.id)  # noqa: SLF001
+
+    # Create a selection in the body editor.
+    body_edit = window._editor_panel._body  # noqa: SLF001
+    cursor = body_edit.textCursor()
+    cursor.setPosition(6)
+    cursor.setPosition(10, QTextCursor.MoveMode.KeepAnchor)
+    body_edit.setTextCursor(cursor)
+
+    window._context_pane.fragment_polish_button.click()  # noqa: SLF001
+
+    tab = window._ai_workspace_panel.tools_tab  # noqa: SLF001
+    request = tab._build_request()  # noqa: SLF001
+    assert request is not None
+    assert request.target_kind == AiTargetKind.SELECTION
+    assert request.text == "beta"
+
+
+def test_context_pane_polish_defaults_to_fragment_when_no_selection(
+    qtbot, container
+):
+    """Without a selection, entering via context-pane polish must default
+    target_kind to FRAGMENT."""
+    from writer.ui.main_window import MainWindow, MODE_FRAGMENTS
+
+    entry = container.entry_repository.create(title="NoSel", body="full body text")
+
+    window = MainWindow(container, autosave_debounce_ms=50)
+    qtbot.addWidget(window)
+    window._set_mode(MODE_FRAGMENTS)  # noqa: SLF001
+    window._load_entry(entry.id)  # noqa: SLF001
+    # Explicitly clear any selection.
+    body_edit = window._editor_panel._body  # noqa: SLF001
+    cursor = body_edit.textCursor()
+    cursor.clearSelection()
+    body_edit.setTextCursor(cursor)
+
+    window._context_pane.fragment_polish_button.click()  # noqa: SLF001
+
+    tab = window._ai_workspace_panel.tools_tab  # noqa: SLF001
+    request = tab._build_request()  # noqa: SLF001
+    assert request is not None
+    assert request.target_kind == AiTargetKind.FRAGMENT
+    assert request.text == "full body text"
+
+
+# ---------------------------------------------------------------------------
+# Compare layout
+# ---------------------------------------------------------------------------
+
+
+def test_compare_layout_shows_source_for_rewrite_tasks(qtbot, container):
+    """For POLISH / EXPAND / CONTINUE / STYLE_TRANSFER, after task completion
+    _source_widget must be visible and contain the original text."""
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+    from writer.services.ai.task_types import AiTaskResponse
+
+    for task_type in (
+        AiTaskType.POLISH,
+        AiTaskType.EXPAND,
+        AiTaskType.CONTINUE,
+        AiTaskType.STYLE_TRANSFER,
+    ):
+        tab = AIToolsTab(container)
+        qtbot.addWidget(tab)
+        tab.bind_scope(
+            AiScope(
+                kind=AiThreadScope.FRAGMENT,
+                ref_id="f1",
+                name="F",
+                body="original source text",
+            )
+        )
+        row = _row_for_task(tab, task_type)
+        tab._task_list.setCurrentRow(row)  # noqa: SLF001
+
+        from writer.services.ai.task_types import AiTaskRequest
+        request = AiTaskRequest(
+            task_type=task_type,
+            target_kind=AiTargetKind.FRAGMENT,
+            text="original source text",
+            cost_tier=AiCostTier.BALANCED,
+            desired_output=AiOutputAction.PREVIEW_ONLY,
+        )
+        response = AiTaskResponse(
+            content="AI OUTPUT",
+            model="m",
+            provider="stub",
+        )
+        tab._last_request = request  # noqa: SLF001
+        tab._on_task_succeeded(response)  # noqa: SLF001
+
+        assert not tab._source_widget.isHidden(), f"{task_type}: source_widget should be visible"  # noqa: SLF001
+        assert "original source text" in tab._source_view.toPlainText()  # noqa: SLF001
+        assert not tab._result_header.isHidden(), f"{task_type}: result_header should be visible"  # noqa: SLF001
+        assert tab._result_view.toPlainText() == "AI OUTPUT"  # noqa: SLF001
+
+
+def test_compare_layout_hidden_for_report_tasks(qtbot, container):
+    """For SUMMARIZE / OUTLINE / TITLE / STRUCTURE_DIAGNOSE, the source pane
+    must stay hidden (report-style output)."""
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+    from writer.services.ai.task_types import AiTaskRequest, AiTaskResponse
+
+    for task_type in (
+        AiTaskType.SUMMARIZE,
+        AiTaskType.OUTLINE,
+        AiTaskType.TITLE,
+    ):
+        tab = AIToolsTab(container)
+        qtbot.addWidget(tab)
+        tab.bind_scope(AiScope(AiThreadScope.GLOBAL, None, "", "plain text"))
+        tab._paste_edit.setPlainText("plain text")  # noqa: SLF001
+        row = _row_for_task(tab, task_type)
+        tab._task_list.setCurrentRow(row)  # noqa: SLF001
+        paste_idx = tab._target_combo.findData(AiTargetKind.PASTE)  # noqa: SLF001
+        tab._target_combo.setCurrentIndex(paste_idx)  # noqa: SLF001
+
+        request = AiTaskRequest(
+            task_type=task_type,
+            target_kind=AiTargetKind.PASTE,
+            text="plain text",
+            cost_tier=AiCostTier.BALANCED,
+            desired_output=AiOutputAction.PREVIEW_ONLY,
+        )
+        response = AiTaskResponse(content="REPORT", model="m", provider="stub")
+        tab._last_request = request  # noqa: SLF001
+        tab._on_task_succeeded(response)  # noqa: SLF001
+
+        assert tab._source_widget.isHidden(), f"{task_type}: source_widget should be hidden"  # noqa: SLF001
+        assert tab._result_header.isHidden(), f"{task_type}: result_header should be hidden"  # noqa: SLF001
+
+
+def test_apply_button_text_reflects_output_action(qtbot, container):
+    """Apply button label must name the specific destructive action, not
+    just the generic 'Apply'."""
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+    from writer.ui.i18n import TR
+
+    entry = container.entry_repository.create(title="T", body="body")
+    provider = _StubProvider("RESULT")
+    _stub_container_provider(container, provider)
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(
+            kind=AiThreadScope.FRAGMENT,
+            ref_id=entry.id,
+            name="T",
+            body="body",
+            selection_start=0,
+            selection_end=4,
+            selection_text="body",
+        )
+    )
+
+    # REPLACE_SELECTION
+    sel_idx = tab._target_combo.findData(AiTargetKind.SELECTION)  # noqa: SLF001
+    tab._target_combo.setCurrentIndex(sel_idx)  # noqa: SLF001
+    repl_sel = tab._output_combo.findData(AiOutputAction.REPLACE_SELECTION)  # noqa: SLF001
+    tab._output_combo.setCurrentIndex(repl_sel)  # noqa: SLF001
+    assert tab._apply_btn.text() == TR("ai.results.apply_replace_selection")  # noqa: SLF001
+
+    # REPLACE_FRAGMENT
+    frag_idx = tab._target_combo.findData(AiTargetKind.FRAGMENT)  # noqa: SLF001
+    tab._target_combo.setCurrentIndex(frag_idx)  # noqa: SLF001
+    repl_frag = tab._output_combo.findData(AiOutputAction.REPLACE_FRAGMENT)  # noqa: SLF001
+    tab._output_combo.setCurrentIndex(repl_frag)  # noqa: SLF001
+    assert tab._apply_btn.text() == TR("ai.results.apply_replace_fragment")  # noqa: SLF001
+
+    # PREVIEW_ONLY → generic label
+    prev_idx = tab._output_combo.findData(AiOutputAction.PREVIEW_ONLY)  # noqa: SLF001
+    tab._output_combo.setCurrentIndex(prev_idx)  # noqa: SLF001
+    assert tab._apply_btn.text() == TR("ai.results.apply")  # noqa: SLF001
+
+
+# ---------------------------------------------------------------------------
+# Task parameter isolation
+# ---------------------------------------------------------------------------
+
+
+def test_task_params_not_shared_between_polish_and_continue(qtbot, container):
+    """Setting style / intensity in POLISH must not bleed into CONTINUE when
+    the user switches tasks.  Switching back to POLISH must restore the
+    original POLISH settings."""
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+
+    # Start on POLISH, set a style and intensity.
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.POLISH))  # noqa: SLF001
+    tab._style_edit.setText("幽默")  # noqa: SLF001
+    intense_idx = tab._intensity_combo.findData("strong")  # noqa: SLF001
+    tab._intensity_combo.setCurrentIndex(intense_idx)  # noqa: SLF001
+
+    # Switch to CONTINUE.
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.CONTINUE))  # noqa: SLF001
+    # CONTINUE is a first-visit → defaults: style empty.
+    assert tab._style_edit.text() == ""  # noqa: SLF001
+
+    # Switch back to POLISH → must restore "幽默" + strong.
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.POLISH))  # noqa: SLF001
+    assert tab._style_edit.text() == "幽默"  # noqa: SLF001
+    assert tab._intensity_combo.currentData() == "strong"  # noqa: SLF001
+
+
+def test_task_params_isolated_across_three_tasks(qtbot, container):
+    """Polish, Expand, Continue each maintain independent extra-instruction
+    state.  Switching between them never silently inherits another task's
+    settings."""
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+
+    # Polish: set extra
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.POLISH))  # noqa: SLF001
+    tab._extra_edit.setPlainText("polish-extra")  # noqa: SLF001
+
+    # Expand: set different extra
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.EXPAND))  # noqa: SLF001
+    assert tab._extra_edit.toPlainText() == ""  # fresh default  # noqa: SLF001
+    tab._extra_edit.setPlainText("expand-extra")  # noqa: SLF001
+
+    # Continue: fresh default
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.CONTINUE))  # noqa: SLF001
+    assert tab._extra_edit.toPlainText() == ""  # noqa: SLF001
+
+    # Round-trip: going back must restore saved values
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.POLISH))  # noqa: SLF001
+    assert tab._extra_edit.toPlainText() == "polish-extra"  # noqa: SLF001
+
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.EXPAND))  # noqa: SLF001
+    assert tab._extra_edit.toPlainText() == "expand-extra"  # noqa: SLF001
+
+
+def test_focus_task_selects_task_and_target(qtbot, container):
+    """AIToolsTab.focus_task() must select the requested task row and,
+    if target_kind is given, change the target combo."""
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(
+            kind=AiThreadScope.FRAGMENT,
+            ref_id="f1",
+            name="F",
+            body="some text",
+        )
+    )
+
+    # Start at POLISH (row 0), switch focus to CONTINUE with FRAGMENT target.
+    tab.focus_task(AiTaskType.CONTINUE, target_kind=AiTargetKind.FRAGMENT)
+    assert tab._current_task_type() == AiTaskType.CONTINUE  # noqa: SLF001
+    from writer.ui.panels.ai_workspace_panel import _combo_enum
+    target = _combo_enum(tab._target_combo, AiTargetKind, AiTargetKind.PASTE)  # noqa: SLF001
+    assert target == AiTargetKind.FRAGMENT
+
+
+def test_ai_workspace_panel_focus_task_switches_to_tools_tab(qtbot, container):
+    """AIWorkspacePanel.focus_task() must switch to the Tools tab (index 0)
+    before delegating to AIToolsTab.focus_task()."""
+    from writer.ui.panels.ai_workspace_panel import AIWorkspacePanel, AiScope
+
+    panel = AIWorkspacePanel(container)
+    qtbot.addWidget(panel)
+    panel.bind_scope(
+        AiScope(
+            kind=AiThreadScope.FRAGMENT,
+            ref_id="f1",
+            name="F",
+            body="text",
+        )
+    )
+    # Switch to chat tab first.
+    panel.tabs.setCurrentIndex(1)
+    assert panel.tabs.currentIndex() == 1
+
+    panel.focus_task(AiTaskType.EXPAND, target_kind=AiTargetKind.FRAGMENT)
+
+    assert panel.tabs.currentIndex() == 0
+    assert panel.tools_tab._current_task_type() == AiTaskType.EXPAND  # noqa: SLF001
+
+

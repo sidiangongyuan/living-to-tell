@@ -47,7 +47,7 @@ from writer.app.settings import (
     KEY_CONTEXT_PANE_VISIBLE,
     KEY_THEME_MODE,
 )
-from writer.domain.enums import RewriteAction, AiThreadScope
+from writer.domain.enums import RewriteAction, AiThreadScope, AiTaskType, AiTargetKind
 from writer.services.ai.interfaces import RewriteRequest, RewriteResponse
 from writer.services.autosave_service import AutosaveService
 from writer.storage.repositories.entry_repository import (
@@ -188,7 +188,7 @@ class MainWindow(QMainWindow):
         )
         # Wire context-pane action buttons to existing handlers.
         self._context_pane.fragment_polish_button.clicked.connect(
-            lambda: self._on_rewrite(RewriteAction.POLISH)
+            self._on_open_ai_polish_from_context
         )
         self._context_pane.fragment_include_button.clicked.connect(
             self._on_include_fragment
@@ -1157,6 +1157,28 @@ class MainWindow(QMainWindow):
         self._ai_workspace_panel.bind_scope(
             AiScope(kind=AiThreadScope.GLOBAL, ref_id=None, name="", body="")
         )
+
+    def _on_open_ai_polish_from_context(self) -> None:
+        """Route the context-pane 'AI Polish' button to AI workspace.
+
+        Flushes autosave, switches to the AI workspace (which binds the
+        current fragment scope including any live selection), then
+        pre-selects the POLISH task with the appropriate target kind.
+        No AI request is made until the user explicitly clicks Run.
+        """
+        if self._editor_panel.current_entry_id() is None:
+            return
+        self._autosave.flush()
+        # _set_mode handles scope binding via _bind_ai_workspace_scope().
+        self._set_mode(MODE_AI)
+        # Choose target based on what bind_scope decided for this scope.
+        scope = self._ai_workspace_panel.scope
+        target_kind = (
+            AiTargetKind.SELECTION
+            if scope is not None and scope.has_selection
+            else AiTargetKind.FRAGMENT
+        )
+        self._ai_workspace_panel.focus_task(AiTaskType.POLISH, target_kind=target_kind)
 
     def _refresh_ai_context_from_panel(self) -> None:
         if self._stack.currentIndex() != MODE_AI:

@@ -170,6 +170,14 @@ _STYLE_TASKS: set[AiTaskType] = {
     AiTaskType.STYLE_TRANSFER,
 }
 
+# Tasks that benefit from side-by-side original vs. AI result compare layout.
+_COMPARE_TASKS: set[AiTaskType] = {
+    AiTaskType.POLISH,
+    AiTaskType.EXPAND,
+    AiTaskType.CONTINUE,
+    AiTaskType.STYLE_TRANSFER,
+}
+
 _INTENSITY_TASKS: set[AiTaskType] = {
     AiTaskType.POLISH,
     AiTaskType.EXPAND,
@@ -268,6 +276,8 @@ class AIToolsTab(QWidget):
         self._style_preset_buttons: dict[str, QPushButton] = {}
         self._style_author_presets = _preset_values("ai.params.style_authors_values")
         self._style_goal_presets = _preset_values("ai.params.style_goals_values")
+        # Per-task parameter state — isolates style/intensity/extra across tasks.
+        self._task_params: dict[AiTaskType, dict] = {}
 
         # ---- Left: task list ----
         self._task_list = QListWidget()
@@ -430,15 +440,50 @@ class AIToolsTab(QWidget):
         run_row.addWidget(self._status_label, 1)
         right_layout.addLayout(run_row)
 
-        # Result area
-        result_label = QLabel(TR("ai.results.title"))
-        result_label.setObjectName("AIResultLabel")
-        right_layout.addWidget(result_label)
+        # Result area — compare layout (side-by-side) for rewrite tasks,
+        # single-pane for report tasks.
+        #
+        # Source pane (left — hidden until a compare-mode task completes).
+        self._source_widget = QWidget()
+        self._source_widget.setObjectName("AISourceWidget")
+        source_layout_v = QVBoxLayout(self._source_widget)
+        source_layout_v.setContentsMargins(0, 0, 0, 0)
+        source_layout_v.setSpacing(4)
+        self._source_header = QLabel(TR("ai.compare.source_label"))
+        self._source_header.setObjectName("AISourceHeader")
+        source_layout_v.addWidget(self._source_header)
+        self._source_view = QTextEdit()
+        self._source_view.setReadOnly(True)
+        self._source_view.setObjectName("AISourceView")
+        self._source_view.setPlaceholderText("")
+        source_layout_v.addWidget(self._source_view, 1)
+
+        # Result pane (right — always present inside splitter).
+        self._result_widget = QWidget()
+        self._result_widget.setObjectName("AIResultWidget")
+        result_widget_layout = QVBoxLayout(self._result_widget)
+        result_widget_layout.setContentsMargins(0, 0, 0, 0)
+        result_widget_layout.setSpacing(4)
+        self._result_header = QLabel(TR("ai.compare.result_label"))
+        self._result_header.setObjectName("AIResultHeader")
+        self._result_header.setVisible(False)  # only in compare mode
+        result_widget_layout.addWidget(self._result_header)
         self._result_view = QTextEdit()
         self._result_view.setReadOnly(False)
         self._result_view.setObjectName("AIResultView")
         self._result_view.setPlaceholderText(TR("ai.results.empty"))
-        right_layout.addWidget(self._result_view, 1)
+        result_widget_layout.addWidget(self._result_view, 1)
+
+        # Splitter container (source | result)
+        self._results_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._results_splitter.setObjectName("AIResultsSplitter")
+        self._results_splitter.addWidget(self._source_widget)
+        self._results_splitter.addWidget(self._result_widget)
+        self._results_splitter.setStretchFactor(0, 1)
+        self._results_splitter.setStretchFactor(1, 1)
+        # Initially hide the source side.
+        self._source_widget.setVisible(False)
+        right_layout.addWidget(self._results_splitter, 1)
 
         self._meta_label = QLabel("")
         self._meta_label.setObjectName("AIResultMeta")
@@ -514,6 +559,30 @@ class AIToolsTab(QWidget):
         self._refresh_attachments_view()
         self._refresh_apply_button_state()
 
+    def focus_task(
+        self,
+        task_type: AiTaskType,
+        target_kind: Optional[AiTargetKind] = None,
+    ) -> None:
+        """Select *task_type* in the task list and, optionally, set the target.
+
+        Used by ``AIWorkspacePanel.focus_task`` to pre-select a task when
+        entering the workspace from an external trigger (e.g. context pane).
+        """
+        row = next(
+            (
+                i
+                for i in range(self._task_list.count())
+                if self._task_list.item(i).data(Qt.ItemDataRole.UserRole) == task_type
+            ),
+            0,
+        )
+        self._task_list.setCurrentRow(row)
+        if target_kind is not None:
+            idx = self._target_combo.findData(target_kind)
+            if idx >= 0:
+                self._target_combo.setCurrentIndex(idx)
+
     # ---- internal ----
     def _update_scope_label(self) -> None:
         if self._scope is None or self._scope.is_global:
@@ -526,10 +595,66 @@ class AIToolsTab(QWidget):
         }.get(self._scope.kind, "ai.scope_global")
         self._scope_label.setText(TR(key).format(name=self._scope.name))
 
-    def _on_task_changed(self, *_args) -> None:
+    def _on_task_changed(self, current, previous) -> None:
+        # Save params for the task we're leaving.
+        if previous is not None:
+            prev_val = previous.data(Qt.ItemDataRole.UserRole)
+            try:
+                prev_task = prev_val if isinstance(prev_val, AiTaskType) else AiTaskType(prev_val)
+                self._task_params[prev_task] = self._read_current_params()
+            except (TypeError, ValueError):
+                pass
+        # Restore params for the task we're entering.
+        if current is not None:
+            new_val = current.data(Qt.ItemDataRole.UserRole)
+            try:
+                new_task = new_val if isinstance(new_val, AiTaskType) else AiTaskType(new_val)
+                self._apply_task_params(new_task)
+            except (TypeError, ValueError):
+                pass
         self._refresh_output_combo()
         self._refresh_task_params()
         self._refresh_send_to_chat_button()
+
+    # ---- task parameter isolation ----
+
+    def _read_current_params(self) -> dict:
+        return {
+            "style": self._style_edit.text(),
+            "intensity_data": self._intensity_combo.currentData(),
+            "extra": self._extra_edit.toPlainText(),
+            "max_output": self._max_output_spin.value(),
+            "preserve_meaning": self._preserve_meaning_check.isChecked(),
+            "preserve_voice": self._preserve_voice_check.isChecked(),
+            "must_keep": self._must_keep_edit.text(),
+            "forbid": self._forbid_edit.text(),
+        }
+
+    def _apply_task_params(self, task: AiTaskType) -> None:
+        """Restore saved params for *task*, or reset to defaults."""
+        params = self._task_params.get(task)
+        if params is None:
+            # First visit — reset to defaults.
+            self._style_edit.clear()
+            idx0 = self._intensity_combo.findData("")
+            self._intensity_combo.setCurrentIndex(max(idx0, 0))
+            self._extra_edit.clear()
+            self._max_output_spin.setValue(0)
+            self._preserve_meaning_check.setChecked(True)
+            self._preserve_voice_check.setChecked(True)
+            self._must_keep_edit.clear()
+            self._forbid_edit.clear()
+            return
+        self._style_edit.setText(params.get("style", ""))
+        intensity_data = params.get("intensity_data", "")
+        idx = self._intensity_combo.findData(intensity_data or "")
+        self._intensity_combo.setCurrentIndex(max(idx, 0))
+        self._extra_edit.setPlainText(params.get("extra", ""))
+        self._max_output_spin.setValue(params.get("max_output", 0))
+        self._preserve_meaning_check.setChecked(params.get("preserve_meaning", True))
+        self._preserve_voice_check.setChecked(params.get("preserve_voice", True))
+        self._must_keep_edit.setText(params.get("must_keep", ""))
+        self._forbid_edit.setText(params.get("forbid", ""))
 
     def _refresh_task_params(self) -> None:
         task = self._current_task_type()
@@ -692,6 +817,13 @@ class AIToolsTab(QWidget):
             AiOutputAction.REPLACE_SELECTION,
             AiOutputAction.REPLACE_SECTION,
         }
+        # Specific button text based on the destructive action.
+        _action_text: dict[AiOutputAction, str] = {
+            AiOutputAction.REPLACE_SELECTION: TR("ai.results.apply_replace_selection"),
+            AiOutputAction.REPLACE_FRAGMENT: TR("ai.results.apply_replace_fragment"),
+            AiOutputAction.REPLACE_SECTION: TR("ai.results.apply_replace_section"),
+        }
+        self._apply_btn.setText(_action_text.get(out, TR("ai.results.apply")))
         self._apply_btn.setEnabled(can_apply)
         if can_apply:
             self._apply_btn.setToolTip(TR("ai.results.apply_ready"))
@@ -927,6 +1059,17 @@ class AIToolsTab(QWidget):
             if response.structured else None
         )
         self._result_view.setPlainText(rendered if rendered is not None else response.content)
+
+        # Compare layout — show source pane for rewrite tasks.
+        if task_type in _COMPARE_TASKS and self._last_request is not None:
+            source_text = self._last_request.text
+            self._source_view.setPlainText(source_text)
+            self._source_widget.setVisible(True)
+            self._result_header.setVisible(True)
+        else:
+            self._source_widget.setVisible(False)
+            self._result_header.setVisible(False)
+
         meta_parts = []
         if response.provider:
             meta_parts.append(
@@ -1390,3 +1533,12 @@ class AIWorkspacePanel(QWidget):
     @property
     def scope(self) -> Optional[AiScope]:
         return self._scope
+
+    def focus_task(
+        self,
+        task_type: AiTaskType,
+        target_kind: Optional[AiTargetKind] = None,
+    ) -> None:
+        """Switch to the Tools tab, select *task_type*, and optionally set target."""
+        self._tabs.setCurrentWidget(self._tools_tab)
+        self._tools_tab.focus_task(task_type, target_kind=target_kind)
