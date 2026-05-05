@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+from writer.app.application_controller import ApplicationController
 from writer.app.container import AppContainer, build_container
 from writer.app.version import APP_VERSION
 from writer.ui.main_window import MainWindow
@@ -59,8 +60,12 @@ def run(argv: Optional[List[str]] = None) -> int:
         pass
 
     try:
-        window = create_main_window(container)
-        window.show()
+        controller = ApplicationController(
+            app,
+            container,
+            main_window_factory=create_main_window,
+        )
+        controller.start()
         return app.exec()
     except Exception:  # noqa: BLE001
         _show_startup_error("An unexpected error occurred during startup.")

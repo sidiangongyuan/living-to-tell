@@ -15,7 +15,7 @@ container's repositories and services.
 from __future__ import annotations
 
 import json
-from typing import Optional
+from typing import Callable, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
@@ -101,6 +101,9 @@ class MainWindow(QMainWindow):
     ) -> None:
         super().__init__(parent)
         self._container = container
+        self._close_request_handler: Optional[Callable[[], bool]] = None
+        self._native_event_handler: Optional[Callable[[object, object], bool]] = None
+        self._force_close = False
 
         self.setWindowTitle("Writer")
         self.resize(1280, 780)
@@ -676,6 +679,44 @@ class MainWindow(QMainWindow):
     def _refresh_tag_filter(self) -> None:
         tags = self._container.entry_repository.list_all_tags()
         self._list_panel.set_tag_options(tags)
+
+    def sync_external_entry(self, entry_id: Optional[str] = None) -> None:
+        self._refresh_tag_filter()
+        self._refresh_list(select_id=entry_id or self._editor_panel.current_entry_id())
+        self._apply_fragments_workspace_visibility()
+        if entry_id:
+            self._dates_panel.refresh(select_entry_id=entry_id)
+        else:
+            self._dates_panel.refresh()
+
+    def show_fragment_entry(self, entry_id: Optional[str] = None) -> None:
+        self._set_mode(MODE_FRAGMENTS)
+        self.show()
+        if self.isMinimized():
+            self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        if entry_id:
+            self._list_panel.clear_search()
+            self._list_panel.reset_tag_filter()
+        self.sync_external_entry(entry_id)
+        if entry_id:
+            self._load_entry(entry_id)
+            self._editor_panel.focus_body()
+
+    def set_close_request_handler(
+        self, handler: Optional[Callable[[], bool]]
+    ) -> None:
+        self._close_request_handler = handler
+
+    def set_native_event_handler(
+        self, handler: Optional[Callable[[object, object], bool]]
+    ) -> None:
+        self._native_event_handler = handler
+
+    def force_close(self) -> None:
+        self._force_close = True
+        self.close()
 
     def _refresh_list(self, *, select_id: Optional[str] = None) -> None:
         search = self._list_panel.search_text().strip()
@@ -1832,6 +1873,23 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt signature)
         try:
             self._autosave.flush()
+            if (
+                not self._force_close
+                and self._close_request_handler is not None
+                and self._close_request_handler()
+            ):
+                event.ignore()
+                return
+        except Exception:  # noqa: BLE001
+            pass
+        try:
             self._autosave.stop()
         finally:
             super().closeEvent(event)
+
+    def nativeEvent(self, event_type, message):  # noqa: N802 (Qt signature)
+        if self._native_event_handler is not None and self._native_event_handler(
+            event_type, message
+        ):
+            return True, 0
+        return super().nativeEvent(event_type, message)

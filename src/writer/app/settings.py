@@ -41,6 +41,15 @@ KEY_CONTEXT_PANE_VISIBLE = "ui.context_pane_visible"
 KEY_ACTIVE_MODE = "ui.active_mode"
 DEFAULT_THEME_MODE = "system"
 
+# Quick capture / tray
+KEY_QUICK_CAPTURE_CLOSE_TO_TRAY_ENABLED = "quick_capture.close_to_tray_enabled"
+KEY_QUICK_CAPTURE_GLOBAL_HOTKEY = "quick_capture.global_hotkey"
+KEY_QUICK_CAPTURE_MAIN_WINDOW_HOTKEY = "quick_capture.main_window_hotkey"
+KEY_QUICK_CAPTURE_LAST_ENTRY_ID = "quick_capture.last_entry_id"
+DEFAULT_QUICK_CAPTURE_CLOSE_TO_TRAY_ENABLED = True
+DEFAULT_QUICK_CAPTURE_GLOBAL_HOTKEY = "Ctrl+Alt+W"
+DEFAULT_QUICK_CAPTURE_MAIN_WINDOW_HOTKEY = "Ctrl+Alt+M"
+
 SUPPORTED_WIRE_APIS = ("responses",)
 DEFAULT_WIRE_API = "responses"
 

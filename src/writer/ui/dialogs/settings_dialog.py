@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -31,7 +32,13 @@ from PySide6.QtWidgets import (
 )
 
 from writer.app.locale import LOCALE_EN, LOCALE_ZH_CN
-from writer.app.settings import KEY_AI_GEMINI_CLI_PROXY, SUPPORTED_WIRE_APIS, Settings
+from writer.app.settings import (
+    DEFAULT_QUICK_CAPTURE_CLOSE_TO_TRAY_ENABLED,
+    KEY_AI_GEMINI_CLI_PROXY,
+    KEY_QUICK_CAPTURE_CLOSE_TO_TRAY_ENABLED,
+    SUPPORTED_WIRE_APIS,
+    Settings,
+)
 from writer.domain.models.ai_config import AiConfig
 from writer.services.ai.codex_auth import CODEX_AUTH_SOURCE, CodexAuthResolver
 from writer.services.ai.codex_config_importer import (
@@ -155,6 +162,15 @@ class SettingsDialog(QDialog):
                 self._language_combo.setCurrentIndex(i)
                 break
 
+        close_to_tray_raw = settings.get(
+            KEY_QUICK_CAPTURE_CLOSE_TO_TRAY_ENABLED,
+            "true" if DEFAULT_QUICK_CAPTURE_CLOSE_TO_TRAY_ENABLED else "false",
+        )
+        self._close_to_tray_checkbox = QCheckBox(TR("settings.close_to_tray_label"))
+        self._close_to_tray_checkbox.setChecked(
+            (close_to_tray_raw or "").strip().lower() == "true"
+        )
+
         form = QFormLayout()
         form.addRow(TR("settings.provider"), self._provider_combo)
         form.addRow(TR("settings.base_url"), self._base_url)
@@ -166,6 +182,7 @@ class SettingsDialog(QDialog):
         self._gemini_cli_proxy_label = form.labelForField(self._gemini_cli_proxy)
         form.addRow("", self._key_status)
         form.addRow(TR("settings.language_label"), self._language_combo)
+        form.addRow("", self._close_to_tray_checkbox)
 
         import_button = QPushButton(TR("settings.import_codex"))
         import_button.clicked.connect(self._on_import_codex)
@@ -553,6 +570,11 @@ class SettingsDialog(QDialog):
                 TR("settings.restart_required_title"),
                 TR("settings.restart_required_msg"),
             )
+
+        self._settings.set(
+            KEY_QUICK_CAPTURE_CLOSE_TO_TRAY_ENABLED,
+            "true" if self._close_to_tray_checkbox.isChecked() else "false",
+        )
 
         self.accept()
 

@@ -17,6 +17,7 @@ from writer.app.settings import (
     KEY_AI_MODEL,
     KEY_AI_PROVIDER,
     KEY_AI_WIRE_API,
+    KEY_QUICK_CAPTURE_CLOSE_TO_TRAY_ENABLED,
 )
 from writer.services.ai.codex_config_importer import (
     CodexConfigImporter,
@@ -28,6 +29,7 @@ from writer.services.ai.gemini_auth import (
     GeminiConfigImporter,
     GeminiImportResult,
 )
+from writer.ui.dialogs.rewrite_compare_dialog import AcceptMode
 from writer.ui.dialogs.rewrite_compare_dialog import RewriteCompareDialog
 from writer.ui.dialogs.settings_dialog import SettingsDialog
 
@@ -87,6 +89,19 @@ def test_settings_dialog_accept_persists_changes(qtbot, container):
     assert cfg.model == "new-model"
     assert cfg.wire_api == "responses"
     assert cfg.api_key_source == "env:GEMINI_API_KEY"
+
+
+def test_settings_dialog_persists_close_to_tray_toggle(qtbot, container):
+    container.settings.set(KEY_QUICK_CAPTURE_CLOSE_TO_TRAY_ENABLED, "false")
+
+    dialog = SettingsDialog(container.settings)
+    qtbot.addWidget(dialog)
+
+    assert dialog._close_to_tray_checkbox.isChecked() is False  # noqa: SLF001
+    dialog._close_to_tray_checkbox.setChecked(True)  # noqa: SLF001
+    dialog._on_accept()  # noqa: SLF001
+
+    assert container.settings.get(KEY_QUICK_CAPTURE_CLOSE_TO_TRAY_ENABLED) == "true"
 
 
 def test_settings_dialog_accept_persists_gemini_cli_provider(qtbot, container):
@@ -255,13 +270,6 @@ def test_compare_dialog_cancel_does_not_signal_accept(qtbot):
     qtbot.addWidget(dialog)
     dialog.reject()
     assert dialog.result() == 0
-
-
-# ---------------------------------------------------------------------------
-# M6A: AcceptMode + Accept Selection tests
-# ---------------------------------------------------------------------------
-
-from writer.ui.dialogs.rewrite_compare_dialog import AcceptMode
 
 
 def test_compare_dialog_accept_selection_disabled_when_no_selection(qtbot):
