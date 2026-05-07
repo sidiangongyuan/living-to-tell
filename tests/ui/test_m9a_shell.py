@@ -154,6 +154,86 @@ class TestShellLayout:
 
         assert len(window.findChildren(QToolBar)) >= 1
 
+    def test_focus_mode_hides_and_restores_shell_surfaces(self, qtbot, container):
+        from writer.ui.main_window import MainWindow, MODE_FRAGMENTS
+
+        entry = container.entry_repository.create(title="focus", body="hello world")
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        window.show()
+        window._set_mode(MODE_FRAGMENTS)  # noqa: SLF001
+        window._load_entry(entry.id)  # noqa: SLF001
+
+        assert window._rail.isVisible()  # noqa: SLF001
+        assert window._context_pane.isVisible()  # noqa: SLF001
+        assert window._top_toolbar.isVisible()  # noqa: SLF001
+        assert window._list_panel.isVisible()  # noqa: SLF001
+
+        window._toggle_focus_mode()  # noqa: SLF001
+
+        assert window._focus_mode_enabled is True  # noqa: SLF001
+        assert not window._rail.isVisible()  # noqa: SLF001
+        assert not window._context_pane.isVisible()  # noqa: SLF001
+        assert not window._top_toolbar.isVisible()  # noqa: SLF001
+        assert not window._list_panel.isVisible()  # noqa: SLF001
+
+        window._toggle_focus_mode()  # noqa: SLF001
+
+        assert window._focus_mode_enabled is False  # noqa: SLF001
+        assert window._rail.isVisible()  # noqa: SLF001
+        assert window._context_pane.isVisible()  # noqa: SLF001
+        assert window._top_toolbar.isVisible()  # noqa: SLF001
+        assert window._list_panel.isVisible()  # noqa: SLF001
+
+    def test_f11_toggles_focus_mode(self, qtbot, container):
+        from PySide6.QtCore import Qt
+
+        from writer.ui.main_window import MainWindow, MODE_FRAGMENTS
+
+        entry = container.entry_repository.create(title="focus", body="hello world")
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        window.show()
+        window._set_mode(MODE_FRAGMENTS)  # noqa: SLF001
+        window._load_entry(entry.id)  # noqa: SLF001
+        window._editor_panel.focus_body()  # noqa: SLF001
+
+        qtbot.keyClick(window._editor_panel._body, Qt.Key.Key_F11)  # noqa: SLF001
+        qtbot.waitUntil(lambda: window._focus_mode_enabled is True)  # noqa: SLF001
+
+        qtbot.keyClick(window._editor_panel._body, Qt.Key.Key_F11)  # noqa: SLF001
+        qtbot.waitUntil(lambda: window._focus_mode_enabled is False)  # noqa: SLF001
+
+    def test_manage_quotes_opens_reference_library_filtered_to_quote(
+        self, qtbot, container, monkeypatch
+    ):
+        from writer.domain.models.reference_passage import USAGE_KIND_QUOTE
+        from writer.ui.main_window import MainWindow
+
+        seen: dict[str, object] = {}
+
+        class _FakeDialog:
+            def __init__(self, repo, parent=None, *, initial_usage_kind=None):
+                seen["repo"] = repo
+                seen["parent"] = parent
+                seen["initial_usage_kind"] = initial_usage_kind
+
+            def exec(self):
+                return 0
+
+        import writer.ui.main_window as main_window_mod
+
+        monkeypatch.setattr(main_window_mod, "ReferenceLibraryDialog", _FakeDialog)
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        window._on_manage_quotes()  # noqa: SLF001
+
+        assert seen["repo"] is container.reference_repository
+        assert seen["parent"] is window
+        assert seen["initial_usage_kind"] == USAGE_KIND_QUOTE
+
 
 # ---------------------------------------------------------------------------
 # Empty states

@@ -57,6 +57,7 @@ _USAGE_KIND_LABEL_KEYS = {
     "character": "reflib.usage_kind_character",
     "setting": "reflib.usage_kind_setting",
     "other": "reflib.usage_kind_other",
+    "quote": "reflib.usage_kind_quote",
 }
 
 
@@ -99,7 +100,11 @@ class _RefTagDotDelegate(QStyledItemDelegate):
 
 class ReferenceLibraryPanel(QWidget):
     def __init__(
-        self, repo: ReferenceRepository, parent: Optional[QWidget] = None
+        self,
+        repo: ReferenceRepository,
+        parent: Optional[QWidget] = None,
+        *,
+        initial_usage_kind_filter: Optional[str] = None,
     ) -> None:
         super().__init__(parent)
         self._repo = repo
@@ -209,6 +214,9 @@ class ReferenceLibraryPanel(QWidget):
         self._delete_btn.clicked.connect(self._on_delete)
         self._save_btn.clicked.connect(self._on_save)
 
+        if initial_usage_kind_filter is not None:
+            self.set_usage_kind_filter(initial_usage_kind_filter)
+
         self.refresh()
 
     # ---------------- behaviour ----------------
@@ -217,6 +225,10 @@ class ReferenceLibraryPanel(QWidget):
 
     def _current_usage_kind_filter(self) -> Optional[str]:
         return self._usage_kind_filter_combo.currentData()
+
+    def set_usage_kind_filter(self, usage_kind: Optional[str]) -> None:
+        idx = self._usage_kind_filter_combo.findData(usage_kind)
+        self._usage_kind_filter_combo.setCurrentIndex(max(0, idx))
 
     def refresh(self, *, select_id: Optional[str] = None) -> None:
         query = self._search.text().strip()

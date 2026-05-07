@@ -18,15 +18,18 @@ from typing import Optional
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -34,6 +37,7 @@ from PySide6.QtWidgets import (
 from writer.app.locale import LOCALE_EN, LOCALE_ZH_CN
 from writer.app.settings import (
     DEFAULT_QUICK_CAPTURE_CLOSE_TO_TRAY_ENABLED,
+    EditorDisplaySettings,
     KEY_AI_GEMINI_CLI_PROXY,
     KEY_QUICK_CAPTURE_CLOSE_TO_TRAY_ENABLED,
     SUPPORTED_WIRE_APIS,
@@ -110,7 +114,7 @@ class SettingsDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(TR("settings.title"))
-        self.resize(520, 360)
+        self.resize(640, 620)
 
         self._settings = settings
         self._importer = importer or CodexConfigImporter()
@@ -119,6 +123,7 @@ class SettingsDialog(QDialog):
         self._gemini_auth = gemini_auth or GeminiAuthResolver()
 
         config = settings.load_ai_config()
+        editor_settings = settings.load_editor_display_settings()
 
         self._provider_combo = QComboBox()
         for provider_key, display_name in _provider_options():
@@ -171,18 +176,68 @@ class SettingsDialog(QDialog):
             (close_to_tray_raw or "").strip().lower() == "true"
         )
 
-        form = QFormLayout()
-        form.addRow(TR("settings.provider"), self._provider_combo)
-        form.addRow(TR("settings.base_url"), self._base_url)
-        form.addRow(TR("settings.model"), self._model)
-        form.addRow(TR("settings.model_preset"), self._model_preset_combo)
-        form.addRow(TR("settings.wire_api"), self._wire_api)
-        form.addRow(TR("settings.api_key_source"), self._api_key_source)
-        form.addRow(TR("settings.gemini_cli_proxy"), self._gemini_cli_proxy)
-        self._gemini_cli_proxy_label = form.labelForField(self._gemini_cli_proxy)
-        form.addRow("", self._key_status)
-        form.addRow(TR("settings.language_label"), self._language_combo)
-        form.addRow("", self._close_to_tray_checkbox)
+        self._font_size = QSpinBox()
+        self._font_size.setRange(12, 32)
+        self._font_size.setValue(editor_settings.font_size)
+        self._font_size.setSuffix(" px")
+
+        self._line_height = QDoubleSpinBox()
+        self._line_height.setRange(1.2, 2.6)
+        self._line_height.setSingleStep(0.1)
+        self._line_height.setDecimals(1)
+        self._line_height.setValue(editor_settings.line_height)
+
+        self._paragraph_spacing = QDoubleSpinBox()
+        self._paragraph_spacing.setRange(0.0, 2.0)
+        self._paragraph_spacing.setSingleStep(0.1)
+        self._paragraph_spacing.setDecimals(1)
+        self._paragraph_spacing.setValue(editor_settings.paragraph_spacing)
+
+        self._content_width = QSpinBox()
+        self._content_width.setRange(520, 1200)
+        self._content_width.setSingleStep(20)
+        self._content_width.setValue(editor_settings.content_width)
+        self._content_width.setSuffix(" px")
+
+        self._visual_indent_checkbox = QCheckBox(TR("settings.editor_visual_indent"))
+        self._visual_indent_checkbox.setChecked(
+            editor_settings.visual_first_line_indent_enabled
+        )
+        self._typewriter_checkbox = QCheckBox(TR("settings.editor_typewriter_mode"))
+        self._typewriter_checkbox.setChecked(editor_settings.typewriter_mode_enabled)
+
+        appearance_group = QGroupBox(TR("settings.group_appearance"))
+        appearance_form = QFormLayout(appearance_group)
+        appearance_form.addRow(TR("settings.language_label"), self._language_combo)
+
+        writing_group = QGroupBox(TR("settings.group_writing"))
+        writing_form = QFormLayout(writing_group)
+        writing_form.addRow(TR("settings.editor_font_size"), self._font_size)
+        writing_form.addRow(TR("settings.editor_line_height"), self._line_height)
+        writing_form.addRow(
+            TR("settings.editor_paragraph_spacing"),
+            self._paragraph_spacing,
+        )
+        writing_form.addRow(TR("settings.editor_content_width"), self._content_width)
+        writing_form.addRow("", self._visual_indent_checkbox)
+        writing_form.addRow("", self._typewriter_checkbox)
+
+        ai_group = QGroupBox(TR("settings.group_ai"))
+        ai_form = QFormLayout(ai_group)
+        ai_form.addRow(TR("settings.provider"), self._provider_combo)
+        ai_form.addRow(TR("settings.base_url"), self._base_url)
+        ai_form.addRow(TR("settings.model"), self._model)
+        ai_form.addRow(TR("settings.model_preset"), self._model_preset_combo)
+        ai_form.addRow(TR("settings.wire_api"), self._wire_api)
+        ai_form.addRow(TR("settings.api_key_source"), self._api_key_source)
+        ai_form.addRow(TR("settings.gemini_cli_proxy"), self._gemini_cli_proxy)
+        self._gemini_cli_proxy_label = ai_form.labelForField(self._gemini_cli_proxy)
+        ai_form.addRow("", self._key_status)
+
+        quick_capture_group = QGroupBox(TR("settings.group_quick_capture"))
+        quick_capture_layout = QVBoxLayout(quick_capture_group)
+        quick_capture_layout.setContentsMargins(12, 12, 12, 12)
+        quick_capture_layout.addWidget(self._close_to_tray_checkbox)
 
         import_button = QPushButton(TR("settings.import_codex"))
         import_button.clicked.connect(self._on_import_codex)
@@ -210,8 +265,11 @@ class SettingsDialog(QDialog):
         action_row.addStretch(1)
 
         layout = QVBoxLayout(self)
-        layout.addLayout(form)
+        layout.addWidget(appearance_group)
+        layout.addWidget(writing_group)
+        layout.addWidget(ai_group)
         layout.addLayout(action_row)
+        layout.addWidget(quick_capture_group)
         layout.addWidget(button_box)
 
         self._refresh_provider_ui()
@@ -560,6 +618,17 @@ class SettingsDialog(QDialog):
         except ValueError as exc:
             QMessageBox.warning(self, TR("settings.invalid_setting"), str(exc))
             return
+
+        self._settings.save_editor_display_settings(
+            EditorDisplaySettings(
+                font_size=self._font_size.value(),
+                line_height=self._line_height.value(),
+                paragraph_spacing=self._paragraph_spacing.value(),
+                content_width=self._content_width.value(),
+                visual_first_line_indent_enabled=self._visual_indent_checkbox.isChecked(),
+                typewriter_mode_enabled=self._typewriter_checkbox.isChecked(),
+            )
+        )
 
         # Persist language selection; inform user a restart is required.
         new_locale = self._language_combo.currentData()

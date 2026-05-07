@@ -17,8 +17,8 @@ from __future__ import annotations
 import json
 from typing import Callable, Optional
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QActionGroup, QKeySequence
+from PySide6.QtCore import QEvent, QSignalBlocker, Qt
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -47,6 +47,7 @@ from writer.app.settings import (
     KEY_CONTEXT_PANE_VISIBLE,
     KEY_THEME_MODE,
 )
+from writer.domain.models.reference_passage import USAGE_KIND_QUOTE
 from writer.domain.enums import RewriteAction, AiThreadScope, AiTaskType, AiTargetKind
 from writer.services.ai.interfaces import RewriteRequest, RewriteResponse
 from writer.services.autosave_service import AutosaveService
@@ -104,6 +105,8 @@ class MainWindow(QMainWindow):
         self._close_request_handler: Optional[Callable[[], bool]] = None
         self._native_event_handler: Optional[Callable[[object, object], bool]] = None
         self._force_close = False
+        self._focus_mode_enabled = False
+        self._focus_restore_state: Optional[dict[str, object]] = None
 
         self.setWindowTitle("Writer")
         self.resize(1280, 780)
@@ -314,6 +317,7 @@ class MainWindow(QMainWindow):
         self._dates_panel.new_today_requested.connect(self._on_dates_new_today)
         self._dates_panel.append_tags_requested.connect(self._on_dates_append_tags)
         self._dates_panel.merge_requested.connect(self._on_dates_merge)
+        self._dates_panel.manage_quotes_requested.connect(self._on_manage_quotes)
 
         # M7B: in-memory trash for the most recent deletions. Each entry is
         # a dict with title/body/tags; survives until the app closes.
@@ -326,6 +330,9 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         self._build_status_bar()
         self._apply_editor_object_names()
+        self._apply_editor_preferences()
+        self._install_focus_mode_key_filters()
+        self._update_focus_mode_ui()
         self._initial_load()
 
         # Restore the persisted active mode (default Dates so users land on
@@ -399,11 +406,24 @@ class MainWindow(QMainWindow):
         references_action = QAction(TR("menu.references"), self)
         references_action.triggered.connect(self._on_open_reference_library)
         file_menu.addAction(references_action)
+        manage_quotes_action = QAction(TR("menu.manage_quotes"), self)
+        manage_quotes_action.triggered.connect(self._on_manage_quotes)
+        file_menu.addAction(manage_quotes_action)
         file_menu.addSeparator()
         quit_action = QAction(TR("menu.quit"), self)
         quit_action.setShortcut("Ctrl+Q")
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
+
+        view_menu = menu_bar.addMenu(TR("menu.view"))
+        self._focus_mode_action = QAction(TR("menu.focus_mode"), self)
+        self._focus_mode_action.setShortcut(QKeySequence("F11"))
+        self._focus_mode_action.triggered.connect(self._toggle_focus_mode)
+        view_menu.addAction(self._focus_mode_action)
+        self.addAction(self._focus_mode_action)
+        self._focus_mode_shortcut = QShortcut(QKeySequence("F11"), self)
+        self._focus_mode_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._focus_mode_shortcut.activated.connect(self._toggle_focus_mode)
 
         help_menu = menu_bar.addMenu(TR("menu.help"))
         about_action = QAction(TR("menu.about"), self)
@@ -441,6 +461,7 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         toolbar.setFloatable(False)
         toolbar.setObjectName("WriterTopToolbar")
+        self._top_toolbar = toolbar
 
         # Toggle context-pane button (replaces the old "◀" sidebar toggle —
         # the keystroke and persisted key live on for backwards compat).
@@ -453,6 +474,11 @@ class MainWindow(QMainWindow):
 
         # Legacy attribute name kept so older tests / call sites still work.
         self._sidebar_btn = self._context_toggle_btn
+
+        self._focus_toggle_btn = QPushButton(TR("toolbar.focus_mode"))
+        self._focus_toggle_btn.setObjectName("GhostButton")
+        self._focus_toggle_btn.clicked.connect(self._toggle_focus_mode)
+        toolbar.addWidget(self._focus_toggle_btn)
 
         # Spacer to push the language button to the right.
         spacer = QWidget()
@@ -980,13 +1006,22 @@ class MainWindow(QMainWindow):
 
     def _on_open_settings(self) -> None:
         dialog = SettingsDialog(self._container.settings, parent=self)
-        dialog.exec()
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._apply_editor_preferences()
 
-    def _on_open_reference_library(self) -> None:
+    def _on_open_reference_library(
+        self, *, initial_usage_kind: Optional[str] = None
+    ) -> None:
         dialog = ReferenceLibraryDialog(
-            self._container.reference_repository, parent=self
+            self._container.reference_repository,
+            parent=self,
+            initial_usage_kind=initial_usage_kind,
         )
         dialog.exec()
+        self._dates_panel.refresh_daily_quote()
+
+    def _on_manage_quotes(self) -> None:
+        self._on_open_reference_library(initial_usage_kind=USAGE_KIND_QUOTE)
 
     # --------------------------------------------------------------
     # M-Dates: signals from DatesPanel
@@ -1065,6 +1100,8 @@ class MainWindow(QMainWindow):
     # M8 Works / Collections / Search / Include
     # --------------------------------------------------------------
     def _set_mode(self, mode: int) -> None:
+        if self._focus_mode_enabled and mode != MODE_FRAGMENTS:
+            self._exit_focus_mode()
         previous_mode = self._stack.currentIndex()
         if mode == MODE_AI and previous_mode != MODE_AI:
             self._last_mode_before_ai = previous_mode
@@ -1700,6 +1737,22 @@ class MainWindow(QMainWindow):
     # --------------------------------------------------------------
     # M9A: shell helpers — theme menu, context pane, context refresh
     # --------------------------------------------------------------
+    def _apply_editor_preferences(self) -> None:
+        self._editor_panel.apply_display_settings(
+            self._container.settings.load_editor_display_settings()
+        )
+        self._editor_panel.set_focus_mode_enabled(self._focus_mode_enabled)
+
+    def _install_focus_mode_key_filters(self) -> None:
+        for widget in (
+            self,
+            self._editor_panel,
+            self._editor_panel._title,
+            self._editor_panel._tags,
+            self._editor_panel._body,
+        ):
+            widget.installEventFilter(self)
+
     def _apply_editor_object_names(self) -> None:
         """Tag editor sub-widgets so the global QSS can style them."""
         try:
@@ -1723,6 +1776,78 @@ class MainWindow(QMainWindow):
             )
         except Exception:  # noqa: BLE001
             pass
+
+    def _toggle_focus_mode(self) -> None:
+        if self._focus_mode_enabled:
+            self._exit_focus_mode()
+            return
+        self._enter_focus_mode()
+
+    def _enter_focus_mode(self) -> None:
+        if self._stack.currentIndex() != MODE_FRAGMENTS:
+            self.statusBar().showMessage(TR("focus.mode_unavailable"), 3000)
+            return
+        if self._editor_panel.current_entry_id() is None:
+            self.statusBar().showMessage(TR("focus.mode_unavailable"), 3000)
+            return
+
+        self._focus_restore_state = {
+            "rail_visible": self._rail.isVisible(),
+            "context_visible": self._context_pane.isVisible(),
+            "toolbar_visible": self._top_toolbar.isVisible(),
+            "list_visible": self._list_panel.isVisible(),
+            "main_splitter_sizes": list(self._main_splitter.sizes()),
+            "fragment_splitter_sizes": list(self._splitter.sizes()),
+        }
+        blocker = QSignalBlocker(self._splitter)
+        try:
+            self._rail.setVisible(False)
+            self._context_pane.setVisible(False)
+            self._top_toolbar.setVisible(False)
+            self._list_panel.setVisible(False)
+            self._splitter.setSizes([0, max(1, self._splitter.width())])
+            self._main_splitter.setSizes([0, max(1, self._main_splitter.width()), 0])
+        finally:
+            del blocker
+        self._focus_mode_enabled = True
+        self._editor_panel.set_focus_mode_enabled(True)
+        self._editor_panel.focus_body()
+        self._update_focus_mode_ui()
+        self.statusBar().showMessage(TR("focus.mode_on"), 2000)
+
+    def _exit_focus_mode(self) -> None:
+        restore = self._focus_restore_state or {}
+        blocker = QSignalBlocker(self._splitter)
+        try:
+            self._rail.setVisible(bool(restore.get("rail_visible", True)))
+            self._context_pane.setVisible(bool(restore.get("context_visible", True)))
+            self._top_toolbar.setVisible(bool(restore.get("toolbar_visible", True)))
+            self._list_panel.setVisible(bool(restore.get("list_visible", True)))
+            fragment_sizes = restore.get("fragment_splitter_sizes")
+            if isinstance(fragment_sizes, list) and len(fragment_sizes) == 2:
+                self._splitter.setSizes(fragment_sizes)
+            main_sizes = restore.get("main_splitter_sizes")
+            if isinstance(main_sizes, list) and len(main_sizes) == 3:
+                self._main_splitter.setSizes(main_sizes)
+        finally:
+            del blocker
+        self._focus_mode_enabled = False
+        self._focus_restore_state = None
+        self._editor_panel.set_focus_mode_enabled(False)
+        self._update_focus_mode_ui()
+        self.statusBar().showMessage(TR("focus.mode_off"), 2000)
+
+    def _update_focus_mode_ui(self) -> None:
+        action_key = (
+            "menu.exit_focus_mode" if self._focus_mode_enabled else "menu.focus_mode"
+        )
+        button_key = (
+            "toolbar.exit_focus_mode"
+            if self._focus_mode_enabled
+            else "toolbar.focus_mode"
+        )
+        self._focus_mode_action.setText(TR(action_key))
+        self._focus_toggle_btn.setText(TR(button_key))
 
     def _on_open_theme_menu(self) -> None:
         menu = QMenu(self)
@@ -1776,7 +1901,10 @@ class MainWindow(QMainWindow):
         words = _count_words(body)
         chars = len(body)
         tags = self._editor_panel.tags_text().strip() or TR("context.no_value")
-        entry = self._container.entry_repository.get(entry_id)
+        try:
+            entry = self._container.entry_repository.get(entry_id)
+        except Exception:  # noqa: BLE001
+            return
         if entry is None:
             self._show_mode_empty_context(MODE_FRAGMENTS)
             return
@@ -1893,3 +2021,9 @@ class MainWindow(QMainWindow):
         ):
             return True, 0
         return super().nativeEvent(event_type, message)
+
+    def eventFilter(self, watched, event):  # noqa: N802 (Qt signature)
+        if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_F11:
+            self._toggle_focus_mode()
+            return True
+        return super().eventFilter(watched, event)

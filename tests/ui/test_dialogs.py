@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QDialog
 
 from writer.app.container import build_container
 from writer.app.settings import (
+    EditorDisplaySettings,
     KEY_AI_BASE_URL,
     KEY_AI_MODEL,
     KEY_AI_PROVIDER,
@@ -102,6 +103,50 @@ def test_settings_dialog_persists_close_to_tray_toggle(qtbot, container):
     dialog._on_accept()  # noqa: SLF001
 
     assert container.settings.get(KEY_QUICK_CAPTURE_CLOSE_TO_TRAY_ENABLED) == "true"
+
+
+def test_settings_dialog_loads_editor_display_settings(qtbot, container):
+    container.settings.save_editor_display_settings(
+        EditorDisplaySettings(
+            font_size=20,
+            line_height=2.0,
+            paragraph_spacing=1.1,
+            content_width=820,
+            visual_first_line_indent_enabled=False,
+            typewriter_mode_enabled=True,
+        )
+    )
+
+    dialog = SettingsDialog(container.settings)
+    qtbot.addWidget(dialog)
+
+    assert dialog._font_size.value() == 20  # noqa: SLF001
+    assert dialog._line_height.value() == 2.0  # noqa: SLF001
+    assert dialog._paragraph_spacing.value() == 1.1  # noqa: SLF001
+    assert dialog._content_width.value() == 820  # noqa: SLF001
+    assert dialog._visual_indent_checkbox.isChecked() is False  # noqa: SLF001
+    assert dialog._typewriter_checkbox.isChecked() is True  # noqa: SLF001
+
+
+def test_settings_dialog_persists_editor_display_settings(qtbot, container):
+    dialog = SettingsDialog(container.settings)
+    qtbot.addWidget(dialog)
+
+    dialog._font_size.setValue(21)  # noqa: SLF001
+    dialog._line_height.setValue(1.9)  # noqa: SLF001
+    dialog._paragraph_spacing.setValue(0.9)  # noqa: SLF001
+    dialog._content_width.setValue(700)  # noqa: SLF001
+    dialog._visual_indent_checkbox.setChecked(False)  # noqa: SLF001
+    dialog._typewriter_checkbox.setChecked(False)  # noqa: SLF001
+    dialog._on_accept()  # noqa: SLF001
+
+    saved = container.settings.load_editor_display_settings()
+    assert saved.font_size == 21
+    assert saved.line_height == 1.9
+    assert saved.paragraph_spacing == 0.9
+    assert saved.content_width == 700
+    assert saved.visual_first_line_indent_enabled is False
+    assert saved.typewriter_mode_enabled is False
 
 
 def test_settings_dialog_accept_persists_gemini_cli_provider(qtbot, container):

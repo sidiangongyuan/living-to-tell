@@ -3,22 +3,139 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont, QTextBlockFormat, QTextCursor
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
+from writer.app.settings import DEFAULT_EDITOR_DISPLAY_SETTINGS, EditorDisplaySettings
 from writer.domain.models.entry import Entry
 from writer.storage.repositories.entry_repository import serialize_tags
 from writer.ui.i18n import TR
 from writer.ui.tag_colors import tag_style_sheet
+
+
+class _WriterBodyEdit(QPlainTextEdit):
+    """Plain-text body editor with view-only layout formatting.
+
+    Paragraph indentation and spacing are applied through block formats so the
+    stored plain text stays clean. We join the previous edit block before
+    reapplying formats so visual refreshes do not create separate undo steps.
+    """
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._display_settings = DEFAULT_EDITOR_DISPLAY_SETTINGS
+        self._typewriter_override = False
+        self._applying_formats = False
+
+        self._format_timer = QTimer(self)
+        self._format_timer.setSingleShot(True)
+        self._format_timer.timeout.connect(self._reapply_paragraph_formatting)
+
+        self._typewriter_timer = QTimer(self)
+        self._typewriter_timer.setSingleShot(True)
+        self._typewriter_timer.timeout.connect(self._adjust_typewriter_scroll)
+
+        self.textChanged.connect(self._schedule_paragraph_formatting)
+        self.cursorPositionChanged.connect(self._schedule_typewriter_adjust)
+
+    def apply_display_settings(self, settings: EditorDisplaySettings) -> None:
+        self._display_settings = settings
+        font = QFont(self.font())
+        font.setPointSizeF(settings.font_size)
+        self.setFont(font)
+        self.document().setDefaultFont(font)
+        self._schedule_paragraph_formatting()
+        self._schedule_typewriter_adjust()
+
+    def display_settings(self) -> EditorDisplaySettings:
+        return self._display_settings
+
+    def set_typewriter_override(self, enabled: bool) -> None:
+        self._typewriter_override = enabled
+        self._schedule_typewriter_adjust()
+
+    def effective_typewriter_enabled(self) -> bool:
+        return self._typewriter_override or self._display_settings.typewriter_mode_enabled
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._schedule_typewriter_adjust()
+
+    def _schedule_paragraph_formatting(self) -> None:
+        if self._applying_formats:
+            return
+        self._format_timer.start(0)
+
+    def _reapply_paragraph_formatting(self) -> None:
+        if self._applying_formats:
+            return
+        self._applying_formats = True
+        try:
+            document = self.document()
+            controller = QTextCursor(document)
+            controller.joinPreviousEditBlock()
+            metrics = self.fontMetrics()
+            line_height = max(100, int(round(self._display_settings.line_height * 100)))
+            paragraph_spacing_px = (
+                metrics.lineSpacing() * self._display_settings.paragraph_spacing
+            )
+            visual_indent_px = (
+                metrics.horizontalAdvance("汉汉")
+                if self._display_settings.visual_first_line_indent_enabled
+                else 0.0
+            )
+
+            block = document.firstBlock()
+            is_first = True
+            while block.isValid():
+                block_cursor = QTextCursor(block)
+                block_format = block.blockFormat()
+                block_format.setLineHeight(
+                    float(line_height),
+                    QTextBlockFormat.LineHeightTypes.ProportionalHeight.value,
+                )
+                block_format.setTextIndent(visual_indent_px)
+                block_format.setTopMargin(0.0 if is_first else paragraph_spacing_px)
+                block_format.setBottomMargin(0.0)
+                block_cursor.setBlockFormat(block_format)
+                block = block.next()
+                is_first = False
+            controller.endEditBlock()
+        finally:
+            self._applying_formats = False
+
+    def _schedule_typewriter_adjust(self) -> None:
+        if self.effective_typewriter_enabled():
+            self._typewriter_timer.start(0)
+
+    def _adjust_typewriter_scroll(self) -> None:
+        if not self.effective_typewriter_enabled() or not self.isVisible():
+            return
+        viewport_height = self.viewport().height()
+        if viewport_height <= 0:
+            return
+        cursor_rect = self.cursorRect()
+        desired_top = int(viewport_height * 0.4)
+        delta = cursor_rect.top() - desired_top
+        threshold = max(cursor_rect.height(), self.fontMetrics().lineSpacing()) // 2
+        if abs(delta) <= threshold:
+            return
+        scrollbar = self.verticalScrollBar()
+        smoothed_delta = int(delta * 0.7)
+        target = scrollbar.value() + smoothed_delta
+        target = max(scrollbar.minimum(), min(scrollbar.maximum(), target))
+        scrollbar.setValue(target)
 
 
 class EditorPanel(QWidget):
@@ -29,6 +146,7 @@ class EditorPanel(QWidget):
         super().__init__(parent)
 
         self._entry_id: Optional[str] = None
+        self._display_settings = DEFAULT_EDITOR_DISPLAY_SETTINGS
 
         self._title = QLineEdit()
         self._title.setPlaceholderText(TR("editor.title_placeholder"))
@@ -47,7 +165,7 @@ class EditorPanel(QWidget):
         self._tag_chips_layout.addStretch(1)
         self._tag_chips_widget.setVisible(False)
 
-        self._body = QPlainTextEdit()
+        self._body = _WriterBodyEdit()
         self._body.setPlaceholderText(TR("editor.body_placeholder"))
         self._body.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._body.textChanged.connect(self._on_changed)
@@ -75,18 +193,53 @@ class EditorPanel(QWidget):
         bottom_row.addWidget(self._save_specimen_btn, 0)
         bottom_row.addWidget(self._word_count, 0)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.addWidget(self._title)
-        layout.addWidget(self._tags)
-        layout.addWidget(self._tag_chips_widget)
-        layout.addWidget(self._body, 1)
-        layout.addLayout(bottom_row)
+        self._content_wrap = QWidget()
+        self._content_wrap.setObjectName("EditorContentWrap")
+        self._content_wrap.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Expanding,
+        )
+        content_layout = QVBoxLayout(self._content_wrap)
+        content_layout.setContentsMargins(12, 12, 12, 12)
+        content_layout.setSpacing(10)
+        content_layout.addWidget(self._title)
+        content_layout.addWidget(self._tags)
+        content_layout.addWidget(self._tag_chips_widget)
+        content_layout.addWidget(self._body, 1)
+        content_layout.addLayout(bottom_row)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addStretch(1)
+        layout.addWidget(self._content_wrap, 1)
+        layout.addStretch(1)
 
         self._loading = False
+        self.apply_display_settings(DEFAULT_EDITOR_DISPLAY_SETTINGS)
         self.set_entry(None)
         self._update_word_count()
         self._refresh_save_specimen_state()
+
+    def apply_display_settings(self, settings: EditorDisplaySettings) -> None:
+        self._display_settings = settings
+        self._content_wrap.setMaximumWidth(settings.content_width)
+        title_font = QFont(self._title.font())
+        title_font.setPointSizeF(max(settings.font_size + 2, 18))
+        self._title.setFont(title_font)
+
+        tags_font = QFont(self._tags.font())
+        tags_font.setPointSizeF(max(settings.font_size - 3, 12))
+        self._tags.setFont(tags_font)
+
+        self._body.apply_display_settings(settings)
+        self.updateGeometry()
+
+    def display_settings(self) -> EditorDisplaySettings:
+        return self._display_settings
+
+    def set_focus_mode_enabled(self, enabled: bool) -> None:
+        self._body.set_typewriter_override(bool(enabled))
 
     def set_entry(self, entry: Optional[Entry]) -> None:
         self._loading = True

@@ -9,6 +9,7 @@ configuration will land alongside the settings dialog in a later milestone.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Optional
 
 from writer.app.locale import SUPPORTED_LOCALES
@@ -41,6 +42,22 @@ KEY_CONTEXT_PANE_VISIBLE = "ui.context_pane_visible"
 KEY_ACTIVE_MODE = "ui.active_mode"
 DEFAULT_THEME_MODE = "system"
 
+# Editor comfort / writing layout
+KEY_EDITOR_FONT_SIZE = "editor.font_size"
+KEY_EDITOR_LINE_HEIGHT = "editor.line_height"
+KEY_EDITOR_PARAGRAPH_SPACING = "editor.paragraph_spacing"
+KEY_EDITOR_CONTENT_WIDTH = "editor.content_width"
+KEY_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED = (
+    "editor.visual_first_line_indent_enabled"
+)
+KEY_EDITOR_TYPEWRITER_MODE_ENABLED = "editor.typewriter_mode_enabled"
+DEFAULT_EDITOR_FONT_SIZE = 18
+DEFAULT_EDITOR_LINE_HEIGHT = 1.8
+DEFAULT_EDITOR_PARAGRAPH_SPACING = 0.8
+DEFAULT_EDITOR_CONTENT_WIDTH = 760
+DEFAULT_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED = True
+DEFAULT_EDITOR_TYPEWRITER_MODE_ENABLED = True
+
 # Quick capture / tray
 KEY_QUICK_CAPTURE_CLOSE_TO_TRAY_ENABLED = "quick_capture.close_to_tray_enabled"
 KEY_QUICK_CAPTURE_GLOBAL_HOTKEY = "quick_capture.global_hotkey"
@@ -53,6 +70,21 @@ DEFAULT_QUICK_CAPTURE_MAIN_WINDOW_HOTKEY = "Ctrl+Alt+M"
 
 SUPPORTED_WIRE_APIS = ("responses",)
 DEFAULT_WIRE_API = "responses"
+
+
+@dataclass(frozen=True)
+class EditorDisplaySettings:
+    font_size: int = DEFAULT_EDITOR_FONT_SIZE
+    line_height: float = DEFAULT_EDITOR_LINE_HEIGHT
+    paragraph_spacing: float = DEFAULT_EDITOR_PARAGRAPH_SPACING
+    content_width: int = DEFAULT_EDITOR_CONTENT_WIDTH
+    visual_first_line_indent_enabled: bool = (
+        DEFAULT_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED
+    )
+    typewriter_mode_enabled: bool = DEFAULT_EDITOR_TYPEWRITER_MODE_ENABLED
+
+
+DEFAULT_EDITOR_DISPLAY_SETTINGS = EditorDisplaySettings()
 
 
 class Settings:
@@ -181,6 +213,58 @@ class Settings:
             raise ValueError(f"Unsupported language: {locale!r}")
         self._repo.set(KEY_LANGUAGE, locale)
 
+    def load_editor_display_settings(self) -> EditorDisplaySettings:
+        return EditorDisplaySettings(
+            font_size=_coerce_int(
+                self._repo.get(KEY_EDITOR_FONT_SIZE),
+                default=DEFAULT_EDITOR_FONT_SIZE,
+                minimum=12,
+                maximum=32,
+            ),
+            line_height=_coerce_float(
+                self._repo.get(KEY_EDITOR_LINE_HEIGHT),
+                default=DEFAULT_EDITOR_LINE_HEIGHT,
+                minimum=1.2,
+                maximum=2.6,
+            ),
+            paragraph_spacing=_coerce_float(
+                self._repo.get(KEY_EDITOR_PARAGRAPH_SPACING),
+                default=DEFAULT_EDITOR_PARAGRAPH_SPACING,
+                minimum=0.0,
+                maximum=2.0,
+            ),
+            content_width=_coerce_int(
+                self._repo.get(KEY_EDITOR_CONTENT_WIDTH),
+                default=DEFAULT_EDITOR_CONTENT_WIDTH,
+                minimum=520,
+                maximum=1200,
+            ),
+            visual_first_line_indent_enabled=_coerce_bool(
+                self._repo.get(KEY_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED),
+                default=DEFAULT_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED,
+            ),
+            typewriter_mode_enabled=_coerce_bool(
+                self._repo.get(KEY_EDITOR_TYPEWRITER_MODE_ENABLED),
+                default=DEFAULT_EDITOR_TYPEWRITER_MODE_ENABLED,
+            ),
+        )
+
+    def save_editor_display_settings(self, settings: EditorDisplaySettings) -> None:
+        self._repo.set(KEY_EDITOR_FONT_SIZE, str(settings.font_size))
+        self._repo.set(KEY_EDITOR_LINE_HEIGHT, f"{settings.line_height:.2f}")
+        self._repo.set(
+            KEY_EDITOR_PARAGRAPH_SPACING, f"{settings.paragraph_spacing:.2f}"
+        )
+        self._repo.set(KEY_EDITOR_CONTENT_WIDTH, str(settings.content_width))
+        self._repo.set(
+            KEY_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED,
+            "true" if settings.visual_first_line_indent_enabled else "false",
+        )
+        self._repo.set(
+            KEY_EDITOR_TYPEWRITER_MODE_ENABLED,
+            "true" if settings.typewriter_mode_enabled else "false",
+        )
+
 
 def _normalize_provider_name(
     provider_name: Optional[str],
@@ -197,3 +281,34 @@ def _normalize_provider_name(
     if source == "gemini":
         return "gemini"
     return default
+
+
+def _coerce_bool(raw: Optional[str], *, default: bool) -> bool:
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _coerce_int(
+    raw: Optional[str], *, default: int, minimum: int, maximum: int
+) -> int:
+    try:
+        value = int(raw) if raw is not None else default
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+def _coerce_float(
+    raw: Optional[str], *, default: float, minimum: float, maximum: float
+) -> float:
+    try:
+        value = float(raw) if raw is not None else default
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))

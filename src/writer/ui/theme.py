@@ -549,6 +549,33 @@ QLabel#EmptyStateDescription {{
     font-size: {t.fs_list_main}px;
 }}
 
+/* ------- Daily quote card ------- */
+QFrame#DailyQuoteCard {{
+    background: {t.bg_card};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_lg}px;
+}}
+QFrame#DailyQuoteCard QLabel:first-child {{
+    color: {t.text_primary};
+    font-size: {t.fs_panel_title}px;
+    font-weight: 600;
+}}
+QLabel#DailyQuoteBody {{
+    color: {t.text_primary};
+    font-size: {t.fs_editor_body}px;
+    line-height: 155%;
+}}
+QLabel#DailyQuoteMeta,
+QLabel#DailyQuoteEmptyDesc {{
+    color: {t.text_secondary};
+    font-size: {t.fs_list_main}px;
+}}
+QLabel#DailyQuoteEmptyTitle {{
+    color: {t.text_primary};
+    font-size: {t.fs_panel_title}px;
+    font-weight: 600;
+}}
+
 /* ------- CheckBox ------- */
 QCheckBox {{
     color: {t.text_secondary};

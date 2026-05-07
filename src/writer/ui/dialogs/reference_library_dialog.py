@@ -12,12 +12,20 @@ from writer.ui.i18n import TR
 
 class ReferenceLibraryDialog(QDialog):
     def __init__(
-        self, repo: ReferenceRepository, parent: Optional[QWidget] = None
+        self,
+        repo: ReferenceRepository,
+        parent: Optional[QWidget] = None,
+        *,
+        initial_usage_kind: Optional[str] = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(TR("reflib.title"))
         self.resize(860, 520)
-        self.panel = ReferenceLibraryPanel(repo, parent=self)
+        self.panel = ReferenceLibraryPanel(
+            repo,
+            parent=self,
+            initial_usage_kind_filter=initial_usage_kind,
+        )
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)

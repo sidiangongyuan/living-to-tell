@@ -17,31 +17,84 @@ the multi-select toolbar emits :pyattr:`append_tags_requested` and
 """
 from __future__ import annotations
 
+import hashlib
 from datetime import date
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 from PySide6.QtCore import QDate, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QPalette, QTextCharFormat
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
+    QApplication,
     QAbstractItemView,
     QCalendarWidget,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QPushButton,
     QSplitter,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from writer.app.container import AppContainer
-from writer.domain.models.entry import Entry
+from writer.domain.models.reference_passage import ReferencePassage, USAGE_KIND_QUOTE
 from writer.storage.repositories.entry_repository import (
     DailyStat,
     EntryRepository,
 )
+from writer.storage.repositories.reference_repository import ReferenceRepository
 from writer.ui.i18n import TR
+
+
+DAILY_QUOTE_MIN_LENGTH = 10
+DAILY_QUOTE_MAX_LENGTH = 160
+DAILY_QUOTE_PREVIEW_LIMIT = 96
+
+
+def _quote_text(content: str) -> str:
+    return " ".join(line.strip() for line in content.splitlines() if line.strip()).strip()
+
+
+def eligible_daily_quotes(
+    passages: Iterable[ReferencePassage],
+) -> list[ReferencePassage]:
+    candidates = []
+    for passage in passages:
+        text = _quote_text(passage.content)
+        if DAILY_QUOTE_MIN_LENGTH <= len(text) <= DAILY_QUOTE_MAX_LENGTH:
+            candidates.append(passage)
+    return sorted(
+        candidates,
+        key=lambda passage: (
+            (passage.source_title or "").casefold(),
+            (passage.source_author or "").casefold(),
+            _quote_text(passage.content).casefold(),
+            passage.id,
+        ),
+    )
+
+
+def choose_default_daily_quote(
+    passages: Iterable[ReferencePassage], selected_day: date
+) -> Optional[ReferencePassage]:
+    candidates = eligible_daily_quotes(passages)
+    if not candidates:
+        return None
+    seed = int(
+        hashlib.sha256(selected_day.isoformat().encode("utf-8")).hexdigest()[:16],
+        16,
+    )
+    return candidates[seed % len(candidates)]
+
+
+def format_daily_quote_preview(content: str, *, limit: int = DAILY_QUOTE_PREVIEW_LIMIT) -> str:
+    text = _quote_text(content)
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
 
 
 def _qdate_to_pydate(q: QDate) -> date:
@@ -122,6 +175,7 @@ class DatesPanel(QWidget):
     new_today_requested = Signal()  # host should create + open
     append_tags_requested = Signal(list)  # list[str] entry_ids
     merge_requested = Signal(list)  # list[str] entry_ids
+    manage_quotes_requested = Signal()
 
     def __init__(
         self,
@@ -132,7 +186,72 @@ class DatesPanel(QWidget):
         self.setObjectName("DatesPanel")
         self._container = container
         self._repo: EntryRepository = container.entry_repository
+        self._reference_repo: ReferenceRepository = container.reference_repository
         self._selected_date: date = date.today()
+        self._temporary_daily_quote_id: Optional[str] = None
+        self._displayed_daily_quote_id: Optional[str] = None
+
+        self._quote_card = QFrame()
+        self._quote_card.setObjectName("DailyQuoteCard")
+        self._quote_card.setMaximumWidth(780)
+
+        quote_header = QHBoxLayout()
+        quote_header.setContentsMargins(0, 0, 0, 0)
+        quote_header.addWidget(QLabel(TR("dates.daily_quote_title")))
+        quote_header.addStretch(1)
+
+        self._replace_quote_btn = QPushButton(TR("dates.daily_quote_replace"))
+        self._replace_quote_btn.setObjectName("GhostButton")
+        self._manage_quotes_btn = QPushButton(TR("dates.daily_quote_manage"))
+        self._manage_quotes_btn.setObjectName("GhostButton")
+        self._copy_quote_btn = QPushButton(TR("dates.daily_quote_copy"))
+        self._copy_quote_btn.setObjectName("GhostButton")
+        quote_header.addWidget(self._replace_quote_btn)
+        quote_header.addWidget(self._manage_quotes_btn)
+        quote_header.addWidget(self._copy_quote_btn)
+
+        self._quote_stack = QStackedWidget()
+
+        quote_content = QWidget()
+        quote_content_layout = QVBoxLayout(quote_content)
+        quote_content_layout.setContentsMargins(0, 0, 0, 0)
+        quote_content_layout.setSpacing(8)
+        self._quote_body = QLabel("")
+        self._quote_body.setObjectName("DailyQuoteBody")
+        self._quote_body.setWordWrap(True)
+        self._quote_meta = QLabel("")
+        self._quote_meta.setObjectName("DailyQuoteMeta")
+        self._quote_meta.setWordWrap(True)
+        quote_content_layout.addWidget(self._quote_body)
+        quote_content_layout.addWidget(self._quote_meta)
+
+        quote_empty = QWidget()
+        quote_empty_layout = QVBoxLayout(quote_empty)
+        quote_empty_layout.setContentsMargins(0, 0, 0, 0)
+        quote_empty_layout.setSpacing(6)
+        self._quote_empty_title = QLabel(TR("dates.daily_quote_empty_title"))
+        self._quote_empty_title.setObjectName("DailyQuoteEmptyTitle")
+        self._quote_empty_desc = QLabel(TR("dates.daily_quote_empty_desc"))
+        self._quote_empty_desc.setObjectName("DailyQuoteEmptyDesc")
+        self._quote_empty_desc.setWordWrap(True)
+        quote_empty_layout.addWidget(self._quote_empty_title)
+        quote_empty_layout.addWidget(self._quote_empty_desc)
+
+        self._quote_stack.addWidget(quote_content)
+        self._quote_stack.addWidget(quote_empty)
+
+        quote_layout = QVBoxLayout(self._quote_card)
+        quote_layout.setContentsMargins(16, 14, 16, 14)
+        quote_layout.setSpacing(10)
+        quote_layout.addLayout(quote_header)
+        quote_layout.addWidget(self._quote_stack)
+
+        quote_wrap = QWidget()
+        quote_wrap_layout = QHBoxLayout(quote_wrap)
+        quote_wrap_layout.setContentsMargins(12, 12, 12, 0)
+        quote_wrap_layout.setSpacing(0)
+        quote_wrap_layout.addWidget(self._quote_card, 0)
+        quote_wrap_layout.addStretch(1)
 
         # ---- Calendar (left) -----------------------------------------
         self._calendar = _DatesCalendar()
@@ -189,9 +308,11 @@ class DatesPanel(QWidget):
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([360, 600])
 
-        root = QHBoxLayout(self)
+        root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.addWidget(splitter)
+        root.setSpacing(0)
+        root.addWidget(quote_wrap)
+        root.addWidget(splitter, 1)
 
         # ---- Wiring --------------------------------------------------
         self._calendar.selectionChanged.connect(self._on_calendar_changed)
@@ -200,6 +321,9 @@ class DatesPanel(QWidget):
         self._new_btn.clicked.connect(self.new_today_requested.emit)
         self._tag_btn.clicked.connect(self._on_tag_clicked)
         self._merge_btn.clicked.connect(self._on_merge_clicked)
+        self._replace_quote_btn.clicked.connect(self._on_replace_daily_quote)
+        self._manage_quotes_btn.clicked.connect(self.manage_quotes_requested.emit)
+        self._copy_quote_btn.clicked.connect(self._on_copy_daily_quote)
         self._entry_list.itemActivated.connect(self._on_item_activated)
         self._entry_list.itemDoubleClicked.connect(self._on_item_activated)
         self._entry_list.itemSelectionChanged.connect(self._update_buttons)
@@ -219,6 +343,7 @@ class DatesPanel(QWidget):
         ]
 
     def refresh(self, *, select_entry_id: Optional[str] = None) -> None:
+        self.refresh_daily_quote()
         # Reload month stats based on whatever the calendar currently shows
         # so the calendar badges remain in sync.
         page_year = self._calendar.yearShown()
@@ -264,6 +389,47 @@ class DatesPanel(QWidget):
         self._calendar.setSelectedDate(_pydate_to_qdate(self._selected_date))
         self.refresh()
 
+    def refresh_daily_quote(self) -> None:
+        quotes = eligible_daily_quotes(
+            self._reference_repo.list_recent(usage_kind=USAGE_KIND_QUOTE, limit=500)
+        )
+        if not quotes:
+            self._displayed_daily_quote_id = None
+            self._temporary_daily_quote_id = None
+            self._quote_stack.setCurrentIndex(1)
+            self._replace_quote_btn.setEnabled(False)
+            self._copy_quote_btn.setEnabled(False)
+            self._quote_body.clear()
+            self._quote_meta.clear()
+            return
+
+        default_quote = choose_default_daily_quote(quotes, date.today())
+        selected_quote = default_quote
+        if self._temporary_daily_quote_id is not None:
+            selected_quote = next(
+                (quote for quote in quotes if quote.id == self._temporary_daily_quote_id),
+                default_quote,
+            )
+        if selected_quote is None:
+            self._quote_stack.setCurrentIndex(1)
+            self._replace_quote_btn.setEnabled(False)
+            self._copy_quote_btn.setEnabled(False)
+            return
+
+        self._displayed_daily_quote_id = selected_quote.id
+        self._quote_stack.setCurrentIndex(0)
+        self._quote_body.setText(format_daily_quote_preview(selected_quote.content))
+        self._quote_body.setToolTip(_quote_text(selected_quote.content))
+        meta_parts = [selected_quote.source_title.strip() or TR("context.no_value")]
+        if selected_quote.source_author.strip():
+            meta_parts.append(selected_quote.source_author.strip())
+        if selected_quote.tags.strip():
+            meta_parts.append(selected_quote.tags.strip())
+        self._quote_meta.setText(" · ".join(meta_parts))
+        self._quote_meta.setToolTip(self._quote_meta.text())
+        self._replace_quote_btn.setEnabled(len(quotes) > 1)
+        self._copy_quote_btn.setEnabled(True)
+
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
@@ -284,6 +450,29 @@ class DatesPanel(QWidget):
 
     def _on_go_today(self) -> None:
         self.refresh_today()
+
+    def _on_replace_daily_quote(self) -> None:
+        quotes = eligible_daily_quotes(
+            self._reference_repo.list_recent(usage_kind=USAGE_KIND_QUOTE, limit=500)
+        )
+        if len(quotes) < 2:
+            return
+        current_id = self._displayed_daily_quote_id
+        current_index = next(
+            (index for index, quote in enumerate(quotes) if quote.id == current_id),
+            -1,
+        )
+        next_quote = quotes[(current_index + 1) % len(quotes)]
+        self._temporary_daily_quote_id = next_quote.id
+        self.refresh_daily_quote()
+
+    def _on_copy_daily_quote(self) -> None:
+        if not self._displayed_daily_quote_id:
+            return
+        quote = self._reference_repo.get(self._displayed_daily_quote_id)
+        if quote is None:
+            return
+        QApplication.clipboard().setText(_quote_text(quote.content))
 
     def _on_item_activated(self, item: QListWidgetItem) -> None:
         entry_id = item.data(Qt.ItemDataRole.UserRole)
