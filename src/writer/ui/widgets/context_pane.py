@@ -6,20 +6,29 @@ a couple of buttons. Richer wiring is intentionally deferred to M9B.
 """
 from __future__ import annotations
 
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import Optional
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFrame,
-    QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from writer.ui.widgets.empty_state import EmptyStateCard
+
+
+def _make_action_button(text: str) -> QPushButton:
+    button = QPushButton(text)
+    button.setObjectName("GhostButton")
+    button.ensurePolished()
+    button.setMinimumHeight(
+        max(button.sizeHint().height(), button.fontMetrics().height() + 16, 36)
+    )
+    button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+    return button
 
 
 class _MetaRow(QWidget):
@@ -93,17 +102,14 @@ class ContextPane(QWidget):
             self._frag_updated,
         ):
             frag_layout.addWidget(row)
-        self._frag_actions_row = QHBoxLayout()
-        self._frag_polish_btn = QPushButton(action_labels["polish"])
-        self._frag_polish_btn.setObjectName("GhostButton")
-        self._frag_include_btn = QPushButton(action_labels["include"])
-        self._frag_include_btn.setObjectName("GhostButton")
-        self._frag_save_specimen_btn = QPushButton(action_labels["save_specimen"])
-        self._frag_save_specimen_btn.setObjectName("GhostButton")
+        self._frag_actions_row = QVBoxLayout()
+        self._frag_actions_row.setSpacing(6)
+        self._frag_polish_btn = _make_action_button(action_labels["polish"])
+        self._frag_include_btn = _make_action_button(action_labels["include"])
+        self._frag_save_specimen_btn = _make_action_button(action_labels["save_specimen"])
         self._frag_actions_row.addWidget(self._frag_polish_btn)
         self._frag_actions_row.addWidget(self._frag_include_btn)
         self._frag_actions_row.addWidget(self._frag_save_specimen_btn)
-        self._frag_actions_row.addStretch(1)
         frag_layout.addLayout(self._frag_actions_row)
         frag_layout.addStretch(1)
 
@@ -125,14 +131,12 @@ class ContextPane(QWidget):
             self._work_updated,
         ):
             work_layout.addWidget(row)
-        self._work_actions_row = QHBoxLayout()
-        self._work_versions_btn = QPushButton(action_labels["versions"])
-        self._work_versions_btn.setObjectName("GhostButton")
-        self._work_export_btn = QPushButton(action_labels["export_work"])
-        self._work_export_btn.setObjectName("GhostButton")
+        self._work_actions_row = QVBoxLayout()
+        self._work_actions_row.setSpacing(6)
+        self._work_versions_btn = _make_action_button(action_labels["versions"])
+        self._work_export_btn = _make_action_button(action_labels["export_work"])
         self._work_actions_row.addWidget(self._work_versions_btn)
         self._work_actions_row.addWidget(self._work_export_btn)
-        self._work_actions_row.addStretch(1)
         work_layout.addLayout(self._work_actions_row)
         work_layout.addStretch(1)
 
@@ -145,11 +149,10 @@ class ContextPane(QWidget):
         self._coll_words = _MetaRow(meta_labels["words"])
         for row in (self._coll_count, self._coll_words):
             coll_layout.addWidget(row)
-        self._coll_actions_row = QHBoxLayout()
-        self._coll_export_btn = QPushButton(action_labels["export_collection"])
-        self._coll_export_btn.setObjectName("GhostButton")
+        self._coll_actions_row = QVBoxLayout()
+        self._coll_actions_row.setSpacing(6)
+        self._coll_export_btn = _make_action_button(action_labels["export_collection"])
         self._coll_actions_row.addWidget(self._coll_export_btn)
-        self._coll_actions_row.addStretch(1)
         coll_layout.addLayout(self._coll_actions_row)
         coll_layout.addStretch(1)
 

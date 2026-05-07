@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QVBoxLayout,
@@ -95,6 +96,20 @@ def format_daily_quote_preview(content: str, *, limit: int = DAILY_QUOTE_PREVIEW
     if len(text) <= limit:
         return text
     return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _make_quote_button(text: str) -> QPushButton:
+    button = QPushButton(text)
+    button.setObjectName("GhostButton")
+    button.ensurePolished()
+    button.setMinimumWidth(
+        max(button.sizeHint().width(), button.fontMetrics().horizontalAdvance(text) + 40)
+    )
+    button.setMinimumHeight(
+        max(button.sizeHint().height(), button.fontMetrics().height() + 16, 36)
+    )
+    button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+    return button
 
 
 def _qdate_to_pydate(q: QDate) -> date:
@@ -200,12 +215,9 @@ class DatesPanel(QWidget):
         quote_header.addWidget(QLabel(TR("dates.daily_quote_title")))
         quote_header.addStretch(1)
 
-        self._replace_quote_btn = QPushButton(TR("dates.daily_quote_replace"))
-        self._replace_quote_btn.setObjectName("GhostButton")
-        self._manage_quotes_btn = QPushButton(TR("dates.daily_quote_manage"))
-        self._manage_quotes_btn.setObjectName("GhostButton")
-        self._copy_quote_btn = QPushButton(TR("dates.daily_quote_copy"))
-        self._copy_quote_btn.setObjectName("GhostButton")
+        self._replace_quote_btn = _make_quote_button(TR("dates.daily_quote_replace"))
+        self._manage_quotes_btn = _make_quote_button(TR("dates.daily_quote_manage"))
+        self._copy_quote_btn = _make_quote_button(TR("dates.daily_quote_copy"))
         quote_header.addWidget(self._replace_quote_btn)
         quote_header.addWidget(self._manage_quotes_btn)
         quote_header.addWidget(self._copy_quote_btn)

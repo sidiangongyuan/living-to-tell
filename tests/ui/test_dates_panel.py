@@ -200,3 +200,19 @@ def test_dates_panel_manage_quotes_button_emits_signal(qtbot, container):
 
     with qtbot.waitSignal(panel.manage_quotes_requested, timeout=1000):
         panel._manage_quotes_btn.click()  # noqa: SLF001
+
+
+def test_daily_quote_buttons_keep_readable_size(qtbot, container):
+    from writer.ui.panels.dates_panel import DatesPanel
+
+    panel = DatesPanel(container)
+    qtbot.addWidget(panel)
+
+    buttons = (
+        panel._replace_quote_btn,  # noqa: SLF001
+        panel._manage_quotes_btn,  # noqa: SLF001
+        panel._copy_quote_btn,  # noqa: SLF001
+    )
+    for button in buttons:
+        assert button.minimumHeight() >= max(button.fontMetrics().height() + 16, 36)
+        assert button.minimumWidth() >= button.fontMetrics().horizontalAdvance(button.text()) + 40

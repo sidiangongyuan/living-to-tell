@@ -311,6 +311,25 @@ class TestContextPane:
         window._load_entry(entry.id)  # noqa: SLF001
         assert window._context_pane._stack.currentIndex() == 1  # noqa: SLF001
 
+    def test_context_pane_action_buttons_are_vertical_and_readable(
+        self, qtbot, container
+    ):
+        from PySide6.QtWidgets import QVBoxLayout
+
+        from writer.ui.main_window import MainWindow
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        pane = window._context_pane  # noqa: SLF001
+        assert isinstance(pane._frag_actions_row, QVBoxLayout)  # noqa: SLF001
+        for button in (
+            pane.fragment_polish_button,
+            pane.fragment_include_button,
+            pane.fragment_save_specimen_button,
+        ):
+            assert button.minimumHeight() >= max(button.fontMetrics().height() + 16, 36)
+
     def test_context_pane_shows_work_in_works_mode(self, qtbot, container):
         from writer.ui.main_window import MainWindow, MODE_WORKS
 

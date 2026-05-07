@@ -392,10 +392,10 @@ QPushButton {{
     color: {t.text_primary};
     border: 1px solid {t.border};
     border-radius: {t.radius_md}px;
-    padding: 6px 14px;
+    padding: 7px 14px;
     font-size: {t.fs_button}px;
     font-weight: 500;
-    min-height: 22px;
+    min-height: 30px;
 }}
 QPushButton:hover {{
     background: {t.hover_bg};
