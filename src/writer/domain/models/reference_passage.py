@@ -34,7 +34,6 @@ USAGE_KIND_TECHNIQUE = "technique"
 USAGE_KIND_CHARACTER = "character"
 USAGE_KIND_SETTING = "setting"
 USAGE_KIND_OTHER = "other"
-USAGE_KIND_QUOTE = "quote"
 
 USAGE_KINDS: tuple[str, ...] = (
     USAGE_KIND_STYLE,
@@ -43,7 +42,6 @@ USAGE_KINDS: tuple[str, ...] = (
     USAGE_KIND_CHARACTER,
     USAGE_KIND_SETTING,
     USAGE_KIND_OTHER,
-    USAGE_KIND_QUOTE,
 )
 
 

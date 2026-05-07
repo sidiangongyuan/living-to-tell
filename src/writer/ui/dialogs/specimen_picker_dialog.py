@@ -36,7 +36,6 @@ _USAGE_LABEL_KEYS = {
     "character": "reflib.usage_kind_character",
     "setting": "reflib.usage_kind_setting",
     "other": "reflib.usage_kind_other",
-    "quote": "reflib.usage_kind_quote",
 }
 
 

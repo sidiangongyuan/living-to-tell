@@ -47,7 +47,6 @@ from writer.app.settings import (
     KEY_CONTEXT_PANE_VISIBLE,
     KEY_THEME_MODE,
 )
-from writer.domain.models.reference_passage import USAGE_KIND_QUOTE
 from writer.domain.enums import RewriteAction, AiThreadScope, AiTaskType, AiTargetKind
 from writer.services.ai.interfaces import RewriteRequest, RewriteResponse
 from writer.services.autosave_service import AutosaveService
@@ -406,9 +405,6 @@ class MainWindow(QMainWindow):
         references_action = QAction(TR("menu.references"), self)
         references_action.triggered.connect(self._on_open_reference_library)
         file_menu.addAction(references_action)
-        manage_quotes_action = QAction(TR("menu.manage_quotes"), self)
-        manage_quotes_action.triggered.connect(self._on_manage_quotes)
-        file_menu.addAction(manage_quotes_action)
         file_menu.addSeparator()
         quit_action = QAction(TR("menu.quit"), self)
         quit_action.setShortcut("Ctrl+Q")
@@ -1021,7 +1017,7 @@ class MainWindow(QMainWindow):
         self._dates_panel.refresh_daily_quote()
 
     def _on_manage_quotes(self) -> None:
-        self._on_open_reference_library(initial_usage_kind=USAGE_KIND_QUOTE)
+        self._on_open_reference_library()
 
     # --------------------------------------------------------------
     # M-Dates: signals from DatesPanel

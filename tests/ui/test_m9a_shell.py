@@ -204,10 +204,9 @@ class TestShellLayout:
         qtbot.keyClick(window._editor_panel._body, Qt.Key.Key_F11)  # noqa: SLF001
         qtbot.waitUntil(lambda: window._focus_mode_enabled is False)  # noqa: SLF001
 
-    def test_manage_quotes_opens_reference_library_filtered_to_quote(
+    def test_manage_quotes_opens_reference_library_without_extra_filter(
         self, qtbot, container, monkeypatch
     ):
-        from writer.domain.models.reference_passage import USAGE_KIND_QUOTE
         from writer.ui.main_window import MainWindow
 
         seen: dict[str, object] = {}
@@ -232,7 +231,7 @@ class TestShellLayout:
 
         assert seen["repo"] is container.reference_repository
         assert seen["parent"] is window
-        assert seen["initial_usage_kind"] == USAGE_KIND_QUOTE
+        assert seen["initial_usage_kind"] is None
 
 
 # ---------------------------------------------------------------------------

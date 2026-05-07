@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
 )
 
 from writer.app.container import AppContainer
-from writer.domain.models.reference_passage import ReferencePassage, USAGE_KIND_QUOTE
+from writer.domain.models.reference_passage import ReferencePassage
 from writer.storage.repositories.entry_repository import (
     DailyStat,
     EntryRepository,
@@ -50,8 +50,6 @@ from writer.storage.repositories.reference_repository import ReferenceRepository
 from writer.ui.i18n import TR
 
 
-DAILY_QUOTE_MIN_LENGTH = 10
-DAILY_QUOTE_MAX_LENGTH = 160
 DAILY_QUOTE_PREVIEW_LIMIT = 96
 
 
@@ -65,7 +63,7 @@ def eligible_daily_quotes(
     candidates = []
     for passage in passages:
         text = _quote_text(passage.content)
-        if DAILY_QUOTE_MIN_LENGTH <= len(text) <= DAILY_QUOTE_MAX_LENGTH:
+        if text:
             candidates.append(passage)
     return sorted(
         candidates,
@@ -403,7 +401,7 @@ class DatesPanel(QWidget):
 
     def refresh_daily_quote(self) -> None:
         quotes = eligible_daily_quotes(
-            self._reference_repo.list_recent(usage_kind=USAGE_KIND_QUOTE, limit=500)
+            self._reference_repo.list_recent(limit=500)
         )
         if not quotes:
             self._displayed_daily_quote_id = None
@@ -465,7 +463,7 @@ class DatesPanel(QWidget):
 
     def _on_replace_daily_quote(self) -> None:
         quotes = eligible_daily_quotes(
-            self._reference_repo.list_recent(usage_kind=USAGE_KIND_QUOTE, limit=500)
+            self._reference_repo.list_recent(limit=500)
         )
         if len(quotes) < 2:
             return

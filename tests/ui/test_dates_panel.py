@@ -102,14 +102,8 @@ def test_navigation_rail_dates_button_is_first(qtbot):
     assert rail._mode_group.id(rail.fragments_button) == 1  # noqa: SLF001
 
 
-def test_dates_panel_shows_empty_daily_quote_state_without_quotes(qtbot, container):
+def test_dates_panel_shows_empty_daily_quote_state_without_reference_passages(qtbot, container):
     from writer.ui.panels.dates_panel import DatesPanel
-
-    container.reference_repository.create(
-        source_title="Not a quote",
-        content="This is a style specimen, not a quote.",
-        usage_kind="style",
-    )
 
     panel = DatesPanel(container)
     qtbot.addWidget(panel)
@@ -118,27 +112,22 @@ def test_dates_panel_shows_empty_daily_quote_state_without_quotes(qtbot, contain
     assert panel._displayed_daily_quote_id is None  # noqa: SLF001
 
 
-def test_dates_panel_shows_today_quote_from_quote_usage_kind(qtbot, container):
+def test_dates_panel_shows_daily_quote_from_reference_library(qtbot, container):
     from writer.ui.panels.dates_panel import DatesPanel
 
-    quote = container.reference_repository.create(
+    passage = container.reference_repository.create(
         source_title="Le Petit Prince",
         source_author="Saint-Exupery",
         content="What is essential is invisible to the eye.",
-        usage_kind="quote",
-        tags="wisdom",
-    )
-    container.reference_repository.create(
-        source_title="Proust",
-        content="Long stylistic paragraph.",
         usage_kind="style",
+        tags="wisdom",
     )
 
     panel = DatesPanel(container)
     qtbot.addWidget(panel)
 
     assert panel._quote_stack.currentIndex() == 0  # noqa: SLF001
-    assert panel._displayed_daily_quote_id == quote.id  # noqa: SLF001
+    assert panel._displayed_daily_quote_id == passage.id  # noqa: SLF001
     assert "essential" in panel._quote_body.text()  # noqa: SLF001
 
 
@@ -148,14 +137,14 @@ def test_daily_quote_default_selection_is_stable_for_same_day(container):
     a = container.reference_repository.create(
         source_title="A",
         content="A short quote that fits the card nicely.",
-        usage_kind="quote",
+        usage_kind="style",
     )
     b = container.reference_repository.create(
         source_title="B",
         content="Another short quote for a steady daily pick.",
-        usage_kind="quote",
+        usage_kind="imagery",
     )
-    quotes = container.reference_repository.list_recent(usage_kind="quote", limit=50)
+    quotes = container.reference_repository.list_recent(limit=50)
 
     first = choose_default_daily_quote(quotes, date(2026, 5, 7))
     second = choose_default_daily_quote(quotes, date(2026, 5, 7))
@@ -171,12 +160,12 @@ def test_dates_panel_replace_quote_changes_only_current_session(qtbot, container
     container.reference_repository.create(
         source_title="A",
         content="A short quote that fits the daily card well.",
-        usage_kind="quote",
+        usage_kind="style",
     )
     container.reference_repository.create(
         source_title="B",
         content="B short quote that also fits the daily quote card.",
-        usage_kind="quote",
+        usage_kind="technique",
     )
 
     panel = DatesPanel(container)

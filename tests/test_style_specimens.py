@@ -79,13 +79,6 @@ def test_unknown_usage_kind_normalised_to_style(repo):
     assert normalise_usage_kind(None) == "style"
 
 
-def test_quote_usage_kind_round_trips(repo):
-    passage = repo.create(source_title="q", content="short quote", usage_kind="quote")
-
-    assert passage.usage_kind == "quote"
-    assert repo.list_recent(usage_kind="quote")[0].id == passage.id
-
-
 def test_list_recent_filter_by_usage_kind(repo):
     repo.create(source_title="a", content="ca", usage_kind="style")
     repo.create(source_title="b", content="cb", usage_kind="imagery")
@@ -136,18 +129,18 @@ def test_all_usage_kinds_round_trip(repo):
         assert p.usage_kind == uk
 
 
-def test_reference_library_panel_can_start_filtered_to_quote(qtbot, repo):
+def test_reference_library_panel_can_start_filtered_to_usage_kind(qtbot, repo):
     from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
 
-    quote = repo.create(source_title="Q", content="A neat daily quote.", usage_kind="quote")
+    imagery = repo.create(source_title="Q", content="A neat passage.", usage_kind="imagery")
     repo.create(source_title="S", content="A style passage.", usage_kind="style")
 
-    panel = ReferenceLibraryPanel(repo, initial_usage_kind_filter="quote")
+    panel = ReferenceLibraryPanel(repo, initial_usage_kind_filter="imagery")
     qtbot.addWidget(panel)
 
-    assert panel._usage_kind_filter_combo.currentData() == "quote"  # noqa: SLF001
+    assert panel._usage_kind_filter_combo.currentData() == "imagery"  # noqa: SLF001
     assert panel._list.count() == 1  # noqa: SLF001
-    assert panel._list.item(0).data(0x0100) == quote.id  # noqa: SLF001
+    assert panel._list.item(0).data(0x0100) == imagery.id  # noqa: SLF001
 
 
 # ---------------------------------------------------------------------------
