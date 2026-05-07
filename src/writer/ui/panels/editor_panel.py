@@ -24,6 +24,9 @@ from writer.ui.i18n import TR
 from writer.ui.tag_colors import tag_style_sheet
 
 
+FOCUS_MODE_CONTENT_WIDTH = 1180
+
+
 class _WriterBodyEdit(QPlainTextEdit):
     """Plain-text body editor with view-only layout formatting.
 
@@ -147,6 +150,7 @@ class EditorPanel(QWidget):
 
         self._entry_id: Optional[str] = None
         self._display_settings = DEFAULT_EDITOR_DISPLAY_SETTINGS
+        self._focus_mode_enabled = False
 
         self._title = QLineEdit()
         self._title.setPlaceholderText(TR("editor.title_placeholder"))
@@ -223,7 +227,7 @@ class EditorPanel(QWidget):
 
     def apply_display_settings(self, settings: EditorDisplaySettings) -> None:
         self._display_settings = settings
-        self._content_wrap.setMaximumWidth(settings.content_width)
+        self._apply_content_width()
         title_font = QFont(self._title.font())
         title_font.setPointSizeF(max(settings.font_size + 2, 18))
         self._title.setFont(title_font)
@@ -239,7 +243,16 @@ class EditorPanel(QWidget):
         return self._display_settings
 
     def set_focus_mode_enabled(self, enabled: bool) -> None:
+        self._focus_mode_enabled = bool(enabled)
         self._body.set_typewriter_override(bool(enabled))
+        self._apply_content_width()
+
+    def _apply_content_width(self) -> None:
+        width = self._display_settings.content_width
+        if self._focus_mode_enabled:
+            width = max(width, FOCUS_MODE_CONTENT_WIDTH)
+        self._content_wrap.setMaximumWidth(width)
+        self.updateGeometry()
 
     def set_entry(self, entry: Optional[Entry]) -> None:
         self._loading = True

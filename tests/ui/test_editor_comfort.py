@@ -85,6 +85,22 @@ def test_editor_panel_typewriter_override_does_not_break_plain_editing(qtbot):
     assert panel.body_text().endswith(" more")
 
 
+def test_editor_panel_focus_mode_expands_writing_surface(qtbot):
+    from writer.ui.panels.editor_panel import EditorPanel, FOCUS_MODE_CONTENT_WIDTH
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.apply_display_settings(EditorDisplaySettings(content_width=680))
+
+    assert panel._content_wrap.maximumWidth() == 680  # noqa: SLF001
+
+    panel.set_focus_mode_enabled(True)
+    assert panel._content_wrap.maximumWidth() == FOCUS_MODE_CONTENT_WIDTH  # noqa: SLF001
+
+    panel.set_focus_mode_enabled(False)
+    assert panel._content_wrap.maximumWidth() == 680  # noqa: SLF001
+
+
 def test_main_window_applies_persisted_editor_preferences(qtbot, container):
     from writer.ui.main_window import MainWindow
 

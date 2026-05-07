@@ -205,3 +205,20 @@ def test_daily_quote_buttons_keep_readable_size(qtbot, container):
     for button in buttons:
         assert button.minimumHeight() >= max(button.fontMetrics().height() + 16, 36)
         assert button.minimumWidth() >= button.fontMetrics().horizontalAdvance(button.text()) + 40
+
+
+def test_daily_quote_card_uses_wide_available_space(qtbot, container):
+    from PySide6.QtWidgets import QSizePolicy
+
+    from writer.ui.panels.dates_panel import DAILY_QUOTE_CARD_MAX_WIDTH, DatesPanel
+
+    panel = DatesPanel(container)
+    qtbot.addWidget(panel)
+
+    quote_parent_layout = panel._quote_card.parentWidget().layout()  # noqa: SLF001
+
+    assert panel._quote_card.maximumWidth() == DAILY_QUOTE_CARD_MAX_WIDTH  # noqa: SLF001
+    assert DAILY_QUOTE_CARD_MAX_WIDTH >= 1100
+    assert panel._quote_card.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Expanding  # noqa: SLF001
+    assert quote_parent_layout.count() == 1
+    assert quote_parent_layout.stretch(0) == 1

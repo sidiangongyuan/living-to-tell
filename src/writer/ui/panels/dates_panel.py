@@ -51,6 +51,7 @@ from writer.ui.i18n import TR
 
 
 DAILY_QUOTE_PREVIEW_LIMIT = 96
+DAILY_QUOTE_CARD_MAX_WIDTH = 1180
 
 
 def _quote_text(content: str) -> str:
@@ -206,7 +207,11 @@ class DatesPanel(QWidget):
 
         self._quote_card = QFrame()
         self._quote_card.setObjectName("DailyQuoteCard")
-        self._quote_card.setMaximumWidth(780)
+        self._quote_card.setMaximumWidth(DAILY_QUOTE_CARD_MAX_WIDTH)
+        self._quote_card.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
 
         quote_header = QHBoxLayout()
         quote_header.setContentsMargins(0, 0, 0, 0)
@@ -260,8 +265,7 @@ class DatesPanel(QWidget):
         quote_wrap_layout = QHBoxLayout(quote_wrap)
         quote_wrap_layout.setContentsMargins(12, 12, 12, 0)
         quote_wrap_layout.setSpacing(0)
-        quote_wrap_layout.addWidget(self._quote_card, 0)
-        quote_wrap_layout.addStretch(1)
+        quote_wrap_layout.addWidget(self._quote_card, 1)
 
         # ---- Calendar (left) -----------------------------------------
         self._calendar = _DatesCalendar()
