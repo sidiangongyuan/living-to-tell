@@ -101,6 +101,28 @@ def test_editor_panel_focus_mode_expands_writing_surface(qtbot):
     assert panel._content_wrap.maximumWidth() == 680  # noqa: SLF001
 
 
+def test_editor_panel_expands_when_window_is_wide(qtbot):
+    from PySide6.QtWidgets import QSizePolicy
+
+    from writer.ui.panels.editor_panel import (
+        EDITOR_RESPONSIVE_SIDE_MARGIN,
+        FOCUS_MODE_RESPONSIVE_SIDE_MARGIN,
+        EditorPanel,
+    )
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.apply_display_settings(EditorDisplaySettings(content_width=680))
+    panel.resize(1500, 800)
+    panel._apply_content_width()  # noqa: SLF001
+
+    assert panel._content_wrap.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Expanding  # noqa: SLF001
+    assert panel._content_wrap.maximumWidth() == 1500 - EDITOR_RESPONSIVE_SIDE_MARGIN  # noqa: SLF001
+
+    panel.set_focus_mode_enabled(True)
+    assert panel._content_wrap.maximumWidth() == 1500 - FOCUS_MODE_RESPONSIVE_SIDE_MARGIN  # noqa: SLF001
+
+
 def test_main_window_applies_persisted_editor_preferences(qtbot, container):
     from writer.ui.main_window import MainWindow
 

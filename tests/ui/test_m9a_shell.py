@@ -1,6 +1,8 @@
 """M9A tests: theme system, shell layout, context pane, empty states."""
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from writer.app.container import build_container
@@ -203,6 +205,18 @@ class TestShellLayout:
 
         qtbot.keyClick(window._editor_panel._body, Qt.Key.Key_F11)  # noqa: SLF001
         qtbot.waitUntil(lambda: window._focus_mode_enabled is False)  # noqa: SLF001
+
+    def test_main_window_caps_fragment_list_width_for_wide_editor(
+        self, qtbot, container
+    ):
+        from writer.ui.main_window import MainWindow, _MAX_SIDEBAR_WIDTH
+
+        container.settings.set("ui.splitter_sizes", json.dumps([520, 760]))
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        assert window._list_panel.maximumWidth() == _MAX_SIDEBAR_WIDTH  # noqa: SLF001
 
     def test_manage_quotes_opens_reference_library_without_extra_filter(
         self, qtbot, container, monkeypatch

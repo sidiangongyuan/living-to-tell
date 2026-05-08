@@ -76,8 +76,9 @@ from writer.ui.widgets import ContextPane, NavigationRail
 
 _SPLITTER_SIZES_KEY = "ui.splitter_sizes"
 _SIDEBAR_COLLAPSED_KEY = "ui.sidebar_collapsed"
-_DEFAULT_SIDEBAR_WIDTH = 300
-_DEFAULT_EDITOR_WIDTH = 760
+_DEFAULT_SIDEBAR_WIDTH = 280
+_MAX_SIDEBAR_WIDTH = 340
+_DEFAULT_EDITOR_WIDTH = 1120
 
 
 # Mode-stack indices. Dates was added at index 0 in M-Dates, shifting
@@ -112,6 +113,7 @@ class MainWindow(QMainWindow):
 
         # ---- Fragments mode panels (preserve attribute names for tests) ----
         self._list_panel = FragmentListPanel()
+        self._list_panel.setMaximumWidth(_MAX_SIDEBAR_WIDTH)
         self._editor_panel = EditorPanel()
         self._editor_panel.save_specimen_requested.connect(
             self._on_save_style_specimen

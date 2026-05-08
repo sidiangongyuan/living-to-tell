@@ -40,6 +40,7 @@ from writer.app.settings import (
     EditorDisplaySettings,
     KEY_AI_GEMINI_CLI_PROXY,
     KEY_QUICK_CAPTURE_CLOSE_TO_TRAY_ENABLED,
+    MAX_EDITOR_CONTENT_WIDTH,
     SUPPORTED_WIRE_APIS,
     Settings,
 )
@@ -194,7 +195,7 @@ class SettingsDialog(QDialog):
         self._paragraph_spacing.setValue(editor_settings.paragraph_spacing)
 
         self._content_width = QSpinBox()
-        self._content_width.setRange(520, 1200)
+        self._content_width.setRange(520, MAX_EDITOR_CONTENT_WIDTH)
         self._content_width.setSingleStep(20)
         self._content_width.setValue(editor_settings.content_width)
         self._content_width.setSuffix(" px")

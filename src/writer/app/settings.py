@@ -55,6 +55,7 @@ DEFAULT_EDITOR_FONT_SIZE = 18
 DEFAULT_EDITOR_LINE_HEIGHT = 1.8
 DEFAULT_EDITOR_PARAGRAPH_SPACING = 0.8
 DEFAULT_EDITOR_CONTENT_WIDTH = 1000
+MAX_EDITOR_CONTENT_WIDTH = 1600
 DEFAULT_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED = True
 DEFAULT_EDITOR_TYPEWRITER_MODE_ENABLED = True
 
@@ -237,7 +238,7 @@ class Settings:
                 self._repo.get(KEY_EDITOR_CONTENT_WIDTH),
                 default=DEFAULT_EDITOR_CONTENT_WIDTH,
                 minimum=520,
-                maximum=1200,
+                maximum=MAX_EDITOR_CONTENT_WIDTH,
             ),
             visual_first_line_indent_enabled=_coerce_bool(
                 self._repo.get(KEY_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED),

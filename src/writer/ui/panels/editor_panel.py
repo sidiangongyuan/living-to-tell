@@ -25,6 +25,10 @@ from writer.ui.tag_colors import tag_style_sheet
 
 
 FOCUS_MODE_CONTENT_WIDTH = 1180
+EDITOR_RESPONSIVE_SIDE_MARGIN = 24
+EDITOR_RESPONSIVE_MAX_WIDTH = 1600
+FOCUS_MODE_RESPONSIVE_SIDE_MARGIN = 32
+FOCUS_MODE_RESPONSIVE_MAX_WIDTH = 1800
 
 
 class _WriterBodyEdit(QPlainTextEdit):
@@ -200,7 +204,7 @@ class EditorPanel(QWidget):
         self._content_wrap = QWidget()
         self._content_wrap.setObjectName("EditorContentWrap")
         self._content_wrap.setSizePolicy(
-            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Expanding,
         )
         content_layout = QVBoxLayout(self._content_wrap)
@@ -215,9 +219,8 @@ class EditorPanel(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addStretch(1)
         layout.addWidget(self._content_wrap, 1)
-        layout.addStretch(1)
+        layout.setAlignment(self._content_wrap, Qt.AlignmentFlag.AlignHCenter)
 
         self._loading = False
         self.apply_display_settings(DEFAULT_EDITOR_DISPLAY_SETTINGS)
@@ -247,10 +250,43 @@ class EditorPanel(QWidget):
         self._body.set_typewriter_override(bool(enabled))
         self._apply_content_width()
 
-    def _apply_content_width(self) -> None:
-        width = self._display_settings.content_width
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._apply_content_width()
+
+    def _target_content_width(self) -> int:
+        base_width = self._display_settings.content_width
+        max_width = EDITOR_RESPONSIVE_MAX_WIDTH
+
         if self._focus_mode_enabled:
-            width = max(width, FOCUS_MODE_CONTENT_WIDTH)
+            base_width = max(base_width, FOCUS_MODE_CONTENT_WIDTH)
+            max_width = FOCUS_MODE_RESPONSIVE_MAX_WIDTH
+
+        available_width = max(0, self.width())
+        if available_width > 0:
+            base_width = max(base_width, available_width - self._responsive_side_margin())
+        return min(base_width, max_width)
+
+    def _responsive_side_margin(self) -> int:
+        if self._focus_mode_enabled:
+            return FOCUS_MODE_RESPONSIVE_SIDE_MARGIN
+        return EDITOR_RESPONSIVE_SIDE_MARGIN
+
+    def _apply_content_width(self) -> None:
+        width = self._target_content_width()
+        available_width = max(0, self.width())
+        minimum_width = 0
+        if available_width > 0:
+            minimum_width = min(
+                width,
+                max(0, available_width - self._responsive_side_margin()),
+            )
+        if (
+            self._content_wrap.maximumWidth() == width
+            and self._content_wrap.minimumWidth() == minimum_width
+        ):
+            return
+        self._content_wrap.setMinimumWidth(minimum_width)
         self._content_wrap.setMaximumWidth(width)
         self.updateGeometry()
 
