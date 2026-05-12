@@ -72,12 +72,12 @@ def test_codex_source_routes_to_resolver(tmp_path):
 
     auth = tmp_path / "auth.json"
     auth.write_text(
-        json.dumps({"OPENAI_API_KEY": "sk-from-codex"}), encoding="utf-8"
+        json.dumps({"OPENAI_API_KEY": "test-api-key-from-codex"}), encoding="utf-8"
     )
     resolver = CodexAuthResolver(path=auth)
     config = AiConfig(api_key_source="codex")
     provider = OpenAiProvider(config, PromptBuilder(), codex_auth=resolver)
-    assert provider._resolve_api_key() == "sk-from-codex"
+    assert provider._resolve_api_key() == "test-api-key-from-codex"
 
 
 def test_codex_source_raises_ai_error_when_missing(tmp_path):

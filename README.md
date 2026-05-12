@@ -41,11 +41,19 @@ Screenshots should be generated from a clean demo profile so private writing and
 
 The recommended public distribution format is a **Windows portable zip**.
 
-- If a GitHub Release is available, download `Writer-<version>-portable.zip` from the release assets.
+- Latest alpha: [Writer-0.2.0-alpha.15-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.15/Writer-0.2.0-alpha.15-portable.zip)
+- Release page: [v0.2.0-alpha.15](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.15)
 - If you are testing the latest branch, use the **Build Windows Portable** GitHub Action artifact.
 - To build locally, run the packaging command in [Build from source](#build-from-source).
 
 After downloading, unzip the archive and launch `Writer.exe` inside the `Writer` folder.
+
+Windows may show a SmartScreen warning for unsigned alpha builds. Verify that the archive comes from this repository's release assets before running it.
+
+## User guide
+
+- [English user guide](docs/user-guide.md)
+- [中文使用教程](docs/user-guide.zh-CN.md)
 
 ## Quick start from source
 
@@ -124,12 +132,15 @@ See [SECURITY.md](SECURITY.md) for reporting and contributor rules.
 
 - [CHANGELOG.md](CHANGELOG.md) — product-facing release history
 - [docs/roadmap.md](docs/roadmap.md) — alpha-to-beta roadmap
+- [docs/todo.md](docs/todo.md) — public TODO list
 - [docs/ai-revision-workflow.md](docs/ai-revision-workflow.md) — planned AI compare / revision workflow
 - [docs/screenshots/README.md](docs/screenshots/README.md) — screenshot checklist
 
 ## Contributing
 
 Pull requests are welcome while the project is alpha. Please keep changes product-facing and avoid committing internal prompts, local test data, credentials, generated builds, or private writing samples.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, pull request expectations, and release hygiene.
 
 CI runs the Windows Python 3.12 test suite with GitHub Actions: [.github/workflows/tests.yml](.github/workflows/tests.yml).
 

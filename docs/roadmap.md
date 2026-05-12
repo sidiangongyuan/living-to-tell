@@ -16,6 +16,8 @@ moving quickly.
 
 ## Before beta
 
+- Publish signed Windows builds or document a reproducible verification path
+  for unsigned alpha archives.
 - Add screenshots captured from a clean demo profile with no personal writing
   data, credentials, account emails, or local paths.
 - Improve first-run onboarding for data location, language, AI provider, and
@@ -29,6 +31,8 @@ moving quickly.
 - Improve the AI revision workflow so quick actions open editable settings,
   rewrite-style results show original text beside AI output, and task parameters
   remain isolated per task. See [AI Revision Workflow Plan](ai-revision-workflow.md).
+
+For the public TODO list, see [todo.md](todo.md).
 
 ## Later candidates
 

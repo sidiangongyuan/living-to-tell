@@ -21,7 +21,7 @@ def test_valid_config_passes() -> None:
         _config(),
         "hello world",
         has_entry=True,
-        environ={"OPENAI_API_KEY": "sk-test"},
+        environ={"OPENAI_API_KEY": "test-api-key-not-real"},
     )
     assert issues == []
 
@@ -31,21 +31,21 @@ def test_no_entry_blocks() -> None:
         _config(),
         "hello",
         has_entry=False,
-        environ={"OPENAI_API_KEY": "sk"},
+        environ={"OPENAI_API_KEY": "test-api-key-not-real"},
     )
     assert any(i.code == "no_entry" for i in issues)
 
 
 def test_empty_text_blocks() -> None:
     issues = preflight_rewrite(
-        _config(), "   ", environ={"OPENAI_API_KEY": "sk"}
+        _config(), "   ", environ={"OPENAI_API_KEY": "test-api-key-not-real"}
     )
     assert any(i.code == "empty_text" for i in issues)
 
 
 def test_missing_model_blocks() -> None:
     issues = preflight_rewrite(
-        _config(model=""), "text", environ={"OPENAI_API_KEY": "sk"}
+        _config(model=""), "text", environ={"OPENAI_API_KEY": "test-api-key-not-real"}
     )
     assert any(i.code == "no_model" for i in issues)
 
@@ -53,14 +53,14 @@ def test_missing_model_blocks() -> None:
 def test_bad_wire_api_blocks() -> None:
     issues = preflight_rewrite(
         _config(wire_api="rest-v99"), "text",
-        environ={"OPENAI_API_KEY": "sk"},
+        environ={"OPENAI_API_KEY": "test-api-key-not-real"},
     )
     assert any(i.code == "bad_wire_api" for i in issues)
 
 
 def test_literal_key_source_blocks() -> None:
     issues = preflight_rewrite(
-        _config(api_key_source="literal:sk-abc"), "text", environ={},
+        _config(api_key_source="literal:test-key"), "text", environ={},
     )
     assert any(i.code == "bad_key_source" for i in issues)
 
@@ -109,7 +109,10 @@ def test_codex_source_passes_when_auth_available(tmp_path) -> None:
     from writer.services.ai.codex_auth import CodexAuthResolver
 
     auth = tmp_path / "auth.json"
-    auth.write_text(json.dumps({"OPENAI_API_KEY": "sk-x"}), encoding="utf-8")
+    auth.write_text(
+        json.dumps({"OPENAI_API_KEY": "test-api-key-from-codex"}),
+        encoding="utf-8",
+    )
     resolver = CodexAuthResolver(path=auth)
     issues = preflight_rewrite(
         _config(api_key_source="codex"),

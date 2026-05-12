@@ -1,4 +1,4 @@
-"""Task-aware prompt construction (M10A).
+"""Task-aware prompt construction for the AI workspace.
 
 Maps an :class:`AiTaskRequest` to a list of ``{role, content}`` dicts the
 provider can pass to the Responses API.

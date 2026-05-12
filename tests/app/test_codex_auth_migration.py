@@ -17,7 +17,7 @@ from writer.storage.database import open_and_initialize
 from writer.storage.repositories.settings_repository import SettingsRepository
 
 
-SECRET = "sk-not-leaked-anywhere"
+SECRET = "test-api-key-not-real"
 
 
 # ---------------------------------------------------------------------------
@@ -32,8 +32,8 @@ def settings(tmp_path: Path) -> Settings:
 
 
 def _seed_default_old_user(settings: Settings) -> None:
-    """Mimic an existing install: env:OPENAI_API_KEY pointing at tokenflux."""
-    settings.set("ai.base_url", "https://tokenflux.dev/v1")
+    """Mimic an existing install using an OpenAI-compatible gateway."""
+    settings.set("ai.base_url", "https://example.test/v1")
     settings.set("ai.model", "gpt-5")
     settings.set("ai.wire_api", "responses")
     settings.set(KEY_AI_API_KEY_SOURCE, "env:OPENAI_API_KEY")
@@ -42,16 +42,16 @@ def _seed_default_old_user(settings: Settings) -> None:
 def _write_codex_config(
     dir_: Path,
     *,
-    base_url: str = "https://tokenflux.dev/v1",
+    base_url: str = "https://example.test/v1",
     requires_openai_auth: bool = True,
 ) -> Path:
     cfg = dir_ / "config.toml"
     cfg.write_text(
         f"""
 model = "gpt-5"
-model_provider = "tokenflux"
+model_provider = "example"
 
-[model_providers.tokenflux]
+[model_providers.example]
 base_url = "{base_url}"
 wire_api = "responses"
 requires_openai_auth = {str(requires_openai_auth).lower()}

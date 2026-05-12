@@ -9,6 +9,14 @@ dist/
 build/
 .coverage
 htmlcov/
+*.log
+*.zip
+
+# Local credential and profile files
+.env
+.env.*
+.codex/
+.gemini/
 
 # Local app data / databases accidentally generated in the repo
 *.sqlite

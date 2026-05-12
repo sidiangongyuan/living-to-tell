@@ -18,7 +18,7 @@ from writer.services.ai.codex_auth import (
 )
 
 
-SECRET = "sk-supersecrettestvalue-should-never-leak"
+SECRET = "test-secret-value-not-real"
 
 
 def _write_auth(dir_: Path, payload) -> Path:

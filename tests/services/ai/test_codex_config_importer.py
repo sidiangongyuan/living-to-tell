@@ -41,10 +41,10 @@ def test_credentials_are_not_exposed(tmp_path):
         [model_providers.openai]
         base_url = "https://example.test/v1"
         wire_api = "responses"
-        api_key = "secret"
+        api_key = "redacted-test-value"
 
         [auth]
-        token = "should-be-ignored"
+        token = "redacted-token-value"
         """,
     )
     result = CodexConfigImporter().import_from(cfg)
