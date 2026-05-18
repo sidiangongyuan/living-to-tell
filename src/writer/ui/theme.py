@@ -464,6 +464,29 @@ QListWidget::item:selected {{
     background: {t.selected_bg};
     color: {t.text_primary};
 }}
+QListWidget#ReferenceLibraryList,
+QListWidget#SpecimenCardList,
+QListWidget#SpecimenShelfList {{
+    background: {t.bg_list};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_lg}px;
+    padding: 6px;
+}}
+QListWidget#ReferenceLibraryList::item,
+QListWidget#SpecimenCardList::item,
+QListWidget#SpecimenShelfList::item {{
+    background: transparent;
+    padding: 0;
+    margin: 3px 0;
+}}
+QListWidget#ReferenceLibraryList::item:hover,
+QListWidget#SpecimenCardList::item:hover,
+QListWidget#SpecimenShelfList::item:hover,
+QListWidget#ReferenceLibraryList::item:selected,
+QListWidget#SpecimenCardList::item:selected,
+QListWidget#SpecimenShelfList::item:selected {{
+    background: transparent;
+}}
 
 /* ------- Splitter handle ------- */
 QSplitter::handle {{
@@ -515,6 +538,10 @@ QPlainTextEdit#FragmentBody, QTextEdit#WorkBody {{
     padding: 24px 32px;
     font-size: {t.fs_editor_body}px;
     line-height: 160%;
+}}
+QPlainTextEdit#FragmentBody[focusMode="true"] {{
+    background: {t.bg_card};
+    border-color: {t.border_strong};
 }}
 QTextEdit#WorkBody {{
     font-size: {t.fs_editor_work_body}px;
@@ -680,6 +707,14 @@ QLabel#AIResultLabel {{
     color: {t.text_primary};
     font-weight: 600;
 }}
+QLabel#AITaskDesc {{
+    color: {t.text_secondary};
+    background: {t.bg_card};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_md}px;
+    padding: 8px 10px;
+    font-size: {t.fs_meta}px;
+}}
 QLabel#AIStyleHint,
 QLabel#AIStylePresetLabel,
 QLabel#AIAttachEmpty,
@@ -687,6 +722,7 @@ QLabel#AIAttachTotal,
 QLabel#AIStatusLabel,
 QLabel#AIResultMeta,
 QLabel#AICitationsLabel,
+QLabel#AIChatThreadInfo,
 QLabel#AIChatAttach {{
     color: {t.text_muted};
     font-size: {t.fs_meta}px;
@@ -719,12 +755,160 @@ QTextEdit#AIChatMessages {{
     border: 1px solid {t.border};
     border-radius: {t.radius_lg}px;
 }}
+QPlainTextEdit#AIExtraInstructions {{
+    background: {t.bg_input};
+    color: {t.text_primary};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_md}px;
+}}
 QWidget#AIWorkspacePanel QComboBox QAbstractItemView {{
     background: {t.bg_card};
     color: {t.text_primary};
     border: 1px solid {t.border};
     selection-background-color: {t.selected_bg};
     selection-color: {t.text_primary};
+}}
+
+/* ------- Reference library ------- */
+QFrame#RefStatsBox {{
+    background: {t.bg_window};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_lg}px;
+}}
+QFrame#RefStatCard {{
+    background: {t.bg_card};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_md}px;
+}}
+QLabel#RefStatTitle {{
+    color: {t.text_muted};
+    font-size: {t.fs_meta}px;
+    font-weight: 600;
+}}
+QLabel#RefStatValue {{
+    color: {t.text_primary};
+    font-size: {t.fs_meta}px;
+}}
+QLabel#SpecimenDuplicateLabel {{
+    color: {t.text_secondary};
+    font-size: {t.fs_meta}px;
+    padding: 4px 0;
+}}
+QFrame#SpecimenPreviewCard {{
+    background: {t.bg_card};
+    border: 1px solid {t.border_strong};
+    border-radius: {t.radius_lg}px;
+}}
+QWidget#SpecimenShelfCard,
+QWidget#ReferenceGroupHeader,
+QWidget#ReferenceSectionHeader {{
+    background: transparent;
+}}
+QWidget#SpecimenShelfCard[current="true"] {{
+    background: {t.selected_bg};
+    border: 1px solid {t.border_strong};
+    border-radius: {t.radius_md}px;
+}}
+QLabel#SpecimenSectionTitle,
+QLabel#ReferenceGroupTitle {{
+    color: {t.text_primary};
+    font-size: {t.fs_panel_title}px;
+    font-weight: 600;
+}}
+QLabel#SpecimenShelfTitle,
+QLabel#ReferenceSectionTitle {{
+    color: {t.text_primary};
+    font-size: {t.fs_list_main}px;
+    font-weight: 600;
+}}
+QLabel#SpecimenShelfMeta,
+QLabel#ReferenceGroupMeta {{
+    color: {t.text_muted};
+    font-size: {t.fs_meta}px;
+}}
+QWidget#ReferenceListCard,
+QWidget#SpecimenListCard {{
+    background: {t.bg_card};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_md}px;
+}}
+QWidget#ReferenceListCard:hover,
+QWidget#SpecimenListCard:hover {{
+    border-color: {t.border_strong};
+}}
+QWidget#ReferenceListCard[current="true"],
+QWidget#SpecimenListCard[current="true"] {{
+    border-color: {t.accent};
+}}
+QWidget#SpecimenListCard[checked="true"] {{
+    background: {t.selected_bg};
+    border-color: {t.accent};
+}}
+QLabel#ReferenceCardTitle,
+QLabel#SpecimenPreviewTitle {{
+    color: {t.text_primary};
+    font-size: {t.fs_panel_title}px;
+    font-weight: 600;
+}}
+QLabel#ReferenceCardAuthor,
+QLabel#SpecimenListAuthor {{
+    color: {t.text_muted};
+    font-size: {t.fs_meta}px;
+}}
+QLabel#ReferenceCardExcerpt,
+QLabel#SpecimenListExcerpt {{
+    color: {t.text_primary};
+    font-family: {t.font_serif};
+    font-size: {t.fs_list_main}px;
+}}
+QLabel#ReferenceCardMeta,
+QLabel#SpecimenListMeta,
+QLabel#SpecimenPreviewMeta,
+QLabel#SpecimenPreviewNote {{
+    color: {t.text_muted};
+    font-size: {t.fs_meta}px;
+}}
+QLabel#SpecimenListTitle {{
+    color: {t.text_primary};
+    font-size: {t.fs_panel_title}px;
+    font-weight: 600;
+}}
+QLabel#SpecimenListNote {{
+    color: {t.text_secondary};
+    font-size: {t.fs_meta}px;
+}}
+QPushButton#SpecimenSelectBadge {{
+    background: transparent;
+    color: {t.accent};
+    border: 1px solid {t.border_strong};
+    border-radius: {t.radius_sm}px;
+    padding: 4px 10px;
+    min-height: 24px;
+    font-size: {t.fs_meta}px;
+    font-weight: 600;
+}}
+QPushButton#SpecimenSelectBadge:hover {{
+    background: {t.hover_bg};
+    border-color: {t.accent};
+}}
+QPushButton#SpecimenSelectBadge:checked {{
+    background: {t.accent};
+    color: {t.text_on_accent};
+    border-color: {t.accent};
+}}
+QLabel#SpecimenSoftChip {{
+    background: {t.hover_bg};
+    color: {t.text_secondary};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_sm}px;
+    padding: 2px 8px;
+    font-size: {t.fs_meta}px;
+}}
+QTextEdit#SpecimenPreviewBody {{
+    background: {t.bg_input};
+    color: {t.text_primary};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_md}px;
 }}
 
 /* ------- Workspace-area overlay cards (welcome / unselected) ------- */

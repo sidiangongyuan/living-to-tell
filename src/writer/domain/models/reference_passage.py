@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+from writer.ui.i18n import TR
+
 
 # Canonical reference kinds (M-RefTypes). The list is closed for this
 # milestone; any unknown legacy value is normalised to ``"excerpt"`` on read.
@@ -33,6 +35,9 @@ USAGE_KIND_IMAGERY = "imagery"
 USAGE_KIND_TECHNIQUE = "technique"
 USAGE_KIND_CHARACTER = "character"
 USAGE_KIND_SETTING = "setting"
+USAGE_KIND_PSYCHOLOGY = "psychology"
+USAGE_KIND_PHILOSOPHY = "philosophy"
+USAGE_KIND_REFLECTION = "reflection"
 USAGE_KIND_OTHER = "other"
 
 USAGE_KINDS: tuple[str, ...] = (
@@ -41,6 +46,9 @@ USAGE_KINDS: tuple[str, ...] = (
     USAGE_KIND_TECHNIQUE,
     USAGE_KIND_CHARACTER,
     USAGE_KIND_SETTING,
+    USAGE_KIND_PSYCHOLOGY,
+    USAGE_KIND_PHILOSOPHY,
+    USAGE_KIND_REFLECTION,
     USAGE_KIND_OTHER,
 )
 
@@ -66,6 +74,7 @@ class ReferencePassage:
     updated_at: Optional[str] = None
 
     def display_label(self) -> str:
+        title = self.source_title.strip() or TR("specimen.group_unlabeled_source")
         if self.source_author:
-            return f"{self.source_title} — {self.source_author}"
-        return self.source_title
+            return f"{title} — {self.source_author}"
+        return title

@@ -7,6 +7,8 @@ prefix-match the last token so users can search as they type.
 """
 from __future__ import annotations
 
+from collections import Counter
+from dataclasses import dataclass, field
 import re
 import sqlite3
 import uuid
@@ -38,6 +40,17 @@ def _row_to_reference(row: sqlite3.Row) -> ReferencePassage:
 
 
 _TOKEN_RE = re.compile(r"[^\w]+", flags=re.UNICODE)
+
+
+@dataclass(frozen=True)
+class ReferenceLibraryStats:
+    total: int
+    total_chars: int
+    recent_7d: int
+    duplicate_risk_count: int
+    by_kind: dict[str, int] = field(default_factory=dict)
+    by_usage_kind: dict[str, int] = field(default_factory=dict)
+    top_tags: list[tuple[str, int]] = field(default_factory=list)
 
 
 def _build_match_expression(query: str) -> Optional[str]:
@@ -198,6 +211,54 @@ class ReferenceRepository:
         ).fetchone()
         return int(row["n"])
 
+    def find_exact_duplicate(self, content: str) -> Optional[ReferencePassage]:
+        normalized = normalize_reference_content(content)
+        if not normalized:
+            return None
+        rows = self._conn.execute(
+            "SELECT * FROM reference_passages ORDER BY updated_at DESC, created_at DESC"
+        ).fetchall()
+        for row in rows:
+            passage = _row_to_reference(row)
+            if normalize_reference_content(passage.content) == normalized:
+                return passage
+        return None
+
+    def stats(self) -> ReferenceLibraryStats:
+        rows = self._conn.execute("SELECT * FROM reference_passages").fetchall()
+        passages = [_row_to_reference(r) for r in rows]
+        by_kind = Counter(p.kind for p in passages)
+        by_usage_kind = Counter(p.usage_kind for p in passages)
+        tags: Counter[str] = Counter()
+        duplicate_keys: Counter[str] = Counter()
+        total_chars = 0
+        for passage in passages:
+            total_chars += len(passage.content or "")
+            normalized = normalize_reference_content(passage.content)
+            if normalized:
+                duplicate_keys[normalized] += 1
+            for tag in (passage.tags or "").split(","):
+                value = tag.strip()
+                if value:
+                    tags[value] += 1
+        recent_row = self._conn.execute(
+            """
+            SELECT COUNT(*) AS n
+              FROM reference_passages
+             WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-7 days')
+            """
+        ).fetchone()
+        duplicate_risk_count = sum(count for count in duplicate_keys.values() if count > 1)
+        return ReferenceLibraryStats(
+            total=len(passages),
+            total_chars=total_chars,
+            recent_7d=int(recent_row["n"] if recent_row else 0),
+            duplicate_risk_count=duplicate_risk_count,
+            by_kind=dict(by_kind),
+            by_usage_kind=dict(by_usage_kind),
+            top_tags=tags.most_common(5),
+        )
+
     def search(
         self, query: str, limit: int = 200, *, kind: Optional[str] = None, usage_kind: Optional[str] = None
     ) -> List[ReferencePassage]:
@@ -225,3 +286,7 @@ class ReferenceRepository:
             tuple(params),
         ).fetchall()
         return [_row_to_reference(r) for r in rows]
+
+
+def normalize_reference_content(content: str) -> str:
+    return " ".join((content or "").split()).casefold()

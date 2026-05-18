@@ -9,6 +9,7 @@ Top-level workspace mode that hosts two tabs:
   currently selected (fragment / work / collection / global), persisted
   across sessions via the ``ai_threads`` / ``ai_messages`` tables.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -52,6 +53,10 @@ from writer.services.ai.task_types import (
     AiContextAttachment,
     AiTaskRequest,
     AiTaskResponse,
+)
+from writer.services.ai.context_budget import (
+    DEFAULT_CHAT_CONTEXT_BUDGET_CHARS,
+    estimate_attachment_chars,
 )
 from writer.services.ai.task_service import SOFT_CONTEXT_BUDGET_CHARS
 from writer.services.ai.thread_service import ChatTurn
@@ -127,7 +132,6 @@ _TASK_DISPLAY_ORDER: List[AiTaskType] = [
     AiTaskType.POLISH,
     AiTaskType.EXPAND,
     AiTaskType.CONTINUE,
-    AiTaskType.STYLE_TRANSFER,
     AiTaskType.SUMMARIZE,
     AiTaskType.OUTLINE,
     AiTaskType.TITLE,
@@ -168,7 +172,6 @@ _STYLE_TASKS: set[AiTaskType] = {
     AiTaskType.POLISH,
     AiTaskType.EXPAND,
     AiTaskType.CONTINUE,
-    AiTaskType.STYLE_TRANSFER,
 }
 
 # Tasks that benefit from side-by-side original vs. AI result compare layout.
@@ -176,33 +179,76 @@ _COMPARE_TASKS: set[AiTaskType] = {
     AiTaskType.POLISH,
     AiTaskType.EXPAND,
     AiTaskType.CONTINUE,
-    AiTaskType.STYLE_TRANSFER,
 }
 
 _INTENSITY_TASKS: set[AiTaskType] = {
     AiTaskType.POLISH,
     AiTaskType.EXPAND,
-    AiTaskType.STYLE_TRANSFER,
 }
 
 _TASK_STYLE_HINT_KEY: dict[AiTaskType, str] = {
     AiTaskType.POLISH: "ai.params.style_hint.polish",
     AiTaskType.EXPAND: "ai.params.style_hint.expand",
     AiTaskType.CONTINUE: "ai.params.style_hint.continue",
-    AiTaskType.STYLE_TRANSFER: "ai.params.style_hint.style_transfer",
+    AiTaskType.SUMMARIZE: "ai.params.style_hint.summarize",
+    AiTaskType.OUTLINE: "ai.params.style_hint.outline",
+    AiTaskType.TITLE: "ai.params.style_hint.title",
+    AiTaskType.STRUCTURE_DIAGNOSE: "ai.params.style_hint.structure_diagnose",
+    AiTaskType.CONSISTENCY_CHECK: "ai.params.style_hint.consistency_check",
+    AiTaskType.LIBRARY_QA: "ai.params.style_hint.library_qa",
 }
 
 _TASK_STYLE_PLACEHOLDER_KEY: dict[AiTaskType, str] = {
     AiTaskType.POLISH: "ai.params.style_placeholder.polish",
     AiTaskType.EXPAND: "ai.params.style_placeholder.expand",
     AiTaskType.CONTINUE: "ai.params.style_placeholder.continue",
-    AiTaskType.STYLE_TRANSFER: "ai.params.style_placeholder.style_transfer",
+    AiTaskType.SUMMARIZE: "ai.params.style_placeholder.summarize",
+    AiTaskType.OUTLINE: "ai.params.style_placeholder.outline",
+    AiTaskType.TITLE: "ai.params.style_placeholder.title",
+    AiTaskType.STRUCTURE_DIAGNOSE: "ai.params.style_placeholder.structure_diagnose",
+    AiTaskType.CONSISTENCY_CHECK: "ai.params.style_placeholder.consistency_check",
+    AiTaskType.LIBRARY_QA: "ai.params.style_placeholder.library_qa",
 }
 
 _TASK_STYLE_PRESET_VALUES_KEY: dict[AiTaskType, str] = {
     AiTaskType.POLISH: "ai.params.style_presets.polish_values",
     AiTaskType.EXPAND: "ai.params.style_presets.expand_values",
     AiTaskType.CONTINUE: "ai.params.style_presets.continue_values",
+    AiTaskType.SUMMARIZE: "ai.params.style_presets.summarize_values",
+    AiTaskType.OUTLINE: "ai.params.style_presets.outline_values",
+    AiTaskType.TITLE: "ai.params.style_presets.title_values",
+    AiTaskType.STRUCTURE_DIAGNOSE: "ai.params.style_presets.structure_values",
+    AiTaskType.CONSISTENCY_CHECK: "ai.params.style_presets.consistency_values",
+    AiTaskType.LIBRARY_QA: "ai.params.style_presets.library_qa_values",
+}
+
+_TASK_DESCRIPTION_KEY: dict[AiTaskType, str] = {
+    AiTaskType.POLISH: "ai.task_desc.polish",
+    AiTaskType.EXPAND: "ai.task_desc.expand",
+    AiTaskType.CONTINUE: "ai.task_desc.continue",
+    AiTaskType.SUMMARIZE: "ai.task_desc.summarize",
+    AiTaskType.OUTLINE: "ai.task_desc.outline",
+    AiTaskType.TITLE: "ai.task_desc.title",
+    AiTaskType.STRUCTURE_DIAGNOSE: "ai.task_desc.structure_diagnose",
+    AiTaskType.CONSISTENCY_CHECK: "ai.task_desc.consistency_check",
+    AiTaskType.LIBRARY_QA: "ai.task_desc.library_qa",
+}
+
+_TASK_CONTROL_LABEL_KEY: dict[AiTaskType, str] = {
+    AiTaskType.POLISH: "ai.params.control.polish",
+    AiTaskType.EXPAND: "ai.params.control.expand",
+    AiTaskType.CONTINUE: "ai.params.control.continue",
+    AiTaskType.SUMMARIZE: "ai.params.control.summarize",
+    AiTaskType.OUTLINE: "ai.params.control.outline",
+    AiTaskType.TITLE: "ai.params.control.title",
+    AiTaskType.STRUCTURE_DIAGNOSE: "ai.params.control.structure_diagnose",
+    AiTaskType.CONSISTENCY_CHECK: "ai.params.control.consistency_check",
+    AiTaskType.LIBRARY_QA: "ai.params.control.library_qa",
+}
+
+_TASK_INTENSITY_LABEL_KEY: dict[AiTaskType, str] = {
+    AiTaskType.POLISH: "ai.params.intensity.polish",
+    AiTaskType.EXPAND: "ai.params.intensity.expand",
 }
 
 
@@ -237,6 +283,24 @@ def _scope_to_attachment_kind(scope: AiScope) -> str:
 
 def _preset_values(key: str) -> List[str]:
     return [item.strip() for item in TR(key).split("|") if item.strip()]
+
+
+def _render_outline_items(items: list, *, level: int = 0) -> str:
+    lines: list[str] = []
+    indent = "  " * level
+    for raw in items:
+        if isinstance(raw, dict):
+            title = str(raw.get("title") or raw.get("text") or "").strip()
+            if title:
+                lines.append(f"{indent}- {title}")
+            children = raw.get("children") or raw.get("items") or []
+            if isinstance(children, list) and children:
+                child_text = _render_outline_items(children, level=level + 1)
+                if child_text:
+                    lines.append(child_text)
+        elif raw:
+            lines.append(f"{indent}- {raw}")
+    return "\n".join(lines)
 
 
 def _display_provider_name(provider: str) -> str:
@@ -372,6 +436,11 @@ class AIToolsTab(QWidget):
         self._scope_label.setWordWrap(True)
         right_layout.addWidget(self._scope_label)
 
+        self._task_desc_label = QLabel("")
+        self._task_desc_label.setObjectName("AITaskDesc")
+        self._task_desc_label.setWordWrap(True)
+        right_layout.addWidget(self._task_desc_label)
+
         # Parameters
         params_box = QFrame()
         params_box.setObjectName("AIParamsBox")
@@ -394,7 +463,18 @@ class AIToolsTab(QWidget):
         for tier in (AiCostTier.THRIFTY, AiCostTier.BALANCED, AiCostTier.STRONG):
             self._tier_combo.addItem(TR(_TIER_LABEL_KEY[tier]), tier)
         self._tier_combo.setCurrentIndex(1)
-        params_form.addRow(TR("ai.params.cost_tier"), self._tier_combo)
+        self._tier_field = QWidget()
+        self._tier_field.setObjectName("AITierField")
+        self._tier_field_layout = QVBoxLayout(self._tier_field)
+        self._tier_field_layout.setContentsMargins(0, 0, 0, 0)
+        self._tier_field_layout.setSpacing(4)
+        self._tier_field_layout.addWidget(self._tier_combo)
+        self._tier_hint_label = QLabel(TR("ai.params.cost_tier_hint"))
+        self._tier_hint_label.setObjectName("AITierHint")
+        self._tier_hint_label.setWordWrap(True)
+        self._tier_field_layout.addWidget(self._tier_hint_label)
+        params_form.addRow(TR("ai.params.cost_tier"), self._tier_field)
+        self._tier_field_label = params_form.labelForField(self._tier_field)
 
         self._output_combo = QComboBox()
         params_form.addRow(TR("ai.output.label"), self._output_combo)
@@ -421,12 +501,24 @@ class AIToolsTab(QWidget):
         self._style_field_label = params_form.labelForField(self._style_field)
 
         self._intensity_combo = QComboBox()
-        for label, value in (("—", ""), ("light", "light"), ("medium", "medium"), ("strong", "strong")):
+        for label, value in (
+            ("—", ""),
+            ("light", "light"),
+            ("medium", "medium"),
+            ("strong", "strong"),
+        ):
             self._intensity_combo.addItem(label, value)
         params_form.addRow(TR("ai.params.intensity"), self._intensity_combo)
         self._intensity_label = params_form.labelForField(self._intensity_combo)
 
         right_layout.addWidget(params_box)
+
+        self._extra_edit = QPlainTextEdit()
+        self._extra_edit.setObjectName("AIExtraInstructions")
+        self._extra_edit.setMaximumHeight(72)
+        self._extra_edit.setPlaceholderText(TR("ai.params.extra_placeholder.polish"))
+        right_layout.addWidget(QLabel(TR("ai.params.extra_instructions")))
+        right_layout.addWidget(self._extra_edit)
 
         # Advanced toggle
         self._advanced_toggle = QPushButton(TR("ai.params.advanced") + " ▾")
@@ -439,9 +531,6 @@ class AIToolsTab(QWidget):
         self._advanced_box.setObjectName("AIAdvancedBox")
         adv_form = QFormLayout(self._advanced_box)
         adv_form.setContentsMargins(0, 0, 0, 0)
-        self._extra_edit = QPlainTextEdit()
-        self._extra_edit.setMaximumHeight(60)
-        adv_form.addRow(TR("ai.params.extra_instructions"), self._extra_edit)
         self._max_output_spin = QSpinBox()
         self._max_output_spin.setRange(0, 100_000)
         self._max_output_spin.setSingleStep(200)
@@ -499,7 +588,9 @@ class AIToolsTab(QWidget):
         attach_btn_row.addWidget(self._attach_total_label)
         right_layout.addLayout(attach_btn_row)
         self._attach_list.currentItemChanged.connect(
-            lambda *_: self._remove_attach_btn.setEnabled(self._attach_list.currentItem() is not None)
+            lambda *_: self._remove_attach_btn.setEnabled(
+                self._attach_list.currentItem() is not None
+            )
         )
 
         # Run button + status
@@ -731,15 +822,26 @@ class AIToolsTab(QWidget):
 
     def _refresh_task_params(self) -> None:
         task = self._current_task_type()
-        show_style = task in _STYLE_TASKS
+        show_style = True
         self._style_field.setVisible(show_style)
         if self._style_field_label is not None:
             self._style_field_label.setVisible(show_style)
+            self._style_field_label.setText(
+                TR(_TASK_CONTROL_LABEL_KEY.get(task, "ai.params.style"))
+            )
+        self._task_desc_label.setText(
+            TR(_TASK_DESCRIPTION_KEY.get(task, "ai.params.style_hint.default"))
+        )
 
         show_intensity = task in _INTENSITY_TASKS
         self._intensity_combo.setVisible(show_intensity)
         if self._intensity_label is not None:
             self._intensity_label.setVisible(show_intensity)
+            self._intensity_label.setText(
+                TR(_TASK_INTENSITY_LABEL_KEY.get(task, "ai.params.intensity"))
+            )
+        if self._tier_field_label is not None:
+            self._tier_field_label.setText(TR("ai.params.cost_tier"))
 
         if not show_style:
             self._rebuild_style_preset_sections([])
@@ -748,14 +850,19 @@ class AIToolsTab(QWidget):
         self._style_edit.setPlaceholderText(
             TR(_TASK_STYLE_PLACEHOLDER_KEY.get(task, "ai.params.style_placeholder"))
         )
+        self._extra_edit.setPlaceholderText(TR(f"ai.params.extra_placeholder.{task.value}"))
         self._style_hint_label.setText(
             TR(_TASK_STYLE_HINT_KEY.get(task, "ai.params.style_hint.default"))
         )
         self._rebuild_style_preset_sections(self._style_sections_for_task(task))
 
     def _style_sections_for_task(self, task: AiTaskType) -> List[tuple[str, List[str]]]:
-        if task is AiTaskType.STYLE_TRANSFER:
+        if task is AiTaskType.POLISH:
             return [
+                (
+                    TR("ai.params.quick_presets"),
+                    _preset_values("ai.params.style_presets.polish_values"),
+                ),
                 (TR("ai.params.style_authors"), self._style_author_presets),
                 (TR("ai.params.style_goals"), self._style_goal_presets),
             ]
@@ -813,7 +920,9 @@ class AIToolsTab(QWidget):
         current = self._style_edit.text().strip()
         if not current:
             self._style_edit.setText(value)
-        elif value not in {part.strip() for part in current.replace(",", "，").split("，") if part.strip()}:
+        elif value not in {
+            part.strip() for part in current.replace(",", "，").split("，") if part.strip()
+        }:
             separator = "，" if current_locale() == LOCALE_ZH_CN else ", "
             self._style_edit.setText(current + separator + value)
         self._style_edit.setFocus()
@@ -856,6 +965,9 @@ class AIToolsTab(QWidget):
         # Always allow REPORT for diagnostic/QA tasks.
         cur_task = self._current_task_type()
         if cur_task in {
+            AiTaskType.SUMMARIZE,
+            AiTaskType.OUTLINE,
+            AiTaskType.TITLE,
             AiTaskType.STRUCTURE_DIAGNOSE,
             AiTaskType.CONSISTENCY_CHECK,
             AiTaskType.LIBRARY_QA,
@@ -882,9 +994,7 @@ class AIToolsTab(QWidget):
         self._refresh_apply_button_state()
 
     def _refresh_apply_button_state(self) -> None:
-        out = _combo_enum(
-            self._output_combo, AiOutputAction, AiOutputAction.PREVIEW_ONLY
-        )
+        out = _combo_enum(self._output_combo, AiOutputAction, AiOutputAction.PREVIEW_ONLY)
         has_result = self._last_response is not None and bool(
             self._result_view.toPlainText().strip()
         )
@@ -931,9 +1041,7 @@ class AIToolsTab(QWidget):
         self._attach_empty_label.setVisible(not has_any)
         # total
         total = self._estimated_context_chars()
-        self._attach_total_label.setText(
-            TR("ai.attachments.total").format(chars=total)
-        )
+        self._attach_total_label.setText(TR("ai.attachments.total").format(chars=total))
         if total > SOFT_CONTEXT_BUDGET_CHARS:
             self._attach_total_label.setStyleSheet("color: #c1440e;")
             self._attach_total_label.setToolTip(TR("ai.attachments.heavy_warning"))
@@ -996,6 +1104,7 @@ class AIToolsTab(QWidget):
 
     def _on_add_fragment_attachment(self) -> None:
         from writer.ui.dialogs.fragment_picker_dialog import FragmentPickerDialog  # lazy
+
         dlg = FragmentPickerDialog(self._container, parent=self)
         if dlg.exec() != dlg.DialogCode.Accepted:
             return
@@ -1006,28 +1115,40 @@ class AIToolsTab(QWidget):
 
     def _on_add_specimen_attachment(self) -> None:
         from writer.ui.dialogs.specimen_picker_dialog import SpecimenPickerDialog  # lazy
+
         repo = self._container.reference_repository
+        preselected_ids = [
+            att.ref_id
+            for att in self._attachments
+            if att.kind == "style_specimen" and att.ref_id
+        ]
         dlg = SpecimenPickerDialog(
             repo,
             recommended_text=self._current_subject_text_for_recommendation(),
+            preselected_ids=preselected_ids,
+            settings=self._container.settings,
             parent=self,
         )
         if dlg.exec() != dlg.DialogCode.Accepted:
             return
         passages = dlg.selected_passages
+        preserved = [att for att in self._attachments if att.kind != "style_specimen"]
+        selected_attachments: list[AiContextAttachment] = []
         for passage in passages:
-            if self._has_attachment(kind="style_specimen", ref_id=passage.id):
-                continue
             from writer.ui.panels.reference_library_panel import _usage_kind_label
-            note_part = f"\n点评：{passage.personal_note}" if passage.personal_note else ""
+
+            note_part = f"\n备注：{passage.personal_note}" if passage.personal_note else ""
+            tags_part = f"\n标签：{passage.tags}" if passage.tags.strip() else ""
             body = (
                 f"{passage.content}\n\n"
-                f"来源：{passage.source_title}"
-                + (f"  {passage.source_author}" if passage.source_author else "")
+                f"作品名：{passage.source_title or TR('search.untitled')}"
+                + (f"\n作者：{passage.source_author}" if passage.source_author else "")
                 + f"\n用途：{_usage_kind_label(passage.usage_kind)}"
+                + f"\n类型：{passage.kind}"
+                + tags_part
                 + note_part
             )
-            self._attachments.append(
+            selected_attachments.append(
                 AiContextAttachment(
                     kind="style_specimen",
                     ref_id=passage.id,
@@ -1035,8 +1156,8 @@ class AIToolsTab(QWidget):
                     body=body,
                 )
             )
-        if passages:
-            self._refresh_attachments_view()
+        self._attachments = preserved + selected_attachments
+        self._refresh_attachments_view()
 
     def _current_subject_text_for_recommendation(self) -> str:
         scope = self._scope
@@ -1063,9 +1184,7 @@ class AIToolsTab(QWidget):
         task = self._current_task_type()
         target = _combo_enum(self._target_combo, AiTargetKind, AiTargetKind.PASTE)
         tier = _combo_enum(self._tier_combo, AiCostTier, AiCostTier.BALANCED)
-        output = _combo_enum(
-            self._output_combo, AiOutputAction, AiOutputAction.PREVIEW_ONLY
-        )
+        output = _combo_enum(self._output_combo, AiOutputAction, AiOutputAction.PREVIEW_ONLY)
 
         # Determine subject text based on target.
         if target == AiTargetKind.PASTE:
@@ -1117,6 +1236,9 @@ class AIToolsTab(QWidget):
             target_ref = None
 
         is_structured = task in {
+            AiTaskType.SUMMARIZE,
+            AiTaskType.OUTLINE,
+            AiTaskType.TITLE,
             AiTaskType.STRUCTURE_DIAGNOSE,
             AiTaskType.CONSISTENCY_CHECK,
             AiTaskType.LIBRARY_QA,
@@ -1128,9 +1250,7 @@ class AIToolsTab(QWidget):
             text=text,
             target_ref_id=target_ref,
             style=(
-                self._style_edit.text().strip() or None
-                if self._style_field.isVisible()
-                else None
+                self._style_edit.text().strip() or None if self._style_field.isVisible() else None
             ),
             intensity=intensity_val,
             extra_instructions=extra,
@@ -1154,9 +1274,7 @@ class AIToolsTab(QWidget):
         self._run_btn.setEnabled(False)
         provider = self._container.settings.load_ai_config().provider_key()
         self._status_label.setText(
-            TR("ai.status.running_provider").format(
-                provider=_display_provider_name(provider)
-            )
+            TR("ai.status.running_provider").format(provider=_display_provider_name(provider))
         )
         self._last_response = None
         self._refresh_apply_button_state()
@@ -1176,8 +1294,7 @@ class AIToolsTab(QWidget):
         self._status_label.setText("")
         task_type = self._result_task_type()
         rendered = (
-            self._render_structured(response, task_type=task_type)
-            if response.structured else None
+            self._render_structured(response, task_type=task_type) if response.structured else None
         )
         self._result_view.setPlainText(rendered if rendered is not None else response.content)
 
@@ -1223,10 +1340,7 @@ class AIToolsTab(QWidget):
         return self._current_task_type()
 
     def _refresh_send_to_chat_button(self) -> None:
-        can_send = (
-            self._last_response is not None
-            and bool(self._result_view.toPlainText().strip())
-        )
+        can_send = self._last_response is not None and bool(self._result_view.toPlainText().strip())
         self._send_chat_btn.setVisible(can_send)
         self._send_chat_btn.setEnabled(can_send)
 
@@ -1243,8 +1357,69 @@ class AIToolsTab(QWidget):
         """
         data = response.structured or {}
         task = task_type or self._result_task_type()
+        if task == AiTaskType.SUMMARIZE:
+            lines: List[str] = []
+            summary = str(data.get("summary") or data.get("core_summary") or "").strip()
+            if summary:
+                lines.append(TR("ai.render.summary") + "\n" + summary)
+            for key, label_key in (
+                ("key_facts", "ai.render.key_facts"),
+                ("themes", "ai.render.themes"),
+                ("keeper_lines", "ai.render.keeper_lines"),
+            ):
+                values = data.get(key) or []
+                if isinstance(values, str):
+                    values = [values]
+                if isinstance(values, list) and values:
+                    lines.append(TR(label_key) + "\n" + "\n".join(f"- {v}" for v in values))
+            return "\n\n".join(lines) if lines else response.content
+        if task == AiTaskType.OUTLINE:
+            items = data.get("outline") or data.get("items") or []
+            if isinstance(items, str):
+                return items
+            if isinstance(items, list):
+                rendered = _render_outline_items(items)
+                return rendered or response.content
+            return response.content
+        if task == AiTaskType.TITLE:
+            groups = data.get("groups") or data.get("titles") or []
+            if isinstance(groups, str):
+                return groups
+            if isinstance(groups, list):
+                lines: List[str] = []
+                for raw in groups:
+                    if not isinstance(raw, dict):
+                        lines.append(f"- {raw}")
+                        continue
+                    category = str(raw.get("category") or raw.get("type") or "").strip()
+                    if category:
+                        lines.append(category)
+                    titles = raw.get("titles") or []
+                    if isinstance(titles, str):
+                        titles = [{"title": titles}]
+                    for item in titles:
+                        if isinstance(item, dict):
+                            title = str(item.get("title") or "").strip()
+                            reason = str(item.get("reason") or "").strip()
+                            if title and reason:
+                                lines.append(f"- {title}：{reason}")
+                            elif title:
+                                lines.append(f"- {title}")
+                        elif item:
+                            lines.append(f"- {item}")
+                return "\n".join(lines) if lines else response.content
         if task == AiTaskType.LIBRARY_QA:
             answer = (data.get("answer") or "").strip()
+            unconfirmed = data.get("unconfirmed") or []
+            if isinstance(unconfirmed, str):
+                unconfirmed = [unconfirmed]
+            if unconfirmed:
+                answer += (
+                    "\n\n"
+                    + TR("ai.render.unconfirmed")
+                    + "\n"
+                    + "\n".join(f"- {item}" for item in unconfirmed)
+                )
             return answer or response.content
         if task in {AiTaskType.STRUCTURE_DIAGNOSE, AiTaskType.CONSISTENCY_CHECK}:
             issues = data.get("issues") or []
@@ -1259,9 +1434,7 @@ class AIToolsTab(QWidget):
                     continue
                 severity = str(raw.get("severity") or "").strip()
                 where = str(raw.get("where") or raw.get("location") or "").strip()
-                what = str(
-                    raw.get("what") or raw.get("issue") or raw.get("problem") or ""
-                ).strip()
+                what = str(raw.get("what") or raw.get("issue") or raw.get("problem") or "").strip()
                 suggestion = str(raw.get("suggestion") or raw.get("fix") or "").strip()
                 header = f"{idx}."
                 if severity:
@@ -1284,9 +1457,7 @@ class AIToolsTab(QWidget):
     def _on_apply(self) -> None:
         if self._last_response is None or self._last_request is None or self._scope is None:
             return
-        out = _combo_enum(
-            self._output_combo, AiOutputAction, AiOutputAction.PREVIEW_ONLY
-        )
+        out = _combo_enum(self._output_combo, AiOutputAction, AiOutputAction.PREVIEW_ONLY)
         text = self._result_view.toPlainText()  # honour any user edits
         try:
             if out == AiOutputAction.REPLACE_FRAGMENT and self._scope.ref_id is not None:
@@ -1319,10 +1490,7 @@ class AIToolsTab(QWidget):
                     provider_name=self._last_response.provider or "openai",
                     model=self._last_response.model or "",
                 )
-            elif (
-                out == AiOutputAction.REPLACE_SECTION
-                and self._scope.has_section
-            ):
+            elif out == AiOutputAction.REPLACE_SECTION and self._scope.has_section:
                 outcome = apply_to_section(
                     self._container,
                     work_id=self._scope.work_id,
@@ -1330,9 +1498,7 @@ class AIToolsTab(QWidget):
                     generated_text=text,
                 )
             else:
-                QMessageBox.warning(
-                    self, TR("ai.dlg.run_failed"), TR("ai.dlg.cannot_apply")
-                )
+                QMessageBox.warning(self, TR("ai.dlg.run_failed"), TR("ai.dlg.cannot_apply"))
                 return
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, TR("ai.dlg.run_failed"), str(exc))
@@ -1389,6 +1555,11 @@ class AIChatTab(QWidget):
         self._scope_label.setWordWrap(True)
         layout.addWidget(self._scope_label)
 
+        self._thread_info_label = QLabel("")
+        self._thread_info_label.setObjectName("AIChatThreadInfo")
+        self._thread_info_label.setWordWrap(True)
+        layout.addWidget(self._thread_info_label)
+
         self._messages_view = QTextEdit()
         self._messages_view.setReadOnly(True)
         self._messages_view.setObjectName("AIChatMessages")
@@ -1412,6 +1583,7 @@ class AIChatTab(QWidget):
         for tier in (AiCostTier.THRIFTY, AiCostTier.BALANCED, AiCostTier.STRONG):
             self._tier_combo.addItem(TR(_TIER_LABEL_KEY[tier]), tier)
         self._tier_combo.setCurrentIndex(1)
+        self._tier_combo.currentIndexChanged.connect(self._refresh_thread_info)
         attach_row.addWidget(self._tier_combo)
         layout.addLayout(attach_row)
 
@@ -1433,6 +1605,7 @@ class AIChatTab(QWidget):
         layout.addLayout(send_row)
 
         self._refresh_attachments_label()
+        self._refresh_thread_info()
 
     # ---- public API ----
     def bind_scope(self, scope: AiScope) -> None:
@@ -1446,6 +1619,7 @@ class AIChatTab(QWidget):
         )
         self._thread_id = thread.id
         self._render_history()
+        self._refresh_thread_info()
 
     def seed_input(self, text: str) -> None:
         self._input.setPlainText(text)
@@ -1454,9 +1628,8 @@ class AIChatTab(QWidget):
     def _update_scope_label(self) -> None:
         if self._scope is None or self._scope.is_global:
             self._scope_label.setText(TR("ai.scope_global"))
-            self._input.setPlaceholderText(
-                TR("ai.chat.input_placeholder").format(scope="object")
-            )
+            self._input.setPlaceholderText(TR("ai.chat.input_placeholder").format(scope="object"))
+            self._refresh_thread_info()
             return
         key = {
             AiThreadScope.FRAGMENT: "ai.scope_fragment",
@@ -1467,6 +1640,7 @@ class AIChatTab(QWidget):
         self._input.setPlaceholderText(
             TR("ai.chat.input_placeholder").format(scope=self._scope.name or "object")
         )
+        self._refresh_thread_info()
 
     def _render_history(self) -> None:
         self._messages_view.clear()
@@ -1494,23 +1668,40 @@ class AIChatTab(QWidget):
 
     @staticmethod
     def _escape(text: str) -> str:
-        return (
-            text.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-        )
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     def _refresh_attachments_label(self) -> None:
         if not self._attachments:
             self._attach_label.setText("")
+            self._refresh_thread_info()
             return
         names = [a.name for a in self._attachments]
-        self._attach_label.setText(
-            TR("ai.chat.attachment_added").format(name=", ".join(names))
+        self._attach_label.setText(TR("ai.chat.attachment_added").format(name=", ".join(names)))
+        self._refresh_thread_info()
+
+    def _refresh_thread_info(self) -> None:
+        tier = _combo_enum(self._tier_combo, AiCostTier, AiCostTier.BALANCED)
+        model = self._container.ai_task_service.model_for_tier(tier)
+        if not model:
+            model = self._container.settings.load_ai_config().model
+        history_count = 0
+        if self._thread_id is not None:
+            history_count = len(self._container.ai_thread_service.history(self._thread_id))
+        scope_chars = len(self._scope.body) if self._scope and not self._scope.is_global else 0
+        attachment_chars = estimate_attachment_chars(self._attachments)
+        estimated = scope_chars + attachment_chars
+        self._thread_info_label.setText(
+            TR("ai.chat.thread_info").format(
+                model=model or TR("context.no_value"),
+                messages=history_count,
+                chars=estimated,
+                budget=DEFAULT_CHAT_CONTEXT_BUDGET_CHARS,
+            )
         )
 
     def _on_add_attachment(self) -> None:
         from writer.ui.dialogs.fragment_picker_dialog import FragmentPickerDialog  # lazy
+
         dlg = FragmentPickerDialog(self._container, parent=self)
         if dlg.exec() != dlg.DialogCode.Accepted:
             return
@@ -1566,8 +1757,12 @@ class AIChatTab(QWidget):
         worker.start()
 
     def _on_chat_succeeded(self, turn: ChatTurn) -> None:
-        self._status_label.setText("")
+        omitted = turn.context_breakdown.omitted_history_count
+        self._status_label.setText(
+            TR("ai.chat.context_trimmed").format(count=omitted) if omitted else ""
+        )
         self._append_message("assistant", turn.assistant_message.content)
+        self._refresh_thread_info()
 
     def _on_chat_failed(self, message: str) -> None:
         self._status_label.setText("")
@@ -1577,9 +1772,7 @@ class AIChatTab(QWidget):
         if self._thread_id is None:
             return
         history = self._container.ai_thread_service.history(self._thread_id)
-        last_assistant = next(
-            (m for m in reversed(history) if m.role == "assistant"), None
-        )
+        last_assistant = next((m for m in reversed(history) if m.role == "assistant"), None)
         if last_assistant is None:
             return
         outcome = save_as_new_fragment(

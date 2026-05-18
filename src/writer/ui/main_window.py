@@ -65,6 +65,7 @@ from writer.ui.dialogs.rewrite_compare_dialog import AcceptMode, RewriteCompareD
 from writer.ui.dialogs.settings_dialog import SettingsDialog
 from writer.ui.dialogs.version_history_dialog import VersionHistoryDialog
 from writer.ui.i18n import TR, rewrite_action_label
+from writer.ui.motion import set_stack_index
 from writer.ui.panels.collections_panel import CollectionsPanel
 from writer.ui.panels.editor_panel import EditorPanel, _count_words
 from writer.ui.panels.fragment_list_panel import FragmentListPanel
@@ -107,6 +108,7 @@ class MainWindow(QMainWindow):
         self._force_close = False
         self._focus_mode_enabled = False
         self._focus_restore_state: Optional[dict[str, object]] = None
+        self._reduced_motion = container.settings.reduced_motion_enabled()
 
         self.setWindowTitle("Writer")
         self.resize(1280, 780)
@@ -197,6 +199,7 @@ class MainWindow(QMainWindow):
                 "export_collection": TR("context.action_export_collection"),
             },
         )
+        self._context_pane.set_reduced_motion(self._reduced_motion)
         # Wire context-pane action buttons to existing handlers.
         self._context_pane.fragment_polish_button.clicked.connect(
             self._on_open_ai_polish_from_context
@@ -642,11 +645,11 @@ class MainWindow(QMainWindow):
 
     def _show_fragments_welcome(self) -> None:
         """Switch the fragments-mode area to the welcome card."""
-        self._fragments_stack.setCurrentIndex(1)
+        set_stack_index(self._fragments_stack, 1, reduced=self._reduced_motion)
 
     def _show_fragments_workspace(self) -> None:
         """Switch the fragments-mode area to the normal list+editor splitter."""
-        self._fragments_stack.setCurrentIndex(0)
+        set_stack_index(self._fragments_stack, 0, reduced=self._reduced_motion)
 
     def _apply_fragments_workspace_visibility(self) -> None:
         """Pick welcome vs. normal workspace based on whether the entry
@@ -1005,16 +1008,25 @@ class MainWindow(QMainWindow):
     def _on_open_settings(self) -> None:
         dialog = SettingsDialog(self._container.settings, parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._apply_motion_preferences()
             self._apply_editor_preferences()
 
     def _on_open_reference_library(
         self, *, initial_usage_kind: Optional[str] = None
     ) -> None:
-        dialog = ReferenceLibraryDialog(
-            self._container.reference_repository,
-            parent=self,
-            initial_usage_kind=initial_usage_kind,
-        )
+        try:
+            dialog = ReferenceLibraryDialog(
+                self._container.reference_repository,
+                parent=self,
+                initial_usage_kind=initial_usage_kind,
+                settings=self._container.settings,
+            )
+        except TypeError:
+            dialog = ReferenceLibraryDialog(
+                self._container.reference_repository,
+                parent=self,
+                initial_usage_kind=initial_usage_kind,
+            )
         dialog.exec()
         self._dates_panel.refresh_daily_quote()
 
@@ -1103,7 +1115,7 @@ class MainWindow(QMainWindow):
         previous_mode = self._stack.currentIndex()
         if mode == MODE_AI and previous_mode != MODE_AI:
             self._last_mode_before_ai = previous_mode
-        self._stack.setCurrentIndex(mode)
+        set_stack_index(self._stack, mode, reduced=self._reduced_motion)
         self._rail.set_active_mode(mode)
         # Persist the active mode so the next launch lands on the same view.
         try:
@@ -1736,10 +1748,19 @@ class MainWindow(QMainWindow):
     # M9A: shell helpers — theme menu, context pane, context refresh
     # --------------------------------------------------------------
     def _apply_editor_preferences(self) -> None:
-        self._editor_panel.apply_display_settings(
-            self._container.settings.load_editor_display_settings()
-        )
+        settings = self._container.settings.load_editor_display_settings()
+        self._editor_panel.apply_display_settings(settings)
+        try:
+            self._works_panel._editor.apply_display_settings(settings)  # noqa: SLF001
+        except Exception:  # noqa: BLE001
+            pass
+        self._editor_panel.set_reduced_motion(self._reduced_motion)
         self._editor_panel.set_focus_mode_enabled(self._focus_mode_enabled)
+
+    def _apply_motion_preferences(self) -> None:
+        self._reduced_motion = self._container.settings.reduced_motion_enabled()
+        self._context_pane.set_reduced_motion(self._reduced_motion)
+        self._editor_panel.set_reduced_motion(self._reduced_motion)
 
     def _install_focus_mode_key_filters(self) -> None:
         for widget in (

@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -36,6 +37,7 @@ from PySide6.QtWidgets import (
 
 from writer.app.locale import LOCALE_EN, LOCALE_ZH_CN
 from writer.app.settings import (
+    DEFAULT_EDITOR_FONT_FAMILY,
     DEFAULT_QUICK_CAPTURE_CLOSE_TO_TRAY_ENABLED,
     EditorDisplaySettings,
     KEY_AI_GEMINI_CLI_PROXY,
@@ -102,6 +104,25 @@ _MODEL_PRESETS = {
     "gemini_cli": GEMINI_CLI_MODEL_PRESETS,
 }
 
+_EDITOR_FONT_PRESETS = (
+    (
+        "serif",
+        "settings.editor_font_preset_serif",
+        DEFAULT_EDITOR_FONT_FAMILY,
+    ),
+    (
+        "sans",
+        "settings.editor_font_preset_sans",
+        "Noto Sans SC, MiSans, Microsoft YaHei UI, 微软雅黑, Segoe UI, Arial",
+    ),
+    (
+        "mono",
+        "settings.editor_font_preset_mono",
+        "Cascadia Code, Cascadia Mono, Consolas, Courier New",
+    ),
+)
+_CUSTOM_FONT_PRESET = "custom"
+
 
 class SettingsDialog(QDialog):
     def __init__(
@@ -115,7 +136,7 @@ class SettingsDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(TR("settings.title"))
-        self.resize(640, 620)
+        self.resize(680, 700)
 
         self._settings = settings
         self._importer = importer or CodexConfigImporter()
@@ -182,6 +203,24 @@ class SettingsDialog(QDialog):
         self._font_size.setValue(editor_settings.font_size)
         self._font_size.setSuffix(" px")
 
+        self._font_preset_combo = QComboBox()
+        for key, label_key, _family in _EDITOR_FONT_PRESETS:
+            self._font_preset_combo.addItem(TR(label_key), key)
+        self._font_preset_combo.addItem(
+            TR("settings.editor_font_preset_custom"), _CUSTOM_FONT_PRESET
+        )
+        self._font_preset_combo.currentIndexChanged.connect(
+            self._on_editor_font_preset_changed
+        )
+
+        self._font_family_combo = QComboBox()
+        self._font_family_combo.setEditable(True)
+        self._populate_font_family_combo(editor_settings.font_family)
+        self._font_family_combo.currentTextChanged.connect(
+            self._on_editor_font_family_changed
+        )
+        self._sync_font_preset_to_family(editor_settings.font_family)
+
         self._line_height = QDoubleSpinBox()
         self._line_height.setRange(1.2, 2.6)
         self._line_height.setSingleStep(0.1)
@@ -206,6 +245,12 @@ class SettingsDialog(QDialog):
         )
         self._typewriter_checkbox = QCheckBox(TR("settings.editor_typewriter_mode"))
         self._typewriter_checkbox.setChecked(editor_settings.typewriter_mode_enabled)
+        self._auto_indent_checkbox = QCheckBox(TR("settings.editor_auto_paragraph_indent"))
+        self._auto_indent_checkbox.setChecked(
+            editor_settings.auto_paragraph_indent_enabled
+        )
+        self._reduced_motion_checkbox = QCheckBox(TR("settings.reduced_motion"))
+        self._reduced_motion_checkbox.setChecked(settings.reduced_motion_enabled())
 
         appearance_group = QGroupBox(TR("settings.group_appearance"))
         appearance_form = QFormLayout(appearance_group)
@@ -213,6 +258,8 @@ class SettingsDialog(QDialog):
 
         writing_group = QGroupBox(TR("settings.group_writing"))
         writing_form = QFormLayout(writing_group)
+        writing_form.addRow(TR("settings.editor_font_preset"), self._font_preset_combo)
+        writing_form.addRow(TR("settings.editor_font_family"), self._font_family_combo)
         writing_form.addRow(TR("settings.editor_font_size"), self._font_size)
         writing_form.addRow(TR("settings.editor_line_height"), self._line_height)
         writing_form.addRow(
@@ -222,6 +269,8 @@ class SettingsDialog(QDialog):
         writing_form.addRow(TR("settings.editor_content_width"), self._content_width)
         writing_form.addRow("", self._visual_indent_checkbox)
         writing_form.addRow("", self._typewriter_checkbox)
+        writing_form.addRow("", self._auto_indent_checkbox)
+        writing_form.addRow("", self._reduced_motion_checkbox)
 
         ai_group = QGroupBox(TR("settings.group_ai"))
         ai_form = QFormLayout(ai_group)
@@ -334,6 +383,49 @@ class SettingsDialog(QDialog):
             self._model_preset_combo.setCurrentIndex(idx if idx >= 0 else 0)
         finally:
             self._model_preset_combo.blockSignals(False)
+
+    def _populate_font_family_combo(self, current: str) -> None:
+        self._font_family_combo.blockSignals(True)
+        try:
+            self._font_family_combo.clear()
+            self._font_family_combo.addItem(current)
+            for family in sorted(set(QFontDatabase.families())):
+                if self._font_family_combo.findText(family) < 0:
+                    self._font_family_combo.addItem(family)
+            self._font_family_combo.setCurrentText(current)
+        finally:
+            self._font_family_combo.blockSignals(False)
+
+    def _on_editor_font_preset_changed(self) -> None:
+        preset = self._font_preset_combo.currentData()
+        if preset == _CUSTOM_FONT_PRESET:
+            return
+        family = _font_family_for_preset(preset)
+        if not family:
+            return
+        self._font_family_combo.blockSignals(True)
+        try:
+            self._font_family_combo.setCurrentText(family)
+        finally:
+            self._font_family_combo.blockSignals(False)
+
+    def _on_editor_font_family_changed(self, family: str) -> None:
+        self._sync_font_preset_to_family(family)
+
+    def _sync_font_preset_to_family(self, family: str) -> None:
+        normalized = _normalize_font_family(family)
+        target = _CUSTOM_FONT_PRESET
+        for key, _label, preset_family in _EDITOR_FONT_PRESETS:
+            if normalized == _normalize_font_family(preset_family):
+                target = key
+                break
+        idx = self._font_preset_combo.findData(target)
+        if idx >= 0 and idx != self._font_preset_combo.currentIndex():
+            self._font_preset_combo.blockSignals(True)
+            try:
+                self._font_preset_combo.setCurrentIndex(idx)
+            finally:
+                self._font_preset_combo.blockSignals(False)
 
     def _refresh_key_status(self) -> None:
         if self._current_provider_key() == "gemini_cli":
@@ -626,9 +718,14 @@ class SettingsDialog(QDialog):
                 line_height=self._line_height.value(),
                 paragraph_spacing=self._paragraph_spacing.value(),
                 content_width=self._content_width.value(),
+                font_family=self._font_family_combo.currentText().strip(),
                 visual_first_line_indent_enabled=self._visual_indent_checkbox.isChecked(),
                 typewriter_mode_enabled=self._typewriter_checkbox.isChecked(),
+                auto_paragraph_indent_enabled=self._auto_indent_checkbox.isChecked(),
             )
+        )
+        self._settings.save_reduced_motion_enabled(
+            self._reduced_motion_checkbox.isChecked()
         )
 
         # Persist language selection; inform user a restart is required.
@@ -657,3 +754,14 @@ def _format_gemini_cli_quota_status(status) -> str:
         paid_tier=status.paid_tier or TR("context.no_value"),
         credits=status.credits or TR("context.no_value"),
     )
+
+
+def _font_family_for_preset(preset: object) -> str:
+    for key, _label, family in _EDITOR_FONT_PRESETS:
+        if key == preset:
+            return family
+    return ""
+
+
+def _normalize_font_family(value: str) -> str:
+    return " ".join((value or "").replace("'", "").replace('"', "").split()).casefold()

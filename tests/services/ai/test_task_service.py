@@ -2,6 +2,7 @@
 
 Stub the AiProvider so no real network call is ever issued.
 """
+
 from __future__ import annotations
 
 import json
@@ -13,10 +14,8 @@ import pytest
 from writer.app.container import build_container
 from writer.domain.enums import (
     AiCostTier,
-    AiOutputAction,
     AiTargetKind,
     AiTaskType,
-    AiThreadScope,
 )
 from writer.services.ai.interfaces import (
     AiError,
@@ -131,12 +130,12 @@ def test_polish_with_style_demands_single_direct_rewrite_only() -> None:
     user_content = msgs[-1]["content"]
     assert "freeform rewriting prompt" in system_content
     assert "author-by-author variants" in system_content
-    assert "Return exactly one final rewritten passage." in user_content
     assert "No heading, no explanation" in user_content
     assert "multiple authors or traits" in user_content
+    assert "Polish and expand return the full resulting text" in user_content
 
 
-def test_medium_polish_with_style_allows_richer_short_paragraph_output() -> None:
+def test_medium_polish_with_style_does_not_turn_into_expansion() -> None:
     builder = TaskPromptBuilder()
     request = AiTaskRequest(
         task_type=AiTaskType.POLISH,
@@ -150,9 +149,111 @@ def test_medium_polish_with_style_allows_richer_short_paragraph_output() -> None
     system_content = msgs[0]["content"]
     user_content = msgs[-1]["content"]
     assert "more than synonym substitution" in system_content
-    assert "short paragraph" in system_content
-    assert "do not add specific new facts" in system_content
-    assert "do not return only a slightly smoother sentence" in user_content
+    assert "do not add new information points or later plot" in system_content
+    assert "do not use polishing as expansion" in user_content
+    assert "do not add characters, events, settings, or later action" in user_content
+
+
+def test_task_control_labels_are_task_specific() -> None:
+    builder = TaskPromptBuilder()
+    cases = (
+        (AiTaskType.EXPAND, "sensory detail", "Expansion direction: sensory detail"),
+        (
+            AiTaskType.CONTINUE,
+            "one paragraph",
+            "Continuation direction / length: one paragraph",
+        ),
+        (AiTaskType.SUMMARIZE, "editor memo", "Summary mode: editor memo"),
+        (AiTaskType.OUTLINE, "by scene", "Outline mode: by scene"),
+        (AiTaskType.TITLE, "restrained", "Title style: restrained"),
+        (AiTaskType.STRUCTURE_DIAGNOSE, "pacing", "Diagnosis focus: pacing"),
+        (AiTaskType.CONSISTENCY_CHECK, "timeline", "Consistency focus: timeline"),
+        (AiTaskType.LIBRARY_QA, "cite each claim", "Answer focus: cite each claim"),
+    )
+    for task_type, style, expected in cases:
+        request = AiTaskRequest(
+            task_type=task_type,
+            target_kind=AiTargetKind.PASTE,
+            text="source text",
+            style=style,
+        )
+        msgs = builder.build_messages(request)
+        assert expected in msgs[-1]["content"]
+        assert "Target style:" not in msgs[-1]["content"]
+
+
+def test_intensity_prompt_labels_follow_task_semantics() -> None:
+    builder = TaskPromptBuilder()
+    cases = (
+        (AiTaskType.POLISH, "medium", "Polish scope: medium"),
+        (AiTaskType.EXPAND, "strong", "Detail density: strong"),
+    )
+
+    for task_type, intensity, expected in cases:
+        request = AiTaskRequest(
+            task_type=task_type,
+            target_kind=AiTargetKind.PASTE,
+            text="source text",
+            intensity=intensity,
+        )
+        msgs = builder.build_messages(request)
+        assert expected in msgs[-1]["content"]
+        assert "Edit intensity:" not in msgs[-1]["content"]
+
+
+def test_prompt_contracts_distinguish_polish_expand_continue() -> None:
+    builder = TaskPromptBuilder()
+
+    expand = builder.build_messages(
+        AiTaskRequest(
+            task_type=AiTaskType.EXPAND,
+            target_kind=AiTargetKind.PASTE,
+            text="source text",
+            style="sensory detail",
+        )
+    )
+    expand_user = expand[-1]["content"]
+    assert "inside the current scene/argument only" in expand_user
+    assert "do not continue beyond the ending" in expand_user
+
+    expand_dense = builder.build_messages(
+        AiTaskRequest(
+            task_type=AiTaskType.EXPAND,
+            target_kind=AiTargetKind.PASTE,
+            text="source text",
+            intensity="medium",
+        )
+    )
+    expand_dense_user = expand_dense[-1]["content"]
+    assert "noticeably increase the detail density" in expand_dense_user
+    assert "do more than rephrase" in expand_dense_user
+
+    cont = builder.build_messages(
+        AiTaskRequest(
+            task_type=AiTaskType.CONTINUE,
+            target_kind=AiTargetKind.PASTE,
+            text="source text",
+            style="one paragraph",
+        )
+    )
+    cont_user = cont[-1]["content"]
+    assert "output only new content after the source text" in cont_user
+    assert "do not include, rewrite, or summarize the source" in cont_user
+
+
+def test_visible_structured_tasks_have_json_contracts() -> None:
+    builder = TaskPromptBuilder()
+    for task in (
+        AiTaskType.SUMMARIZE,
+        AiTaskType.OUTLINE,
+        AiTaskType.TITLE,
+        AiTaskType.STRUCTURE_DIAGNOSE,
+        AiTaskType.CONSISTENCY_CHECK,
+        AiTaskType.LIBRARY_QA,
+    ):
+        assert task in STRUCTURED_TASKS
+        sys_prompt = builder.system_prompt(task)
+        assert "STRICT JSON" in sys_prompt
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +309,7 @@ def test_tier_models_are_resolved_from_settings(container) -> None:
     ):
         service.generate(
             AiTaskRequest(
-                task_type=AiTaskType.SUMMARIZE,
+                task_type=AiTaskType.POLISH,
                 target_kind=AiTargetKind.PASTE,
                 text="x",
                 cost_tier=tier,
@@ -222,7 +323,7 @@ def test_unset_tier_falls_back_to_provider_default(container) -> None:
     service = _make_service(provider, container.settings)
     service.generate(
         AiTaskRequest(
-            task_type=AiTaskType.SUMMARIZE,
+            task_type=AiTaskType.POLISH,
             target_kind=AiTargetKind.PASTE,
             text="x",
             cost_tier=AiCostTier.STRONG,
@@ -337,9 +438,7 @@ def test_estimate_context_chars_sums_text_extra_and_attachments() -> None:
 def test_is_context_heavy_uses_soft_budget(container) -> None:
     provider = _StubProvider("ok")
     service = _make_service(provider, container.settings)
-    light = AiTaskRequest(
-        task_type=AiTaskType.POLISH, target_kind=AiTargetKind.PASTE, text="x"
-    )
+    light = AiTaskRequest(task_type=AiTaskType.POLISH, target_kind=AiTargetKind.PASTE, text="x")
     heavy = AiTaskRequest(
         task_type=AiTaskType.POLISH,
         target_kind=AiTargetKind.PASTE,

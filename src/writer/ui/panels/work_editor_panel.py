@@ -12,9 +12,10 @@ modified so the parent (works panel) can refresh its row.
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -31,11 +32,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from writer.app.settings import DEFAULT_EDITOR_DISPLAY_SETTINGS, EditorDisplaySettings
 from writer.app.container import AppContainer
 from writer.domain.enums import SectionType, WorkStatus
 from writer.domain.models.work_section import WorkSection
 from writer.ui.dialogs.work_versions_dialog import WorkVersionsDialog
 from writer.ui.i18n import TR
+from writer.ui.panels.editor_panel import _font_families
 
 
 _AUTOSAVE_DEBOUNCE_MS = 600
@@ -51,6 +54,7 @@ class WorkEditorPanel(QWidget):
         self._work_id: Optional[str] = None
         self._current_section_id: Optional[str] = None
         self._loading = False
+        self._display_settings = DEFAULT_EDITOR_DISPLAY_SETTINGS
 
         # ---- header fields ----
         self._title = QLineEdit()
@@ -159,6 +163,7 @@ class WorkEditorPanel(QWidget):
         self._editor_save_timer.timeout.connect(self._flush_section_content)
 
         self._set_enabled(False)
+        self.apply_display_settings(DEFAULT_EDITOR_DISPLAY_SETTINGS)
 
     # ------------------------------------------------------------------
     # Public API
@@ -231,6 +236,19 @@ class WorkEditorPanel(QWidget):
         if self._editor_save_timer.isActive():
             self._editor_save_timer.stop()
             self._flush_section_content()
+
+    def apply_display_settings(self, settings: EditorDisplaySettings) -> None:
+        self._display_settings = settings
+        title_font = QFont()
+        title_font.setFamilies(_font_families(settings.font_family))
+        title_font.setPointSizeF(max(settings.font_size + 2, 18))
+        self._title.setFont(title_font)
+
+        body_font = QFont()
+        body_font.setFamilies(_font_families(settings.font_family))
+        body_font.setPointSizeF(settings.font_size)
+        self._editor.setFont(body_font)
+        self._editor.document().setDefaultFont(body_font)
 
     # ------------------------------------------------------------------
     # Section list management

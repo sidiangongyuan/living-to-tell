@@ -29,6 +29,7 @@ def test_library_panel_create_edit_delete(qtbot, container):
     panel._content_edit.setPlainText("Call me Ishmael.")  # noqa: SLF001
     panel._on_save()  # noqa: SLF001
     assert container.reference_repository.count() == 1
+    assert "1" in panel._stat_labels["total"].text()  # noqa: SLF001
 
     # select, edit
     panel._list.setCurrentRow(0)  # noqa: SLF001
@@ -48,6 +49,101 @@ def test_library_panel_create_edit_delete(qtbot, container):
     container.reference_repository.delete(loaded.id)
     panel.refresh()
     assert panel._list.count() == 0  # noqa: SLF001
+
+
+def test_library_panel_shows_stats_cards(qtbot, container):
+    from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+    repo = container.reference_repository
+    repo.create(source_title="A", content="same text", tags="moon", usage_kind="imagery")
+    repo.create(source_title="B", content="same text", tags="moon", usage_kind="imagery")
+
+    panel = ReferenceLibraryPanel(repo)
+    qtbot.addWidget(panel)
+
+    assert "2" in panel._stat_labels["total"].text()  # noqa: SLF001
+    assert "moon" in panel._stat_labels["tags"].text()  # noqa: SLF001
+    assert "2" in panel._stat_labels["duplicates"].text()  # noqa: SLF001
+
+
+def test_library_panel_save_default_group_mode_and_restore(qtbot, container):
+    from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+    first = ReferenceLibraryPanel(
+        container.reference_repository,
+        settings=container.settings,
+    )
+    qtbot.addWidget(first)
+
+    idx = first._group_mode_combo.findData("recent")  # noqa: SLF001
+    first._group_mode_combo.setCurrentIndex(idx)  # noqa: SLF001
+    first._save_group_mode_as_default()  # noqa: SLF001
+
+    second = ReferenceLibraryPanel(
+        container.reference_repository,
+        settings=container.settings,
+    )
+    qtbot.addWidget(second)
+    assert second._group_mode_combo.currentData() == "recent"  # noqa: SLF001
+
+
+def test_library_grouping_helper_groups_unlabeled_source_and_tag():
+    from writer.domain.models.reference_passage import ReferencePassage
+    from writer.ui.reference_grouping import (
+        GROUP_MODE_SOURCE,
+        GROUP_MODE_TAG,
+        group_reference_passages,
+    )
+
+    passages = [
+        ReferencePassage(id="a", source_title="", content="alpha", tags=""),
+        ReferencePassage(id="b", source_title="Book", content="beta", tags="sea"),
+    ]
+
+    source_groups = group_reference_passages(passages, GROUP_MODE_SOURCE)
+    assert any(group.title in {"未标注来源", "Unlabeled Source"} for group in source_groups)
+
+    tag_groups = group_reference_passages(passages, GROUP_MODE_TAG)
+    assert any(group.title in {"未标注标签", "Unlabeled Tag"} for group in tag_groups)
+
+
+def test_library_panel_save_refreshes_and_selects_new_passage(qtbot, container):
+    from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+    panel = ReferenceLibraryPanel(container.reference_repository)
+    qtbot.addWidget(panel)
+
+    idx = panel._group_mode_combo.findData("usage")  # noqa: SLF001
+    panel._group_mode_combo.setCurrentIndex(idx)  # noqa: SLF001
+
+    panel._on_new()  # noqa: SLF001
+    panel._title_edit.setText("New Book")  # noqa: SLF001
+    panel._content_edit.setPlainText("New body")  # noqa: SLF001
+    panel._on_save()  # noqa: SLF001
+
+    current = panel._list.currentItem()  # noqa: SLF001
+    assert current is not None
+    assert current.data(0x0100) is not None
+    assert panel._title_edit.text() == "New Book"  # noqa: SLF001
+
+
+def test_library_panel_uses_widget_cards_without_native_item_text(qtbot, container):
+    from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+    repo = container.reference_repository
+    repo.create(source_title="Card Book", source_author="Author", content="paper body")
+
+    panel = ReferenceLibraryPanel(repo)
+    qtbot.addWidget(panel)
+
+    item = panel._list.item(0)  # noqa: SLF001
+    card = panel._list.itemWidget(item)  # noqa: SLF001
+
+    assert item.text() == ""
+    assert item.data(0x0101).source_title == "Card Book"  # noqa: SLF001
+    assert card is not None
+    assert card.objectName() == "ReferenceListCard"
+    assert card.property("current") is True
 
 
 def test_picker_returns_checked_contents(qtbot, container):

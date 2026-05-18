@@ -35,7 +35,7 @@ class MergeOutputType(str, Enum):
 # merge mode is encoded as ``extra_instructions`` so the prompt builder
 # does the right thing without us having to add new prompt templates.
 _OUTPUT_TO_TASK = {
-    MergeOutputType.PROSE: AiTaskType.STYLE_TRANSFER,
+    MergeOutputType.PROSE: AiTaskType.POLISH,
     MergeOutputType.SECTION: AiTaskType.CONTINUE,
     MergeOutputType.OUTLINE: AiTaskType.OUTLINE,
 }

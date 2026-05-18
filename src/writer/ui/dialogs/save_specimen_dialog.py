@@ -33,6 +33,9 @@ _USAGE_LABEL_KEYS = {
     "technique": "reflib.usage_kind_technique",
     "character": "reflib.usage_kind_character",
     "setting": "reflib.usage_kind_setting",
+    "psychology": "reflib.usage_kind_psychology",
+    "philosophy": "reflib.usage_kind_philosophy",
+    "reflection": "reflib.usage_kind_reflection",
     "other": "reflib.usage_kind_other",
 }
 
@@ -70,6 +73,9 @@ class SaveSpecimenDialog(QDialog):
         self._note_edit.setMaximumHeight(90)
         self._body_edit = QPlainTextEdit(default_body)
         self._body_edit.setMinimumHeight(180)
+        self._duplicate_label = QLabel("")
+        self._duplicate_label.setObjectName("SpecimenDuplicateLabel")
+        self._duplicate_label.setWordWrap(True)
 
         self._similar_list = QListWidget()
         self._similar_list.setObjectName("SpecimenSimilarList")
@@ -106,6 +112,7 @@ class SaveSpecimenDialog(QDialog):
         layout.addWidget(self._note_edit)
         layout.addWidget(QLabel(TR("specimen.body_label")))
         layout.addWidget(self._body_edit, 1)
+        layout.addWidget(self._duplicate_label)
         layout.addWidget(QLabel(TR("specimen.similar_label")))
         layout.addWidget(self._similar_list, 1)
         layout.addWidget(buttons)
@@ -117,7 +124,16 @@ class SaveSpecimenDialog(QDialog):
         text = self._body_edit.toPlainText().strip()
         self._similar_list.clear()
         if not text:
+            self._duplicate_label.setText("")
             return
+
+        duplicate = self._repo.find_exact_duplicate(text)
+        if duplicate is not None:
+            self._duplicate_label.setText(
+                TR("specimen.duplicate_exact").format(title=duplicate.display_label())
+            )
+        else:
+            self._duplicate_label.setText(TR("specimen.duplicate_clear"))
 
         results = rank_similar_passages(self._repo.list_recent(limit=500), text, limit=6)
 
@@ -140,6 +156,14 @@ class SaveSpecimenDialog(QDialog):
             return
         if not body.strip():
             QMessageBox.warning(self, TR("rlp.missing_content"), TR("rlp.missing_content_msg"))
+            return
+        duplicate = self._repo.find_exact_duplicate(body)
+        if duplicate is not None:
+            QMessageBox.warning(
+                self,
+                TR("specimen.duplicate_title"),
+                TR("specimen.duplicate_msg").format(title=duplicate.display_label()),
+            )
             return
         try:
             self.saved_passage = self._repo.create(

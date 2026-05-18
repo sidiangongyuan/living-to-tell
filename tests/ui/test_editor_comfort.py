@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from writer.app.container import build_container
-from writer.app.settings import EditorDisplaySettings
+from writer.app.settings import DEFAULT_EDITOR_FONT_FAMILY, EditorDisplaySettings
 
 
 @pytest.fixture()
@@ -21,6 +21,30 @@ def test_editor_display_settings_load_defaults(container):
     settings = container.settings.load_editor_display_settings()
 
     assert settings == EditorDisplaySettings()
+    assert settings.font_family == DEFAULT_EDITOR_FONT_FAMILY
+
+
+def test_editor_display_settings_persists_font_and_reduced_motion(container):
+    custom = EditorDisplaySettings(
+        font_family="Noto Serif SC, 宋体",
+        auto_paragraph_indent_enabled=False,
+    )
+
+    container.settings.save_editor_display_settings(custom)
+    container.settings.save_reduced_motion_enabled(True)
+
+    loaded = container.settings.load_editor_display_settings()
+    assert loaded.font_family == "Noto Serif SC, 宋体"
+    assert loaded.auto_paragraph_indent_enabled is False
+    assert container.settings.reduced_motion_enabled() is True
+
+
+def test_editor_display_settings_falls_back_for_blank_font(container):
+    container.settings.set("editor.font_family", "  ,  ")
+
+    assert (
+        container.settings.load_editor_display_settings().font_family == DEFAULT_EDITOR_FONT_FAMILY
+    )
 
 
 def test_editor_panel_applies_display_settings_to_body(qtbot):
@@ -34,6 +58,7 @@ def test_editor_panel_applies_display_settings_to_body(qtbot):
         line_height=2.1,
         paragraph_spacing=1.0,
         content_width=680,
+        font_family="Georgia, Cambria",
         visual_first_line_indent_enabled=True,
         typewriter_mode_enabled=False,
     )
@@ -47,6 +72,7 @@ def test_editor_panel_applies_display_settings_to_body(qtbot):
     block_format = block.blockFormat()
 
     assert panel._body.font().pointSize() == 22  # noqa: SLF001
+    assert panel._body.font().families()[0] == "Georgia"  # noqa: SLF001
     assert panel._content_wrap.maximumWidth() == 680  # noqa: SLF001
     assert block_format.lineHeight() == 210.0
     assert block_format.textIndent() > 0
@@ -57,9 +83,7 @@ def test_visual_first_line_indent_does_not_mutate_plain_text(qtbot):
 
     panel = EditorPanel()
     qtbot.addWidget(panel)
-    panel.apply_display_settings(
-        EditorDisplaySettings(visual_first_line_indent_enabled=True)
-    )
+    panel.apply_display_settings(EditorDisplaySettings(visual_first_line_indent_enabled=True))
 
     original = "第一段\n第二段"
     panel.replace_body(original)
@@ -83,6 +107,215 @@ def test_editor_panel_typewriter_override_does_not_break_plain_editing(qtbot):
 
     panel.set_focus_mode_enabled(False)
     assert panel.body_text().endswith(" more")
+
+
+def test_editor_panel_focus_mode_adds_current_paragraph_selection(qtbot):
+    from writer.ui.panels.editor_panel import EditorPanel
+    from writer.domain.models.entry import Entry
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.set_entry(Entry(id="entry-1", title="t", body="one\n\ntwo"))
+    panel.focus_body()
+
+    assert panel._body.extraSelections() == []  # noqa: SLF001
+    panel.set_focus_mode_enabled(True)
+    qtbot.waitUntil(lambda: len(panel._body.extraSelections()) >= 1)  # noqa: SLF001
+
+    panel.set_focus_mode_enabled(False)
+    assert panel._body.extraSelections() == []  # noqa: SLF001
+
+
+def test_editor_panel_reduced_motion_scrolls_immediately(qtbot):
+    from writer.ui.panels.editor_panel import EditorPanel
+    from writer.domain.models.entry import Entry
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.resize(600, 260)
+    panel.show()
+    panel.set_entry(Entry(id="entry-1", title="t", body="\n".join(str(i) for i in range(80))))
+    panel.set_focus_mode_enabled(True)
+    panel.set_reduced_motion(True)
+    panel.focus_body()
+
+    scrollbar = panel._body.verticalScrollBar()  # noqa: SLF001
+    before = scrollbar.value()
+    panel._body._adjust_typewriter_scroll()  # noqa: SLF001
+
+    assert scrollbar.value() >= before
+    assert getattr(scrollbar, "_writer_scroll_animation", None) is None
+
+
+def test_editor_panel_enter_inserts_full_width_indent(qtbot):
+    from PySide6.QtCore import Qt
+
+    from writer.domain.models.entry import Entry
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.apply_display_settings(EditorDisplaySettings(auto_paragraph_indent_enabled=True))
+    panel.set_entry(Entry(id="entry-1", title="t", body="第一段"))
+    panel.focus_body()
+
+    qtbot.keyClick(panel._body, Qt.Key.Key_Return)  # noqa: SLF001
+
+    assert panel.body_text() == "第一段\n　　"
+
+
+def test_editor_panel_enter_indent_can_be_disabled(qtbot):
+    from PySide6.QtCore import Qt
+
+    from writer.domain.models.entry import Entry
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.apply_display_settings(EditorDisplaySettings(auto_paragraph_indent_enabled=False))
+    panel.set_entry(Entry(id="entry-1", title="t", body="第一段"))
+    panel.focus_body()
+
+    qtbot.keyClick(panel._body, Qt.Key.Key_Return)  # noqa: SLF001
+
+    assert panel.body_text() == "第一段\n"
+
+
+def test_editor_panel_mouse_click_does_not_schedule_typewriter_scroll(qtbot):
+    from PySide6.QtCore import QPoint, Qt
+
+    from writer.domain.models.entry import Entry
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.resize(600, 260)
+    panel.show()
+    panel.apply_display_settings(EditorDisplaySettings(typewriter_mode_enabled=True))
+    panel.set_entry(Entry(id="entry-1", title="t", body="\n".join(str(i) for i in range(80))))
+    qtbot.wait(20)
+
+    body = panel._body  # noqa: SLF001
+    body.verticalScrollBar().setValue(30)
+    body._typewriter_adjust_allowed = False  # noqa: SLF001
+    qtbot.mouseClick(body.viewport(), Qt.MouseButton.LeftButton, pos=QPoint(20, 20))
+
+    assert body._typewriter_timer.isActive() is False  # noqa: SLF001
+
+
+def test_editor_panel_backspace_does_not_recentre_small_window_typewriter(qtbot):
+    from PySide6.QtCore import Qt
+
+    from writer.domain.models.entry import Entry
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.resize(440, 220)
+    panel.show()
+    panel.apply_display_settings(EditorDisplaySettings(typewriter_mode_enabled=True))
+    panel.set_entry(Entry(id="entry-1", title="t", body="\n".join(str(i) for i in range(120))))
+    panel.focus_body()
+    body = panel._body  # noqa: SLF001
+    scrollbar = body.verticalScrollBar()
+    qtbot.waitUntil(lambda: scrollbar.value() > 0)
+
+    qtbot.keyClick(body, Qt.Key.Key_Backspace)
+    qtbot.wait(30)
+
+    assert scrollbar.value() >= max(0, scrollbar.maximum() - 5)
+    assert body._typewriter_timer.isActive() is False  # noqa: SLF001
+    assert getattr(scrollbar, "_writer_scroll_animation", None) is None
+
+
+def test_editor_panel_focus_mode_continuous_delete_does_not_recentre(qtbot):
+    from PySide6.QtCore import Qt
+
+    from writer.domain.models.entry import Entry
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.resize(440, 220)
+    panel.show()
+    panel.set_entry(Entry(id="entry-1", title="t", body="\n".join(str(i) for i in range(120))))
+    panel.set_focus_mode_enabled(True)
+    panel.focus_body()
+    body = panel._body  # noqa: SLF001
+    scrollbar = body.verticalScrollBar()
+    qtbot.waitUntil(lambda: scrollbar.value() > 0)
+    body._schedule_typewriter_adjust(force=True)  # noqa: SLF001
+    body._typewriter_timer.start(1000)  # noqa: SLF001
+
+    for _ in range(5):
+        qtbot.keyClick(body, Qt.Key.Key_Backspace)
+        qtbot.wait(10)
+
+    qtbot.wait(30)
+
+    assert body._typewriter_timer.isActive() is False  # noqa: SLF001
+    assert getattr(scrollbar, "_writer_scroll_animation", None) is None
+
+
+def test_editor_panel_delete_cancels_pending_follow_and_scroll_animation(qtbot):
+    from PySide6.QtCore import Qt
+
+    from writer.domain.models.entry import Entry
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.resize(440, 220)
+    panel.show()
+    panel.apply_display_settings(EditorDisplaySettings(typewriter_mode_enabled=True))
+    panel.set_entry(Entry(id="entry-1", title="t", body="\n".join(str(i) for i in range(120))))
+    panel.focus_body()
+    body = panel._body  # noqa: SLF001
+    scrollbar = body.verticalScrollBar()
+    qtbot.waitUntil(lambda: scrollbar.value() > 0)
+
+    body._schedule_typewriter_adjust(force=True)  # noqa: SLF001
+    body._typewriter_timer.start(1000)  # noqa: SLF001
+    body._adjust_typewriter_scroll()  # noqa: SLF001
+    animation = getattr(scrollbar, "_writer_scroll_animation", None)
+
+    assert animation is not None
+    assert body._typewriter_timer.isActive() is True  # noqa: SLF001
+
+    qtbot.keyClick(body, Qt.Key.Key_Delete)
+    qtbot.waitUntil(lambda: getattr(scrollbar, "_writer_scroll_animation", None) is None)
+
+    assert body._typewriter_timer.isActive() is False  # noqa: SLF001
+    assert getattr(scrollbar, "_writer_scroll_animation", None) is None
+    assert animation.state() == animation.State.Stopped
+
+
+def test_editor_panel_text_input_and_return_still_schedule_typewriter_follow(qtbot):
+    from PySide6.QtCore import Qt
+
+    from writer.domain.models.entry import Entry
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.resize(440, 220)
+    panel.show()
+    panel.apply_display_settings(
+        EditorDisplaySettings(
+            auto_paragraph_indent_enabled=False,
+            typewriter_mode_enabled=True,
+        )
+    )
+    panel.set_entry(Entry(id="entry-1", title="t", body="\n".join(str(i) for i in range(120))))
+    panel.focus_body()
+    body = panel._body  # noqa: SLF001
+
+    qtbot.keyClicks(body, "x")
+    assert body._typewriter_timer.isActive() is True  # noqa: SLF001
+    body._typewriter_timer.stop()  # noqa: SLF001
+
+    qtbot.keyClick(body, Qt.Key.Key_Return)
+    assert body._typewriter_timer.isActive() is True  # noqa: SLF001
 
 
 def test_editor_panel_focus_mode_expands_writing_surface(qtbot):
@@ -132,6 +365,7 @@ def test_main_window_applies_persisted_editor_preferences(qtbot, container):
             line_height=2.0,
             paragraph_spacing=1.0,
             content_width=700,
+            font_family="Georgia",
             visual_first_line_indent_enabled=False,
             typewriter_mode_enabled=False,
         )
@@ -144,4 +378,5 @@ def test_main_window_applies_persisted_editor_preferences(qtbot, container):
     assert applied.font_size == 20
     assert applied.line_height == 2.0
     assert applied.content_width == 700
+    assert applied.font_family == "Georgia"
     assert applied.visual_first_line_indent_enabled is False

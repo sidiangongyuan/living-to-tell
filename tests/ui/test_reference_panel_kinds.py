@@ -65,4 +65,6 @@ def test_kind_filter_combo_filters_list(qtbot, container):
             panel._kind_filter_combo.setCurrentIndex(i)  # noqa: SLF001
             break
     assert panel._list.count() == 1  # noqa: SLF001
-    assert panel._list.item(0).text().startswith("Char1") or "Char1" in panel._list.item(0).text()  # noqa: SLF001
+    item = panel._list.item(0)  # noqa: SLF001
+    assert item.data(0x0100) is not None
+    assert item.data(0x0101).source_title == "Char1"  # noqa: SLF001

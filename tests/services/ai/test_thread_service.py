@@ -6,7 +6,6 @@ inlining, and tier model selection.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import pytest
 
@@ -128,6 +127,22 @@ def test_history_windowing_caps_messages_sent_to_provider(container) -> None:
     last_call_msgs = provider.calls[-1]["messages"]
     # 1 system + (history_window historical) + 1 final user
     assert len(last_call_msgs) <= DEFAULT_HISTORY_WINDOW + 2
+
+
+def test_context_budget_omits_older_history_without_deleting_it(container) -> None:
+    provider = _StubProvider()
+    svc = _wire_thread_service(container, provider)
+    thread = svc.get_or_create_for_scope(AiThreadScope.GLOBAL, None, title="g")
+
+    svc.send(thread.id, "older-message-" + ("x" * 80), context_budget_chars=500)
+    svc.send(thread.id, "newer-message", context_budget_chars=500)
+    turn = svc.send(thread.id, "final", context_budget_chars=80)
+
+    sent = "\n".join(msg["content"] for msg in provider.calls[-1]["messages"])
+    assert "older-message" not in sent
+    assert "newer-message" in sent
+    assert turn.context_breakdown.omitted_history_count > 0
+    assert len(svc.history(thread.id)) == 6
 
 
 def test_send_uses_tier_model_when_set(container) -> None:

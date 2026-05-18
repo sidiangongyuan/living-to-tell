@@ -22,13 +22,18 @@ from writer.app.locale import LOCALE_ZH_CN, current_locale
 from writer.domain.enums import AiCostTier
 from writer.domain.models.ai_thread import AiMessage, AiThread
 from writer.services.ai.interfaces import AiProvider
+from writer.services.ai.context_budget import (
+    DEFAULT_CHAT_CONTEXT_BUDGET_CHARS,
+    ContextBudgetBreakdown,
+    select_history_for_budget,
+)
 from writer.services.ai.task_service import AiTaskService
 from writer.services.ai.task_types import AiContextAttachment
 from writer.storage.repositories.ai_thread_repository import AiThreadRepository
 
 
-# How many most-recent messages we feed back into the next call.
-DEFAULT_HISTORY_WINDOW = 8
+# How many recent messages are considered before character-budget fitting.
+DEFAULT_HISTORY_WINDOW = 80
 
 
 _EN_SYSTEM = (
@@ -49,6 +54,7 @@ _ZH_SYSTEM = (
 class ChatTurn:
     user_message: AiMessage
     assistant_message: AiMessage
+    context_breakdown: ContextBudgetBreakdown
 
 
 class AiThreadService:
@@ -82,6 +88,7 @@ class AiThreadService:
         attachments: Optional[List[AiContextAttachment]] = None,
         cost_tier: AiCostTier = AiCostTier.BALANCED,
         history_window: int = DEFAULT_HISTORY_WINDOW,
+        context_budget_chars: int = DEFAULT_CHAT_CONTEXT_BUDGET_CHARS,
     ) -> ChatTurn:
         """Persist user message, run the provider, persist assistant message."""
         if not user_text.strip():
@@ -111,7 +118,13 @@ class AiThreadService:
         # The just-inserted user message is included in `recent`; we
         # re-render it from the live request so attachments are visible.
         # Drop the trailing user msg from history to avoid duplication.
-        history = [m for m in recent if m.id != user_msg.id]
+        raw_history = [m for m in recent if m.id != user_msg.id]
+        history, context_breakdown = select_history_for_budget(
+            raw_history,
+            user_text=user_text,
+            attachments=attachments_list,
+            budget_chars=context_budget_chars,
+        )
 
         messages = _build_chat_messages(
             history=history,
@@ -136,7 +149,11 @@ class AiThreadService:
             content=response.content,
             meta_json=meta_assistant,
         )
-        return ChatTurn(user_message=user_msg, assistant_message=assistant_msg)
+        return ChatTurn(
+            user_message=user_msg,
+            assistant_message=assistant_msg,
+            context_breakdown=context_breakdown,
+        )
 
 
 # ---------------------------------------------------------------------------

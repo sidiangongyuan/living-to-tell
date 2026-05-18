@@ -1,11 +1,21 @@
 """Right pane: title + body editor for the active fragment."""
+
 from __future__ import annotations
 
 from typing import Optional
 
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QTextBlockFormat, QTextCursor
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontDatabase,
+    QTextBlockFormat,
+    QTextCharFormat,
+    QTextCursor,
+    QKeyEvent,
+    QMouseEvent,
+)
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -13,14 +23,20 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
-from writer.app.settings import DEFAULT_EDITOR_DISPLAY_SETTINGS, EditorDisplaySettings
+from writer.app.settings import (
+    DEFAULT_EDITOR_DISPLAY_SETTINGS,
+    DEFAULT_EDITOR_FONT_FAMILY,
+    EditorDisplaySettings,
+)
 from writer.domain.models.entry import Entry
 from writer.storage.repositories.entry_repository import serialize_tags
 from writer.ui.i18n import TR
+from writer.ui.motion import cancel_scrollbar_animation, smooth_scrollbar_to
 from writer.ui.tag_colors import tag_style_sheet
 
 
@@ -29,6 +45,7 @@ EDITOR_RESPONSIVE_SIDE_MARGIN = 24
 EDITOR_RESPONSIVE_MAX_WIDTH = 1600
 FOCUS_MODE_RESPONSIVE_SIDE_MARGIN = 32
 FOCUS_MODE_RESPONSIVE_MAX_WIDTH = 1800
+PARAGRAPH_INDENT_TEXT = "\u3000\u3000"
 
 
 class _WriterBodyEdit(QPlainTextEdit):
@@ -43,7 +60,11 @@ class _WriterBodyEdit(QPlainTextEdit):
         super().__init__(parent)
         self._display_settings = DEFAULT_EDITOR_DISPLAY_SETTINGS
         self._typewriter_override = False
+        self._focus_paragraph_enabled = False
+        self._reduced_motion = False
         self._applying_formats = False
+        self._typewriter_adjust_allowed = False
+        self._typewriter_adjust_suppressed = False
 
         self._format_timer = QTimer(self)
         self._format_timer.setSingleShot(True)
@@ -54,30 +75,71 @@ class _WriterBodyEdit(QPlainTextEdit):
         self._typewriter_timer.timeout.connect(self._adjust_typewriter_scroll)
 
         self.textChanged.connect(self._schedule_paragraph_formatting)
-        self.cursorPositionChanged.connect(self._schedule_typewriter_adjust)
+        self.cursorPositionChanged.connect(self._refresh_focus_paragraph)
+
+    def set_reduced_motion(self, enabled: bool) -> None:
+        self._reduced_motion = bool(enabled)
 
     def apply_display_settings(self, settings: EditorDisplaySettings) -> None:
         self._display_settings = settings
-        font = QFont(self.font())
+        font = QFont()
+        font.setFamilies(_font_families(settings.font_family))
         font.setPointSizeF(settings.font_size)
         self.setFont(font)
         self.document().setDefaultFont(font)
         self._schedule_paragraph_formatting()
-        self._schedule_typewriter_adjust()
+        self._refresh_focus_paragraph()
 
     def display_settings(self) -> EditorDisplaySettings:
         return self._display_settings
 
     def set_typewriter_override(self, enabled: bool) -> None:
         self._typewriter_override = enabled
-        self._schedule_typewriter_adjust()
+        self._focus_paragraph_enabled = enabled
+        self._refresh_focus_paragraph()
 
     def effective_typewriter_enabled(self) -> bool:
         return self._typewriter_override or self._display_settings.typewriter_mode_enabled
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        self._schedule_typewriter_adjust()
+        self._schedule_typewriter_adjust(force=True)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        self._cancel_typewriter_follow()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        self._cancel_typewriter_follow()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        self._cancel_typewriter_follow()
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        if self._should_auto_indent_return(event):
+            cursor = self.textCursor()
+            cursor.beginEditBlock()
+            cursor.insertBlock()
+            if not cursor.block().text().startswith(PARAGRAPH_INDENT_TEXT):
+                cursor.insertText(PARAGRAPH_INDENT_TEXT)
+            cursor.endEditBlock()
+            self.setTextCursor(cursor)
+            event.accept()
+            self._schedule_typewriter_adjust(force=True)
+            return
+        is_delete_key = self._is_delete_key(event)
+        if is_delete_key:
+            self._typewriter_adjust_suppressed = True
+            self._cancel_typewriter_follow()
+        super().keyPressEvent(event)
+        if is_delete_key:
+            self._cancel_typewriter_follow()
+            QTimer.singleShot(80, self._clear_typewriter_adjust_suppression)
+            return
+        if self._should_typewriter_follow_key(event):
+            self._schedule_typewriter_adjust(force=True)
 
     def _schedule_paragraph_formatting(self) -> None:
         if self._applying_formats:
@@ -94,9 +156,7 @@ class _WriterBodyEdit(QPlainTextEdit):
             controller.joinPreviousEditBlock()
             metrics = self.fontMetrics()
             line_height = max(100, int(round(self._display_settings.line_height * 100)))
-            paragraph_spacing_px = (
-                metrics.lineSpacing() * self._display_settings.paragraph_spacing
-            )
+            paragraph_spacing_px = metrics.lineSpacing() * self._display_settings.paragraph_spacing
             visual_indent_px = (
                 metrics.horizontalAdvance("汉汉")
                 if self._display_settings.visual_first_line_indent_enabled
@@ -121,12 +181,26 @@ class _WriterBodyEdit(QPlainTextEdit):
             controller.endEditBlock()
         finally:
             self._applying_formats = False
+        self._refresh_focus_paragraph()
 
-    def _schedule_typewriter_adjust(self) -> None:
-        if self.effective_typewriter_enabled():
+    def _schedule_typewriter_adjust(self, *, force: bool = False) -> None:
+        if self._typewriter_adjust_suppressed:
+            return
+        if force:
+            self._typewriter_adjust_allowed = True
+        if self.effective_typewriter_enabled() and self._typewriter_adjust_allowed:
             self._typewriter_timer.start(0)
 
+    def _clear_typewriter_adjust_suppression(self) -> None:
+        self._typewriter_adjust_suppressed = False
+
+    def _cancel_typewriter_follow(self) -> None:
+        self._typewriter_adjust_allowed = False
+        self._typewriter_timer.stop()
+        cancel_scrollbar_animation(self.verticalScrollBar())
+
     def _adjust_typewriter_scroll(self) -> None:
+        self._typewriter_adjust_allowed = False
         if not self.effective_typewriter_enabled() or not self.isVisible():
             return
         viewport_height = self.viewport().height()
@@ -142,7 +216,70 @@ class _WriterBodyEdit(QPlainTextEdit):
         smoothed_delta = int(delta * 0.7)
         target = scrollbar.value() + smoothed_delta
         target = max(scrollbar.minimum(), min(scrollbar.maximum(), target))
-        scrollbar.setValue(target)
+        smooth_scrollbar_to(scrollbar, target, reduced=self._reduced_motion)
+
+    def _should_auto_indent_return(self, event: QKeyEvent) -> bool:
+        if not self._display_settings.auto_paragraph_indent_enabled:
+            return False
+        if event.key() not in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            return False
+        return not event.modifiers() & (
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier
+        )
+
+    def _should_typewriter_follow_key(self, event: QKeyEvent) -> bool:
+        if self._is_delete_key(event):
+            return False
+        if event.key() in (
+            Qt.Key.Key_Return,
+            Qt.Key.Key_Enter,
+            Qt.Key.Key_Up,
+            Qt.Key.Key_Down,
+            Qt.Key.Key_PageUp,
+            Qt.Key.Key_PageDown,
+            Qt.Key.Key_Home,
+            Qt.Key.Key_End,
+        ):
+            return True
+        return bool(event.text())
+
+    @staticmethod
+    def _is_delete_key(event: QKeyEvent) -> bool:
+        return event.key() in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete)
+
+    def _refresh_focus_paragraph(self) -> None:
+        if not self._focus_paragraph_enabled:
+            self.setExtraSelections([])
+            return
+        current_block = self.textCursor().block()
+        selections: list[QTextEdit.ExtraSelection] = []
+
+        muted_format = QTextCharFormat()
+        muted_format.setForeground(QColor(120, 128, 140))
+        block = self.document().firstBlock()
+        while block.isValid():
+            if block != current_block and block.text().strip():
+                selection = QTextEdit.ExtraSelection()
+                selection.cursor = QTextCursor(block)
+                selection.cursor.select(QTextCursor.SelectionType.BlockUnderCursor)
+                selection.format = muted_format
+                selections.append(selection)
+            block = block.next()
+
+        current_format = QTextCharFormat()
+        current_format.setBackground(QColor(30, 143, 149, 22))
+        current_selection = QTextEdit.ExtraSelection()
+        current_selection.cursor = QTextCursor(current_block)
+        current_selection.cursor.clearSelection()
+        current_selection.format = current_format
+        current_selection.format.setProperty(QTextCharFormat.Property.FullWidthSelection, True)
+        selections.append(current_selection)
+        self.setExtraSelections(selections)
+
+    def focusNextPrevChild(self, next: bool) -> bool:  # noqa: A002, N802
+        result = super().focusNextPrevChild(next)
+        self._schedule_paragraph_formatting()
+        return result
 
 
 class EditorPanel(QWidget):
@@ -191,9 +328,7 @@ class EditorPanel(QWidget):
 
         self._word_count = QLabel("")
         self._word_count.setObjectName("MetaLabel")
-        self._word_count.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
+        self._word_count.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         bottom_row = QHBoxLayout()
         bottom_row.setContentsMargins(0, 0, 0, 0)
@@ -231,7 +366,8 @@ class EditorPanel(QWidget):
     def apply_display_settings(self, settings: EditorDisplaySettings) -> None:
         self._display_settings = settings
         self._apply_content_width()
-        title_font = QFont(self._title.font())
+        title_font = QFont()
+        title_font.setFamilies(_font_families(settings.font_family))
         title_font.setPointSizeF(max(settings.font_size + 2, 18))
         self._title.setFont(title_font)
 
@@ -242,13 +378,20 @@ class EditorPanel(QWidget):
         self._body.apply_display_settings(settings)
         self.updateGeometry()
 
+    def set_reduced_motion(self, enabled: bool) -> None:
+        self._body.set_reduced_motion(enabled)
+
     def display_settings(self) -> EditorDisplaySettings:
         return self._display_settings
 
     def set_focus_mode_enabled(self, enabled: bool) -> None:
         self._focus_mode_enabled = bool(enabled)
         self._body.set_typewriter_override(bool(enabled))
+        self._body.setProperty("focusMode", bool(enabled))
+        self._body.style().unpolish(self._body)
+        self._body.style().polish(self._body)
         self._apply_content_width()
+        self._body._schedule_paragraph_formatting()  # noqa: SLF001
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
@@ -394,9 +537,7 @@ class EditorPanel(QWidget):
         for tag in tags:
             chip = QLabel(tag)
             chip.setStyleSheet(tag_style_sheet(tag))
-            self._tag_chips_layout.insertWidget(
-                self._tag_chips_layout.count() - 1, chip
-            )
+            self._tag_chips_layout.insertWidget(self._tag_chips_layout.count() - 1, chip)
         self._tag_chips_widget.setVisible(bool(tags))
 
     def _format_meta(self, entry: Entry) -> str:
@@ -428,9 +569,7 @@ class EditorPanel(QWidget):
                 )
             )
         else:
-            self._word_count.setText(
-                TR("editor.word_count").format(words=words, chars=chars)
-            )
+            self._word_count.setText(TR("editor.word_count").format(words=words, chars=chars))
 
 
 def _count_words(text: str) -> int:
@@ -454,12 +593,31 @@ def _count_words(text: str) -> int:
     return total
 
 
+def _font_families(raw: str) -> list[str]:
+    parts = [part.strip().strip("'\"") for part in (raw or "").split(",")]
+    families = [part for part in parts if part]
+    if _has_installed_family(families):
+        return families
+    fallback = [
+        part.strip().strip("'\"") for part in DEFAULT_EDITOR_FONT_FAMILY.split(",") if part.strip()
+    ]
+    return fallback
+
+
+def _has_installed_family(families: list[str]) -> bool:
+    try:
+        installed = {name.casefold() for name in QFontDatabase.families()}
+    except Exception:  # noqa: BLE001
+        return True
+    return any(family.casefold() in installed for family in families)
+
+
 def _is_cjk(ch: str) -> bool:
     code = ord(ch)
     return (
-        0x4E00 <= code <= 0x9FFF      # CJK Unified Ideographs
-        or 0x3040 <= code <= 0x309F   # Hiragana
-        or 0x30A0 <= code <= 0x30FF   # Katakana
-        or 0xAC00 <= code <= 0xD7AF   # Hangul Syllables
-        or 0x3400 <= code <= 0x4DBF   # CJK Unified Ideographs Extension A
+        0x4E00 <= code <= 0x9FFF  # CJK Unified Ideographs
+        or 0x3040 <= code <= 0x309F  # Hiragana
+        or 0x30A0 <= code <= 0x30FF  # Katakana
+        or 0xAC00 <= code <= 0xD7AF  # Hangul Syllables
+        or 0x3400 <= code <= 0x4DBF  # CJK Unified Ideographs Extension A
     )

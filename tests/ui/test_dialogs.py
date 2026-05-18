@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QDialog
 
 from writer.app.container import build_container
 from writer.app.settings import (
+    DEFAULT_EDITOR_FONT_FAMILY,
     EditorDisplaySettings,
     KEY_AI_BASE_URL,
     KEY_AI_MODEL,
@@ -112,10 +113,12 @@ def test_settings_dialog_loads_editor_display_settings(qtbot, container):
             line_height=2.0,
             paragraph_spacing=1.1,
             content_width=820,
+            font_family="Georgia, Cambria",
             visual_first_line_indent_enabled=False,
             typewriter_mode_enabled=True,
         )
     )
+    container.settings.save_reduced_motion_enabled(True)
 
     dialog = SettingsDialog(container.settings)
     qtbot.addWidget(dialog)
@@ -124,8 +127,10 @@ def test_settings_dialog_loads_editor_display_settings(qtbot, container):
     assert dialog._line_height.value() == 2.0  # noqa: SLF001
     assert dialog._paragraph_spacing.value() == 1.1  # noqa: SLF001
     assert dialog._content_width.value() == 820  # noqa: SLF001
+    assert dialog._font_family_combo.currentText() == "Georgia, Cambria"  # noqa: SLF001
     assert dialog._visual_indent_checkbox.isChecked() is False  # noqa: SLF001
     assert dialog._typewriter_checkbox.isChecked() is True  # noqa: SLF001
+    assert dialog._reduced_motion_checkbox.isChecked() is True  # noqa: SLF001
 
 
 def test_settings_dialog_persists_editor_display_settings(qtbot, container):
@@ -136,8 +141,10 @@ def test_settings_dialog_persists_editor_display_settings(qtbot, container):
     dialog._line_height.setValue(1.9)  # noqa: SLF001
     dialog._paragraph_spacing.setValue(0.9)  # noqa: SLF001
     dialog._content_width.setValue(700)  # noqa: SLF001
+    dialog._font_family_combo.setCurrentText("Noto Serif SC, 宋体")  # noqa: SLF001
     dialog._visual_indent_checkbox.setChecked(False)  # noqa: SLF001
     dialog._typewriter_checkbox.setChecked(False)  # noqa: SLF001
+    dialog._reduced_motion_checkbox.setChecked(True)  # noqa: SLF001
     dialog._on_accept()  # noqa: SLF001
 
     saved = container.settings.load_editor_display_settings()
@@ -145,8 +152,29 @@ def test_settings_dialog_persists_editor_display_settings(qtbot, container):
     assert saved.line_height == 1.9
     assert saved.paragraph_spacing == 0.9
     assert saved.content_width == 700
+    assert saved.font_family == "Noto Serif SC, 宋体"
     assert saved.visual_first_line_indent_enabled is False
     assert saved.typewriter_mode_enabled is False
+    assert container.settings.reduced_motion_enabled() is True
+
+
+def test_settings_dialog_font_preset_updates_family(qtbot, container):
+    dialog = SettingsDialog(container.settings)
+    qtbot.addWidget(dialog)
+
+    idx = dialog._font_preset_combo.findData("mono")  # noqa: SLF001
+    assert idx >= 0
+    dialog._font_preset_combo.setCurrentIndex(idx)  # noqa: SLF001
+
+    assert "Cascadia" in dialog._font_family_combo.currentText()  # noqa: SLF001
+
+
+def test_settings_dialog_default_font_preset_is_serif(qtbot, container):
+    dialog = SettingsDialog(container.settings)
+    qtbot.addWidget(dialog)
+
+    assert dialog._font_preset_combo.currentData() == "serif"  # noqa: SLF001
+    assert dialog._font_family_combo.currentText() == DEFAULT_EDITOR_FONT_FAMILY  # noqa: SLF001
 
 
 def test_settings_dialog_accept_persists_gemini_cli_provider(qtbot, container):

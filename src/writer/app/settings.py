@@ -35,6 +35,10 @@ DEFAULT_LANGUAGE = "en"
 
 KEY_SPLITTER_SIZES = "ui.splitter_sizes"
 KEY_SIDEBAR_COLLAPSED = "ui.sidebar_collapsed"
+KEY_REFERENCE_LIBRARY_DEFAULT_GROUP_MODE = "reference_library.default_group_mode"
+KEY_SPECIMEN_PICKER_DEFAULT_GROUP_MODE = "specimen_picker.default_group_mode"
+DEFAULT_REFERENCE_LIBRARY_GROUP_MODE = "source"
+DEFAULT_SPECIMEN_PICKER_GROUP_MODE = "source_usage"
 
 # M9A — visual shell upgrade
 KEY_THEME_MODE = "ui.theme_mode"
@@ -47,17 +51,25 @@ KEY_EDITOR_FONT_SIZE = "editor.font_size"
 KEY_EDITOR_LINE_HEIGHT = "editor.line_height"
 KEY_EDITOR_PARAGRAPH_SPACING = "editor.paragraph_spacing"
 KEY_EDITOR_CONTENT_WIDTH = "editor.content_width"
+KEY_EDITOR_FONT_FAMILY = "editor.font_family"
 KEY_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED = (
     "editor.visual_first_line_indent_enabled"
 )
 KEY_EDITOR_TYPEWRITER_MODE_ENABLED = "editor.typewriter_mode_enabled"
+KEY_EDITOR_AUTO_PARAGRAPH_INDENT_ENABLED = "editor.auto_paragraph_indent_enabled"
+KEY_REDUCED_MOTION_ENABLED = "ui.reduced_motion_enabled"
 DEFAULT_EDITOR_FONT_SIZE = 18
 DEFAULT_EDITOR_LINE_HEIGHT = 1.8
 DEFAULT_EDITOR_PARAGRAPH_SPACING = 0.8
 DEFAULT_EDITOR_CONTENT_WIDTH = 1000
 MAX_EDITOR_CONTENT_WIDTH = 1600
+DEFAULT_EDITOR_FONT_FAMILY = (
+    "Noto Serif SC, Source Han Serif SC, Songti SC, 华文宋体, 宋体, Georgia, Cambria"
+)
 DEFAULT_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED = True
 DEFAULT_EDITOR_TYPEWRITER_MODE_ENABLED = True
+DEFAULT_EDITOR_AUTO_PARAGRAPH_INDENT_ENABLED = True
+DEFAULT_REDUCED_MOTION_ENABLED = False
 
 # Quick capture / tray
 KEY_QUICK_CAPTURE_CLOSE_TO_TRAY_ENABLED = "quick_capture.close_to_tray_enabled"
@@ -79,10 +91,12 @@ class EditorDisplaySettings:
     line_height: float = DEFAULT_EDITOR_LINE_HEIGHT
     paragraph_spacing: float = DEFAULT_EDITOR_PARAGRAPH_SPACING
     content_width: int = DEFAULT_EDITOR_CONTENT_WIDTH
+    font_family: str = DEFAULT_EDITOR_FONT_FAMILY
     visual_first_line_indent_enabled: bool = (
         DEFAULT_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED
     )
     typewriter_mode_enabled: bool = DEFAULT_EDITOR_TYPEWRITER_MODE_ENABLED
+    auto_paragraph_indent_enabled: bool = DEFAULT_EDITOR_AUTO_PARAGRAPH_INDENT_ENABLED
 
 
 DEFAULT_EDITOR_DISPLAY_SETTINGS = EditorDisplaySettings()
@@ -240,6 +254,10 @@ class Settings:
                 minimum=520,
                 maximum=MAX_EDITOR_CONTENT_WIDTH,
             ),
+            font_family=_coerce_font_family(
+                self._repo.get(KEY_EDITOR_FONT_FAMILY),
+                default=DEFAULT_EDITOR_FONT_FAMILY,
+            ),
             visual_first_line_indent_enabled=_coerce_bool(
                 self._repo.get(KEY_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED),
                 default=DEFAULT_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED,
@@ -247,6 +265,10 @@ class Settings:
             typewriter_mode_enabled=_coerce_bool(
                 self._repo.get(KEY_EDITOR_TYPEWRITER_MODE_ENABLED),
                 default=DEFAULT_EDITOR_TYPEWRITER_MODE_ENABLED,
+            ),
+            auto_paragraph_indent_enabled=_coerce_bool(
+                self._repo.get(KEY_EDITOR_AUTO_PARAGRAPH_INDENT_ENABLED),
+                default=DEFAULT_EDITOR_AUTO_PARAGRAPH_INDENT_ENABLED,
             ),
         )
 
@@ -258,6 +280,13 @@ class Settings:
         )
         self._repo.set(KEY_EDITOR_CONTENT_WIDTH, str(settings.content_width))
         self._repo.set(
+            KEY_EDITOR_FONT_FAMILY,
+            _coerce_font_family(
+                settings.font_family,
+                default=DEFAULT_EDITOR_FONT_FAMILY,
+            ),
+        )
+        self._repo.set(
             KEY_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED,
             "true" if settings.visual_first_line_indent_enabled else "false",
         )
@@ -265,6 +294,43 @@ class Settings:
             KEY_EDITOR_TYPEWRITER_MODE_ENABLED,
             "true" if settings.typewriter_mode_enabled else "false",
         )
+        self._repo.set(
+            KEY_EDITOR_AUTO_PARAGRAPH_INDENT_ENABLED,
+            "true" if settings.auto_paragraph_indent_enabled else "false",
+        )
+
+    def reduced_motion_enabled(self) -> bool:
+        return _coerce_bool(
+            self._repo.get(KEY_REDUCED_MOTION_ENABLED),
+            default=DEFAULT_REDUCED_MOTION_ENABLED,
+        )
+
+    def save_reduced_motion_enabled(self, enabled: bool) -> None:
+        self._repo.set(KEY_REDUCED_MOTION_ENABLED, "true" if enabled else "false")
+
+    def reference_library_default_group_mode(self) -> str:
+        return (
+            self._repo.get(
+                KEY_REFERENCE_LIBRARY_DEFAULT_GROUP_MODE,
+                DEFAULT_REFERENCE_LIBRARY_GROUP_MODE,
+            )
+            or DEFAULT_REFERENCE_LIBRARY_GROUP_MODE
+        )
+
+    def save_reference_library_default_group_mode(self, mode: str) -> None:
+        self._repo.set(KEY_REFERENCE_LIBRARY_DEFAULT_GROUP_MODE, mode)
+
+    def specimen_picker_default_group_mode(self) -> str:
+        return (
+            self._repo.get(
+                KEY_SPECIMEN_PICKER_DEFAULT_GROUP_MODE,
+                DEFAULT_SPECIMEN_PICKER_GROUP_MODE,
+            )
+            or DEFAULT_SPECIMEN_PICKER_GROUP_MODE
+        )
+
+    def save_specimen_picker_default_group_mode(self, mode: str) -> None:
+        self._repo.set(KEY_SPECIMEN_PICKER_DEFAULT_GROUP_MODE, mode)
 
 
 def _normalize_provider_name(
@@ -313,3 +379,12 @@ def _coerce_float(
     except (TypeError, ValueError):
         value = default
     return max(minimum, min(maximum, value))
+
+
+def _coerce_font_family(raw: Optional[str], *, default: str) -> str:
+    value = (raw or "").strip()
+    if not value:
+        return default
+    parts = [part.strip().strip("'\"") for part in value.split(",")]
+    cleaned = [part for part in parts if part]
+    return ", ".join(cleaned) if cleaned else default

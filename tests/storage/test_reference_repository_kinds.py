@@ -12,7 +12,7 @@ from writer.domain.models.reference_passage import (
     REFERENCE_KIND_LOCATION,
     REFERENCE_KIND_SETTING,
 )
-from writer.storage.database import initialize_schema, open_and_initialize
+from writer.storage.database import open_and_initialize
 from writer.storage.repositories.reference_repository import ReferenceRepository
 
 
@@ -69,6 +69,27 @@ def test_list_by_kind_filters(repo):
 def test_unknown_kind_normalises_to_excerpt(repo):
     p = repo.create(source_title="t", content="c", kind="bogus")
     assert p.kind == REFERENCE_KIND_EXCERPT
+
+
+def test_reference_stats_and_exact_duplicate_detection(repo):
+    first = repo.create(
+        source_title="A",
+        content="  same\ntext  ",
+        tags="moon, sea",
+        usage_kind="imagery",
+    )
+    repo.create(source_title="B", content="same text", tags="moon", usage_kind="imagery")
+    repo.create(source_title="C", content="different", tags="stone", usage_kind="technique")
+
+    duplicate = repo.find_exact_duplicate("same   text")
+    assert duplicate is not None
+    assert duplicate.id in {first.id, repo.list_recent()[0].id, repo.list_recent()[1].id}
+
+    stats = repo.stats()
+    assert stats.total == 3
+    assert stats.by_usage_kind["imagery"] == 2
+    assert stats.duplicate_risk_count == 2
+    assert ("moon", 2) in stats.top_tags
 
 
 def test_migration_adds_kind_to_legacy_db(tmp_path):

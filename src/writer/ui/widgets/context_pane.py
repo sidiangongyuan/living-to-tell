@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from writer.ui.motion import set_stack_index
 from writer.ui.widgets.empty_state import EmptyStateCard
 
 
@@ -160,6 +161,7 @@ class ContextPane(QWidget):
         self._stack.addWidget(self._frag_widget)   # 1
         self._stack.addWidget(self._work_widget)   # 2
         self._stack.addWidget(self._coll_widget)   # 3
+        self._reduced_motion = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -169,6 +171,9 @@ class ContextPane(QWidget):
 
         self.show_empty()
 
+    def set_reduced_motion(self, enabled: bool) -> None:
+        self._reduced_motion = bool(enabled)
+
     # ------------------------------------------------------------------
     # State setters used by MainWindow.
     # ------------------------------------------------------------------
@@ -176,7 +181,7 @@ class ContextPane(QWidget):
         if title:
             self._empty.set_text(title, description)
         self._title.setText("")
-        self._stack.setCurrentIndex(0)
+        set_stack_index(self._stack, 0, reduced=self._reduced_motion)
 
     def show_fragment(
         self,
@@ -196,7 +201,7 @@ class ContextPane(QWidget):
         self._frag_created.set_value(created)
         self._frag_updated.set_value(updated)
         self._frag_status.set_value(status)
-        self._stack.setCurrentIndex(1)
+        set_stack_index(self._stack, 1, reduced=self._reduced_motion)
 
     def show_work(
         self,
@@ -214,7 +219,7 @@ class ContextPane(QWidget):
         self._work_words.set_value(words)
         self._work_target.set_value(target)
         self._work_updated.set_value(updated)
-        self._stack.setCurrentIndex(2)
+        set_stack_index(self._stack, 2, reduced=self._reduced_motion)
 
     def show_collection(
         self,
@@ -226,7 +231,7 @@ class ContextPane(QWidget):
         self._title.setText(title)
         self._coll_count.set_value(work_count)
         self._coll_words.set_value(words)
-        self._stack.setCurrentIndex(3)
+        set_stack_index(self._stack, 3, reduced=self._reduced_motion)
 
     # ------------------------------------------------------------------
     # Action button accessors so MainWindow can wire callbacks.
