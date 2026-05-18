@@ -47,15 +47,16 @@ Writer is for writers who collect scenes, sentences, moods, notes, research, and
 - [x] Scoped AI chat with persisted local history
 - [x] Literary reference library with grouping, duplicate hints, and stats
 - [x] Editor typography, focus mode, smoother motion, and typewriter comfort
-- [ ] Screenshot gallery with clean demo data
+- [ ] Public screenshot gallery and short demo videos
+- [ ] Step-by-step video tutorials for common writing workflows
 - [ ] Better onboarding for first-time writers
 - [ ] Richer reference classification and saved custom library views
 - [ ] Clickable AI reports that can locate or apply suggested edits
 - [ ] Beta release hygiene: signed builds, migration checks, and clearer release notes
 
-## 🖼️ Screenshots
+## 🎬 Demos And Tutorials
 
-Screenshots should be generated from a clean demo profile so private writing and credentials never appear in the repository. See [docs/screenshots/README.md](docs/screenshots/README.md) for the checklist.
+Public screenshots, short walkthrough videos, and workflow demos are on the roadmap. They will show a clean demo project rather than private writing, so new users can quickly understand Writer's fragment-to-work, reference library, and AI-assisted revision flow.
 
 ## ⬇️ Download
 
@@ -154,7 +155,7 @@ See [SECURITY.md](SECURITY.md) for reporting and contributor rules.
 - [docs/roadmap.md](docs/roadmap.md) - alpha-to-beta roadmap
 - [docs/todo.md](docs/todo.md) - public TODO list
 - [docs/ai-revision-workflow.md](docs/ai-revision-workflow.md) - planned AI compare / revision workflow
-- [docs/screenshots/README.md](docs/screenshots/README.md) - screenshot checklist
+- [docs/screenshots/README.md](docs/screenshots/README.md) - demo media preparation notes
 
 ## 🤝 Contributing
 
