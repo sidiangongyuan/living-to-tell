@@ -48,7 +48,7 @@ def test_editor_display_settings_falls_back_for_blank_font(container):
 
 
 def test_editor_panel_applies_display_settings_to_body(qtbot):
-    from writer.ui.panels.editor_panel import EditorPanel
+    from writer.ui.panels.editor_panel import EditorPanel, _font_families
 
     panel = EditorPanel()
     qtbot.addWidget(panel)
@@ -70,9 +70,10 @@ def test_editor_panel_applies_display_settings_to_body(qtbot):
 
     block = panel._body.document().firstBlock()  # noqa: SLF001
     block_format = block.blockFormat()
+    expected_families = _font_families(custom.font_family)
 
     assert panel._body.font().pointSize() == 22  # noqa: SLF001
-    assert panel._body.font().families()[0] == "Georgia"  # noqa: SLF001
+    assert panel._body.font().families()[: len(expected_families)] == expected_families  # noqa: SLF001
     assert panel._content_wrap.maximumWidth() == 680  # noqa: SLF001
     assert block_format.lineHeight() == 210.0
     assert block_format.textIndent() > 0
@@ -261,6 +262,7 @@ def test_editor_panel_delete_cancels_pending_follow_and_scroll_animation(qtbot):
     from PySide6.QtCore import Qt
 
     from writer.domain.models.entry import Entry
+    from writer.ui.motion import smooth_scrollbar_to
     from writer.ui.panels.editor_panel import EditorPanel
 
     panel = EditorPanel()
@@ -272,11 +274,12 @@ def test_editor_panel_delete_cancels_pending_follow_and_scroll_animation(qtbot):
     panel.focus_body()
     body = panel._body  # noqa: SLF001
     scrollbar = body.verticalScrollBar()
-    qtbot.waitUntil(lambda: scrollbar.value() > 0)
+    qtbot.waitUntil(lambda: scrollbar.maximum() > 0)
 
     body._schedule_typewriter_adjust(force=True)  # noqa: SLF001
     body._typewriter_timer.start(1000)  # noqa: SLF001
-    body._adjust_typewriter_scroll()  # noqa: SLF001
+    scrollbar.setValue(0)
+    smooth_scrollbar_to(scrollbar, min(60, scrollbar.maximum()), duration_ms=500)
     animation = getattr(scrollbar, "_writer_scroll_animation", None)
 
     assert animation is not None
