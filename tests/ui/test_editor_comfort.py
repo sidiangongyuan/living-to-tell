@@ -110,6 +110,43 @@ def test_editor_panel_typewriter_override_does_not_break_plain_editing(qtbot):
     assert panel.body_text().endswith(" more")
 
 
+def test_editor_panel_epigraph_card_tracks_body_without_mutating_text(qtbot):
+    from writer.ui.panels.editor_panel import EditorPanel
+    from writer.domain.models.entry import Entry
+
+    body = "人可生如蚁，而美如神。\n——《一句顶一万句》 刘震云\n\n正文。"
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.show()
+    panel.set_entry(Entry(id="entry-1", title="t", body=body))
+
+    assert panel._epigraph_card.isHidden() is False  # noqa: SLF001
+    assert panel._epigraph_quote.text() == "人可生如蚁，而美如神。"  # noqa: SLF001
+    assert panel._epigraph_attr.text() == "《一句顶一万句》 刘震云"  # noqa: SLF001
+    assert panel.body_text() == body
+
+
+def test_editor_panel_epigraph_card_hides_when_attribution_removed(qtbot):
+    from writer.ui.panels.editor_panel import EditorPanel
+    from writer.domain.models.entry import Entry
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.show()
+    panel.set_entry(
+        Entry(
+            id="entry-1",
+            title="t",
+            body="人可生如蚁，而美如神。\n——《一句顶一万句》 刘震云\n\n正文。",
+        )
+    )
+
+    panel.replace_body("人可生如蚁，而美如神。\n\n正文。")
+
+    assert panel._epigraph_card.isHidden() is True  # noqa: SLF001
+    assert panel.body_text() == "人可生如蚁，而美如神。\n\n正文。"
+
+
 def test_editor_panel_focus_mode_adds_current_paragraph_selection(qtbot):
     from writer.ui.panels.editor_panel import EditorPanel
     from writer.domain.models.entry import Entry

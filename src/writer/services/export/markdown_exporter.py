@@ -22,6 +22,7 @@ from typing import List, Optional
 from writer.domain.models.chapter import Chapter
 from writer.domain.models.entry import Entry
 from writer.domain.models.project import Project
+from writer.services.epigraph import detect_epigraph, strip_epigraph
 from writer.storage.repositories.chapter_repository import ChapterRepository
 from writer.storage.repositories.entry_repository import EntryRepository
 
@@ -85,6 +86,20 @@ class MarkdownExporter:
         body = entry.body.rstrip()
         parts = [f"{heading_prefix} {title}"]
         if body:
+            epigraph = detect_epigraph(body)
+            rendered_body = strip_epigraph(body).rstrip() if epigraph is not None else body
             parts.append("")
-            parts.append(body)
+            if epigraph is not None:
+                parts.append(_render_epigraph_block(epigraph))
+                if rendered_body:
+                    parts.append("")
+            if rendered_body:
+                parts.append(rendered_body)
         return "\n".join(parts)
+
+
+def _render_epigraph_block(epigraph) -> str:
+    lines = [f"> {line}" if line else ">" for line in epigraph.quote.splitlines()]
+    lines.append(">")
+    lines.append(f"> -- {epigraph.attribution}")
+    return "\n".join(lines)

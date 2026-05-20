@@ -21,6 +21,7 @@ from writer.domain.enums import SectionType
 from writer.domain.models.collection import Collection
 from writer.domain.models.work import Work
 from writer.domain.models.work_section import WorkSection
+from writer.services.epigraph import detect_epigraph, strip_epigraph
 from writer.services.work_service import _word_count
 from writer.storage.repositories.collection_repository import (
     CollectionRepository,
@@ -168,8 +169,15 @@ class WorkExportService:
                 lines.append("")
                 lines.append(f"{'#' * (base + 1)} {heading}")
             elif content:
+                epigraph = detect_epigraph(content)
+                rendered_body = strip_epigraph(content).rstrip() if epigraph is not None else content
                 lines.append("")
-                lines.append(content)
+                if epigraph is not None:
+                    lines.extend(_render_epigraph_markdown_lines(epigraph))
+                    if rendered_body:
+                        lines.append("")
+                if rendered_body:
+                    lines.append(rendered_body)
         return "\n".join(lines).rstrip()
 
     @staticmethod
@@ -188,9 +196,14 @@ class WorkExportService:
                     level=min(9, base_heading + 1),
                 )
             elif content:
+                epigraph = detect_epigraph(content)
+                rendered_body = strip_epigraph(content).rstrip() if epigraph is not None else content
+                if epigraph is not None:
+                    _write_epigraph_docx(document, epigraph)
                 # Preserve blank lines between paragraphs.
-                for para in content.split("\n\n"):
-                    document.add_paragraph(para)
+                if rendered_body:
+                    for para in rendered_body.split("\n\n"):
+                        document.add_paragraph(para)
 
     # ------------------------------------------------------------------
     # Loaders
@@ -232,3 +245,29 @@ def _new_document():
             "Install it with: pip install python-docx"
         ) from exc
     return Document()
+
+
+def _render_epigraph_markdown_lines(epigraph) -> list[str]:
+    lines = [f"> {line}" if line else ">" for line in epigraph.quote.splitlines()]
+    lines.append(">")
+    lines.append(f"> -- {epigraph.attribution}")
+    return lines
+
+
+def _write_epigraph_docx(document, epigraph) -> None:
+    from docx.enum.text import WD_ALIGN_PARAGRAPH  # type: ignore
+    from docx.shared import Inches, Pt  # type: ignore
+
+    for line in epigraph.quote.splitlines():
+        para = document.add_paragraph()
+        para.paragraph_format.left_indent = Inches(0.35)
+        para.paragraph_format.right_indent = Inches(0.55)
+        para.paragraph_format.space_after = Pt(0)
+        run = para.add_run(line)
+        run.italic = True
+
+    attr_para = document.add_paragraph()
+    attr_para.paragraph_format.right_indent = Inches(0.55)
+    attr_para.paragraph_format.space_after = Pt(8)
+    attr_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    attr_para.add_run(epigraph.attribution)

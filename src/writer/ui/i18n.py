@@ -32,6 +32,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "editor.body_placeholder": "Start writing…",
         "editor.meta_created": "created",
         "editor.meta_updated": "updated",
+        "editor.epigraph_label": "Epigraph",
         # ── Main window – menus ───────────────────────────────────────────────
         "menu.file": "&File",
         "menu.new_fragment": "&New Fragment",
@@ -960,6 +961,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "editor.body_placeholder": "开始写作…",
         "editor.meta_created": "创建于",
         "editor.meta_updated": "更新于",
+        "editor.epigraph_label": "题辞",
         # ── Main window – menus ───────────────────────────────────────────────
         "menu.file": "文件(&F)",
         "menu.new_fragment": "新建片段(&N)",

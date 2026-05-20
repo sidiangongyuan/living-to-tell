@@ -39,10 +39,34 @@ def test_text_export_entry(container):
     assert out == "Hello\n=====\n\nWorld body\n"
 
 
+def test_text_export_entry_keeps_epigraph_raw(container):
+    body = "世界微尘里，吾宁爱与憎。\n——《北青萝》 李商隐\n\n正文第一段。"
+    entry = _make_entry(container, title="Hello", body=body)
+
+    out = container.text_exporter.export_entry(entry)
+
+    assert body in out
+
+
 def test_export_entry_untitled(container):
     entry = _make_entry(container, title="", body="just body")
     md = container.markdown_exporter.export_entry(entry)
     assert md.startswith("# Untitled\n")
+
+
+def test_markdown_export_entry_renders_epigraph_once(container):
+    entry = _make_entry(
+        container,
+        title="Hello",
+        body="世界微尘里，吾宁爱与憎。\n——《北青萝》 李商隐\n\n正文第一段。",
+    )
+
+    out = container.markdown_exporter.export_entry(entry)
+
+    assert "> 世界微尘里，吾宁爱与憎。" in out
+    assert "> -- 《北青萝》 李商隐" in out
+    assert out.count("世界微尘里，吾宁爱与憎。") == 1
+    assert "正文第一段。" in out
 
 
 # --------------------------- project export ----------------------------

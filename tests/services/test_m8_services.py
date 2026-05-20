@@ -359,6 +359,34 @@ def test_export_work_docx_writes_file(tmp_path, repos, export_service):
     assert out.stat().st_size > 0
 
 
+def test_export_work_md_and_docx_handle_epigraph_without_duplication(
+    tmp_path, repos, export_service
+):
+    docx = pytest.importorskip("docx")
+    work = repos["works"].create(title="Docx Work")
+    repos["sections"].create(
+        work.id,
+        content="世界微尘里，\n吾宁爱与憎。\n——《北青萝》 李商隐\n\n正文第一段。",
+    )
+
+    md = export_service.export_work_md(work.id)
+    assert "> 世界微尘里，" in md
+    assert "> -- 《北青萝》 李商隐" in md
+    assert md.count("世界微尘里，") == 1
+    assert "正文第一段。" in md
+
+    out = tmp_path / "epigraph.docx"
+    export_service.export_work_docx(work.id, str(out))
+    document = docx.Document(str(out))
+    texts = [para.text for para in document.paragraphs]
+
+    assert texts[0] == "Docx Work"
+    assert texts[1] == "世界微尘里，"
+    assert texts[2] == "吾宁爱与憎。"
+    assert texts[3] == "《北青萝》 李商隐"
+    assert texts[4] == "正文第一段。"
+
+
 def test_export_collection_docx_writes_file(tmp_path, repos, export_service):
     pytest.importorskip("docx")
     coll = repos["collections"].create(name="C")

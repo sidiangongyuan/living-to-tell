@@ -618,6 +618,30 @@ QLabel#DailyQuoteEmptyTitle {{
     font-weight: 600;
 }}
 
+/* ------- Epigraph card ------- */
+QFrame#EpigraphCard {{
+    background: {t.bg_card};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_lg}px;
+}}
+QLabel#EpigraphCardLabel {{
+    color: {t.text_muted};
+    font-size: {t.fs_meta}px;
+    letter-spacing: 0.4px;
+}}
+QLabel#EpigraphQuote {{
+    color: {t.text_primary};
+    font-family: {t.font_serif};
+    font-size: {t.fs_editor_body - 1}px;
+    line-height: 165%;
+}}
+QLabel#EpigraphAttribution {{
+    color: {t.text_secondary};
+    font-family: {t.font_serif};
+    font-size: {t.fs_meta + 1}px;
+    padding-top: 4px;
+}}
+
 /* ------- CheckBox ------- */
 QCheckBox {{
     color: {t.text_secondary};

@@ -17,6 +17,7 @@ from PySide6.QtGui import (
     QMouseEvent,
 )
 from PySide6.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -34,6 +35,7 @@ from writer.app.settings import (
     EditorDisplaySettings,
 )
 from writer.domain.models.entry import Entry
+from writer.services.epigraph import detect_epigraph
 from writer.storage.repositories.entry_repository import serialize_tags
 from writer.ui.i18n import TR
 from writer.ui.motion import cancel_scrollbar_animation, smooth_scrollbar_to
@@ -314,10 +316,37 @@ class EditorPanel(QWidget):
         self._body.setPlaceholderText(TR("editor.body_placeholder"))
         self._body.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._body.textChanged.connect(self._on_changed)
+        self._body.textChanged.connect(self._refresh_epigraph_card)
         self._body.textChanged.connect(self._update_word_count)
         self._body.textChanged.connect(self._refresh_save_specimen_state)
         self._body.selectionChanged.connect(self._update_word_count)
         self._body.customContextMenuRequested.connect(self._on_body_context_menu)
+
+        self._epigraph_card = QFrame()
+        self._epigraph_card.setObjectName("EpigraphCard")
+        self._epigraph_card.setVisible(False)
+        epigraph_layout = QVBoxLayout(self._epigraph_card)
+        epigraph_layout.setContentsMargins(20, 18, 20, 18)
+        epigraph_layout.setSpacing(8)
+
+        self._epigraph_label = QLabel(TR("editor.epigraph_label"))
+        self._epigraph_label.setObjectName("EpigraphCardLabel")
+        epigraph_layout.addWidget(self._epigraph_label)
+
+        self._epigraph_quote = QLabel("")
+        self._epigraph_quote.setObjectName("EpigraphQuote")
+        self._epigraph_quote.setWordWrap(True)
+        self._epigraph_quote.setTextFormat(Qt.TextFormat.PlainText)
+        epigraph_layout.addWidget(self._epigraph_quote)
+
+        self._epigraph_attr = QLabel("")
+        self._epigraph_attr.setObjectName("EpigraphAttribution")
+        self._epigraph_attr.setWordWrap(True)
+        self._epigraph_attr.setTextFormat(Qt.TextFormat.PlainText)
+        self._epigraph_attr.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        epigraph_layout.addWidget(self._epigraph_attr)
 
         self._meta = QLabel("")
         self._meta.setObjectName("MetaLabel")
@@ -348,6 +377,7 @@ class EditorPanel(QWidget):
         content_layout.addWidget(self._title)
         content_layout.addWidget(self._tags)
         content_layout.addWidget(self._tag_chips_widget)
+        content_layout.addWidget(self._epigraph_card)
         content_layout.addWidget(self._body, 1)
         content_layout.addLayout(bottom_row)
 
@@ -374,6 +404,20 @@ class EditorPanel(QWidget):
         tags_font = QFont(self._tags.font())
         tags_font.setPointSizeF(max(settings.font_size - 3, 12))
         self._tags.setFont(tags_font)
+
+        epigraph_label_font = QFont()
+        epigraph_label_font.setFamilies(_font_families(settings.font_family))
+        epigraph_label_font.setPointSizeF(max(settings.font_size - 5, 11))
+        self._epigraph_label.setFont(epigraph_label_font)
+
+        epigraph_quote_font = QFont()
+        epigraph_quote_font.setFamilies(_serif_font_families(settings.font_family))
+        epigraph_quote_font.setPointSizeF(max(settings.font_size - 1, 14))
+        self._epigraph_quote.setFont(epigraph_quote_font)
+
+        epigraph_attr_font = QFont(epigraph_quote_font)
+        epigraph_attr_font.setPointSizeF(max(settings.font_size - 3, 12))
+        self._epigraph_attr.setFont(epigraph_attr_font)
 
         self._body.apply_display_settings(settings)
         self.updateGeometry()
@@ -443,6 +487,7 @@ class EditorPanel(QWidget):
                 self._body.clear()
                 self._meta.setText("")
                 self._update_tag_chips("")
+                self._refresh_epigraph_card()
                 self.setEnabled(False)
             else:
                 self._entry_id = entry.id
@@ -451,6 +496,7 @@ class EditorPanel(QWidget):
                 self._body.setPlainText(entry.body)
                 self._meta.setText(self._format_meta(entry))
                 self._update_tag_chips(serialize_tags(entry.tags))
+                self._refresh_epigraph_card()
                 self.setEnabled(True)
         finally:
             self._loading = False
@@ -500,6 +546,7 @@ class EditorPanel(QWidget):
             self._body.setPlainText(new_body)
         finally:
             self._loading = False
+        self._refresh_epigraph_card()
 
     def _on_changed(self) -> None:
         if self._loading or self._entry_id is None:
@@ -571,6 +618,17 @@ class EditorPanel(QWidget):
         else:
             self._word_count.setText(TR("editor.word_count").format(words=words, chars=chars))
 
+    def _refresh_epigraph_card(self) -> None:
+        epigraph = detect_epigraph(self._body.toPlainText())
+        if epigraph is None:
+            self._epigraph_quote.clear()
+            self._epigraph_attr.clear()
+            self._epigraph_card.setVisible(False)
+            return
+        self._epigraph_quote.setText(epigraph.quote)
+        self._epigraph_attr.setText(epigraph.attribution)
+        self._epigraph_card.setVisible(True)
+
 
 def _count_words(text: str) -> int:
     """Word count that treats CJK characters individually and splits
@@ -602,6 +660,31 @@ def _font_families(raw: str) -> list[str]:
         part.strip().strip("'\"") for part in DEFAULT_EDITOR_FONT_FAMILY.split(",") if part.strip()
     ]
     return fallback
+
+
+def _serif_font_families(raw: str) -> list[str]:
+    families = _font_families(raw)
+    preferred = [
+        "Source Han Serif SC",
+        "Noto Serif CJK SC",
+        "Songti SC",
+        "STSong",
+        "SimSun",
+        "Georgia",
+        "Cambria",
+    ]
+    merged = preferred + families
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for family in merged:
+        key = family.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(family)
+    if _has_installed_family(deduped):
+        return deduped
+    return families
 
 
 def _has_installed_family(families: list[str]) -> bool:
