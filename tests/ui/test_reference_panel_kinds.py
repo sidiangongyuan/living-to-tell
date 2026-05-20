@@ -58,6 +58,7 @@ def test_kind_filter_combo_filters_list(qtbot, container):
     panel = ReferenceLibraryPanel(repo)
     qtbot.addWidget(panel)
     assert panel._list.count() == 3  # noqa: SLF001
+    assert panel._group_list.count() == 4  # noqa: SLF001
 
     # Switch filter to "character" only.
     for i in range(panel._kind_filter_combo.count()):  # noqa: SLF001
@@ -65,6 +66,7 @@ def test_kind_filter_combo_filters_list(qtbot, container):
             panel._kind_filter_combo.setCurrentIndex(i)  # noqa: SLF001
             break
     assert panel._list.count() == 1  # noqa: SLF001
+    assert panel._group_list.count() == 2  # noqa: SLF001
     item = panel._list.item(0)  # noqa: SLF001
     assert item.data(0x0100) is not None
     assert item.data(0x0101).source_title == "Char1"  # noqa: SLF001

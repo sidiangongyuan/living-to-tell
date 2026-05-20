@@ -30,6 +30,8 @@ def test_library_panel_create_edit_delete(qtbot, container):
     panel._on_save()  # noqa: SLF001
     assert container.reference_repository.count() == 1
     assert "1" in panel._stat_labels["total"].text()  # noqa: SLF001
+    assert panel._group_list.count() == 2  # noqa: SLF001
+    assert "《Moby Dick》" in panel._book_header_title.text()  # noqa: SLF001
 
     # select, edit
     panel._list.setCurrentRow(0)  # noqa: SLF001
@@ -64,6 +66,50 @@ def test_library_panel_shows_stats_cards(qtbot, container):
     assert "2" in panel._stat_labels["total"].text()  # noqa: SLF001
     assert "moon" in panel._stat_labels["tags"].text()  # noqa: SLF001
     assert "2" in panel._stat_labels["duplicates"].text()  # noqa: SLF001
+
+    buttons = panel._stats_tab_group.buttons()  # noqa: SLF001
+    tags_button = next(
+        button for button in buttons if button.text() in {"Tags", "标签"}
+    )
+    tags_button.click()
+    assert panel._stats_stack.currentWidget() is panel._stats_pages["tags"]  # noqa: SLF001
+
+
+def test_library_panel_source_mode_acts_like_bookshelf(qtbot, container):
+    from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+    repo = container.reference_repository
+    repo.create(
+        source_title="Book A",
+        source_author="Author A",
+        content="alpha",
+        usage_kind="style",
+        tags="风格参考",
+    )
+    repo.create(
+        source_title="Book A",
+        source_author="Author A",
+        content="beta",
+        usage_kind="imagery",
+        tags="意象表达",
+    )
+    repo.create(source_title="Book B", source_author="Author B", content="gamma")
+
+    panel = ReferenceLibraryPanel(repo)
+    qtbot.addWidget(panel)
+
+    assert panel._group_list.count() == 3  # noqa: SLF001
+    panel._select_group_key("book a")  # noqa: SLF001
+
+    assert panel._active_group_key == "book a"  # noqa: SLF001
+    assert panel._list.count() == 2  # noqa: SLF001
+    assert panel._book_header_title.text() == "《Book A》"  # noqa: SLF001
+    assert "Author A" in panel._book_header_author.text()  # noqa: SLF001
+    assert "2" in panel._book_header_meta.text()  # noqa: SLF001
+
+    panel._select_group_key("__all__")  # noqa: SLF001
+    assert panel._list.count() == 3  # noqa: SLF001
+    assert panel._book_header_title.text() in {"All shelves", "全部书架"}  # noqa: SLF001
 
 
 def test_library_panel_save_default_group_mode_and_restore(qtbot, container):
@@ -144,6 +190,34 @@ def test_library_panel_uses_widget_cards_without_native_item_text(qtbot, contain
     assert card is not None
     assert card.objectName() == "ReferenceListCard"
     assert card.property("current") is True
+
+
+def test_library_panel_category_chips_sync_tags_and_save(qtbot, container):
+    from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+    panel = ReferenceLibraryPanel(container.reference_repository)
+    qtbot.addWidget(panel)
+
+    panel._on_new()  # noqa: SLF001
+    panel._title_edit.setText("Chip Book")  # noqa: SLF001
+    panel._content_edit.setPlainText("chip body")  # noqa: SLF001
+
+    imagery = panel._category_chip_buttons["imagery"]  # noqa: SLF001
+    psychology = panel._category_chip_buttons["psychology"]  # noqa: SLF001
+    imagery.click()
+    psychology.click()
+
+    assert "意象表达" in panel._tags_edit.text()  # noqa: SLF001
+    assert "心理描写" in panel._tags_edit.text()  # noqa: SLF001
+
+    imagery.click()
+    assert "意象表达" not in panel._tags_edit.text()  # noqa: SLF001
+    assert "心理描写" in panel._tags_edit.text()  # noqa: SLF001
+
+    panel._on_save()  # noqa: SLF001
+    saved = container.reference_repository.list_recent()[0]
+    assert "心理描写" in saved.tags
+    assert "意象表达" not in saved.tags
 
 
 def test_picker_returns_checked_contents(qtbot, container):

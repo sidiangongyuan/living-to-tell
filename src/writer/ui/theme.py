@@ -466,7 +466,8 @@ QListWidget::item:selected {{
 }}
 QListWidget#ReferenceLibraryList,
 QListWidget#SpecimenCardList,
-QListWidget#SpecimenShelfList {{
+QListWidget#SpecimenShelfList,
+QListWidget#ReferenceShelfList {{
     background: {t.bg_list};
     border: 1px solid {t.border};
     border-radius: {t.radius_lg}px;
@@ -474,7 +475,8 @@ QListWidget#SpecimenShelfList {{
 }}
 QListWidget#ReferenceLibraryList::item,
 QListWidget#SpecimenCardList::item,
-QListWidget#SpecimenShelfList::item {{
+QListWidget#SpecimenShelfList::item,
+QListWidget#ReferenceShelfList::item {{
     background: transparent;
     padding: 0;
     margin: 3px 0;
@@ -482,9 +484,11 @@ QListWidget#SpecimenShelfList::item {{
 QListWidget#ReferenceLibraryList::item:hover,
 QListWidget#SpecimenCardList::item:hover,
 QListWidget#SpecimenShelfList::item:hover,
+QListWidget#ReferenceShelfList::item:hover,
 QListWidget#ReferenceLibraryList::item:selected,
 QListWidget#SpecimenCardList::item:selected,
-QListWidget#SpecimenShelfList::item:selected {{
+QListWidget#SpecimenShelfList::item:selected,
+QListWidget#ReferenceShelfList::item:selected {{
     background: transparent;
 }}
 
@@ -771,12 +775,40 @@ QWidget#AIWorkspacePanel QComboBox QAbstractItemView {{
 
 /* ------- Reference library ------- */
 QFrame#RefStatsBox {{
-    background: {t.bg_window};
+    background: {t.bg_card};
     border: 1px solid {t.border};
     border-radius: {t.radius_lg}px;
 }}
+QPushButton#RefStatTab {{
+    background: transparent;
+    color: {t.text_secondary};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_md}px;
+    padding: 5px 12px;
+    min-height: 28px;
+}}
+QPushButton#RefStatTab:hover {{
+    background: {t.hover_bg};
+    color: {t.text_primary};
+    border-color: {t.border_strong};
+}}
+QPushButton#RefStatTab:checked {{
+    background: {t.selected_bg};
+    color: {t.accent};
+    border-color: {t.accent};
+    font-weight: 600;
+}}
+QLabel#RefStatScope {{
+    color: {t.text_muted};
+    font-size: {t.fs_meta}px;
+}}
 QFrame#RefStatCard {{
     background: {t.bg_card};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_md}px;
+}}
+QFrame#RefStatMetricCard {{
+    background: {t.bg_window};
     border: 1px solid {t.border};
     border-radius: {t.radius_md}px;
 }}
@@ -787,6 +819,35 @@ QLabel#RefStatTitle {{
 }}
 QLabel#RefStatValue {{
     color: {t.text_primary};
+    font-size: {t.fs_meta}px;
+}}
+QLabel#RefStatMetricValue {{
+    color: {t.text_primary};
+    font-size: {t.fs_panel_title}px;
+    font-weight: 700;
+}}
+QLabel#RefStatMetricLabel,
+QLabel#RefBarLabel,
+QLabel#RefBarValue {{
+    color: {t.text_secondary};
+    font-size: {t.fs_meta}px;
+}}
+QProgressBar#RefStatBar {{
+    background: {t.hover_bg};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_sm}px;
+    min-height: 10px;
+}}
+QProgressBar#RefStatBar::chunk {{
+    background: {t.accent};
+    border-radius: {t.radius_sm}px;
+}}
+QLabel#RefTagCloudChip {{
+    background: {t.hover_bg};
+    color: {t.text_primary};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_md}px;
+    padding: 6px 10px;
     font-size: {t.fs_meta}px;
 }}
 QLabel#SpecimenDuplicateLabel {{
@@ -800,11 +861,13 @@ QFrame#SpecimenPreviewCard {{
     border-radius: {t.radius_lg}px;
 }}
 QWidget#SpecimenShelfCard,
+QWidget#ReferenceShelfCard,
 QWidget#ReferenceGroupHeader,
 QWidget#ReferenceSectionHeader {{
     background: transparent;
 }}
-QWidget#SpecimenShelfCard[current="true"] {{
+QWidget#SpecimenShelfCard[current="true"],
+QWidget#ReferenceShelfCard[current="true"] {{
     background: {t.selected_bg};
     border: 1px solid {t.border_strong};
     border-radius: {t.radius_md}px;
@@ -816,13 +879,36 @@ QLabel#ReferenceGroupTitle {{
     font-weight: 600;
 }}
 QLabel#SpecimenShelfTitle,
-QLabel#ReferenceSectionTitle {{
+QLabel#ReferenceSectionTitle,
+QLabel#ReferenceShelfTitle {{
     color: {t.text_primary};
     font-size: {t.fs_list_main}px;
     font-weight: 600;
 }}
 QLabel#SpecimenShelfMeta,
-QLabel#ReferenceGroupMeta {{
+QLabel#ReferenceGroupMeta,
+QLabel#ReferenceShelfMeta {{
+    color: {t.text_muted};
+    font-size: {t.fs_meta}px;
+}}
+QFrame#ReferenceBookHeader {{
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 {t.bg_card}, stop:1 {t.bg_context});
+    border: 1px solid {t.border};
+    border-radius: {t.radius_lg}px;
+}}
+QLabel#ReferenceBookTitle {{
+    color: {t.text_primary};
+    font-family: {t.font_serif};
+    font-size: 22px;
+    font-weight: 700;
+}}
+QLabel#ReferenceBookAuthor {{
+    color: {t.text_secondary};
+    font-size: {t.fs_list_main}px;
+}}
+QLabel#ReferenceBookMeta,
+QLabel#ReferenceBookSummary {{
     color: {t.text_muted};
     font-size: {t.fs_meta}px;
 }}
@@ -850,22 +936,37 @@ QLabel#SpecimenPreviewTitle {{
     font-size: {t.fs_panel_title}px;
     font-weight: 600;
 }}
+QLabel#ReferenceCardSource {{
+    color: {t.text_primary};
+    font-family: {t.font_serif};
+    font-size: {t.fs_panel_title}px;
+    font-weight: 700;
+}}
 QLabel#ReferenceCardAuthor,
 QLabel#SpecimenListAuthor {{
     color: {t.text_muted};
     font-size: {t.fs_meta}px;
 }}
-QLabel#ReferenceCardExcerpt,
-QLabel#SpecimenListExcerpt {{
+QLabel#ReferenceCardExcerpt {{
     color: {t.text_primary};
     font-family: {t.font_serif};
     font-size: {t.fs_list_main}px;
+}}
+QLabel#ReferenceQuoteText,
+QLabel#SpecimenListExcerpt {{
+    color: {t.text_primary};
+    font-family: {t.font_serif};
+    font-size: {t.fs_editor_body}px;
 }}
 QLabel#ReferenceCardMeta,
 QLabel#SpecimenListMeta,
 QLabel#SpecimenPreviewMeta,
 QLabel#SpecimenPreviewNote {{
     color: {t.text_muted};
+    font-size: {t.fs_meta}px;
+}}
+QLabel#ReferenceCardNote {{
+    color: {t.text_secondary};
     font-size: {t.fs_meta}px;
 }}
 QLabel#SpecimenListTitle {{
@@ -903,6 +1004,34 @@ QLabel#SpecimenSoftChip {{
     border-radius: {t.radius_sm}px;
     padding: 2px 8px;
     font-size: {t.fs_meta}px;
+}}
+QPushButton#RefCategoryChip {{
+    background: transparent;
+    color: {t.text_secondary};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_md}px;
+    padding: 6px 12px;
+    min-height: 26px;
+    text-align: left;
+}}
+QPushButton#RefCategoryChip:hover {{
+    background: {t.hover_bg};
+    color: {t.text_primary};
+}}
+QPushButton#RefCategoryChip:checked {{
+    background: {t.selected_bg};
+    color: {t.accent};
+    border-color: {t.accent};
+    font-weight: 600;
+}}
+QPlainTextEdit#ReferenceQuoteEditor {{
+    background: {t.bg_input};
+    color: {t.text_primary};
+    font-family: {t.font_serif};
+    font-size: {t.fs_editor_body}px;
+    border: 1px solid {t.border};
+    border-radius: {t.radius_lg}px;
+    padding: 14px 16px;
 }}
 QTextEdit#SpecimenPreviewBody {{
     background: {t.bg_input};

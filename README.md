@@ -19,7 +19,7 @@ Writer is for writers who collect scenes, sentences, moods, notes, research, and
 | --- | --- |
 | ✍️ Fragment first | Capture small pieces quickly, then tag, search, filter, and reuse them. |
 | 📖 Long-form ready | Turn fragments into works, sections, collections, and exportable manuscripts. |
-| 📚 Literary library | Save passages, style specimens, character notes, setting details, and research material in one place. |
+| 📚 Literary library | Browse saved passages by book-like shelves, read inside a source, and keep style specimens, character notes, setting details, and research material in one place. |
 | 🤖 AI with boundaries | Polish, expand, continue, summarize, outline, diagnose structure, and ask the library without silent write-back. |
 | 🔒 Local by default | Your SQLite database stays on your machine; API keys and OAuth tokens are read at request time. |
 | 🪄 Built for feel | Typography controls, focus mode, typewriter scrolling, smoother transitions, and a quieter editor surface. |
@@ -30,7 +30,7 @@ Writer is for writers who collect scenes, sentences, moods, notes, research, and
 | --- | --- |
 | ✍️ Writing | Fragment editor, autosave, tags, full-text search, version history, focus mode, typography controls |
 | 📚 Works | Works, ordered sections, collections, TXT / Markdown / DOCX export |
-| 🗂️ Reference library | Typed material for characters, locations, settings, excerpts, style specimens, duplicate hints, stats, and grouped browsing |
+| 🗂️ Reference library | Book-shelf browsing, source pages, literary quote cards, category chips, duplicate hints, and switchable stats views |
 | 🤖 AI workspace | Polish, style-aware polish, expand, continue, summarize, outline, title ideas, structure diagnosis, consistency checks, library Q&A |
 | 💬 Scoped chat | Fragment / work / collection / global chat scopes, persisted threads, context budget trimming |
 | 🔐 Safety | Compare before accepting, snapshots before write-back, no stored raw AI keys |
@@ -45,7 +45,7 @@ Writer is for writers who collect scenes, sentences, moods, notes, research, and
 - [x] Gemini API key and Gemini CLI / OAuth support
 - [x] AI workspace with differentiated writing tools
 - [x] Scoped AI chat with persisted local history
-- [x] Literary reference library with grouping, duplicate hints, and stats
+- [x] Literary reference library with book shelves, source pages, duplicate hints, category chips, and switchable stats
 - [x] Editor typography, focus mode, smoother motion, and typewriter comfort
 - [ ] Public screenshot gallery and short demo videos
 - [ ] Step-by-step video tutorials for common writing workflows

@@ -364,6 +364,26 @@ def test_reference_library_panel_saves_usage_kind_and_personal_note(qtbot, isola
         container.close()
 
 
+def test_reference_library_panel_tags_drive_category_chips(qtbot, isolated_data_dir):
+    from writer.app.container import build_container
+
+    container = build_container()
+    try:
+        from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+        panel = ReferenceLibraryPanel(container.reference_repository)
+        qtbot.addWidget(panel)
+
+        panel._on_new()  # noqa: SLF001
+        panel._tags_edit.setText("环境描写, 哲思句子")  # noqa: SLF001
+
+        assert panel._category_chip_buttons["environment"].isChecked() is True  # noqa: SLF001
+        assert panel._category_chip_buttons["philosophy"].isChecked() is True  # noqa: SLF001
+        assert panel._category_chip_buttons["imagery"].isChecked() is False  # noqa: SLF001
+    finally:
+        container.close()
+
+
 def test_specimen_picker_dialog_filters_by_usage_kind(qtbot, isolated_data_dir):
     from writer.app.container import build_container
 
