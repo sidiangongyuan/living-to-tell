@@ -240,32 +240,27 @@ def test_library_panel_uses_widget_cards_without_native_item_text(qtbot, contain
     assert card.property("current") is True
 
 
-def test_library_panel_category_chips_sync_tags_and_save(qtbot, container):
+def test_library_panel_loads_selected_passage_content_and_new_starts_blank(qtbot, container):
     from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+    passage = container.reference_repository.create(
+        source_title="Selected Book",
+        source_author="Author",
+        content="Loaded passage body",
+        tags="心理描写",
+    )
 
     panel = ReferenceLibraryPanel(container.reference_repository)
     qtbot.addWidget(panel)
 
+    current = panel._list.currentItem()  # noqa: SLF001
+    assert current is not None
+    assert current.data(0x0100) == passage.id
+    assert panel._content_edit.toPlainText() == "Loaded passage body"  # noqa: SLF001
+
     panel._on_new()  # noqa: SLF001
-    panel._title_edit.setText("Chip Book")  # noqa: SLF001
-    panel._content_edit.setPlainText("chip body")  # noqa: SLF001
-
-    imagery = panel._category_chip_buttons["imagery"]  # noqa: SLF001
-    psychology = panel._category_chip_buttons["psychology"]  # noqa: SLF001
-    imagery.click()
-    psychology.click()
-
-    assert "意象表达" in panel._tags_edit.text()  # noqa: SLF001
-    assert "心理描写" in panel._tags_edit.text()  # noqa: SLF001
-
-    imagery.click()
-    assert "意象表达" not in panel._tags_edit.text()  # noqa: SLF001
-    assert "心理描写" in panel._tags_edit.text()  # noqa: SLF001
-
-    panel._on_save()  # noqa: SLF001
-    saved = container.reference_repository.list_recent()[0]
-    assert "心理描写" in saved.tags
-    assert "意象表达" not in saved.tags
+    assert panel._content_edit.toPlainText() == ""  # noqa: SLF001
+    assert not hasattr(panel, "_category_chip_buttons")  # noqa: SLF001
 
 
 def test_picker_returns_checked_contents(qtbot, container):

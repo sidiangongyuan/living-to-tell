@@ -503,35 +503,46 @@ QSplitter::handle:vertical {{
     height: 1px;
 }}
 
-/* ------- Scroll bars (subtle) ------- */
+/* ------- Scroll bars ------- */
 QScrollBar:vertical {{
-    background: transparent;
-    width: 10px;
-    margin: 2px;
+    background: {t.hover_bg};
+    width: 14px;
+    margin: 2px 2px 2px 0;
+    border-radius: 7px;
 }}
 QScrollBar::handle:vertical {{
-    background: {t.border_strong};
-    border-radius: 4px;
-    min-height: 24px;
+    background: {t.text_secondary};
+    border: 2px solid {t.hover_bg};
+    border-radius: 7px;
+    min-height: 36px;
 }}
 QScrollBar::handle:vertical:hover {{
-    background: {t.text_muted};
+    background: {t.accent};
 }}
 QScrollBar:horizontal {{
-    background: transparent;
-    height: 10px;
-    margin: 2px;
+    background: {t.hover_bg};
+    height: 14px;
+    margin: 0 2px 2px 2px;
+    border-radius: 7px;
 }}
 QScrollBar::handle:horizontal {{
-    background: {t.border_strong};
-    border-radius: 4px;
-    min-width: 24px;
+    background: {t.text_secondary};
+    border: 2px solid {t.hover_bg};
+    border-radius: 7px;
+    min-width: 36px;
+}}
+QScrollBar::handle:horizontal:hover {{
+    background: {t.accent};
 }}
 QScrollBar::add-line, QScrollBar::sub-line {{
     background: transparent;
     border: none;
     width: 0;
     height: 0;
+}}
+QScrollBar::add-page, QScrollBar::sub-page {{
+    background: transparent;
+    border: none;
 }}
 
 /* ------- Editor surfaces (object-name driven) ------- */
@@ -1004,25 +1015,6 @@ QLabel#SpecimenSoftChip {{
     border-radius: {t.radius_sm}px;
     padding: 2px 8px;
     font-size: {t.fs_meta}px;
-}}
-QPushButton#RefCategoryChip {{
-    background: transparent;
-    color: {t.text_secondary};
-    border: 1px solid {t.border};
-    border-radius: {t.radius_md}px;
-    padding: 6px 12px;
-    min-height: 26px;
-    text-align: left;
-}}
-QPushButton#RefCategoryChip:hover {{
-    background: {t.hover_bg};
-    color: {t.text_primary};
-}}
-QPushButton#RefCategoryChip:checked {{
-    background: {t.selected_bg};
-    color: {t.accent};
-    border-color: {t.accent};
-    font-weight: 600;
 }}
 QPlainTextEdit#ReferenceQuoteEditor {{
     background: {t.bg_input};

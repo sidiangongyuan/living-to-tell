@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QStackedWidget,
     QVBoxLayout,
@@ -67,30 +68,6 @@ _KIND_LABEL_KEYS = {
     REFERENCE_KIND_LOCATION: "reflib.kind_location",
     REFERENCE_KIND_SETTING: "reflib.kind_setting",
     REFERENCE_KIND_EXCERPT: "reflib.kind_excerpt",
-}
-
-_CATEGORY_TAGS: tuple[tuple[str, str], ...] = (
-    ("environment", "环境描写"),
-    ("character", "人物描写"),
-    ("psychology", "心理描写"),
-    ("philosophy", "哲思句子"),
-    ("reflection", "思考句子"),
-    ("imagery", "意象表达"),
-    ("technique", "叙事技巧"),
-    ("style", "风格参考"),
-    ("other", "其他"),
-)
-
-_CATEGORY_LABEL_KEYS = {
-    "environment": "reflib.category_environment",
-    "character": "reflib.category_character",
-    "psychology": "reflib.category_psychology",
-    "philosophy": "reflib.category_philosophy",
-    "reflection": "reflib.category_reflection",
-    "imagery": "reflib.category_imagery",
-    "technique": "reflib.category_technique",
-    "style": "reflib.category_style",
-    "other": "reflib.category_other",
 }
 
 _STAT_TABS: tuple[tuple[str, str], ...] = (
@@ -380,7 +357,6 @@ class ReferenceLibraryPanel(QWidget):
         self._duplicate_ids_cache: set[str] = set()
         self._stat_labels: dict[str, QLabel] = {}
         self._stat_body_layouts = {}
-        self._category_chip_buttons: dict[str, QPushButton] = {}
 
         self._search = QLineEdit()
         self._search.setPlaceholderText(TR("rlp.search_placeholder"))
@@ -477,9 +453,11 @@ class ReferenceLibraryPanel(QWidget):
         self._personal_note_edit = QPlainTextEdit()
         self._personal_note_edit.setObjectName("RefPersonalNote")
         self._personal_note_edit.setPlaceholderText(TR("reflib.personal_note_label"))
-        self._personal_note_edit.setMaximumHeight(90)
+        self._personal_note_edit.setMinimumHeight(84)
+        self._personal_note_edit.setMaximumHeight(108)
         self._content_edit = QPlainTextEdit()
         self._content_edit.setObjectName("ReferenceQuoteEditor")
+        self._content_edit.setMinimumHeight(260)
         self._save_btn = QPushButton(TR("rlp.save_btn"))
         self._save_btn.setObjectName("PrimaryButton")
         self._new_btn = QPushButton(TR("rlp.new_btn"))
@@ -487,46 +465,36 @@ class ReferenceLibraryPanel(QWidget):
         self._delete_btn = QPushButton(TR("rlp.delete_btn"))
         self._delete_btn.setObjectName("DangerButton")
 
-        category_label = QLabel(TR("reflib.category_label"))
-        category_label.setObjectName("MetaLabel")
-        category_grid = QGridLayout()
-        category_grid.setContentsMargins(0, 0, 0, 0)
-        category_grid.setHorizontalSpacing(8)
-        category_grid.setVerticalSpacing(8)
-        for index, (key, _stored_tag) in enumerate(_CATEGORY_TAGS):
-            chip = QPushButton(TR(_CATEGORY_LABEL_KEYS[key]))
-            chip.setObjectName("RefCategoryChip")
-            chip.setCheckable(True)
-            chip.setAutoDefault(False)
-            chip.clicked.connect(
-                lambda checked, category_key=key: self._on_category_chip_clicked(
-                    category_key,
-                    checked,
-                )
-            )
-            category_grid.addWidget(chip, index // 3, index % 3)
-            self._category_chip_buttons[key] = chip
+        editor_form = QWidget()
+        editor_form_layout = QVBoxLayout(editor_form)
+        editor_form_layout.setContentsMargins(0, 0, 0, 0)
+        editor_form_layout.setSpacing(8)
+        editor_form_layout.addWidget(QLabel(TR("rlp.source_title_label")))
+        editor_form_layout.addWidget(self._title_edit)
+        editor_form_layout.addWidget(QLabel(TR("rlp.author_label")))
+        editor_form_layout.addWidget(self._author_edit)
+        editor_form_layout.addWidget(QLabel(TR("reflib.kind_label")))
+        editor_form_layout.addWidget(self._kind_combo)
+        editor_form_layout.addWidget(QLabel(TR("reflib.usage_kind_label")))
+        editor_form_layout.addWidget(self._usage_kind_combo)
+        editor_form_layout.addWidget(QLabel(TR("rlp.tags_label")))
+        editor_form_layout.addWidget(self._tags_edit)
+        editor_form_layout.addWidget(QLabel(TR("reflib.personal_note_label")))
+        editor_form_layout.addWidget(self._personal_note_edit)
+        editor_form_layout.addWidget(QLabel(TR("rlp.content_label")))
+        editor_form_layout.addWidget(self._content_edit, 1)
+
+        editor_scroll = QScrollArea()
+        editor_scroll.setWidgetResizable(True)
+        editor_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        editor_scroll.setWidget(editor_form)
 
         editor = QWidget()
+        editor.setMinimumWidth(360)
         editor_layout = QVBoxLayout(editor)
         editor_layout.setContentsMargins(0, 0, 0, 0)
-        editor_layout.setSpacing(8)
-        editor_layout.addWidget(QLabel(TR("rlp.source_title_label")))
-        editor_layout.addWidget(self._title_edit)
-        editor_layout.addWidget(QLabel(TR("rlp.author_label")))
-        editor_layout.addWidget(self._author_edit)
-        editor_layout.addWidget(QLabel(TR("reflib.kind_label")))
-        editor_layout.addWidget(self._kind_combo)
-        editor_layout.addWidget(QLabel(TR("reflib.usage_kind_label")))
-        editor_layout.addWidget(self._usage_kind_combo)
-        editor_layout.addWidget(QLabel(TR("rlp.tags_label")))
-        editor_layout.addWidget(self._tags_edit)
-        editor_layout.addWidget(category_label)
-        editor_layout.addLayout(category_grid)
-        editor_layout.addWidget(QLabel(TR("reflib.personal_note_label")))
-        editor_layout.addWidget(self._personal_note_edit)
-        editor_layout.addWidget(QLabel(TR("rlp.content_label")))
-        editor_layout.addWidget(self._content_edit, 1)
+        editor_layout.setSpacing(10)
+        editor_layout.addWidget(editor_scroll, 1)
         button_row = QHBoxLayout()
         button_row.addWidget(self._new_btn)
         button_row.addWidget(self._delete_btn)
@@ -606,7 +574,6 @@ class ReferenceLibraryPanel(QWidget):
         self._new_btn.clicked.connect(self._on_new)
         self._delete_btn.clicked.connect(self._on_delete)
         self._save_btn.clicked.connect(self._on_save)
-        self._tags_edit.textChanged.connect(self._sync_category_chips_from_tags)
 
         if initial_usage_kind_filter is not None:
             self.set_usage_kind_filter(initial_usage_kind_filter)
@@ -1386,7 +1353,6 @@ class ReferenceLibraryPanel(QWidget):
         self._personal_note_edit.setPlainText(passage.personal_note if passage else "")
         self._content_edit.setPlainText(passage.content if passage else "")
         self._delete_btn.setEnabled(passage is not None)
-        self._sync_category_chips_from_tags(self._tags_edit.text())
 
     def _on_search_changed(self, _text: str) -> None:
         self.refresh(select_id=self._current_id)
@@ -1449,34 +1415,6 @@ class ReferenceLibraryPanel(QWidget):
             if isinstance(widget, _ReferenceListCard):
                 widget.set_current(item.data(Qt.ItemDataRole.UserRole) == current_id)
 
-    def _tag_map(self) -> dict[str, str]:
-        return {key: stored_tag for key, stored_tag in _CATEGORY_TAGS}
-
-    def _tag_values(self) -> set[str]:
-        return {stored_tag for _key, stored_tag in _CATEGORY_TAGS}
-
-    def _on_category_chip_clicked(self, category_key: str, checked: bool) -> None:
-        tags = split_tags(self._tags_edit.text())
-        stored_tag = self._tag_map()[category_key]
-        tag_set = set(tags)
-        if checked and stored_tag not in tag_set:
-            tags.append(stored_tag)
-        if not checked:
-            tags = [tag for tag in tags if tag != stored_tag]
-        self._tags_edit.setText(", ".join(tags))
-
-    def _sync_category_chips_from_tags(self, _text: str) -> None:
-        current_tags = set(split_tags(self._tags_edit.text()))
-        for key, stored_tag in _CATEGORY_TAGS:
-            chip = self._category_chip_buttons[key]
-            checked = stored_tag in current_tags
-            if chip.isChecked() == checked:
-                continue
-            chip.blockSignals(True)
-            chip.setChecked(checked)
-            chip.blockSignals(False)
-            _refresh_dynamic_style(chip)
-
     def _prefill_from_active_group(self) -> tuple[str, str]:
         group = self._group_for_key(self._active_group_key)
         if group is None or not self._is_bookshelf_mode():
@@ -1499,7 +1437,6 @@ class ReferenceLibraryPanel(QWidget):
         uidx = self._usage_kind_combo.findData(USAGE_KIND_STYLE)
         self._usage_kind_combo.setCurrentIndex(max(0, uidx))
         self._delete_btn.setEnabled(False)
-        self._sync_category_chips_from_tags("")
         self._title_edit.setFocus()
 
     def _on_save(self) -> None:

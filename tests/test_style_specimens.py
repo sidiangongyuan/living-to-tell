@@ -364,7 +364,7 @@ def test_reference_library_panel_saves_usage_kind_and_personal_note(qtbot, isola
         container.close()
 
 
-def test_reference_library_panel_tags_drive_category_chips(qtbot, isolated_data_dir):
+def test_reference_library_panel_has_no_category_chip_ui(qtbot, isolated_data_dir):
     from writer.app.container import build_container
 
     container = build_container()
@@ -376,10 +376,7 @@ def test_reference_library_panel_tags_drive_category_chips(qtbot, isolated_data_
 
         panel._on_new()  # noqa: SLF001
         panel._tags_edit.setText("环境描写, 哲思句子")  # noqa: SLF001
-
-        assert panel._category_chip_buttons["environment"].isChecked() is True  # noqa: SLF001
-        assert panel._category_chip_buttons["philosophy"].isChecked() is True  # noqa: SLF001
-        assert panel._category_chip_buttons["imagery"].isChecked() is False  # noqa: SLF001
+        assert not hasattr(panel, "_category_chip_buttons")  # noqa: SLF001
     finally:
         container.close()
 

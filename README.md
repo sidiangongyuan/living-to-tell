@@ -30,7 +30,7 @@ Writer is for writers who collect scenes, sentences, moods, notes, research, and
 | --- | --- |
 | ✍️ Writing | Fragment editor, autosave, tags, full-text search, version history, focus mode, typography controls |
 | 📚 Works | Works, ordered sections, collections, TXT / Markdown / DOCX export |
-| 🗂️ Reference library | Book-shelf browsing, source pages, literary quote cards, category chips, duplicate hints, and switchable stats views |
+| 🗂️ Reference library | Book-shelf browsing, source pages, literary quote cards, tag summaries, duplicate hints, and switchable stats views |
 | 🤖 AI workspace | Polish, style-aware polish, expand, continue, summarize, outline, title ideas, structure diagnosis, consistency checks, library Q&A |
 | 💬 Scoped chat | Fragment / work / collection / global chat scopes, persisted threads, context budget trimming |
 | 🔐 Safety | Compare before accepting, snapshots before write-back, no stored raw AI keys |
@@ -45,7 +45,7 @@ Writer is for writers who collect scenes, sentences, moods, notes, research, and
 - [x] Gemini API key and Gemini CLI / OAuth support
 - [x] AI workspace with differentiated writing tools
 - [x] Scoped AI chat with persisted local history
-- [x] Literary reference library with book shelves, source pages, duplicate hints, category chips, and switchable stats
+- [x] Literary reference library with book shelves, source pages, duplicate hints, tag-based browsing, and switchable stats
 - [x] Editor typography, focus mode, smoother motion, and typewriter comfort
 - [ ] Public screenshot gallery and short demo videos
 - [ ] Step-by-step video tutorials for common writing workflows
