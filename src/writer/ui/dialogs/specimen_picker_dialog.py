@@ -60,7 +60,7 @@ _KIND_LABEL_KEYS = {
 
 _ITEM_AUX_TEXT_ROLE = Qt.ItemDataRole.UserRole + 8
 _SHELF_ITEM_MIN_HEIGHT = 82
-_SPECIMEN_CARD_MIN_HEIGHT = 212
+_SPECIMEN_CARD_MIN_HEIGHT = 248
 
 
 def _kind_label(kind: str) -> str:
@@ -83,14 +83,21 @@ def _apply_conservative_size_hint(
     widget: QWidget,
     *,
     min_height: int,
+    width_hint: Optional[int] = None,
 ) -> None:
     widget.ensurePolished()
-    height = max(
+    height_candidates = [
         min_height,
         widget.minimumSizeHint().height(),
         widget.sizeHint().height(),
-    )
-    item.setSizeHint(QSize(0, height))
+    ]
+    if width_hint and width_hint > 0:
+        layout = widget.layout()
+        if layout is not None and layout.hasHeightForWidth():
+            height_candidates.append(layout.totalHeightForWidth(width_hint))
+        if widget.hasHeightForWidth():
+            height_candidates.append(widget.heightForWidth(width_hint))
+    item.setSizeHint(QSize(0, max(height for height in height_candidates if height > 0)))
 
 
 class _ClickableCard(QWidget):
@@ -345,6 +352,7 @@ class SpecimenPickerDialog(QDialog):
         self._list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self._list.setUniformItemSizes(False)
         self._list.setSpacing(6)
+        self._list.viewport().installEventFilter(self)
 
         center_header = QLabel(TR("specimen.collection_title"))
         center_header.setObjectName("SpecimenSectionTitle")
@@ -680,6 +688,7 @@ class SpecimenPickerDialog(QDialog):
                     item,
                     card,
                     min_height=_SPECIMEN_CARD_MIN_HEIGHT,
+                    width_hint=max(self._list.viewport().width(), 420),
                 )
                 if preferred_id and passage.id == preferred_id:
                     target_row = self._list.row(item)
@@ -698,6 +707,28 @@ class SpecimenPickerDialog(QDialog):
             self._clear_preview()
         self._refresh_group_card_states()
         self._refresh_passage_card_states()
+        self._refresh_passage_item_size_hints()
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self._list.viewport() and event.type() == QEvent.Type.Resize:
+            self._refresh_passage_item_size_hints()
+        return super().eventFilter(watched, event)
+
+    def _refresh_passage_item_size_hints(self) -> None:
+        width_hint = self._list.viewport().width()
+        if width_hint <= 0:
+            return
+        for row in range(self._list.count()):
+            item = self._list.item(row)
+            card = self._list.itemWidget(item)
+            if not isinstance(card, _SpecimenListCard):
+                continue
+            _apply_conservative_size_hint(
+                item,
+                card,
+                min_height=_SPECIMEN_CARD_MIN_HEIGHT,
+                width_hint=width_hint,
+            )
 
     def _on_group_changed(self, _current, _previous) -> None:
         self._refresh_group_card_states()

@@ -155,14 +155,21 @@ def _apply_conservative_size_hint(
     widget: QWidget,
     *,
     min_height: int,
+    width_hint: Optional[int] = None,
 ) -> None:
     widget.ensurePolished()
-    height = max(
+    height_candidates = [
         min_height,
         widget.minimumSizeHint().height(),
         widget.sizeHint().height(),
-    )
-    item.setSizeHint(QSize(0, height))
+    ]
+    if width_hint and width_hint > 0:
+        layout = widget.layout()
+        if layout is not None and layout.hasHeightForWidth():
+            height_candidates.append(layout.totalHeightForWidth(width_hint))
+        if widget.hasHeightForWidth():
+            height_candidates.append(widget.heightForWidth(width_hint))
+    item.setSizeHint(QSize(0, max(height for height in height_candidates if height > 0)))
 
 
 def _clear_layout(layout) -> None:
@@ -244,6 +251,8 @@ class _ReferenceShelfCard(_ClickableCard):
 
 
 class _ReferenceListCard(_ClickableCard):
+    delete_requested = Signal(str)
+
     def __init__(
         self,
         passage: ReferencePassage,
@@ -258,10 +267,28 @@ class _ReferenceListCard(_ClickableCard):
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(8)
 
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(8)
+
         source = QLabel(source_group_title(passage.source_title))
         source.setObjectName("ReferenceCardSource")
         source.setWordWrap(True)
-        layout.addWidget(source)
+        header.addWidget(source, 1)
+
+        self._delete_button = QPushButton(TR("rlp.delete_btn"))
+        self._delete_button.setObjectName("DangerButton")
+        self._delete_button.setAutoDefault(False)
+        self._delete_button.setToolTip(TR("rlp.delete_btn"))
+        self._delete_button.clicked.connect(
+            lambda _checked=False, passage_id=passage.id: self.delete_requested.emit(passage_id)
+        )
+        header.addWidget(
+            self._delete_button,
+            0,
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
+        )
+        layout.addLayout(header)
 
         author = QLabel(_blank(passage.source_author))
         author.setObjectName("ReferenceCardAuthor")
@@ -859,11 +886,13 @@ class ReferenceLibraryPanel(QWidget):
                     parent=self._list,
                 )
                 card.clicked.connect(lambda selected_item=item: self._select_item(selected_item))
+                card.delete_requested.connect(self._request_delete_passage)
                 self._list.setItemWidget(item, card)
                 _apply_conservative_size_hint(
                     item,
                     card,
                     min_height=_REFERENCE_CARD_MIN_HEIGHT,
+                    width_hint=max(self._list.viewport().width(), 440),
                 )
                 if preferred_id and passage.id == preferred_id:
                     target_row = self._list.row(item)
@@ -1247,6 +1276,33 @@ class ReferenceLibraryPanel(QWidget):
             layout.addWidget(title)
             layout.addWidget(quote)
             layout.addWidget(meta)
+            for passage in passages[:4]:
+                row = QWidget()
+                row_layout = QHBoxLayout(row)
+                row_layout.setContentsMargins(0, 0, 0, 0)
+                row_layout.setSpacing(6)
+
+                locate_button = QPushButton(passage.display_label())
+                locate_button.setObjectName("GhostButton")
+                locate_button.setAutoDefault(False)
+                locate_button.setToolTip(passage.display_label())
+                locate_button.clicked.connect(
+                    lambda _checked=False, passage_id=passage.id: self._select_passage_by_id(
+                        passage_id
+                    )
+                )
+                row_layout.addWidget(locate_button, 1)
+
+                delete_button = QPushButton(TR("rlp.delete_btn"))
+                delete_button.setObjectName("DangerButton")
+                delete_button.setAutoDefault(False)
+                delete_button.clicked.connect(
+                    lambda _checked=False, passage_id=passage.id: self._request_delete_passage(
+                        passage_id
+                    )
+                )
+                row_layout.addWidget(delete_button)
+                layout.addWidget(row)
             body.addWidget(card)
         body.addStretch(1)
 
@@ -1368,6 +1424,15 @@ class ReferenceLibraryPanel(QWidget):
     def _select_item(self, item: QListWidgetItem) -> None:
         self._list.setCurrentItem(item)
 
+    def _select_passage_by_id(self, passage_id: str) -> Optional[QListWidgetItem]:
+        for row in range(self._list.count()):
+            item = self._list.item(row)
+            if item.data(Qt.ItemDataRole.UserRole) == passage_id:
+                self._list.setCurrentItem(item)
+                self._list.scrollToItem(item)
+                return item
+        return None
+
     def _refresh_group_card_states(self) -> None:
         current_key = self._current_group_key()
         for row in range(self._group_list.count()):
@@ -1483,8 +1548,13 @@ class ReferenceLibraryPanel(QWidget):
         self.refresh(select_id=passage.id)
 
     def _on_delete(self) -> None:
-        if self._current_id is None:
+        self._request_delete_passage(self._current_id)
+
+    def _request_delete_passage(self, passage_id: Optional[str]) -> None:
+        target_id = (passage_id or "").strip()
+        if not target_id:
             return
+        self._select_passage_by_id(target_id)
         confirm = QMessageBox.question(
             self,
             TR("rlp.confirm_delete_title"),
@@ -1492,8 +1562,9 @@ class ReferenceLibraryPanel(QWidget):
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
-        self._repo.delete(self._current_id)
-        self._current_id = None
+        self._repo.delete(target_id)
+        if self._current_id == target_id:
+            self._current_id = None
         self.refresh()
 
     def _on_stat_tab_selected(self, index: int, checked: bool) -> None:

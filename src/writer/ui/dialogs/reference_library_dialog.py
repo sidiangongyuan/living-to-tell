@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout, QWidget
 
 from writer.app.settings import Settings
@@ -22,7 +23,10 @@ class ReferenceLibraryDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(TR("reflib.title"))
-        self.resize(860, 520)
+        self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
+        self.setSizeGripEnabled(True)
+        self.setMinimumSize(980, 680)
+        self.resize(1120, 760)
         self.panel = ReferenceLibraryPanel(
             repo,
             parent=self,

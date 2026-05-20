@@ -53,6 +53,20 @@ def test_library_panel_create_edit_delete(qtbot, container):
     assert panel._list.count() == 0  # noqa: SLF001
 
 
+def test_reference_library_dialog_enables_resize_controls(qtbot, container):
+    from PySide6.QtCore import Qt
+
+    from writer.ui.dialogs.reference_library_dialog import ReferenceLibraryDialog
+
+    dialog = ReferenceLibraryDialog(container.reference_repository)
+    qtbot.addWidget(dialog)
+
+    assert dialog.minimumWidth() >= 980
+    assert dialog.minimumHeight() >= 680
+    assert dialog.isSizeGripEnabled() is True
+    assert bool(dialog.windowFlags() & Qt.WindowType.WindowMaximizeButtonHint)
+
+
 def test_library_panel_shows_stats_cards(qtbot, container):
     from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
 
@@ -73,6 +87,40 @@ def test_library_panel_shows_stats_cards(qtbot, container):
     )
     tags_button.click()
     assert panel._stats_stack.currentWidget() is panel._stats_pages["tags"]  # noqa: SLF001
+
+
+def test_library_panel_card_delete_button_removes_target_passage(
+    qtbot, container, monkeypatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+    repo = container.reference_repository
+    keep = repo.create(source_title="Keep", content="keep body")
+    drop = repo.create(source_title="Drop", content="drop body")
+
+    monkeypatch.setattr(
+        "writer.ui.panels.reference_library_panel.QMessageBox.question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
+    )
+
+    panel = ReferenceLibraryPanel(repo)
+    qtbot.addWidget(panel)
+    panel.show()
+
+    target_row = next(
+        row
+        for row in range(panel._list.count())  # noqa: SLF001
+        if panel._list.item(row).data(0x0100) == drop.id  # noqa: SLF001
+    )
+    card = panel._list.itemWidget(panel._list.item(target_row))  # noqa: SLF001
+    card._delete_button.click()  # noqa: SLF001
+
+    remaining_ids = {passage.id for passage in repo.list_recent()}
+    assert keep.id in remaining_ids
+    assert drop.id not in remaining_ids
+    assert panel._list.count() == 1  # noqa: SLF001
 
 
 def test_library_panel_source_mode_acts_like_bookshelf(qtbot, container):

@@ -711,6 +711,43 @@ def test_specimen_picker_uses_widget_cards_without_native_item_text(qtbot, isola
         container.close()
 
 
+def test_specimen_picker_long_card_sizehint_is_not_clipped(qtbot, isolated_data_dir):
+    from writer.app.container import build_container
+    from writer.ui.dialogs.specimen_picker_dialog import (
+        _SPECIMEN_CARD_MIN_HEIGHT,
+        SpecimenPickerDialog,
+    )
+
+    container = build_container()
+    try:
+        repo = container.reference_repository
+        repo.create(
+            source_title="Long Form Notebook",
+            source_author="Verbose Author",
+            content=" ".join(f"line{i}" for i in range(220)),
+            personal_note=" ".join(f"note{i}" for i in range(80)),
+            tags="alpha, beta, gamma",
+            usage_kind="imagery",
+        )
+
+        dlg = SpecimenPickerDialog(repo)
+        qtbot.addWidget(dlg)
+        dlg.resize(1180, 700)
+        dlg.show()
+        qtbot.waitExposed(dlg)
+
+        row = _specimen_item_rows(dlg)[0]
+        item = dlg._list.item(row)  # noqa: SLF001
+        card = _specimen_card(dlg, row)
+        qtbot.waitUntil(lambda: item.sizeHint().height() > 0)  # noqa: SLF001
+
+        assert item.sizeHint().height() >= _SPECIMEN_CARD_MIN_HEIGHT
+        assert item.sizeHint().height() >= card.sizeHint().height()
+        assert item.sizeHint().height() >= card.minimumSizeHint().height()
+    finally:
+        container.close()
+
+
 def test_specimen_picker_group_mode_switch_keeps_checked(qtbot, isolated_data_dir):
     from PySide6.QtCore import Qt
 
