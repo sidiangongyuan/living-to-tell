@@ -249,6 +249,10 @@ class SettingsDialog(QDialog):
         self._auto_indent_checkbox.setChecked(
             editor_settings.auto_paragraph_indent_enabled
         )
+        self._soft_page_guides_checkbox = QCheckBox(TR("settings.editor_soft_page_guides"))
+        self._soft_page_guides_checkbox.setChecked(
+            editor_settings.soft_page_guides_enabled
+        )
         self._reduced_motion_checkbox = QCheckBox(TR("settings.reduced_motion"))
         self._reduced_motion_checkbox.setChecked(settings.reduced_motion_enabled())
 
@@ -270,6 +274,7 @@ class SettingsDialog(QDialog):
         writing_form.addRow("", self._visual_indent_checkbox)
         writing_form.addRow("", self._typewriter_checkbox)
         writing_form.addRow("", self._auto_indent_checkbox)
+        writing_form.addRow("", self._soft_page_guides_checkbox)
         writing_form.addRow("", self._reduced_motion_checkbox)
 
         ai_group = QGroupBox(TR("settings.group_ai"))
@@ -722,6 +727,7 @@ class SettingsDialog(QDialog):
                 visual_first_line_indent_enabled=self._visual_indent_checkbox.isChecked(),
                 typewriter_mode_enabled=self._typewriter_checkbox.isChecked(),
                 auto_paragraph_indent_enabled=self._auto_indent_checkbox.isChecked(),
+                soft_page_guides_enabled=self._soft_page_guides_checkbox.isChecked(),
             )
         )
         self._settings.save_reduced_motion_enabled(

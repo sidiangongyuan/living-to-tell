@@ -113,28 +113,28 @@ class Tokens:
 
 
 LIGHT_TOKENS = Tokens(
-    bg_window="#F4F7FB",
-    bg_rail="#EAF0F6",
+    bg_window="#F1ECE2",
+    bg_rail="#E5DDD0",
     bg_list="#FFFFFF",
-    bg_main="#FCFDFE",
-    bg_context="#F7FAFC",
-    bg_input="#FFFFFF",
-    bg_card="#FFFFFF",
-    text_primary="#17202A",
-    text_secondary="#5B6574",
-    text_muted="#8A94A6",
+    bg_main="#F4EEE2",
+    bg_context="#EFE7D8",
+    bg_input="#FFFDF8",
+    bg_card="#FBF7EF",
+    text_primary="#2D2418",
+    text_secondary="#625443",
+    text_muted="#9A8872",
     text_on_accent="#FFFFFF",
-    border="#D7E0EA",
-    border_strong="#B6C2D2",
-    accent="#1E8F95",
-    accent_hover="#136C70",
-    accent_pressed="#0F595D",
-    selected_bg="#DDF3F2",
-    hover_bg="#EEF4F8",
-    danger="#C0432F",
-    danger_hover="#9B3424",
-    archived_bg="#FFF2E2",
-    archived_fg="#A76A2A",
+    border="#DCCFB9",
+    border_strong="#C8B596",
+    accent="#7C8B6A",
+    accent_hover="#68765A",
+    accent_pressed="#56624A",
+    selected_bg="#EBE1CB",
+    hover_bg="#F5ECDD",
+    danger="#B2553F",
+    danger_hover="#8F4332",
+    archived_bg="#F4E5CF",
+    archived_fg="#916235",
 )
 
 
@@ -560,6 +560,7 @@ QPlainTextEdit#FragmentBody[focusMode="true"] {{
 }}
 QTextEdit#WorkBody {{
     font-size: {t.fs_editor_work_body}px;
+    font-family: {t.font_serif};
 }}
 QLineEdit#EditorTitle {{
     background: transparent;
@@ -573,6 +574,26 @@ QLineEdit#EditorTitle {{
 }}
 QLineEdit#EditorTitle:focus {{
     border-bottom: 1px solid {t.accent};
+}}
+QFrame#EditorFindBar {{
+    background: {t.bg_card};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_lg}px;
+}}
+QLineEdit#EditorFindInput {{
+    background: #FFF9EF;
+    border: 1px solid {t.border};
+    border-radius: {t.radius_md}px;
+    padding: 7px 12px;
+}}
+QLabel#EditorFindCount {{
+    color: {t.text_secondary};
+    font-size: {t.fs_meta}px;
+    min-width: 52px;
+    qproperty-alignment: AlignCenter;
+}}
+QLabel#EditorFindCount[noResults="true"] {{
+    color: {t.danger};
 }}
 
 /* ------- Empty state card ------- */

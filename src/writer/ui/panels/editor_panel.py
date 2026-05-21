@@ -40,6 +40,7 @@ from writer.storage.repositories.entry_repository import serialize_tags
 from writer.ui.i18n import TR
 from writer.ui.motion import cancel_scrollbar_animation, smooth_scrollbar_to
 from writer.ui.tag_colors import tag_style_sheet
+from writer.ui.widgets.editor_find import EditorFindBar, PaperPlainTextEdit
 
 
 FOCUS_MODE_CONTENT_WIDTH = 1180
@@ -50,7 +51,7 @@ FOCUS_MODE_RESPONSIVE_MAX_WIDTH = 1800
 PARAGRAPH_INDENT_TEXT = "\u3000\u3000"
 
 
-class _WriterBodyEdit(QPlainTextEdit):
+class _WriterBodyEdit(PaperPlainTextEdit):
     """Plain-text body editor with view-only layout formatting.
 
     Paragraph indentation and spacing are applied through block formats so the
@@ -67,6 +68,7 @@ class _WriterBodyEdit(QPlainTextEdit):
         self._applying_formats = False
         self._typewriter_adjust_allowed = False
         self._typewriter_adjust_suppressed = False
+        self._find_selections: list[QTextEdit.ExtraSelection] = []
 
         self._format_timer = QTimer(self)
         self._format_timer.setSingleShot(True)
@@ -81,6 +83,7 @@ class _WriterBodyEdit(QPlainTextEdit):
 
     def set_reduced_motion(self, enabled: bool) -> None:
         self._reduced_motion = bool(enabled)
+        super().set_reduced_motion(enabled)
 
     def apply_display_settings(self, settings: EditorDisplaySettings) -> None:
         self._display_settings = settings
@@ -120,6 +123,10 @@ class _WriterBodyEdit(QPlainTextEdit):
         super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        if event.key() in (Qt.Key.Key_PageUp, Qt.Key.Key_PageDown):
+            self._cancel_typewriter_follow()
+            super().keyPressEvent(event)
+            return
         if self._should_auto_indent_return(event):
             cursor = self.textCursor()
             cursor.beginEditBlock()
@@ -237,8 +244,6 @@ class _WriterBodyEdit(QPlainTextEdit):
             Qt.Key.Key_Enter,
             Qt.Key.Key_Up,
             Qt.Key.Key_Down,
-            Qt.Key.Key_PageUp,
-            Qt.Key.Key_PageDown,
             Qt.Key.Key_Home,
             Qt.Key.Key_End,
         ):
@@ -250,33 +255,37 @@ class _WriterBodyEdit(QPlainTextEdit):
         return event.key() in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete)
 
     def _refresh_focus_paragraph(self) -> None:
-        if not self._focus_paragraph_enabled:
-            self.setExtraSelections([])
-            return
-        current_block = self.textCursor().block()
-        selections: list[QTextEdit.ExtraSelection] = []
+        selections: list[QTextEdit.ExtraSelection] = list(self._find_selections)
+        if self._focus_paragraph_enabled:
+            current_block = self.textCursor().block()
 
-        muted_format = QTextCharFormat()
-        muted_format.setForeground(QColor(120, 128, 140))
-        block = self.document().firstBlock()
-        while block.isValid():
-            if block != current_block and block.text().strip():
-                selection = QTextEdit.ExtraSelection()
-                selection.cursor = QTextCursor(block)
-                selection.cursor.select(QTextCursor.SelectionType.BlockUnderCursor)
-                selection.format = muted_format
-                selections.append(selection)
-            block = block.next()
+            muted_format = QTextCharFormat()
+            muted_format.setForeground(QColor(120, 128, 140))
+            block = self.document().firstBlock()
+            while block.isValid():
+                if block != current_block and block.text().strip():
+                    selection = QTextEdit.ExtraSelection()
+                    selection.cursor = QTextCursor(block)
+                    selection.cursor.select(QTextCursor.SelectionType.BlockUnderCursor)
+                    selection.format = muted_format
+                    selections.append(selection)
+                block = block.next()
 
-        current_format = QTextCharFormat()
-        current_format.setBackground(QColor(30, 143, 149, 22))
-        current_selection = QTextEdit.ExtraSelection()
-        current_selection.cursor = QTextCursor(current_block)
-        current_selection.cursor.clearSelection()
-        current_selection.format = current_format
-        current_selection.format.setProperty(QTextCharFormat.Property.FullWidthSelection, True)
-        selections.append(current_selection)
+            current_format = QTextCharFormat()
+            current_format.setBackground(QColor(30, 143, 149, 22))
+            current_selection = QTextEdit.ExtraSelection()
+            current_selection.cursor = QTextCursor(current_block)
+            current_selection.cursor.clearSelection()
+            current_selection.format = current_format
+            current_selection.format.setProperty(
+                QTextCharFormat.Property.FullWidthSelection, True
+            )
+            selections.append(current_selection)
         self.setExtraSelections(selections)
+
+    def set_find_selections(self, selections: list[QTextEdit.ExtraSelection]) -> None:
+        self._find_selections = list(selections)
+        self._refresh_focus_paragraph()
 
     def focusNextPrevChild(self, next: bool) -> bool:  # noqa: A002, N802
         result = super().focusNextPrevChild(next)
@@ -294,6 +303,7 @@ class EditorPanel(QWidget):
         self._entry_id: Optional[str] = None
         self._display_settings = DEFAULT_EDITOR_DISPLAY_SETTINGS
         self._focus_mode_enabled = False
+        self._find_bar = EditorFindBar()
 
         self._title = QLineEdit()
         self._title.setPlaceholderText(TR("editor.title_placeholder"))
@@ -384,10 +394,19 @@ class EditorPanel(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(self._content_wrap, 1)
+        editor_column = QWidget()
+        editor_column_layout = QVBoxLayout(editor_column)
+        editor_column_layout.setContentsMargins(0, 0, 0, 0)
+        editor_column_layout.setSpacing(8)
+        editor_column_layout.addWidget(self._find_bar)
+        editor_column_layout.addWidget(self._content_wrap, 1)
+        layout.addWidget(editor_column, 1)
         layout.setAlignment(self._content_wrap, Qt.AlignmentFlag.AlignHCenter)
 
         self._loading = False
+        self._find_bar.set_editor(self._body)
+        self._find_bar.install_on(self, self._title, self._tags, self._body, self._body.viewport())
+        self._body.textChanged.connect(self._find_bar.refresh_matches)
         self.apply_display_settings(DEFAULT_EDITOR_DISPLAY_SETTINGS)
         self.set_entry(None)
         self._update_word_count()
@@ -420,6 +439,7 @@ class EditorPanel(QWidget):
         self._epigraph_attr.setFont(epigraph_attr_font)
 
         self._body.apply_display_settings(settings)
+        self._body.set_soft_page_guides_enabled(settings.soft_page_guides_enabled)
         self.updateGeometry()
 
     def set_reduced_motion(self, enabled: bool) -> None:
@@ -488,6 +508,8 @@ class EditorPanel(QWidget):
                 self._meta.setText("")
                 self._update_tag_chips("")
                 self._refresh_epigraph_card()
+                self._find_bar.close_bar(clear_query=True)
+                self._find_bar.clear_matches()
                 self.setEnabled(False)
             else:
                 self._entry_id = entry.id
@@ -497,6 +519,7 @@ class EditorPanel(QWidget):
                 self._meta.setText(self._format_meta(entry))
                 self._update_tag_chips(serialize_tags(entry.tags))
                 self._refresh_epigraph_card()
+                self._find_bar.refresh_matches()
                 self.setEnabled(True)
         finally:
             self._loading = False
@@ -547,6 +570,10 @@ class EditorPanel(QWidget):
         finally:
             self._loading = False
         self._refresh_epigraph_card()
+        self._find_bar.refresh_matches()
+
+    def activate_excerpt_find(self, excerpt: str) -> bool:
+        return self._find_bar.activate_excerpt(excerpt)
 
     def _on_changed(self) -> None:
         if self._loading or self._entry_id is None:

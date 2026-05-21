@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from PySide6.QtCore import Qt
 
 from writer.app.container import build_container
 from writer.app.settings import DEFAULT_EDITOR_FONT_FAMILY, EditorDisplaySettings
@@ -28,6 +29,7 @@ def test_editor_display_settings_persists_font_and_reduced_motion(container):
     custom = EditorDisplaySettings(
         font_family="Noto Serif SC, 宋体",
         auto_paragraph_indent_enabled=False,
+        soft_page_guides_enabled=False,
     )
 
     container.settings.save_editor_display_settings(custom)
@@ -36,6 +38,7 @@ def test_editor_display_settings_persists_font_and_reduced_motion(container):
     loaded = container.settings.load_editor_display_settings()
     assert loaded.font_family == "Noto Serif SC, 宋体"
     assert loaded.auto_paragraph_indent_enabled is False
+    assert loaded.soft_page_guides_enabled is False
     assert container.settings.reduced_motion_enabled() is True
 
 
@@ -408,6 +411,7 @@ def test_main_window_applies_persisted_editor_preferences(qtbot, container):
             font_family="Georgia",
             visual_first_line_indent_enabled=False,
             typewriter_mode_enabled=False,
+            soft_page_guides_enabled=False,
         )
     )
 
@@ -420,3 +424,145 @@ def test_main_window_applies_persisted_editor_preferences(qtbot, container):
     assert applied.content_width == 700
     assert applied.font_family == "Georgia"
     assert applied.visual_first_line_indent_enabled is False
+    assert applied.soft_page_guides_enabled is False
+
+
+def test_editor_panel_find_shortcuts_highlight_and_cycle(qtbot):
+    from writer.domain.models.entry import Entry
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.show()
+    panel.set_entry(
+        Entry(
+            id="entry-1",
+            title="t",
+            body="Alpha beta\n中文标点，alpha。\nALPHA again",
+        )
+    )
+    panel.focus_body()
+
+    qtbot.keyClick(panel._body, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)  # noqa: SLF001
+    qtbot.waitUntil(lambda: panel._find_bar.isVisible())  # noqa: SLF001
+    qtbot.keyClicks(panel._find_bar._input, "alpha")  # noqa: SLF001
+    qtbot.waitUntil(lambda: panel._find_bar._count_label.text() == "1/3")  # noqa: SLF001
+
+    assert len(panel._body.extraSelections()) >= 3  # noqa: SLF001
+    assert panel.selected_body_text().lower() == "alpha"
+
+    qtbot.keyClick(panel._find_bar._input, Qt.Key.Key_Return)  # noqa: SLF001
+    assert panel._find_bar._count_label.text() == "2/3"  # noqa: SLF001
+    assert panel.selected_body_text().lower() == "alpha"
+
+    qtbot.keyClick(
+        panel._find_bar._input,
+        Qt.Key.Key_Return,
+        Qt.KeyboardModifier.ShiftModifier,
+    )  # noqa: SLF001
+    assert panel._find_bar._count_label.text() == "1/3"  # noqa: SLF001
+
+    qtbot.keyClick(panel._find_bar._input, Qt.Key.Key_Escape)  # noqa: SLF001
+    assert panel._find_bar.isHidden() is True  # noqa: SLF001
+
+
+def test_editor_panel_find_no_results_keeps_cursor_and_reports_empty(qtbot):
+    from writer.domain.models.entry import Entry
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.show()
+    panel.set_entry(Entry(id="entry-1", title="t", body="中文错别字，English Mixed Case"))
+    panel.focus_body()
+    original_pos = panel._body.textCursor().position()  # noqa: SLF001
+
+    panel._find_bar.open_and_focus()  # noqa: SLF001
+    panel._find_bar.set_query("不存在")  # noqa: SLF001
+
+    assert panel._find_bar._count_label.text() == "无结果" or panel._find_bar._count_label.text() == "No results"  # noqa: SLF001
+    panel._find_bar.go_next()  # noqa: SLF001
+    assert panel._body.textCursor().position() == original_pos  # noqa: SLF001
+
+
+def test_editor_panel_find_refreshes_after_body_change_and_entry_switch(qtbot, container):
+    from writer.domain.models.entry import Entry
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    first = Entry(id="entry-1", title="t1", body="apple apple")
+    second = Entry(id="entry-2", title="t2", body="banana only")
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.show()
+    panel.set_entry(first)
+
+    panel._find_bar.activate_excerpt("apple")  # noqa: SLF001
+    assert panel._find_bar._count_label.text() == "1/2"  # noqa: SLF001
+
+    panel.replace_body("apple")
+    qtbot.waitUntil(lambda: panel._find_bar._count_label.text() == "1/1")  # noqa: SLF001
+
+    panel.set_entry(second)
+    qtbot.waitUntil(lambda: panel._find_bar._count_label.text() == "无结果" or panel._find_bar._count_label.text() == "No results")  # noqa: SLF001
+    assert panel._body.extraSelections() == [] or len(panel._body.extraSelections()) == 0  # noqa: SLF001
+
+
+def test_work_editor_find_shortcuts_refresh_on_section_switch(qtbot, container):
+    from writer.domain.enums import SectionType
+    from writer.ui.panels.work_editor_panel import WorkEditorPanel
+
+    work = container.work_repository.create(title="W")
+    first = container.work_section_repository.create(work.id, section_type=SectionType.BODY.value, content="moon river moon")
+    second = container.work_section_repository.create(work.id, section_type=SectionType.BODY.value, content="sun only")
+
+    panel = WorkEditorPanel(container)
+    qtbot.addWidget(panel)
+    panel.show()
+    panel.load_work(work.id)
+    panel.focus_section(first.id)
+
+    qtbot.keyClick(panel._editor, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)  # noqa: SLF001
+    qtbot.waitUntil(lambda: panel._find_bar.isVisible())  # noqa: SLF001
+    qtbot.keyClicks(panel._find_bar._input, "moon")  # noqa: SLF001
+    qtbot.waitUntil(lambda: panel._find_bar._count_label.text() == "1/2")  # noqa: SLF001
+
+    qtbot.keyClick(panel._find_bar._input, Qt.Key.Key_Return)  # noqa: SLF001
+    assert panel._find_bar._count_label.text() == "2/2"  # noqa: SLF001
+
+    panel.focus_section(second.id)
+    qtbot.waitUntil(lambda: panel._find_bar._count_label.text() == "无结果" or panel._find_bar._count_label.text() == "No results")  # noqa: SLF001
+
+
+def test_soft_page_guides_toggle_does_not_mutate_plain_text(qtbot):
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    text = "第一段\n第二段"
+    panel.replace_body(text)
+
+    panel.apply_display_settings(EditorDisplaySettings(soft_page_guides_enabled=True))
+    assert panel.body_text() == text
+    assert panel._body.soft_page_guides_enabled() is True  # noqa: SLF001
+
+    panel.apply_display_settings(EditorDisplaySettings(soft_page_guides_enabled=False))
+    assert panel.body_text() == text
+    assert panel._body.soft_page_guides_enabled() is False  # noqa: SLF001
+
+
+def test_editor_panel_page_keys_use_paper_scroll_not_typewriter_follow(qtbot):
+    from writer.domain.models.entry import Entry
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.resize(440, 260)
+    panel.show()
+    panel.apply_display_settings(EditorDisplaySettings(typewriter_mode_enabled=True))
+    panel.set_entry(Entry(id="entry-1", title="t", body="\n".join(str(i) for i in range(120))))
+    panel.focus_body()
+    body = panel._body  # noqa: SLF001
+
+    qtbot.keyClick(body, Qt.Key.Key_PageDown)
+
+    assert body._typewriter_timer.isActive() is False  # noqa: SLF001

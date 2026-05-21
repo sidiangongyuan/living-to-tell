@@ -397,6 +397,7 @@ class AIToolsTab(QWidget):
 
     request_save_as_fragment = Signal(str)  # new fragment id
     request_send_to_chat = Signal(str)  # text to seed chat
+    request_locate_excerpt = Signal(str)
 
     def __init__(self, container: AppContainer, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -410,6 +411,7 @@ class AIToolsTab(QWidget):
         self._style_preset_buttons: dict[str, QPushButton] = {}
         self._style_author_presets = _preset_values("ai.params.style_authors_values")
         self._style_goal_presets = _preset_values("ai.params.style_goals_values")
+        self._last_excerpt: str = ""
         # Per-task parameter state — isolates style/intensity/extra across tasks.
         self._task_params: dict[AiTaskType, dict] = {}
 
@@ -675,6 +677,10 @@ class AIToolsTab(QWidget):
         self._send_chat_btn.clicked.connect(self._on_send_to_chat)
         self._send_chat_btn.setVisible(False)
         action_row.addWidget(self._send_chat_btn)
+        self._locate_excerpt_btn = QPushButton(TR("ai.results.locate_excerpt"))
+        self._locate_excerpt_btn.setEnabled(False)
+        self._locate_excerpt_btn.clicked.connect(self._on_locate_excerpt)
+        action_row.addWidget(self._locate_excerpt_btn)
         action_row.addStretch(1)
         right_layout.addLayout(action_row)
 
@@ -1291,6 +1297,7 @@ class AIToolsTab(QWidget):
 
     def _on_task_succeeded(self, response: AiTaskResponse) -> None:
         self._last_response = response
+        self._last_excerpt = self._extract_excerpt(response)
         self._status_label.setText("")
         task_type = self._result_task_type()
         rendered = (
@@ -1333,6 +1340,7 @@ class AIToolsTab(QWidget):
         self._refresh_apply_button_state()
         self._save_fragment_btn.setEnabled(True)
         self._refresh_send_to_chat_button()
+        self._locate_excerpt_btn.setEnabled(bool(self._last_excerpt.strip()))
 
     def _result_task_type(self) -> AiTaskType:
         if self._last_request is not None:
@@ -1343,6 +1351,19 @@ class AIToolsTab(QWidget):
         can_send = self._last_response is not None and bool(self._result_view.toPlainText().strip())
         self._send_chat_btn.setVisible(can_send)
         self._send_chat_btn.setEnabled(can_send)
+
+    def _extract_excerpt(self, response: AiTaskResponse) -> str:
+        data = response.structured or {}
+        issues = data.get("issues") or []
+        if isinstance(issues, list):
+            for raw in issues:
+                if not isinstance(raw, dict):
+                    continue
+                excerpt = str(raw.get("excerpt") or "").strip()
+                if excerpt:
+                    return excerpt
+        excerpt = str(data.get("excerpt") or "").strip()
+        return excerpt
 
     def _render_structured(
         self,
@@ -1525,6 +1546,17 @@ class AIToolsTab(QWidget):
         text = self._result_view.toPlainText()
         if text.strip():
             self.request_send_to_chat.emit(text)
+
+    def _on_locate_excerpt(self) -> None:
+        excerpt = self._last_excerpt.strip()
+        if not excerpt:
+            QMessageBox.information(
+                self,
+                TR("ai.results.locate_excerpt"),
+                TR("ai.results.locate_excerpt_missing"),
+            )
+            return
+        self.request_locate_excerpt.emit(excerpt)
 
 
 # ---------------------------------------------------------------------------
@@ -1796,6 +1828,7 @@ class AIWorkspacePanel(QWidget):
     """The mode-3 panel: a tabbed AI workspace (Tools + Chat)."""
 
     request_save_as_fragment = Signal(str)
+    request_locate_excerpt = Signal(str)
 
     def __init__(self, container: AppContainer, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -1817,6 +1850,7 @@ class AIWorkspacePanel(QWidget):
         # Wire send-to-chat from tools to chat tab.
         self._tools_tab.request_send_to_chat.connect(self._on_send_to_chat)
         self._tools_tab.request_save_as_fragment.connect(self.request_save_as_fragment.emit)
+        self._tools_tab.request_locate_excerpt.connect(self.request_locate_excerpt.emit)
         self._chat_tab.request_save_as_fragment.connect(self.request_save_as_fragment.emit)
 
         # Default global scope until bound.

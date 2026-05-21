@@ -57,6 +57,7 @@ KEY_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED = (
 )
 KEY_EDITOR_TYPEWRITER_MODE_ENABLED = "editor.typewriter_mode_enabled"
 KEY_EDITOR_AUTO_PARAGRAPH_INDENT_ENABLED = "editor.auto_paragraph_indent_enabled"
+KEY_EDITOR_SOFT_PAGE_GUIDES_ENABLED = "editor.soft_page_guides_enabled"
 KEY_REDUCED_MOTION_ENABLED = "ui.reduced_motion_enabled"
 DEFAULT_EDITOR_FONT_SIZE = 18
 DEFAULT_EDITOR_LINE_HEIGHT = 1.8
@@ -69,6 +70,7 @@ DEFAULT_EDITOR_FONT_FAMILY = (
 DEFAULT_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED = True
 DEFAULT_EDITOR_TYPEWRITER_MODE_ENABLED = True
 DEFAULT_EDITOR_AUTO_PARAGRAPH_INDENT_ENABLED = True
+DEFAULT_EDITOR_SOFT_PAGE_GUIDES_ENABLED = True
 DEFAULT_REDUCED_MOTION_ENABLED = False
 
 # Quick capture / tray
@@ -97,6 +99,7 @@ class EditorDisplaySettings:
     )
     typewriter_mode_enabled: bool = DEFAULT_EDITOR_TYPEWRITER_MODE_ENABLED
     auto_paragraph_indent_enabled: bool = DEFAULT_EDITOR_AUTO_PARAGRAPH_INDENT_ENABLED
+    soft_page_guides_enabled: bool = DEFAULT_EDITOR_SOFT_PAGE_GUIDES_ENABLED
 
 
 DEFAULT_EDITOR_DISPLAY_SETTINGS = EditorDisplaySettings()
@@ -270,6 +273,10 @@ class Settings:
                 self._repo.get(KEY_EDITOR_AUTO_PARAGRAPH_INDENT_ENABLED),
                 default=DEFAULT_EDITOR_AUTO_PARAGRAPH_INDENT_ENABLED,
             ),
+            soft_page_guides_enabled=_coerce_bool(
+                self._repo.get(KEY_EDITOR_SOFT_PAGE_GUIDES_ENABLED),
+                default=DEFAULT_EDITOR_SOFT_PAGE_GUIDES_ENABLED,
+            ),
         )
 
     def save_editor_display_settings(self, settings: EditorDisplaySettings) -> None:
@@ -297,6 +304,10 @@ class Settings:
         self._repo.set(
             KEY_EDITOR_AUTO_PARAGRAPH_INDENT_ENABLED,
             "true" if settings.auto_paragraph_indent_enabled else "false",
+        )
+        self._repo.set(
+            KEY_EDITOR_SOFT_PAGE_GUIDES_ENABLED,
+            "true" if settings.soft_page_guides_enabled else "false",
         )
 
     def reduced_motion_enabled(self) -> bool:

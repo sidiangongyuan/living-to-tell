@@ -322,6 +322,7 @@ class MainWindow(QMainWindow):
         self._dates_panel.append_tags_requested.connect(self._on_dates_append_tags)
         self._dates_panel.merge_requested.connect(self._on_dates_merge)
         self._dates_panel.manage_quotes_requested.connect(self._on_manage_quotes)
+        self._ai_workspace_panel.request_locate_excerpt.connect(self._on_locate_ai_excerpt)
 
         # M7B: in-memory trash for the most recent deletions. Each entry is
         # a dict with title/body/tags; survives until the app closes.
@@ -1275,6 +1276,26 @@ class MainWindow(QMainWindow):
         )
         self._ai_workspace_panel.focus_task(AiTaskType.POLISH, target_kind=target_kind)
 
+    def _on_locate_ai_excerpt(self, excerpt: str) -> None:
+        scope = self._ai_workspace_panel.scope
+        if scope is None:
+            self.statusBar().showMessage(TR("ai.results.locate_excerpt_not_found"), 2500)
+            return
+        found = False
+        if scope.kind is AiThreadScope.FRAGMENT and scope.ref_id:
+            self._autosave.flush()
+            self._set_mode(MODE_FRAGMENTS)
+            self._refresh_list(select_id=scope.ref_id)
+            self._load_entry(scope.ref_id)
+            found = self._editor_panel.activate_excerpt_find(excerpt)
+        elif scope.kind is AiThreadScope.WORK and scope.work_id:
+            self._set_mode(MODE_WORKS)
+            section_id = scope.section_id
+            self._works_panel.select_work_section(scope.work_id, section_id)
+            found = self._works_panel._editor.activate_excerpt_find(excerpt)  # noqa: SLF001
+        if not found:
+            self.statusBar().showMessage(TR("ai.results.locate_excerpt_not_found"), 2500)
+
     def _refresh_ai_context_from_panel(self) -> None:
         if self._stack.currentIndex() != MODE_AI:
             return
@@ -1756,11 +1777,19 @@ class MainWindow(QMainWindow):
             pass
         self._editor_panel.set_reduced_motion(self._reduced_motion)
         self._editor_panel.set_focus_mode_enabled(self._focus_mode_enabled)
+        try:
+            self._works_panel._editor._editor.set_reduced_motion(self._reduced_motion)  # noqa: SLF001
+        except Exception:  # noqa: BLE001
+            pass
 
     def _apply_motion_preferences(self) -> None:
         self._reduced_motion = self._container.settings.reduced_motion_enabled()
         self._context_pane.set_reduced_motion(self._reduced_motion)
         self._editor_panel.set_reduced_motion(self._reduced_motion)
+        try:
+            self._works_panel._editor._editor.set_reduced_motion(self._reduced_motion)  # noqa: SLF001
+        except Exception:  # noqa: BLE001
+            pass
 
     def _install_focus_mode_key_filters(self) -> None:
         for widget in (

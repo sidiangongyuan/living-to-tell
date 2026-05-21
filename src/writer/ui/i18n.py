@@ -289,6 +289,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "settings.editor_visual_indent": "Visual first-line indent",
         "settings.editor_typewriter_mode": "Typewriter mode",
         "settings.editor_auto_paragraph_indent": "Insert two full-width spaces after Enter",
+        "settings.editor_soft_page_guides": "Paper separators / soft page guides",
         "settings.reduced_motion": "Reduce motion",
         "settings.key_only_env": (
               "Use env:VAR or the literal string 'codex' / 'gemini'. The API key is "
@@ -535,6 +536,13 @@ _CATALOG: dict[str, dict[str, str]] = {
         "editor.word_count_with_sel": (
             "{words} words · {chars} chars  (selection: {sel_words} / {sel_chars})"
         ),
+        "editor.find.placeholder": "Find in current document…",
+        "editor.find.empty_count": "",
+        "editor.find.no_results": "No results",
+        "editor.find.count": "{current}/{total}",
+        "editor.find.previous": "Previous",
+        "editor.find.next": "Next",
+        "editor.find.close": "Close",
         # ── M8: works / sections / collections / include / global search ─────
         "menu.include_fragment": "&Include Fragment into Work…",
         "menu.global_search": "&Global Search…",
@@ -779,6 +787,9 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.status.running_provider": "Running {provider}…",
         "ai.results.save_fragment": "Save as fragment",
         "ai.results.send_to_chat": "Send to chat",
+        "ai.results.locate_excerpt": "Locate excerpt",
+        "ai.results.locate_excerpt_missing": "No excerpt available in this item.",
+        "ai.results.locate_excerpt_not_found": "Excerpt not found in the current editor.",
         # chat
         "ai.chat.input_placeholder": "Ask the assistant about this {scope}…",
         "ai.chat.send": "Send",
@@ -1161,6 +1172,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "settings.editor_visual_indent": "视觉首行缩进",
         "settings.editor_typewriter_mode": "打字机模式",
         "settings.editor_auto_paragraph_indent": "回车后自动空两格",
+        "settings.editor_soft_page_guides": "纸页分隔 / 软分页提示",
         "settings.reduced_motion": "减少动效",
         # ── Quick capture ─────────────────────────────────────────────────────
         "quick.window_title": "快速速记",
@@ -1384,6 +1396,13 @@ _CATALOG: dict[str, dict[str, str]] = {
         "editor.word_count_with_sel": (
             "{words} 字 · {chars} 字符  （选中：{sel_words} / {sel_chars}）"
         ),
+        "editor.find.placeholder": "在当前文档中查找…",
+        "editor.find.empty_count": "",
+        "editor.find.no_results": "无结果",
+        "editor.find.count": "{current}/{total}",
+        "editor.find.previous": "上一处",
+        "editor.find.next": "下一处",
+        "editor.find.close": "关闭",
         # ── M8: 作品 / 节块 / 作品集 / 纳入 / 全局搜索 ───────────────────────
         "menu.include_fragment": "将片段纳入作品(&I)…",
         "menu.global_search": "全局搜索(&G)…",
@@ -1622,6 +1641,9 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.status.running_provider": "正在调用 {provider}…",
         "ai.results.save_fragment": "存为片段",
         "ai.results.send_to_chat": "发到对话",
+        "ai.results.locate_excerpt": "定位摘录",
+        "ai.results.locate_excerpt_missing": "当前条目没有可定位的摘录。",
+        "ai.results.locate_excerpt_not_found": "当前编辑器中未找到该摘录。",
         # chat
         "ai.chat.input_placeholder": "就当前 {scope} 向助手提问…",
         "ai.chat.send": "发送",

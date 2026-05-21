@@ -39,6 +39,7 @@ from writer.domain.models.work_section import WorkSection
 from writer.ui.dialogs.work_versions_dialog import WorkVersionsDialog
 from writer.ui.i18n import TR
 from writer.ui.panels.editor_panel import _font_families
+from writer.ui.widgets.editor_find import EditorFindBar, PaperRichTextEdit
 
 
 _AUTOSAVE_DEBOUNCE_MS = 600
@@ -55,6 +56,7 @@ class WorkEditorPanel(QWidget):
         self._current_section_id: Optional[str] = None
         self._loading = False
         self._display_settings = DEFAULT_EDITOR_DISPLAY_SETTINGS
+        self._find_bar = EditorFindBar()
 
         # ---- header fields ----
         self._title = QLineEdit()
@@ -126,9 +128,10 @@ class WorkEditorPanel(QWidget):
         sl.addLayout(section_btns)
         sl.addWidget(self._sections, 1)
 
-        self._editor = QTextEdit()
+        self._editor = PaperRichTextEdit()
         self._editor.setPlaceholderText(TR("work.body_placeholder"))
         self._editor.textChanged.connect(self._on_editor_changed)
+        self._editor.textChanged.connect(self._find_bar.refresh_matches)
 
         section_split = QSplitter(Qt.Orientation.Horizontal)
         section_split.addWidget(section_left)
@@ -151,6 +154,7 @@ class WorkEditorPanel(QWidget):
         bottom.addWidget(self._versions_btn)
 
         layout = QVBoxLayout(self)
+        layout.addWidget(self._find_bar)
         layout.addLayout(header_row1)
         layout.addLayout(header_row2)
         layout.addLayout(header_row3)
@@ -162,6 +166,16 @@ class WorkEditorPanel(QWidget):
         self._editor_save_timer.setInterval(_AUTOSAVE_DEBOUNCE_MS)
         self._editor_save_timer.timeout.connect(self._flush_section_content)
 
+        self._find_bar.set_editor(self._editor)
+        self._find_bar.install_on(
+            self,
+            self._title,
+            self._summary,
+            self._tags,
+            self._sections,
+            self._editor,
+            self._editor.viewport(),
+        )
         self._set_enabled(False)
         self.apply_display_settings(DEFAULT_EDITOR_DISPLAY_SETTINGS)
 
@@ -186,6 +200,7 @@ class WorkEditorPanel(QWidget):
             self._editor.setPlainText("")
             self._wc_label.setText("")
             self._loading = False
+            self._find_bar.close_bar(clear_query=True)
             return
 
         work = self._container.work_repository.get(work_id)
@@ -205,6 +220,7 @@ class WorkEditorPanel(QWidget):
         self._reload_sections()
         self._loading = False
         self._update_word_count()
+        self._find_bar.refresh_matches()
 
     def focus_section(self, section_id: str) -> None:
         for i in range(self._sections.count()):
@@ -237,6 +253,9 @@ class WorkEditorPanel(QWidget):
             self._editor_save_timer.stop()
             self._flush_section_content()
 
+    def activate_excerpt_find(self, excerpt: str) -> bool:
+        return self._find_bar.activate_excerpt(excerpt)
+
     def apply_display_settings(self, settings: EditorDisplaySettings) -> None:
         self._display_settings = settings
         title_font = QFont()
@@ -249,6 +268,7 @@ class WorkEditorPanel(QWidget):
         body_font.setPointSizeF(settings.font_size)
         self._editor.setFont(body_font)
         self._editor.document().setDefaultFont(body_font)
+        self._editor.set_soft_page_guides_enabled(settings.soft_page_guides_enabled)
 
     # ------------------------------------------------------------------
     # Section list management
@@ -276,6 +296,7 @@ class WorkEditorPanel(QWidget):
             self._editor.blockSignals(True)
             self._editor.setPlainText("")
             self._editor.blockSignals(False)
+            self._find_bar.refresh_matches()
 
     @staticmethod
     def _make_section_item(section: WorkSection) -> QListWidgetItem:
@@ -302,6 +323,7 @@ class WorkEditorPanel(QWidget):
             self._editor.blockSignals(True)
             self._editor.setPlainText("")
             self._editor.blockSignals(False)
+            self._find_bar.refresh_matches()
             return
         section_id = item.data(Qt.ItemDataRole.UserRole)
         self._current_section_id = section_id
@@ -309,6 +331,7 @@ class WorkEditorPanel(QWidget):
         self._editor.blockSignals(True)
         self._editor.setPlainText(section.content if section else "")
         self._editor.blockSignals(False)
+        self._find_bar.refresh_matches()
 
     def _add_section(self, section_type: str) -> None:
         if self._work_id is None:

@@ -105,6 +105,47 @@ def test_set_mode_three_binds_ai_workspace_to_open_fragment(qtbot, container):
     assert "Hello" in scope.name
 
 
+def test_main_window_locates_ai_excerpt_in_fragment_editor(qtbot, container):
+    from writer.ui.main_window import MainWindow
+
+    entry = container.entry_repository.create(
+        title="Hello",
+        body="第一段\n这里有关键摘录。\n第三段",
+    )
+    window = MainWindow(container, autosave_debounce_ms=50)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitExposed(window)
+    window._editor_panel.set_entry(entry)  # noqa: SLF001
+    window._set_mode(4)  # noqa: SLF001
+
+    window._on_locate_ai_excerpt("关键摘录")  # noqa: SLF001
+
+    assert window._stack.currentIndex() == 1  # noqa: SLF001
+    assert window._editor_panel._find_bar.isVisible() is True  # noqa: SLF001
+    assert window._editor_panel.selected_body_text() == "关键摘录"  # noqa: SLF001
+
+
+def test_main_window_locates_ai_excerpt_in_work_editor(qtbot, container):
+    from writer.ui.main_window import MainWindow
+
+    work = container.work_repository.create(title="Work")
+    section = container.work_section_repository.create(work.id, content="前文\nExcerpt Line\n后文")
+    window = MainWindow(container, autosave_debounce_ms=50)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitExposed(window)
+    window._works_panel.select_work_section(work.id, section.id)  # noqa: SLF001
+    window._last_mode_before_ai = 2  # noqa: SLF001
+    window._set_mode(4)  # noqa: SLF001
+
+    window._on_locate_ai_excerpt("Excerpt Line")  # noqa: SLF001
+
+    assert window._stack.currentIndex() == 2  # noqa: SLF001
+    assert window._works_panel._editor._find_bar.isVisible() is True  # noqa: SLF001
+    assert window._works_panel._editor._editor.textCursor().selectedText() == "Excerpt Line"  # noqa: SLF001
+
+
 # ---------------------------------------------------------------------------
 # Tools tab
 # ---------------------------------------------------------------------------
@@ -186,6 +227,30 @@ def test_result_meta_shows_provider_and_model(qtbot, container):
     assert "Provider" in tab._meta_label.text()  # noqa: SLF001
     assert "stub" in tab._meta_label.text()  # noqa: SLF001
     assert "Model" in tab._meta_label.text()  # noqa: SLF001
+
+
+def test_structured_result_enables_locate_excerpt_and_emits_excerpt(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+    from writer.services.ai.task_types import AiTaskResponse
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(AiScope(AiThreadScope.GLOBAL, None, "", ""))
+    tab._paste_edit.setPlainText("report body")  # noqa: SLF001
+    tab._last_request = tab._build_request()  # noqa: SLF001
+    response = AiTaskResponse(
+        content="1. issue",
+        structured={"issues": [{"location": "p1", "excerpt": "关键句子", "issue": "x"}]},
+        provider="stub",
+        model="m",
+    )
+
+    tab._on_task_succeeded(response)  # noqa: SLF001
+
+    assert tab._locate_excerpt_btn.isEnabled() is True  # noqa: SLF001
+    with qtbot.waitSignal(tab.request_locate_excerpt, timeout=500) as blocker:
+        tab._locate_excerpt_btn.click()  # noqa: SLF001
+    assert blocker.args == ["关键句子"]
 
 
 def test_apply_button_updates_when_output_destination_changes_after_result(qtbot, container):
