@@ -3,6 +3,17 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.16 — Writing feel and literary workflow polish
+
+- Added in-document find with match highlighting for fragment and work editors.
+- Added a soft paper-page writing surface and epigraph preview for literary
+  openings while keeping plain-text storage unchanged.
+- Improved reference library browsing with book-style shelves, source pages,
+  clearer quote cards, deletion access, and stronger duplicate review flows.
+- Fixed editor mouse-wheel scrolling so one wheel notch no longer jumps from
+  the start of a long document to the end.
+- Published an updated Windows portable zip release for direct download.
+
 ## 0.2.0-alpha.15 — Public alpha release
 
 - Published a Windows portable zip release for direct download.
