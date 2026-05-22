@@ -36,6 +36,8 @@ _MATCH_FG = QColor("#54411E")
 _CURRENT_BG = QColor("#D29C43")
 _CURRENT_FG = QColor("#FFFDF7")
 _CURRENT_BORDER = QColor("#B97828")
+_WHEEL_LINES_PER_NOTCH = 3
+_WHEEL_ANIMATION_MS = 90
 
 
 def _selection_type() -> type:
@@ -460,15 +462,33 @@ class PaperTextEditMixin:
         )
 
     def wheelEvent(self, event) -> None:  # noqa: N802
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            super().wheelEvent(event)
+            return
+        pixel_delta = event.pixelDelta().y()
         angle = event.angleDelta().y()
-        if angle and not (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+        if pixel_delta or angle:
             event.accept()
             scrollbar = self.verticalScrollBar()
-            target = scrollbar.value() - int(angle * 0.6)
+            single_step = max(1, scrollbar.singleStep())
+            if pixel_delta:
+                # Trackpads report actual pixels. Keep the motion proportional
+                # and restrained. QPlainTextEdit scrollbars are line-based,
+                # while QTextEdit scrollbars are usually pixel-based.
+                if single_step <= 3:
+                    delta = -int(round(pixel_delta / max(1, self.fontMetrics().lineSpacing())))
+                else:
+                    delta = -pixel_delta
+            else:
+                steps = angle / 120.0
+                delta = -int(round(steps * single_step * _WHEEL_LINES_PER_NOTCH))
+            if delta == 0:
+                delta = -1 if angle > 0 else 1
+            target = scrollbar.value() + delta
             smooth_scrollbar_to(
                 scrollbar,
                 target,
-                duration_ms=120,
+                duration_ms=_WHEEL_ANIMATION_MS,
                 reduced=self._reduced_motion,
             )
             return

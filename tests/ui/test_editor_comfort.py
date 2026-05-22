@@ -566,3 +566,83 @@ def test_editor_panel_page_keys_use_paper_scroll_not_typewriter_follow(qtbot):
     qtbot.keyClick(body, Qt.Key.Key_PageDown)
 
     assert body._typewriter_timer.isActive() is False  # noqa: SLF001
+
+
+def test_editor_panel_wheel_scrolls_precisely_not_to_end(qtbot):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QWheelEvent
+
+    from writer.domain.models.entry import Entry
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.resize(520, 260)
+    panel.show()
+    panel.apply_display_settings(
+        EditorDisplaySettings(
+            typewriter_mode_enabled=False,
+            soft_page_guides_enabled=True,
+        )
+    )
+    panel.set_reduced_motion(True)
+    panel.set_entry(Entry(id="entry-1", title="t", body="\n".join(str(i) for i in range(200))))
+    body = panel._body  # noqa: SLF001
+    scrollbar = body.verticalScrollBar()
+    scrollbar.setValue(0)
+    qtbot.waitUntil(lambda: scrollbar.maximum() > 0)
+
+    event = QWheelEvent(
+        QPoint(20, 20),
+        body.viewport().mapToGlobal(QPoint(20, 20)),
+        QPoint(0, 0),
+        QPoint(0, -120),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+        Qt.ScrollPhase.ScrollUpdate,
+        False,
+    )
+    body.wheelEvent(event)  # noqa: SLF001
+    qtbot.waitUntil(lambda: scrollbar.value() > 0)
+
+    assert scrollbar.value() < scrollbar.maximum() // 4
+
+
+def test_work_editor_wheel_scrolls_precisely_not_to_end(qtbot, container):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QWheelEvent
+
+    from writer.domain.enums import SectionType
+    from writer.ui.panels.work_editor_panel import WorkEditorPanel
+
+    work = container.work_repository.create(title="W")
+    container.work_section_repository.create(
+        work.id,
+        section_type=SectionType.BODY.value,
+        content="\n".join(str(i) for i in range(200)),
+    )
+    panel = WorkEditorPanel(container)
+    qtbot.addWidget(panel)
+    panel.resize(720, 320)
+    panel.show()
+    panel.load_work(work.id)
+    editor = panel._editor  # noqa: SLF001
+    editor.set_reduced_motion(True)
+    scrollbar = editor.verticalScrollBar()
+    scrollbar.setValue(0)
+    qtbot.waitUntil(lambda: scrollbar.maximum() > 0)
+
+    event = QWheelEvent(
+        QPoint(20, 20),
+        editor.viewport().mapToGlobal(QPoint(20, 20)),
+        QPoint(0, 0),
+        QPoint(0, -120),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+        Qt.ScrollPhase.ScrollUpdate,
+        False,
+    )
+    editor.wheelEvent(event)  # noqa: SLF001
+    qtbot.waitUntil(lambda: scrollbar.value() > 0)
+
+    assert scrollbar.value() < scrollbar.maximum() // 4
