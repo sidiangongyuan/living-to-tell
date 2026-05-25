@@ -3,6 +3,17 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.17 — Single instance, soft paging, and AI selection flow
+
+- Added single-instance startup so reopening Writer wakes the existing process
+  instead of starting a second tray, hotkey, and database session.
+- Reworked soft paging from decorative separators into page controls with
+  previous / next navigation and page counts for fragment and work editors.
+- Added paper spacing settings for vertical padding and page gaps alongside
+  existing line height, paragraph spacing, and content width controls.
+- Added AI selection previews with copy and return-to-selection actions.
+- Added safe AI replacement for selected ranges inside work sections.
+
 ## 0.2.0-alpha.16 — Writing feel and literary workflow polish
 
 - Added in-document find with match highlighting for fragment and work editors.

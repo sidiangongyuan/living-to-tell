@@ -323,6 +323,9 @@ class MainWindow(QMainWindow):
         self._dates_panel.merge_requested.connect(self._on_dates_merge)
         self._dates_panel.manage_quotes_requested.connect(self._on_manage_quotes)
         self._ai_workspace_panel.request_locate_excerpt.connect(self._on_locate_ai_excerpt)
+        self._ai_workspace_panel.request_locate_selection.connect(
+            self._on_locate_ai_selection
+        )
 
         # M7B: in-memory trash for the most recent deletions. Each entry is
         # a dict with title/body/tags; survives until the app closes.
@@ -1180,14 +1183,20 @@ class MainWindow(QMainWindow):
                 return False
             section_id: Optional[str] = None
             section_body = ""
+            sel_range: Optional[tuple[int, int]] = None
+            sel_text = ""
             try:
                 editor = self._works_panel._editor  # noqa: SLF001
                 editor.flush_pending()
                 section_id = editor.current_section_id()
                 if section_id is not None:
                     section_body = editor.current_section_content()
+                    sel_range = editor.selection_range()
+                    sel_text = editor.selected_section_text()
             except Exception:  # noqa: BLE001
                 section_id = None
+                sel_range = None
+                sel_text = ""
             if section_id is not None:
                 section_obj = self._container.work_section_repository.get(section_id)
                 section_label = (
@@ -1203,6 +1212,9 @@ class MainWindow(QMainWindow):
                         body=section_body,
                         work_id=work.id,
                         section_id=section_id,
+                        selection_start=sel_range[0] if sel_range else None,
+                        selection_end=sel_range[1] if sel_range else None,
+                        selection_text=sel_text,
                     )
                 )
                 return True
@@ -1295,6 +1307,26 @@ class MainWindow(QMainWindow):
             found = self._works_panel._editor.activate_excerpt_find(excerpt)  # noqa: SLF001
         if not found:
             self.statusBar().showMessage(TR("ai.results.locate_excerpt_not_found"), 2500)
+
+    def _on_locate_ai_selection(self, scope: AiScope) -> None:
+        if scope is None or not scope.has_selection:
+            return
+        if scope.kind is AiThreadScope.FRAGMENT and scope.ref_id:
+            self._autosave.flush()
+            self._set_mode(MODE_FRAGMENTS)
+            self._refresh_list(select_id=scope.ref_id)
+            self._load_entry(scope.ref_id)
+            self._editor_panel.select_body_range(
+                scope.selection_start or 0,
+                scope.selection_end or 0,
+            )
+        elif scope.kind is AiThreadScope.WORK and scope.work_id and scope.section_id:
+            self._set_mode(MODE_WORKS)
+            self._works_panel.select_work_section(scope.work_id, scope.section_id)
+            self._works_panel._editor.select_current_section_range(  # noqa: SLF001
+                scope.selection_start or 0,
+                scope.selection_end or 0,
+            )
 
     def _refresh_ai_context_from_panel(self) -> None:
         if self._stack.currentIndex() != MODE_AI:

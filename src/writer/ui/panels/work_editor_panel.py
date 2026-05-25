@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QTextCursor
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -39,7 +39,11 @@ from writer.domain.models.work_section import WorkSection
 from writer.ui.dialogs.work_versions_dialog import WorkVersionsDialog
 from writer.ui.i18n import TR
 from writer.ui.panels.editor_panel import _font_families
-from writer.ui.widgets.editor_find import EditorFindBar, PaperRichTextEdit
+from writer.ui.widgets.editor_find import (
+    EditorFindBar,
+    EditorPageControls,
+    PaperRichTextEdit,
+)
 
 
 _AUTOSAVE_DEBOUNCE_MS = 600
@@ -57,6 +61,7 @@ class WorkEditorPanel(QWidget):
         self._loading = False
         self._display_settings = DEFAULT_EDITOR_DISPLAY_SETTINGS
         self._find_bar = EditorFindBar()
+        self._page_controls = EditorPageControls()
 
         # ---- header fields ----
         self._title = QLineEdit()
@@ -159,6 +164,7 @@ class WorkEditorPanel(QWidget):
         layout.addLayout(header_row2)
         layout.addLayout(header_row3)
         layout.addWidget(section_split, 1)
+        layout.addWidget(self._page_controls)
         layout.addLayout(bottom)
 
         self._editor_save_timer = QTimer(self)
@@ -167,6 +173,7 @@ class WorkEditorPanel(QWidget):
         self._editor_save_timer.timeout.connect(self._flush_section_content)
 
         self._find_bar.set_editor(self._editor)
+        self._page_controls.set_editor(self._editor)
         self._find_bar.install_on(
             self,
             self._title,
@@ -243,6 +250,27 @@ class WorkEditorPanel(QWidget):
             return ""
         return self._editor.toPlainText()
 
+    def selection_range(self) -> Optional[tuple[int, int]]:
+        cursor = self._editor.textCursor()
+        if not cursor.hasSelection():
+            return None
+        return cursor.selectionStart(), cursor.selectionEnd()
+
+    def selected_section_text(self) -> str:
+        cursor = self._editor.textCursor()
+        return cursor.selectedText().replace("\u2029", "\n") if cursor.hasSelection() else ""
+
+    def select_current_section_range(self, start: int, end: int) -> None:
+        text = self._editor.toPlainText()
+        lower = max(0, min(len(text), int(start)))
+        upper = max(lower, min(len(text), int(end)))
+        cursor = self._editor.textCursor()
+        cursor.setPosition(lower)
+        cursor.setPosition(upper, QTextCursor.MoveMode.KeepAnchor)
+        self._editor.setTextCursor(cursor)
+        self._editor.ensureCursorVisible()
+        self._editor.setFocus()
+
     def flush_pending(self) -> None:
         """Force any debounced text edit to be persisted immediately.
 
@@ -269,6 +297,8 @@ class WorkEditorPanel(QWidget):
         self._editor.setFont(body_font)
         self._editor.document().setDefaultFont(body_font)
         self._editor.set_soft_page_guides_enabled(settings.soft_page_guides_enabled)
+        self._editor.set_paper_layout(settings.page_vertical_padding, settings.page_gap)
+        self._page_controls.refresh()
 
     # ------------------------------------------------------------------
     # Section list management

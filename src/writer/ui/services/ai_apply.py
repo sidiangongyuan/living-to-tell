@@ -118,17 +118,32 @@ def apply_to_section(
     work_id: str,
     section_id: str,
     generated_text: str,
+    original_section_body: Optional[str] = None,
+    selection_start: Optional[int] = None,
+    selection_end: Optional[int] = None,
     snapshot_label: str = "pre-ai",
 ) -> ApplyOutcome:
-    """Replace a work section's body after taking a manual work snapshot."""
+    """Replace a work section body or selected range after taking a snapshot."""
 
     container.work_service.save_manual_snapshot(work_id, label=snapshot_label)
+    if (
+        original_section_body is not None
+        and selection_start is not None
+        and selection_end is not None
+    ):
+        start = max(0, min(len(original_section_body), selection_start))
+        end = max(start, min(len(original_section_body), selection_end))
+        generated_text = (
+            original_section_body[:start]
+            + generated_text
+            + original_section_body[end:]
+        )
     section = container.work_section_repository.update_content(
         section_id, generated_text
     )
     label = section_id if section is None else section_id[:8]
     return ApplyOutcome(
-        kind="section",
+        kind="selection" if selection_start is not None else "section",
         target_label=label,
         snapshot_taken=True,
     )

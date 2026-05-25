@@ -5,10 +5,12 @@ import sys
 import traceback
 from typing import List, Optional
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from writer.app.application_controller import ApplicationController
 from writer.app.container import AppContainer, build_container
+from writer.app.single_instance import SingleInstanceCoordinator
 from writer.app.version import APP_VERSION
 from writer.ui.main_window import MainWindow
 
@@ -32,6 +34,20 @@ def run(argv: Optional[List[str]] = None) -> int:
     app.setApplicationName("Writer")
     app.setOrganizationName("Writer")
     app.setApplicationVersion(APP_VERSION)
+
+    controller_holder: dict[str, ApplicationController | None] = {"controller": None}
+    pending_show = {"value": False}
+
+    def _show_primary_window() -> None:
+        controller = controller_holder["controller"]
+        if controller is None:
+            pending_show["value"] = True
+            return
+        controller.show_main_window()
+
+    single_instance = SingleInstanceCoordinator(parent=app)
+    if not single_instance.notify_existing_or_listen(_show_primary_window):
+        return 0
 
     try:
         container = build_container()
@@ -65,7 +81,10 @@ def run(argv: Optional[List[str]] = None) -> int:
             container,
             main_window_factory=create_main_window,
         )
+        controller_holder["controller"] = controller
         controller.start()
+        if pending_show["value"]:
+            QTimer.singleShot(0, controller.show_main_window)
         return app.exec()
     except Exception:  # noqa: BLE001
         _show_startup_error("An unexpected error occurred during startup.")

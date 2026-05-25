@@ -19,6 +19,7 @@ from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QApplication,
     QFormLayout,
     QFrame,
     QHBoxLayout,
@@ -398,6 +399,7 @@ class AIToolsTab(QWidget):
     request_save_as_fragment = Signal(str)  # new fragment id
     request_send_to_chat = Signal(str)  # text to seed chat
     request_locate_excerpt = Signal(str)
+    request_locate_selection = Signal(object)
 
     def __init__(self, container: AppContainer, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -437,6 +439,39 @@ class AIToolsTab(QWidget):
         self._scope_label.setObjectName("AIScopeLabel")
         self._scope_label.setWordWrap(True)
         right_layout.addWidget(self._scope_label)
+
+        self._selection_card = QFrame()
+        self._selection_card.setObjectName("AISelectionCard")
+        selection_layout = QVBoxLayout(self._selection_card)
+        selection_layout.setContentsMargins(12, 10, 12, 10)
+        selection_layout.setSpacing(6)
+
+        selection_header = QHBoxLayout()
+        self._selection_title = QLabel(TR("ai.selection.title"))
+        self._selection_title.setObjectName("AISelectionTitle")
+        selection_header.addWidget(self._selection_title)
+        selection_header.addStretch(1)
+        self._selection_copy_btn = QPushButton(TR("ai.selection.copy"))
+        self._selection_copy_btn.setObjectName("GhostButton")
+        self._selection_copy_btn.clicked.connect(self._copy_selection)
+        selection_header.addWidget(self._selection_copy_btn)
+        self._selection_locate_btn = QPushButton(TR("ai.selection.locate"))
+        self._selection_locate_btn.setObjectName("GhostButton")
+        self._selection_locate_btn.clicked.connect(self._locate_selection)
+        selection_header.addWidget(self._selection_locate_btn)
+        selection_layout.addLayout(selection_header)
+
+        self._selection_meta = QLabel("")
+        self._selection_meta.setObjectName("AISelectionMeta")
+        selection_layout.addWidget(self._selection_meta)
+
+        self._selection_view = QPlainTextEdit()
+        self._selection_view.setObjectName("AISelectionPreview")
+        self._selection_view.setReadOnly(True)
+        self._selection_view.setMaximumHeight(116)
+        selection_layout.addWidget(self._selection_view)
+        self._selection_card.setVisible(False)
+        right_layout.addWidget(self._selection_card)
 
         self._task_desc_label = QLabel("")
         self._task_desc_label.setObjectName("AITaskDesc")
@@ -711,6 +746,7 @@ class AIToolsTab(QWidget):
     def bind_scope(self, scope: AiScope) -> None:
         self._scope = scope
         self._update_scope_label()
+        self._refresh_selection_card()
         self._refresh_output_combo()
         # Reset target default per scope.
         target_default = {
@@ -719,7 +755,11 @@ class AIToolsTab(QWidget):
                 if scope.has_selection and bool(scope.selection_text.strip())
                 else AiTargetKind.FRAGMENT
             ),
-            AiThreadScope.WORK: AiTargetKind.WORK,
+            AiThreadScope.WORK: (
+                AiTargetKind.SELECTION
+                if scope.has_selection and bool(scope.selection_text.strip())
+                else AiTargetKind.WORK
+            ),
             AiThreadScope.COLLECTION: AiTargetKind.COLLECTION,
             AiThreadScope.GLOBAL: AiTargetKind.PASTE,
         }[scope.kind]
@@ -764,6 +804,28 @@ class AIToolsTab(QWidget):
             AiThreadScope.COLLECTION: "ai.scope_collection",
         }.get(self._scope.kind, "ai.scope_global")
         self._scope_label.setText(TR(key).format(name=self._scope.name))
+
+    def _refresh_selection_card(self) -> None:
+        scope = self._scope
+        has_selection = bool(scope and scope.has_selection and scope.selection_text.strip())
+        self._selection_card.setVisible(has_selection)
+        if not has_selection or scope is None:
+            self._selection_meta.setText(TR("ai.selection.empty"))
+            self._selection_view.setPlainText("")
+            return
+        text = scope.selection_text
+        self._selection_meta.setText(
+            TR("ai.selection.source").format(name=scope.name, chars=len(text))
+        )
+        self._selection_view.setPlainText(text)
+
+    def _copy_selection(self) -> None:
+        if self._scope is not None and self._scope.has_selection:
+            QApplication.clipboard().setText(self._scope.selection_text)
+
+    def _locate_selection(self) -> None:
+        if self._scope is not None and self._scope.has_selection:
+            self.request_locate_selection.emit(self._scope)
 
     def _on_task_changed(self, current, previous) -> None:
         # Save params for the task we're leaving.
@@ -954,9 +1016,11 @@ class AIToolsTab(QWidget):
         # scope-allowed and additionally restrict by target kind.
         allowed = set(_allowed_outputs(scope))
         if target == AiTargetKind.SELECTION:
-            # Selection inside a fragment unlocks REPLACE_SELECTION; for
-            # other scopes the request degrades to preview / save-as.
-            if scope.kind is AiThreadScope.FRAGMENT:
+            # Fragment and focused work-section selections can be replaced
+            # safely; other selection-like targets degrade to preview/save-as.
+            if scope.kind is AiThreadScope.FRAGMENT or (
+                scope.kind is AiThreadScope.WORK and scope.has_section
+            ):
                 allowed.add(AiOutputAction.REPLACE_SELECTION)
             allowed &= {
                 AiOutputAction.PREVIEW_ONLY,
@@ -1498,6 +1562,7 @@ class AIToolsTab(QWidget):
                 out == AiOutputAction.REPLACE_SELECTION
                 and self._scope.ref_id is not None
                 and self._scope.has_selection
+                and self._scope.kind is AiThreadScope.FRAGMENT
             ):
                 outcome = apply_to_fragment(
                     self._container,
@@ -1510,6 +1575,20 @@ class AIToolsTab(QWidget):
                     title=self._scope.name,
                     provider_name=self._last_response.provider or "openai",
                     model=self._last_response.model or "",
+                )
+            elif (
+                out == AiOutputAction.REPLACE_SELECTION
+                and self._scope.has_section
+                and self._scope.has_selection
+            ):
+                outcome = apply_to_section(
+                    self._container,
+                    work_id=self._scope.work_id,
+                    section_id=self._scope.section_id,
+                    generated_text=text,
+                    original_section_body=self._scope.body,
+                    selection_start=self._scope.selection_start,
+                    selection_end=self._scope.selection_end,
                 )
             elif out == AiOutputAction.REPLACE_SECTION and self._scope.has_section:
                 outcome = apply_to_section(
@@ -1829,6 +1908,7 @@ class AIWorkspacePanel(QWidget):
 
     request_save_as_fragment = Signal(str)
     request_locate_excerpt = Signal(str)
+    request_locate_selection = Signal(object)
 
     def __init__(self, container: AppContainer, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -1851,6 +1931,9 @@ class AIWorkspacePanel(QWidget):
         self._tools_tab.request_send_to_chat.connect(self._on_send_to_chat)
         self._tools_tab.request_save_as_fragment.connect(self.request_save_as_fragment.emit)
         self._tools_tab.request_locate_excerpt.connect(self.request_locate_excerpt.emit)
+        self._tools_tab.request_locate_selection.connect(
+            self.request_locate_selection.emit
+        )
         self._chat_tab.request_save_as_fragment.connect(self.request_save_as_fragment.emit)
 
         # Default global scope until bound.

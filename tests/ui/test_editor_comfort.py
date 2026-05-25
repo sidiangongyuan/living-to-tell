@@ -28,6 +28,8 @@ def test_editor_display_settings_load_defaults(container):
 def test_editor_display_settings_persists_font_and_reduced_motion(container):
     custom = EditorDisplaySettings(
         font_family="Noto Serif SC, 宋体",
+        page_vertical_padding=40,
+        page_gap=20,
         auto_paragraph_indent_enabled=False,
         soft_page_guides_enabled=False,
     )
@@ -37,6 +39,8 @@ def test_editor_display_settings_persists_font_and_reduced_motion(container):
 
     loaded = container.settings.load_editor_display_settings()
     assert loaded.font_family == "Noto Serif SC, 宋体"
+    assert loaded.page_vertical_padding == 40
+    assert loaded.page_gap == 20
     assert loaded.auto_paragraph_indent_enabled is False
     assert loaded.soft_page_guides_enabled is False
     assert container.settings.reduced_motion_enabled() is True
@@ -548,6 +552,30 @@ def test_soft_page_guides_toggle_does_not_mutate_plain_text(qtbot):
     panel.apply_display_settings(EditorDisplaySettings(soft_page_guides_enabled=False))
     assert panel.body_text() == text
     assert panel._body.soft_page_guides_enabled() is False  # noqa: SLF001
+    assert panel._page_controls.isVisible() is False  # noqa: SLF001
+
+
+def test_editor_page_controls_turn_pages_without_mutating_text(qtbot):
+    from writer.domain.models.entry import Entry
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    text = "\n".join(str(i) for i in range(160))
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.resize(520, 260)
+    panel.show()
+    panel.set_reduced_motion(True)
+    panel.apply_display_settings(EditorDisplaySettings(soft_page_guides_enabled=True))
+    panel.set_entry(Entry(id="entry-1", title="t", body=text))
+    body = panel._body  # noqa: SLF001
+    scrollbar = body.verticalScrollBar()
+    qtbot.waitUntil(lambda: scrollbar.maximum() > 0)
+
+    panel._page_controls.next_page()  # noqa: SLF001
+    qtbot.waitUntil(lambda: scrollbar.value() > 0)
+
+    assert panel.body_text() == text
+    assert body.current_soft_page() >= 2
 
 
 def test_editor_panel_page_keys_use_paper_scroll_not_typewriter_follow(qtbot):

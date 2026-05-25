@@ -239,6 +239,18 @@ class SettingsDialog(QDialog):
         self._content_width.setValue(editor_settings.content_width)
         self._content_width.setSuffix(" px")
 
+        self._page_vertical_padding = QSpinBox()
+        self._page_vertical_padding.setRange(12, 96)
+        self._page_vertical_padding.setSingleStep(4)
+        self._page_vertical_padding.setValue(editor_settings.page_vertical_padding)
+        self._page_vertical_padding.setSuffix(" px")
+
+        self._page_gap = QSpinBox()
+        self._page_gap.setRange(0, 96)
+        self._page_gap.setSingleStep(4)
+        self._page_gap.setValue(editor_settings.page_gap)
+        self._page_gap.setSuffix(" px")
+
         self._visual_indent_checkbox = QCheckBox(TR("settings.editor_visual_indent"))
         self._visual_indent_checkbox.setChecked(
             editor_settings.visual_first_line_indent_enabled
@@ -271,6 +283,11 @@ class SettingsDialog(QDialog):
             self._paragraph_spacing,
         )
         writing_form.addRow(TR("settings.editor_content_width"), self._content_width)
+        writing_form.addRow(
+            TR("settings.editor_page_vertical_padding"),
+            self._page_vertical_padding,
+        )
+        writing_form.addRow(TR("settings.editor_page_gap"), self._page_gap)
         writing_form.addRow("", self._visual_indent_checkbox)
         writing_form.addRow("", self._typewriter_checkbox)
         writing_form.addRow("", self._auto_indent_checkbox)
@@ -723,6 +740,8 @@ class SettingsDialog(QDialog):
                 line_height=self._line_height.value(),
                 paragraph_spacing=self._paragraph_spacing.value(),
                 content_width=self._content_width.value(),
+                page_vertical_padding=self._page_vertical_padding.value(),
+                page_gap=self._page_gap.value(),
                 font_family=self._font_family_combo.currentText().strip(),
                 visual_first_line_indent_enabled=self._visual_indent_checkbox.isChecked(),
                 typewriter_mode_enabled=self._typewriter_checkbox.isChecked(),

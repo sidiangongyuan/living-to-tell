@@ -40,7 +40,11 @@ from writer.storage.repositories.entry_repository import serialize_tags
 from writer.ui.i18n import TR
 from writer.ui.motion import cancel_scrollbar_animation, smooth_scrollbar_to
 from writer.ui.tag_colors import tag_style_sheet
-from writer.ui.widgets.editor_find import EditorFindBar, PaperPlainTextEdit
+from writer.ui.widgets.editor_find import (
+    EditorFindBar,
+    EditorPageControls,
+    PaperPlainTextEdit,
+)
 
 
 FOCUS_MODE_CONTENT_WIDTH = 1180
@@ -218,6 +222,10 @@ class _WriterBodyEdit(PaperPlainTextEdit):
         cursor_rect = self.cursorRect()
         desired_top = int(viewport_height * 0.4)
         delta = cursor_rect.top() - desired_top
+        if delta < 0 and cursor_rect.top() > int(viewport_height * 0.18):
+            # Avoid pulling the page upward just to perfect-centre the cursor;
+            # only scroll up when the caret is genuinely near the top edge.
+            return
         threshold = max(cursor_rect.height(), self.fontMetrics().lineSpacing()) // 2
         if abs(delta) <= threshold:
             return
@@ -225,6 +233,8 @@ class _WriterBodyEdit(PaperPlainTextEdit):
         smoothed_delta = int(delta * 0.7)
         target = scrollbar.value() + smoothed_delta
         target = max(scrollbar.minimum(), min(scrollbar.maximum(), target))
+        if target < scrollbar.value() and self.textCursor().position() >= len(self.toPlainText()):
+            return
         smooth_scrollbar_to(scrollbar, target, reduced=self._reduced_motion)
 
     def _should_auto_indent_return(self, event: QKeyEvent) -> bool:
@@ -304,6 +314,7 @@ class EditorPanel(QWidget):
         self._display_settings = DEFAULT_EDITOR_DISPLAY_SETTINGS
         self._focus_mode_enabled = False
         self._find_bar = EditorFindBar()
+        self._page_controls = EditorPageControls()
 
         self._title = QLineEdit()
         self._title.setPlaceholderText(TR("editor.title_placeholder"))
@@ -389,6 +400,7 @@ class EditorPanel(QWidget):
         content_layout.addWidget(self._tag_chips_widget)
         content_layout.addWidget(self._epigraph_card)
         content_layout.addWidget(self._body, 1)
+        content_layout.addWidget(self._page_controls)
         content_layout.addLayout(bottom_row)
 
         layout = QHBoxLayout(self)
@@ -405,6 +417,7 @@ class EditorPanel(QWidget):
 
         self._loading = False
         self._find_bar.set_editor(self._body)
+        self._page_controls.set_editor(self._body)
         self._find_bar.install_on(self, self._title, self._tags, self._body, self._body.viewport())
         self._body.textChanged.connect(self._find_bar.refresh_matches)
         self.apply_display_settings(DEFAULT_EDITOR_DISPLAY_SETTINGS)
@@ -440,6 +453,8 @@ class EditorPanel(QWidget):
 
         self._body.apply_display_settings(settings)
         self._body.set_soft_page_guides_enabled(settings.soft_page_guides_enabled)
+        self._body.set_paper_layout(settings.page_vertical_padding, settings.page_gap)
+        self._page_controls.refresh()
         self.updateGeometry()
 
     def set_reduced_motion(self, enabled: bool) -> None:
@@ -558,6 +573,17 @@ class EditorPanel(QWidget):
     def selected_body_text(self) -> str:
         cursor = self._body.textCursor()
         return cursor.selectedText().replace("\u2029", "\n") if cursor.hasSelection() else ""
+
+    def select_body_range(self, start: int, end: int) -> None:
+        body = self._body.toPlainText()
+        lower = max(0, min(len(body), int(start)))
+        upper = max(lower, min(len(body), int(end)))
+        cursor = self._body.textCursor()
+        cursor.setPosition(lower)
+        cursor.setPosition(upper, QTextCursor.MoveMode.KeepAnchor)
+        self._body.setTextCursor(cursor)
+        self._body.ensureCursorVisible()
+        self._body.setFocus()
 
     @property
     def save_specimen_button(self) -> QPushButton:

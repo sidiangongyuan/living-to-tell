@@ -51,6 +51,8 @@ KEY_EDITOR_FONT_SIZE = "editor.font_size"
 KEY_EDITOR_LINE_HEIGHT = "editor.line_height"
 KEY_EDITOR_PARAGRAPH_SPACING = "editor.paragraph_spacing"
 KEY_EDITOR_CONTENT_WIDTH = "editor.content_width"
+KEY_EDITOR_PAGE_VERTICAL_PADDING = "editor.page_vertical_padding"
+KEY_EDITOR_PAGE_GAP = "editor.page_gap"
 KEY_EDITOR_FONT_FAMILY = "editor.font_family"
 KEY_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED = (
     "editor.visual_first_line_indent_enabled"
@@ -63,6 +65,8 @@ DEFAULT_EDITOR_FONT_SIZE = 18
 DEFAULT_EDITOR_LINE_HEIGHT = 1.8
 DEFAULT_EDITOR_PARAGRAPH_SPACING = 0.8
 DEFAULT_EDITOR_CONTENT_WIDTH = 1000
+DEFAULT_EDITOR_PAGE_VERTICAL_PADDING = 28
+DEFAULT_EDITOR_PAGE_GAP = 34
 MAX_EDITOR_CONTENT_WIDTH = 1600
 DEFAULT_EDITOR_FONT_FAMILY = (
     "Noto Serif SC, Source Han Serif SC, Songti SC, 华文宋体, 宋体, Georgia, Cambria"
@@ -93,6 +97,8 @@ class EditorDisplaySettings:
     line_height: float = DEFAULT_EDITOR_LINE_HEIGHT
     paragraph_spacing: float = DEFAULT_EDITOR_PARAGRAPH_SPACING
     content_width: int = DEFAULT_EDITOR_CONTENT_WIDTH
+    page_vertical_padding: int = DEFAULT_EDITOR_PAGE_VERTICAL_PADDING
+    page_gap: int = DEFAULT_EDITOR_PAGE_GAP
     font_family: str = DEFAULT_EDITOR_FONT_FAMILY
     visual_first_line_indent_enabled: bool = (
         DEFAULT_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED
@@ -257,6 +263,18 @@ class Settings:
                 minimum=520,
                 maximum=MAX_EDITOR_CONTENT_WIDTH,
             ),
+            page_vertical_padding=_coerce_int(
+                self._repo.get(KEY_EDITOR_PAGE_VERTICAL_PADDING),
+                default=DEFAULT_EDITOR_PAGE_VERTICAL_PADDING,
+                minimum=12,
+                maximum=96,
+            ),
+            page_gap=_coerce_int(
+                self._repo.get(KEY_EDITOR_PAGE_GAP),
+                default=DEFAULT_EDITOR_PAGE_GAP,
+                minimum=0,
+                maximum=96,
+            ),
             font_family=_coerce_font_family(
                 self._repo.get(KEY_EDITOR_FONT_FAMILY),
                 default=DEFAULT_EDITOR_FONT_FAMILY,
@@ -286,6 +304,10 @@ class Settings:
             KEY_EDITOR_PARAGRAPH_SPACING, f"{settings.paragraph_spacing:.2f}"
         )
         self._repo.set(KEY_EDITOR_CONTENT_WIDTH, str(settings.content_width))
+        self._repo.set(
+            KEY_EDITOR_PAGE_VERTICAL_PADDING, str(settings.page_vertical_padding)
+        )
+        self._repo.set(KEY_EDITOR_PAGE_GAP, str(settings.page_gap))
         self._repo.set(
             KEY_EDITOR_FONT_FAMILY,
             _coerce_font_family(

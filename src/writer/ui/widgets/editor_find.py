@@ -424,6 +424,84 @@ class EditorFindBar(QFrame):
         self.installEventFilter(self._shortcut_filter)
 
 
+class EditorPageControls(QFrame):
+    """Small page navigation strip for soft-page editor browsing."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("EditorPageControls")
+        self._editor: Optional[EditorWidget] = None
+
+        self._prev_btn = QPushButton(TR("editor.page.previous"))
+        self._prev_btn.setObjectName("EditorPageButton")
+        self._prev_btn.clicked.connect(self.previous_page)
+
+        self._page_label = QLabel(TR("editor.page.count").format(current=1, total=1))
+        self._page_label.setObjectName("EditorPageLabel")
+        self._page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self._next_btn = QPushButton(TR("editor.page.next"))
+        self._next_btn.setObjectName("EditorPageButton")
+        self._next_btn.clicked.connect(self.next_page)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(6)
+        layout.addStretch(1)
+        layout.addWidget(self._prev_btn)
+        layout.addWidget(self._page_label)
+        layout.addWidget(self._next_btn)
+        layout.addStretch(1)
+
+    def set_editor(self, widget: Optional[EditorWidget]) -> None:
+        if self._editor is widget:
+            self.refresh()
+            return
+        if self._editor is not None:
+            scrollbar = self._editor.verticalScrollBar()
+            try:
+                scrollbar.valueChanged.disconnect(self.refresh)
+                scrollbar.rangeChanged.disconnect(self.refresh)
+                self._editor.textChanged.disconnect(self.refresh)
+            except (RuntimeError, TypeError):
+                pass
+        self._editor = widget
+        if widget is not None:
+            scrollbar = widget.verticalScrollBar()
+            scrollbar.valueChanged.connect(self.refresh)
+            scrollbar.rangeChanged.connect(self.refresh)
+            widget.textChanged.connect(self.refresh)
+        self.refresh()
+
+    def previous_page(self) -> None:
+        if self._editor is not None and hasattr(self._editor, "previous_soft_page"):
+            self._editor.previous_soft_page()
+            self.refresh()
+
+    def next_page(self) -> None:
+        if self._editor is not None and hasattr(self._editor, "next_soft_page"):
+            self._editor.next_soft_page()
+            self.refresh()
+
+    def refresh(self, *_args) -> None:
+        editor = self._editor
+        enabled = bool(
+            editor is not None
+            and hasattr(editor, "soft_page_guides_enabled")
+            and editor.soft_page_guides_enabled()
+        )
+        self.setVisible(enabled)
+        if not enabled or editor is None:
+            return
+        total = editor.soft_page_count() if hasattr(editor, "soft_page_count") else 1
+        current = editor.current_soft_page() if hasattr(editor, "current_soft_page") else 1
+        self._page_label.setText(
+            TR("editor.page.count").format(current=current, total=total)
+        )
+        self._prev_btn.setEnabled(current > 1)
+        self._next_btn.setEnabled(current < total)
+
+
 class PaperTextEditMixin:
     """Shared paper-guide drawing and smooth page-step scrolling."""
 
@@ -444,11 +522,49 @@ class PaperTextEditMixin:
     def soft_page_guides_enabled(self) -> bool:
         return bool(self._soft_page_guides_enabled)
 
+    def set_paper_layout(self, page_vertical_padding: int, page_gap: int) -> None:
+        self._paper_margin_v = max(12, min(96, int(page_vertical_padding)))
+        self._page_gap = max(0, min(96, int(page_gap)))
+        self.viewport().update()
+
+    def _soft_page_step(self) -> int:
+        scrollbar = self.verticalScrollBar()
+        return max(1, int(scrollbar.pageStep()))
+
+    def soft_page_count(self) -> int:
+        scrollbar = self.verticalScrollBar()
+        page_step = self._soft_page_step()
+        span = max(0, scrollbar.maximum() - scrollbar.minimum())
+        return max(1, (span + page_step - 1) // page_step + 1)
+
+    def current_soft_page(self) -> int:
+        scrollbar = self.verticalScrollBar()
+        page_step = self._soft_page_step()
+        current = (scrollbar.value() - scrollbar.minimum()) // page_step + 1
+        return max(1, min(self.soft_page_count(), int(current)))
+
+    def go_to_soft_page(self, page_index: int) -> None:
+        scrollbar = self.verticalScrollBar()
+        page = max(1, min(self.soft_page_count(), int(page_index)))
+        target = scrollbar.minimum() + (page - 1) * self._soft_page_step()
+        target = max(scrollbar.minimum(), min(scrollbar.maximum(), target))
+        smooth_scrollbar_to(
+            scrollbar,
+            target,
+            duration_ms=220,
+            reduced=self._reduced_motion,
+        )
+
+    def next_soft_page(self) -> None:
+        self.go_to_soft_page(self.current_soft_page() + 1)
+
+    def previous_soft_page(self) -> None:
+        self.go_to_soft_page(self.current_soft_page() - 1)
+
     def pageStepTarget(self, *, direction: int) -> int:  # noqa: N802
         scrollbar = self.verticalScrollBar()
-        page_step = max(1, int(self.viewport().height() * 0.84))
-        gap = int(self._page_gap * 0.7)
-        delta = direction * (page_step - gap)
+        page_step = max(1, int(scrollbar.pageStep() * 0.92))
+        delta = direction * page_step
         target = scrollbar.value() + delta
         return max(scrollbar.minimum(), min(scrollbar.maximum(), target))
 
@@ -516,39 +632,26 @@ class PaperTextEditMixin:
     def _paint_soft_page_guides(self) -> None:
         if not self._soft_page_guides_enabled:
             return
-        document: QTextDocument = self.document()
-        page_height = self._page_height_px()
-        if page_height <= 0:
-            return
         viewport_rect = self.viewport().rect()
-        scrollbar_value = self.verticalScrollBar().value()
-        paper_rect = viewport_rect.adjusted(20, 12, -20, -12)
+        paper_rect = viewport_rect.adjusted(18, 10, -18, -10)
         painter = QPainter(self.viewport())
         if not painter.isActive():
             return
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setPen(QColor("#D8CCB7"))
+        painter.setPen(QColor("#E0D3BE"))
         painter.setBrush(Qt.BrushStyle.NoBrush)
-
-        doc_height = max(document.size().height(), float(viewport_rect.height()))
-        guide_top = 0
-        while guide_top < doc_height + page_height:
-            y = int(guide_top - scrollbar_value + self._paper_margin_v + page_height)
-            if y >= viewport_rect.top() - 60 and y <= viewport_rect.bottom() + 60:
-                left = paper_rect.left() + 20
-                right = paper_rect.right() - 20
-                if right > left:
-                    painter.drawLine(left, y, right, y)
-                dot_y = y + int(self._page_gap / 2)
-                if dot_y < viewport_rect.bottom():
-                    dot_radius = 2
-                    center = QPoint(paper_rect.center().x(), dot_y)
-                    painter.setBrush(QColor("#C9B796"))
-                    painter.setPen(Qt.PenStyle.NoPen)
-                    painter.drawEllipse(center, dot_radius, dot_radius)
-                    painter.setBrush(Qt.BrushStyle.NoBrush)
-                    painter.setPen(QColor("#D8CCB7"))
-            guide_top += page_height + self._page_gap
+        painter.drawRoundedRect(paper_rect, 14, 14)
+        painter.setPen(QColor("#D6C5A8"))
+        top_y = paper_rect.top() + self._paper_margin_v
+        bottom_y = paper_rect.bottom() - self._paper_margin_v
+        if top_y < bottom_y:
+            painter.drawLine(paper_rect.left() + 28, top_y, paper_rect.right() - 28, top_y)
+            painter.drawLine(
+                paper_rect.left() + 28,
+                bottom_y,
+                paper_rect.right() - 28,
+                bottom_y,
+            )
 
     def _page_height_px(self) -> int:
         metrics = self.fontMetrics()

@@ -898,6 +898,78 @@ def test_replace_selection_apply_only_rewrites_selected_range(qtbot, container):
     assert fresh.body == "alpha BETA! gamma"
 
 
+def test_selection_preview_card_shows_bound_selection_and_emits_locate(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(
+            kind=AiThreadScope.FRAGMENT,
+            ref_id="frag-1",
+            name="Fragment",
+            body="hello world",
+            selection_start=6,
+            selection_end=11,
+            selection_text="world",
+        )
+    )
+
+    assert tab._selection_card.isHidden() is False  # noqa: SLF001
+    assert tab._selection_view.toPlainText() == "world"  # noqa: SLF001
+    with qtbot.waitSignal(tab.request_locate_selection) as blocker:
+        tab._selection_locate_btn.click()  # noqa: SLF001
+    assert blocker.args[0].selection_text == "world"
+
+
+def test_work_section_selection_apply_only_rewrites_selected_range(qtbot, container):
+    from PySide6.QtGui import QTextCursor
+
+    from writer.ui.main_window import MainWindow, MODE_AI, MODE_WORKS
+
+    work = container.work_repository.create(title="W", summary="")
+    section = container.work_section_repository.create(
+        work_id=work.id,
+        content="alpha beta gamma",
+    )
+    provider = _StubProvider("BETA!")
+    _stub_container_provider(container, provider)
+
+    window = MainWindow(container, autosave_debounce_ms=50)
+    qtbot.addWidget(window)
+    window._set_mode(MODE_WORKS)  # noqa: SLF001
+    window._works_panel.select_work_section(work.id, section.id)  # noqa: SLF001
+    editor = window._works_panel._editor._editor  # noqa: SLF001
+    cursor = editor.textCursor()
+    cursor.setPosition(6)
+    cursor.setPosition(10, QTextCursor.MoveMode.KeepAnchor)
+    editor.setTextCursor(cursor)
+
+    window._set_mode(MODE_AI)  # noqa: SLF001
+    tab = window._ai_workspace_panel.tools_tab  # noqa: SLF001
+    request = tab._build_request()  # noqa: SLF001
+    assert request is not None
+    assert request.target_kind == AiTargetKind.SELECTION
+    assert request.text == "beta"
+
+    repl_idx = tab._output_combo.findData(AiOutputAction.REPLACE_SELECTION)  # noqa: SLF001
+    assert repl_idx >= 0
+    tab._output_combo.setCurrentIndex(repl_idx)  # noqa: SLF001
+    response = container.ai_task_service.generate(request)
+    tab._last_request = request  # noqa: SLF001
+    tab._last_response = response  # noqa: SLF001
+    tab._result_view.setPlainText(response.content)  # noqa: SLF001
+
+    import writer.ui.panels.ai_workspace_panel as panel_mod
+
+    panel_mod.QMessageBox.information = lambda *a, **k: None  # type: ignore[assignment]
+    panel_mod.QMessageBox.warning = lambda *a, **k: 0  # type: ignore[assignment]
+    tab._on_apply()  # noqa: SLF001
+
+    fresh = container.work_section_repository.get(section.id)
+    assert fresh.content == "alpha BETA! gamma"
+
+
 def test_main_window_binds_section_scope_when_section_focused(qtbot, container):
     """Bug #3: when a work section is focused, AI binding must surface a
     writable section sub-scope (section_id + work_id + section body)."""

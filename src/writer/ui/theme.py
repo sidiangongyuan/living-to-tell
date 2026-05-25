@@ -595,6 +595,30 @@ QLabel#EditorFindCount {{
 QLabel#EditorFindCount[noResults="true"] {{
     color: {t.danger};
 }}
+QFrame#EditorPageControls {{
+    background: transparent;
+    border: none;
+}}
+QLabel#EditorPageLabel {{
+    color: {t.text_muted};
+    font-size: {t.fs_meta}px;
+    min-width: 78px;
+}}
+QPushButton#EditorPageButton {{
+    background: {t.bg_card};
+    color: {t.text_secondary};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_md}px;
+    padding: 4px 10px;
+}}
+QPushButton#EditorPageButton:hover {{
+    color: {t.text_primary};
+    border-color: {t.accent};
+}}
+QPushButton#EditorPageButton:disabled {{
+    color: {t.text_muted};
+    background: transparent;
+}}
 
 /* ------- Empty state card ------- */
 QFrame#EmptyStateCard {{
@@ -747,7 +771,8 @@ QScrollArea#AIToolsScroll {{
     border: none;
 }}
 QFrame#AIParamsBox,
-QFrame#AIAdvancedBox {{
+QFrame#AIAdvancedBox,
+QFrame#AISelectionCard {{
     background: {t.bg_card};
     border: 1px solid {t.border};
     border-radius: {t.radius_lg}px;
@@ -756,6 +781,22 @@ QFrame#AIAdvancedBox {{
 QFrame#AIParamsBox QLabel,
 QFrame#AIAdvancedBox QLabel {{
     color: {t.text_secondary};
+}}
+QLabel#AISelectionTitle {{
+    color: {t.text_primary};
+    font-weight: 600;
+}}
+QLabel#AISelectionMeta {{
+    color: {t.text_muted};
+    font-size: {t.fs_meta}px;
+}}
+QPlainTextEdit#AISelectionPreview {{
+    background: #FFF9EF;
+    color: {t.text_primary};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_md}px;
+    padding: 8px;
+    font-family: {t.font_serif};
 }}
 QWidget#AIWorkspacePanel QCheckBox {{
     color: {t.text_primary};
