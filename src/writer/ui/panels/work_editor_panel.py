@@ -208,6 +208,7 @@ class WorkEditorPanel(QWidget):
             self._wc_label.setText("")
             self._loading = False
             self._find_bar.close_bar(clear_query=True)
+            self._page_controls.schedule_refresh()
             return
 
         work = self._container.work_repository.get(work_id)
@@ -228,6 +229,7 @@ class WorkEditorPanel(QWidget):
         self._loading = False
         self._update_word_count()
         self._find_bar.refresh_matches()
+        self._page_controls.schedule_refresh()
 
     def focus_section(self, section_id: str) -> None:
         for i in range(self._sections.count()):
@@ -327,6 +329,7 @@ class WorkEditorPanel(QWidget):
             self._editor.setPlainText("")
             self._editor.blockSignals(False)
             self._find_bar.refresh_matches()
+            self._page_controls.schedule_refresh()
 
     @staticmethod
     def _make_section_item(section: WorkSection) -> QListWidgetItem:
@@ -362,6 +365,7 @@ class WorkEditorPanel(QWidget):
         self._editor.setPlainText(section.content if section else "")
         self._editor.blockSignals(False)
         self._find_bar.refresh_matches()
+        self._page_controls.schedule_refresh()
 
     def _add_section(self, section_type: str) -> None:
         if self._work_id is None:

@@ -3,6 +3,19 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.18 — Reliable soft paging and cleaner editor surface
+
+- Fixed soft page navigation so the next / previous page controls refresh after
+  content and layout changes and reliably move through long fragments.
+- Fixed soft page counting so the final page is based on a real reachable
+  scroll position instead of leaving a disabled-looking extra page.
+- Removed in-body grey page guide lines that could overlap wrapped text and
+  opening epigraph previews.
+- Added regression coverage for a long `绵绵`-style fragment with an opening
+  epigraph and many body paragraphs.
+- Hardened typewriter-scroll teardown so delayed timer callbacks do not fire
+  against a deleted editor widget during close or tests.
+
 ## 0.2.0-alpha.17 — Single instance, soft paging, and AI selection flow
 
 - Added single-instance startup so reopening Writer wakes the existing process

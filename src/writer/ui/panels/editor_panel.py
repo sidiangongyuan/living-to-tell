@@ -213,29 +213,33 @@ class _WriterBodyEdit(PaperPlainTextEdit):
         cancel_scrollbar_animation(self.verticalScrollBar())
 
     def _adjust_typewriter_scroll(self) -> None:
-        self._typewriter_adjust_allowed = False
-        if not self.effective_typewriter_enabled() or not self.isVisible():
+        try:
+            self._typewriter_adjust_allowed = False
+            if not self.effective_typewriter_enabled() or not self.isVisible():
+                return
+            viewport_height = self.viewport().height()
+            if viewport_height <= 0:
+                return
+            cursor_rect = self.cursorRect()
+            desired_top = int(viewport_height * 0.4)
+            delta = cursor_rect.top() - desired_top
+            if delta < 0 and cursor_rect.top() > int(viewport_height * 0.18):
+                # Avoid pulling the page upward just to perfect-centre the cursor;
+                # only scroll up when the caret is genuinely near the top edge.
+                return
+            threshold = max(cursor_rect.height(), self.fontMetrics().lineSpacing()) // 2
+            if abs(delta) <= threshold:
+                return
+            scrollbar = self.verticalScrollBar()
+            smoothed_delta = int(delta * 0.7)
+            target = scrollbar.value() + smoothed_delta
+            target = max(scrollbar.minimum(), min(scrollbar.maximum(), target))
+            if target < scrollbar.value() and self.textCursor().position() >= len(self.toPlainText()):
+                return
+            smooth_scrollbar_to(scrollbar, target, reduced=self._reduced_motion)
+        except RuntimeError:
+            # The timer can fire during Qt teardown after the C++ widget is gone.
             return
-        viewport_height = self.viewport().height()
-        if viewport_height <= 0:
-            return
-        cursor_rect = self.cursorRect()
-        desired_top = int(viewport_height * 0.4)
-        delta = cursor_rect.top() - desired_top
-        if delta < 0 and cursor_rect.top() > int(viewport_height * 0.18):
-            # Avoid pulling the page upward just to perfect-centre the cursor;
-            # only scroll up when the caret is genuinely near the top edge.
-            return
-        threshold = max(cursor_rect.height(), self.fontMetrics().lineSpacing()) // 2
-        if abs(delta) <= threshold:
-            return
-        scrollbar = self.verticalScrollBar()
-        smoothed_delta = int(delta * 0.7)
-        target = scrollbar.value() + smoothed_delta
-        target = max(scrollbar.minimum(), min(scrollbar.maximum(), target))
-        if target < scrollbar.value() and self.textCursor().position() >= len(self.toPlainText()):
-            return
-        smooth_scrollbar_to(scrollbar, target, reduced=self._reduced_motion)
 
     def _should_auto_indent_return(self, event: QKeyEvent) -> bool:
         if not self._display_settings.auto_paragraph_indent_enabled:
@@ -538,6 +542,7 @@ class EditorPanel(QWidget):
                 self.setEnabled(True)
         finally:
             self._loading = False
+        self._page_controls.schedule_refresh()
         self._refresh_save_specimen_state()
 
     def focus_body(self) -> None:
@@ -597,6 +602,7 @@ class EditorPanel(QWidget):
             self._loading = False
         self._refresh_epigraph_card()
         self._find_bar.refresh_matches()
+        self._page_controls.schedule_refresh()
 
     def activate_excerpt_find(self, excerpt: str) -> bool:
         return self._find_bar.activate_excerpt(excerpt)

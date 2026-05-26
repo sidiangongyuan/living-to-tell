@@ -578,6 +578,75 @@ def test_editor_page_controls_turn_pages_without_mutating_text(qtbot):
     assert body.current_soft_page() >= 2
 
 
+def test_editor_page_controls_work_with_epigraph_and_do_not_draw_body_guides(qtbot):
+    from writer.domain.models.entry import Entry
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    body_text = (
+        "“从来没爱你，绵绵。可惜我爱怀念。”      —— 《绵绵》 陈奕迅\n"
+        "　　\n"
+        + "\n".join(
+            "　　这是一段用于验证长文翻页的正文，包含足够多的文字，避免纸页控件因为短文而禁用。"
+            for _ in range(90)
+        )
+    )
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.resize(900, 700)
+    panel.show()
+    panel.set_reduced_motion(True)
+    panel.apply_display_settings(EditorDisplaySettings(soft_page_guides_enabled=True))
+    panel.set_entry(Entry(id="entry-1", title="绵绵", body=body_text))
+    body = panel._body  # noqa: SLF001
+    scrollbar = body.verticalScrollBar()
+
+    qtbot.waitUntil(lambda: scrollbar.maximum() > 0)
+    qtbot.waitUntil(lambda: panel._page_controls._next_btn.isEnabled())  # noqa: SLF001
+    assert not hasattr(body, "_paint_soft_page_guides")
+
+    panel._page_controls._next_btn.click()  # noqa: SLF001
+    qtbot.waitUntil(lambda: scrollbar.value() > 0)
+
+    assert panel.body_text() == body_text
+    assert panel._epigraph_card.isVisible() is True  # noqa: SLF001
+
+
+def test_work_editor_page_controls_disable_at_reachable_end(qtbot, container):
+    from writer.domain.enums import SectionType
+    from writer.ui.panels.work_editor_panel import WorkEditorPanel
+
+    body_text = "\n".join(f"line {i}" for i in range(4))
+    work = container.work_repository.create(title="W")
+    container.work_section_repository.create(
+        work.id,
+        section_type=SectionType.BODY.value,
+        content=body_text,
+    )
+
+    panel = WorkEditorPanel(container)
+    qtbot.addWidget(panel)
+    panel.resize(720, 320)
+    panel.show()
+    panel.load_work(work.id)
+    editor = panel._editor  # noqa: SLF001
+    editor.set_reduced_motion(True)
+    scrollbar = editor.verticalScrollBar()
+
+    qtbot.waitUntil(lambda: editor.toPlainText() == body_text)
+    qtbot.waitUntil(lambda: panel._page_controls._next_btn.isEnabled())  # noqa: SLF001
+
+    for _ in range(10):
+        if scrollbar.value() == scrollbar.maximum():
+            break
+        previous = scrollbar.value()
+        panel._page_controls.next_page()  # noqa: SLF001
+        qtbot.waitUntil(lambda: scrollbar.value() > previous)
+
+    assert scrollbar.value() == scrollbar.maximum()
+    assert editor.current_soft_page() == editor.soft_page_count()
+    assert panel._page_controls._next_btn.isEnabled() is False  # noqa: SLF001
+
+
 def test_editor_panel_page_keys_use_paper_scroll_not_typewriter_follow(qtbot):
     from writer.domain.models.entry import Entry
     from writer.ui.panels.editor_panel import EditorPanel

@@ -5,15 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from PySide6.QtCore import QObject, QEvent, QPoint, QRect, Qt, Signal
-from PySide6.QtGui import (
-    QColor,
-    QKeyEvent,
-    QPainter,
-    QTextCharFormat,
-    QTextCursor,
-    QTextDocument,
-)
+from PySide6.QtCore import QObject, QEvent, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QKeyEvent, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -431,6 +424,7 @@ class EditorPageControls(QFrame):
         super().__init__(parent)
         self.setObjectName("EditorPageControls")
         self._editor: Optional[EditorWidget] = None
+        self._pending_refresh = False
 
         self._prev_btn = QPushButton(TR("editor.page.previous"))
         self._prev_btn.setObjectName("EditorPageButton")
@@ -461,27 +455,37 @@ class EditorPageControls(QFrame):
             scrollbar = self._editor.verticalScrollBar()
             try:
                 scrollbar.valueChanged.disconnect(self.refresh)
-                scrollbar.rangeChanged.disconnect(self.refresh)
-                self._editor.textChanged.disconnect(self.refresh)
+                scrollbar.rangeChanged.disconnect(self.schedule_refresh)
+                self._editor.textChanged.disconnect(self.schedule_refresh)
             except (RuntimeError, TypeError):
                 pass
         self._editor = widget
         if widget is not None:
             scrollbar = widget.verticalScrollBar()
             scrollbar.valueChanged.connect(self.refresh)
-            scrollbar.rangeChanged.connect(self.refresh)
-            widget.textChanged.connect(self.refresh)
-        self.refresh()
+            scrollbar.rangeChanged.connect(self.schedule_refresh)
+            widget.textChanged.connect(self.schedule_refresh)
+        self.schedule_refresh()
 
     def previous_page(self) -> None:
         if self._editor is not None and hasattr(self._editor, "previous_soft_page"):
             self._editor.previous_soft_page()
-            self.refresh()
+            self.schedule_refresh()
 
     def next_page(self) -> None:
         if self._editor is not None and hasattr(self._editor, "next_soft_page"):
             self._editor.next_soft_page()
-            self.refresh()
+            self.schedule_refresh()
+
+    def schedule_refresh(self, *_args) -> None:
+        if self._pending_refresh:
+            return
+        self._pending_refresh = True
+        QTimer.singleShot(0, self._refresh_later)
+
+    def _refresh_later(self) -> None:
+        self._pending_refresh = False
+        self.refresh()
 
     def refresh(self, *_args) -> None:
         editor = self._editor
@@ -529,29 +533,50 @@ class PaperTextEditMixin:
 
     def _soft_page_step(self) -> int:
         scrollbar = self.verticalScrollBar()
-        return max(1, int(scrollbar.pageStep()))
+        page_step = int(scrollbar.pageStep())
+        if page_step <= 1:
+            return max(1, int(self.viewport().height() * 0.82))
+        return max(1, int(page_step * 0.92))
+
+    def _soft_page_positions(self) -> list[int]:
+        scrollbar = self.verticalScrollBar()
+        minimum = int(scrollbar.minimum())
+        maximum = int(scrollbar.maximum())
+        step = self._soft_page_step()
+        positions = [minimum]
+        current = minimum
+        while current < maximum:
+            next_position = min(maximum, current + step)
+            if next_position <= current:
+                break
+            positions.append(next_position)
+            current = next_position
+        return positions
 
     def soft_page_count(self) -> int:
-        scrollbar = self.verticalScrollBar()
-        page_step = self._soft_page_step()
-        span = max(0, scrollbar.maximum() - scrollbar.minimum())
-        return max(1, (span + page_step - 1) // page_step + 1)
+        return len(self._soft_page_positions())
 
     def current_soft_page(self) -> int:
         scrollbar = self.verticalScrollBar()
-        page_step = self._soft_page_step()
-        current = (scrollbar.value() - scrollbar.minimum()) // page_step + 1
-        return max(1, min(self.soft_page_count(), int(current)))
+        value = int(scrollbar.value())
+        current = 1
+        for index, position in enumerate(self._soft_page_positions(), start=1):
+            if value < position:
+                break
+            current = index
+        return current
 
     def go_to_soft_page(self, page_index: int) -> None:
         scrollbar = self.verticalScrollBar()
-        page = max(1, min(self.soft_page_count(), int(page_index)))
-        target = scrollbar.minimum() + (page - 1) * self._soft_page_step()
-        target = max(scrollbar.minimum(), min(scrollbar.maximum(), target))
+        positions = self._soft_page_positions()
+        requested_page = max(1, min(len(positions), int(page_index)))
+        target = positions[requested_page - 1]
+        if target == int(scrollbar.value()):
+            return
         smooth_scrollbar_to(
             scrollbar,
             target,
-            duration_ms=220,
+            duration_ms=120,
             reduced=self._reduced_motion,
         )
 
@@ -563,8 +588,7 @@ class PaperTextEditMixin:
 
     def pageStepTarget(self, *, direction: int) -> int:  # noqa: N802
         scrollbar = self.verticalScrollBar()
-        page_step = max(1, int(scrollbar.pageStep() * 0.92))
-        delta = direction * page_step
+        delta = direction * self._soft_page_step()
         target = scrollbar.value() + delta
         return max(scrollbar.minimum(), min(scrollbar.maximum(), target))
 
@@ -627,31 +651,9 @@ class PaperTextEditMixin:
 
     def paintEvent(self, event) -> None:  # noqa: N802
         super().paintEvent(event)
-        self._paint_soft_page_guides()
-
-    def _paint_soft_page_guides(self) -> None:
-        if not self._soft_page_guides_enabled:
-            return
-        viewport_rect = self.viewport().rect()
-        paper_rect = viewport_rect.adjusted(18, 10, -18, -10)
-        painter = QPainter(self.viewport())
-        if not painter.isActive():
-            return
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setPen(QColor("#E0D3BE"))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(paper_rect, 14, 14)
-        painter.setPen(QColor("#D6C5A8"))
-        top_y = paper_rect.top() + self._paper_margin_v
-        bottom_y = paper_rect.bottom() - self._paper_margin_v
-        if top_y < bottom_y:
-            painter.drawLine(paper_rect.left() + 28, top_y, paper_rect.right() - 28, top_y)
-            painter.drawLine(
-                paper_rect.left() + 28,
-                bottom_y,
-                paper_rect.right() - 28,
-                bottom_y,
-            )
+        # Deliberately do not draw page guides inside the text viewport.
+        # In-body lines can overlap wrapped text and opening epigraphs; paging
+        # is represented by the external EditorPageControls instead.
 
     def _page_height_px(self) -> int:
         metrics = self.fontMetrics()
