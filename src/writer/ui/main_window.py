@@ -326,6 +326,9 @@ class MainWindow(QMainWindow):
         self._ai_workspace_panel.request_locate_selection.connect(
             self._on_locate_ai_selection
         )
+        self._ai_workspace_panel.request_fragment_changed.connect(
+            self._on_ai_fragment_changed
+        )
 
         # M7B: in-memory trash for the most recent deletions. Each entry is
         # a dict with title/body/tags; survives until the app closes.
@@ -1327,6 +1330,23 @@ class MainWindow(QMainWindow):
                 scope.selection_start or 0,
                 scope.selection_end or 0,
             )
+
+    def _on_ai_fragment_changed(self, entry_id: str) -> None:
+        entry = self._container.entry_repository.get(entry_id)
+        if entry is None:
+            return
+        if self._editor_panel.current_entry_id() == entry_id:
+            self._editor_panel.set_entry(entry)
+            self._autosave.remember_clean(
+                entry_id,
+                entry.title,
+                entry.body,
+                serialize_tags(entry.tags),
+            )
+        self._refresh_list(select_id=entry_id)
+        if self._stack.currentIndex() == MODE_AI:
+            self._bind_ai_workspace_scope()
+            self._refresh_ai_context_from_panel()
 
     def _refresh_ai_context_from_panel(self) -> None:
         if self._stack.currentIndex() != MODE_AI:

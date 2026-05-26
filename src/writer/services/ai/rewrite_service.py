@@ -32,6 +32,7 @@ _ACTION_TO_VERSION: dict[RewriteAction, VersionType] = {
 class AcceptanceOutcome:
     new_body: str
     version_id: str
+    snapshot_version_id: str
 
 
 class RewriteService:
@@ -83,7 +84,7 @@ class RewriteService:
         else:
             new_body = generated_text
 
-        self._versions.add(
+        original_version = self._versions.add(
             entry_id=entry_id,
             version_type=VersionType.ORIGINAL.value,
             content=original_full_body,
@@ -96,4 +97,8 @@ class RewriteService:
             model=model,
         )
         self._entries.update(entry_id, title=title, body=new_body)
-        return AcceptanceOutcome(new_body=new_body, version_id=ai_version.id)
+        return AcceptanceOutcome(
+            new_body=new_body,
+            version_id=ai_version.id,
+            snapshot_version_id=original_version.id,
+        )

@@ -35,6 +35,8 @@ class ApplyOutcome:
     kind: str  # "selection" | "fragment" | "section" | "save_as_fragment"
     target_label: str
     snapshot_taken: bool
+    restore_version_id: Optional[str] = None
+    new_body: Optional[str] = None
     new_fragment_id: Optional[str] = None
 
 
@@ -77,6 +79,8 @@ def apply_to_fragment(
             kind=kind,
             target_label=title or "(untitled)",
             snapshot_taken=True,
+            restore_version_id=outcome.snapshot_version_id,
+            new_body=outcome.new_body,
         )
 
     # Generic path: snapshot ORIGINAL then write the AI body without a
@@ -92,7 +96,7 @@ def apply_to_fragment(
         new_body = generated_text
         kind = "fragment"
 
-    container.version_repository.add(
+    original_version = container.version_repository.add(
         entry_id=entry_id,
         version_type=VersionType.ORIGINAL.value,
         content=original_full_body,
@@ -109,6 +113,8 @@ def apply_to_fragment(
         kind=kind,
         target_label=title or "(untitled)",
         snapshot_taken=True,
+        restore_version_id=original_version.id,
+        new_body=new_body,
     )
 
 

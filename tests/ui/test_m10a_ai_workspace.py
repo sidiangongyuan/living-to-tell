@@ -49,6 +49,14 @@ def _row_for_task(tab, task: AiTaskType) -> int:
     )
 
 
+def _accept_ai_apply_dialogs(panel_mod) -> None:
+    panel_mod.QMessageBox.information = lambda *a, **k: None  # type: ignore[assignment]
+    panel_mod.QMessageBox.warning = lambda *a, **k: 0  # type: ignore[assignment]
+    panel_mod.QMessageBox.question = (  # type: ignore[assignment]
+        lambda *a, **k: panel_mod.QMessageBox.StandardButton.Yes
+    )
+
+
 @pytest.fixture()
 def container(isolated_data_dir):
     c = build_container()
@@ -285,6 +293,46 @@ def test_apply_button_updates_when_output_destination_changes_after_result(qtbot
 
     assert tab._apply_btn.isEnabled() is True  # noqa: SLF001
     assert tab._apply_btn.toolTip() == TR("ai.results.apply_ready")  # noqa: SLF001
+
+
+def test_ai_destination_controls_ignore_mouse_wheel(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    class _Wheel:
+        ignored = False
+
+        def ignore(self):
+            self.ignored = True
+
+    entry = container.entry_repository.create(title="X", body="alpha beta")
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(
+            kind=AiThreadScope.FRAGMENT,
+            ref_id=entry.id,
+            name=entry.title,
+            body=entry.body,
+            selection_start=0,
+            selection_end=5,
+            selection_text="alpha",
+        )
+    )
+
+    controls = [
+        tab._target_combo,  # noqa: SLF001
+        tab._output_combo,  # noqa: SLF001
+        tab._tier_combo,  # noqa: SLF001
+        tab._intensity_combo,  # noqa: SLF001
+        tab._max_output_spin,  # noqa: SLF001
+    ]
+    for control in controls:
+        before = control.currentIndex() if hasattr(control, "currentIndex") else control.value()
+        event = _Wheel()
+        control.wheelEvent(event)  # noqa: SLF001
+        after = control.currentIndex() if hasattr(control, "currentIndex") else control.value()
+        assert event.ignored is True
+        assert after == before
 
 
 def test_library_qa_result_shows_send_to_chat_action(qtbot, container):
@@ -685,6 +733,7 @@ def test_apply_to_section_snapshots_work_first(qtbot, container):
     assert fresh.content == "NEW SECTION"
 
 
+
 # ---------------------------------------------------------------------------
 # Regression: combo currentData() round-trips str-Enums as plain strings,
 # so `is` checks against AiTargetKind / AiOutputAction / AiCostTier silently
@@ -842,11 +891,10 @@ def test_replace_fragment_apply_actually_writes_fragment_body(qtbot, container):
     tab._last_response = response  # noqa: SLF001
     tab._result_view.setPlainText(response.content)  # noqa: SLF001
 
-    # Bypass QMessageBox.information by stubbing it.
+    # Bypass QMessageBox prompts by stubbing them.
     import writer.ui.panels.ai_workspace_panel as panel_mod
 
-    panel_mod.QMessageBox.information = lambda *a, **k: None  # type: ignore[assignment]
-    panel_mod.QMessageBox.warning = lambda *a, **k: 0  # type: ignore[assignment]
+    _accept_ai_apply_dialogs(panel_mod)
     tab._on_apply()  # noqa: SLF001
 
     fresh = container.entry_repository.get(entry.id)
@@ -890,12 +938,64 @@ def test_replace_selection_apply_only_rewrites_selected_range(qtbot, container):
 
     import writer.ui.panels.ai_workspace_panel as panel_mod
 
-    panel_mod.QMessageBox.information = lambda *a, **k: None  # type: ignore[assignment]
-    panel_mod.QMessageBox.warning = lambda *a, **k: 0  # type: ignore[assignment]
+    _accept_ai_apply_dialogs(panel_mod)
     tab._on_apply()  # noqa: SLF001
 
     fresh = container.entry_repository.get(entry.id)
     assert fresh.body == "alpha BETA! gamma"
+
+
+def test_fragment_apply_exposes_undo_and_restores_previous_body(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    body = "alpha beta gamma"
+    entry = container.entry_repository.create(title="t", body=body)
+    provider = _StubProvider("BETA!")
+    _stub_container_provider(container, provider)
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(
+            kind=AiThreadScope.FRAGMENT,
+            ref_id=entry.id,
+            name=entry.title,
+            body=body,
+            selection_start=6,
+            selection_end=10,
+            selection_text="beta",
+        )
+    )
+    repl_idx = tab._output_combo.findData(AiOutputAction.REPLACE_SELECTION)  # noqa: SLF001
+    tab._output_combo.setCurrentIndex(repl_idx)  # noqa: SLF001
+
+    request = tab._build_request()  # noqa: SLF001
+    response = container.ai_task_service.generate(request)
+    tab._last_request = request  # noqa: SLF001
+    tab._last_response = response  # noqa: SLF001
+    tab._result_view.setPlainText(response.content)  # noqa: SLF001
+
+    import writer.ui.panels.ai_workspace_panel as panel_mod
+
+    _accept_ai_apply_dialogs(panel_mod)
+    tab._on_apply()  # noqa: SLF001
+
+    fresh = container.entry_repository.get(entry.id)
+    assert fresh.body == "alpha BETA! gamma"
+    assert tab._undo_apply_btn.isHidden() is False  # noqa: SLF001
+    assert tab._undo_apply_btn.isEnabled() is True  # noqa: SLF001
+
+    tab.bind_scope(AiScope(AiThreadScope.GLOBAL, None, "", ""))
+    assert tab._undo_apply_btn.isHidden() is True  # noqa: SLF001
+
+    tab.bind_scope(AiScope(AiThreadScope.FRAGMENT, entry.id, entry.title, fresh.body))
+    assert tab._undo_apply_btn.isHidden() is False  # noqa: SLF001
+
+    tab._on_undo_last_apply()  # noqa: SLF001
+
+    restored = container.entry_repository.get(entry.id)
+    assert restored.body == body
+    assert tab._undo_apply_btn.isHidden() is True  # noqa: SLF001
 
 
 def test_selection_preview_card_shows_bound_selection_and_emits_locate(qtbot, container):
@@ -962,8 +1062,7 @@ def test_work_section_selection_apply_only_rewrites_selected_range(qtbot, contai
 
     import writer.ui.panels.ai_workspace_panel as panel_mod
 
-    panel_mod.QMessageBox.information = lambda *a, **k: None  # type: ignore[assignment]
-    panel_mod.QMessageBox.warning = lambda *a, **k: 0  # type: ignore[assignment]
+    _accept_ai_apply_dialogs(panel_mod)
     tab._on_apply()  # noqa: SLF001
 
     fresh = container.work_section_repository.get(section.id)
@@ -1058,8 +1157,7 @@ def test_main_window_section_scope_replace_section_path_reachable(qtbot, contain
 
     import writer.ui.panels.ai_workspace_panel as panel_mod
 
-    panel_mod.QMessageBox.information = lambda *a, **k: None  # type: ignore[assignment]
-    panel_mod.QMessageBox.warning = lambda *a, **k: 0  # type: ignore[assignment]
+    _accept_ai_apply_dialogs(panel_mod)
     tab._on_apply()  # noqa: SLF001
 
     fresh = container.work_section_repository.get(section.id)

@@ -3,6 +3,19 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.19 — AI write-back safety hotfix
+
+- Prevented mouse-wheel scrolling from changing AI target, output destination,
+  model tier, intensity, and output-limit controls.
+- Added explicit confirmation before replacing a selection, an entire fragment,
+  or a work section with AI output.
+- Added a fragment-level "Undo last write-back" action that restores the
+  version-history snapshot saved before the last AI write-back.
+- Synchronized the fragment editor after AI write-back / undo so hidden stale
+  editor content cannot overwrite the restored database state.
+- Added regression coverage for selection-only replacement, no-wheel controls,
+  and AI write-back undo.
+
 ## 0.2.0-alpha.18 — Reliable soft paging and cleaner editor surface
 
 - Fixed soft page navigation so the next / previous page controls refresh after

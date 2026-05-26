@@ -800,6 +800,8 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.results.locate_excerpt": "Locate excerpt",
         "ai.results.locate_excerpt_missing": "No excerpt available in this item.",
         "ai.results.locate_excerpt_not_found": "Excerpt not found in the current editor.",
+        "ai.results.undo_last_apply": "Undo last write-back",
+        "ai.results.undo_last_apply_hint": "Restore the snapshot saved before the last AI write-back.",
         # chat
         "ai.chat.input_placeholder": "Ask the assistant about this {scope}…",
         "ai.chat.send": "Send",
@@ -832,6 +834,35 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.dlg.saved_as_fragment": "Saved as a new fragment.",
         "ai.dlg.snapshot_taken": "Snapshot saved before write.",
         "ai.dlg.cannot_apply": "This output destination is not available for the current target.",
+        "ai.dlg.cannot_apply_title": "Cannot apply",
+        "ai.dlg.target_missing": "The target fragment no longer exists.",
+        "ai.dlg.target_changed": (
+            "The target fragment changed after this AI result was generated. "
+            "Return to the fragment or rerun the task before writing back."
+        ),
+        "ai.confirm_apply.title": "Confirm AI write-back",
+        "ai.confirm_apply.unknown_target": "current target",
+        "ai.confirm_apply.selection": (
+            "Replace the selected text in {target}?\n\n"
+            "Source selection: {source_chars} chars\n"
+            "AI result: {output_chars} chars\n\n"
+            "A version-history snapshot will be saved first."
+        ),
+        "ai.confirm_apply.fragment": (
+            "Replace the entire fragment {target}?\n\n"
+            "Current fragment: {source_chars} chars\n"
+            "AI result: {output_chars} chars\n\n"
+            "A version-history snapshot will be saved first."
+        ),
+        "ai.confirm_apply.section": (
+            "Replace the current work section or selected section text in {target}?\n\n"
+            "Source text: {source_chars} chars\n"
+            "AI result: {output_chars} chars\n\n"
+            "A work snapshot will be saved first."
+        ),
+        "ai.undo.title": "Undo AI write-back",
+        "ai.undo.confirm": "Restore the snapshot saved before the last AI write-back?",
+        "ai.undo.done": "The previous text has been restored from version history.",
         # ── M-Dates: daily writing view ──────────────────────────────────────
         "dates.title": "Dates",
         "dates.today_label": "Today",
@@ -1664,6 +1695,8 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.results.locate_excerpt": "定位摘录",
         "ai.results.locate_excerpt_missing": "当前条目没有可定位的摘录。",
         "ai.results.locate_excerpt_not_found": "当前编辑器中未找到该摘录。",
+        "ai.results.undo_last_apply": "撤回上次写回",
+        "ai.results.undo_last_apply_hint": "恢复 AI 写回前自动保存的版本历史快照。",
         # chat
         "ai.chat.input_placeholder": "就当前 {scope} 向助手提问…",
         "ai.chat.send": "发送",
@@ -1696,6 +1729,32 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.dlg.saved_as_fragment": "已保存为新片段。",
         "ai.dlg.snapshot_taken": "已在写入前生成快照。",
         "ai.dlg.cannot_apply": "当前目标不支持该结果落地方式。",
+        "ai.dlg.cannot_apply_title": "无法写回",
+        "ai.dlg.target_missing": "目标片段已经不存在。",
+        "ai.dlg.target_changed": "目标片段在本次 AI 结果生成后发生了变化。请先回到片段确认，或重新运行任务后再写回。",
+        "ai.confirm_apply.title": "确认 AI 写回",
+        "ai.confirm_apply.unknown_target": "当前目标",
+        "ai.confirm_apply.selection": (
+            "确认替换《{target}》里的当前选区？\n\n"
+            "原选区：{source_chars} 字\n"
+            "AI 结果：{output_chars} 字\n\n"
+            "写入前会先保存版本历史快照。"
+        ),
+        "ai.confirm_apply.fragment": (
+            "确认替换整个片段《{target}》？\n\n"
+            "当前片段：{source_chars} 字\n"
+            "AI 结果：{output_chars} 字\n\n"
+            "写入前会先保存版本历史快照。"
+        ),
+        "ai.confirm_apply.section": (
+            "确认替换《{target}》里的当前作品节块或节块选区？\n\n"
+            "原文本：{source_chars} 字\n"
+            "AI 结果：{output_chars} 字\n\n"
+            "写入前会先保存作品快照。"
+        ),
+        "ai.undo.title": "撤回 AI 写回",
+        "ai.undo.confirm": "恢复到上次 AI 写回前自动保存的快照？",
+        "ai.undo.done": "已从版本历史恢复写回前文本。",
         # ── M-Dates: daily writing view ──────────────────────────────────────
         "dates.title": "日期",
         "dates.today_label": "今天",

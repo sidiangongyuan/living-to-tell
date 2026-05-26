@@ -125,6 +125,20 @@ def _combo_enum(combo: QComboBox, enum_cls, default):
         return default
 
 
+class _NoWheelComboBox(QComboBox):
+    """Combo box that never changes value from accidental hover scrolling."""
+
+    def wheelEvent(self, event) -> None:  # noqa: N802
+        event.ignore()
+
+
+class _NoWheelSpinBox(QSpinBox):
+    """Spin box that avoids accidental value changes while scrolling a page."""
+
+    def wheelEvent(self, event) -> None:  # noqa: N802
+        event.ignore()
+
+
 # ---------------------------------------------------------------------------
 # Task catalog (display order for the left list)
 # ---------------------------------------------------------------------------
@@ -400,6 +414,7 @@ class AIToolsTab(QWidget):
     request_send_to_chat = Signal(str)  # text to seed chat
     request_locate_excerpt = Signal(str)
     request_locate_selection = Signal(object)
+    request_fragment_changed = Signal(str)
 
     def __init__(self, container: AppContainer, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -414,6 +429,7 @@ class AIToolsTab(QWidget):
         self._style_author_presets = _preset_values("ai.params.style_authors_values")
         self._style_goal_presets = _preset_values("ai.params.style_goals_values")
         self._last_excerpt: str = ""
+        self._last_fragment_undo: Optional[tuple[str, str]] = None
         # Per-task parameter state — isolates style/intensity/extra across tasks.
         self._task_params: dict[AiTaskType, dict] = {}
 
@@ -484,7 +500,7 @@ class AIToolsTab(QWidget):
         params_form = QFormLayout(params_box)
         params_form.setContentsMargins(0, 0, 0, 0)
 
-        self._target_combo = QComboBox()
+        self._target_combo = _NoWheelComboBox()
         for kind, key in (
             (AiTargetKind.SELECTION, "ai.target.selection"),
             (AiTargetKind.FRAGMENT, "ai.target.fragment"),
@@ -496,7 +512,7 @@ class AIToolsTab(QWidget):
             self._target_combo.addItem(TR(key), kind)
         params_form.addRow(TR("ai.target.label"), self._target_combo)
 
-        self._tier_combo = QComboBox()
+        self._tier_combo = _NoWheelComboBox()
         for tier in (AiCostTier.THRIFTY, AiCostTier.BALANCED, AiCostTier.STRONG):
             self._tier_combo.addItem(TR(_TIER_LABEL_KEY[tier]), tier)
         self._tier_combo.setCurrentIndex(1)
@@ -513,7 +529,7 @@ class AIToolsTab(QWidget):
         params_form.addRow(TR("ai.params.cost_tier"), self._tier_field)
         self._tier_field_label = params_form.labelForField(self._tier_field)
 
-        self._output_combo = QComboBox()
+        self._output_combo = _NoWheelComboBox()
         params_form.addRow(TR("ai.output.label"), self._output_combo)
 
         self._style_edit = QLineEdit()
@@ -537,7 +553,7 @@ class AIToolsTab(QWidget):
         params_form.addRow(TR("ai.params.style"), self._style_field)
         self._style_field_label = params_form.labelForField(self._style_field)
 
-        self._intensity_combo = QComboBox()
+        self._intensity_combo = _NoWheelComboBox()
         for label, value in (
             ("—", ""),
             ("light", "light"),
@@ -568,7 +584,7 @@ class AIToolsTab(QWidget):
         self._advanced_box.setObjectName("AIAdvancedBox")
         adv_form = QFormLayout(self._advanced_box)
         adv_form.setContentsMargins(0, 0, 0, 0)
-        self._max_output_spin = QSpinBox()
+        self._max_output_spin = _NoWheelSpinBox()
         self._max_output_spin.setRange(0, 100_000)
         self._max_output_spin.setSingleStep(200)
         self._max_output_spin.setSpecialValueText("—")
@@ -716,6 +732,11 @@ class AIToolsTab(QWidget):
         self._locate_excerpt_btn.setEnabled(False)
         self._locate_excerpt_btn.clicked.connect(self._on_locate_excerpt)
         action_row.addWidget(self._locate_excerpt_btn)
+        self._undo_apply_btn = QPushButton(TR("ai.results.undo_last_apply"))
+        self._undo_apply_btn.setEnabled(False)
+        self._undo_apply_btn.setVisible(False)
+        self._undo_apply_btn.clicked.connect(self._on_undo_last_apply)
+        action_row.addWidget(self._undo_apply_btn)
         action_row.addStretch(1)
         right_layout.addLayout(action_row)
 
@@ -741,6 +762,7 @@ class AIToolsTab(QWidget):
         self._refresh_task_params()
         self._refresh_attachments_view()
         self._refresh_apply_button_state()
+        self._refresh_fragment_undo_button()
 
     # ---- public API ----
     def bind_scope(self, scope: AiScope) -> None:
@@ -768,6 +790,7 @@ class AIToolsTab(QWidget):
             self._target_combo.setCurrentIndex(idx)
         self._refresh_attachments_view()
         self._refresh_apply_button_state()
+        self._refresh_fragment_undo_button()
 
     def focus_task(
         self,
@@ -1088,6 +1111,28 @@ class AIToolsTab(QWidget):
         else:
             self._apply_btn.setToolTip(TR("ai.results.apply_disabled_preview"))
 
+    def _clear_fragment_undo(self) -> None:
+        self._last_fragment_undo = None
+        self._refresh_fragment_undo_button()
+
+    def _remember_fragment_undo(self, entry_id: str, restore_version_id: str) -> None:
+        self._last_fragment_undo = (entry_id, restore_version_id)
+        self._undo_apply_btn.setToolTip(TR("ai.results.undo_last_apply_hint"))
+        self._refresh_fragment_undo_button()
+
+    def _refresh_fragment_undo_button(self) -> None:
+        if self._last_fragment_undo is None or self._scope is None:
+            self._undo_apply_btn.setEnabled(False)
+            self._undo_apply_btn.setVisible(False)
+            return
+        entry_id, _version_id = self._last_fragment_undo
+        visible = (
+            self._scope.kind is AiThreadScope.FRAGMENT
+            and self._scope.ref_id == entry_id
+        )
+        self._undo_apply_btn.setVisible(visible)
+        self._undo_apply_btn.setEnabled(visible)
+
     def _current_task_type(self) -> AiTaskType:
         item = self._task_list.currentItem()
         if item is None:
@@ -1362,6 +1407,7 @@ class AIToolsTab(QWidget):
     def _on_task_succeeded(self, response: AiTaskResponse) -> None:
         self._last_response = response
         self._last_excerpt = self._extract_excerpt(response)
+        self._clear_fragment_undo()
         self._status_label.setText("")
         task_type = self._result_task_type()
         rendered = (
@@ -1544,6 +1590,10 @@ class AIToolsTab(QWidget):
             return
         out = _combo_enum(self._output_combo, AiOutputAction, AiOutputAction.PREVIEW_ONLY)
         text = self._result_view.toPlainText()  # honour any user edits
+        if not self._confirm_destructive_apply(out, text):
+            return
+        if not self._validate_live_fragment_before_apply(out):
+            return
         try:
             if out == AiOutputAction.REPLACE_FRAGMENT and self._scope.ref_id is not None:
                 outcome = apply_to_fragment(
@@ -1603,11 +1653,127 @@ class AIToolsTab(QWidget):
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, TR("ai.dlg.run_failed"), str(exc))
             return
+        self._after_apply(outcome)
         QMessageBox.information(
             self,
             TR("ai.results.apply"),
             TR("ai.dlg.applied").format(target=outcome.target_label),
         )
+
+    def _confirm_destructive_apply(self, out: AiOutputAction, text: str) -> bool:
+        if out not in {
+            AiOutputAction.REPLACE_FRAGMENT,
+            AiOutputAction.REPLACE_SELECTION,
+            AiOutputAction.REPLACE_SECTION,
+        }:
+            return True
+        scope = self._scope
+        target_name = scope.name if scope is not None else ""
+        source_chars = (
+            len(scope.selection_text)
+            if scope is not None and out == AiOutputAction.REPLACE_SELECTION
+            else len(scope.body if scope is not None else "")
+        )
+        key = {
+            AiOutputAction.REPLACE_SELECTION: "ai.confirm_apply.selection",
+            AiOutputAction.REPLACE_FRAGMENT: "ai.confirm_apply.fragment",
+            AiOutputAction.REPLACE_SECTION: "ai.confirm_apply.section",
+        }[out]
+        msg = TR(key).format(
+            target=target_name or TR("ai.confirm_apply.unknown_target"),
+            source_chars=source_chars,
+            output_chars=len(text),
+        )
+        choice = QMessageBox.question(
+            self,
+            TR("ai.confirm_apply.title"),
+            msg,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return choice == QMessageBox.StandardButton.Yes
+
+    def _validate_live_fragment_before_apply(self, out: AiOutputAction) -> bool:
+        if self._scope is None or self._scope.kind is not AiThreadScope.FRAGMENT:
+            return True
+        if out not in {
+            AiOutputAction.REPLACE_FRAGMENT,
+            AiOutputAction.REPLACE_SELECTION,
+        }:
+            return True
+        if self._scope.ref_id is None:
+            return False
+        entry = self._container.entry_repository.get(self._scope.ref_id)
+        if entry is None:
+            QMessageBox.warning(
+                self,
+                TR("ai.dlg.cannot_apply_title"),
+                TR("ai.dlg.target_missing"),
+            )
+            return False
+        if (entry.body or "") != (self._scope.body or ""):
+            QMessageBox.warning(
+                self,
+                TR("ai.dlg.cannot_apply_title"),
+                TR("ai.dlg.target_changed"),
+            )
+            return False
+        return True
+
+    def _after_apply(self, outcome) -> None:
+        if (
+            self._scope is not None
+            and self._scope.kind is AiThreadScope.FRAGMENT
+            and self._scope.ref_id is not None
+        ):
+            if outcome.restore_version_id:
+                self._remember_fragment_undo(
+                    self._scope.ref_id,
+                    outcome.restore_version_id,
+                )
+            if outcome.new_body is not None:
+                self._scope.body = outcome.new_body
+                self._scope.selection_start = None
+                self._scope.selection_end = None
+                self._scope.selection_text = ""
+                self._refresh_selection_card()
+                self._refresh_output_combo()
+                self._refresh_attachments_view()
+                self._refresh_apply_button_state()
+            self.request_fragment_changed.emit(self._scope.ref_id)
+        else:
+            self._clear_fragment_undo()
+
+    def _on_undo_last_apply(self) -> None:
+        if self._last_fragment_undo is None:
+            return
+        entry_id, version_id = self._last_fragment_undo
+        choice = QMessageBox.question(
+            self,
+            TR("ai.undo.title"),
+            TR("ai.undo.confirm"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if choice != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            outcome = self._container.version_history_service.restore(entry_id, version_id)
+        except ValueError as exc:
+            QMessageBox.critical(self, TR("ai.undo.title"), str(exc))
+            return
+        if self._scope is not None and self._scope.ref_id == entry_id:
+            self._scope.body = outcome.new_body
+            self._scope.selection_start = None
+            self._scope.selection_end = None
+            self._scope.selection_text = ""
+            self._refresh_selection_card()
+            self._refresh_output_combo()
+            self._refresh_attachments_view()
+            self._refresh_apply_button_state()
+        self._clear_fragment_undo()
+        self.request_fragment_changed.emit(entry_id)
+        QMessageBox.information(self, TR("ai.undo.title"), TR("ai.undo.done"))
 
     def _on_save_fragment(self) -> None:
         text = self._result_view.toPlainText()
@@ -1690,7 +1856,7 @@ class AIChatTab(QWidget):
         self._clear_attach_btn.clicked.connect(self._on_clear_attachments)
         attach_row.addWidget(self._clear_attach_btn)
         attach_row.addStretch(1)
-        self._tier_combo = QComboBox()
+        self._tier_combo = _NoWheelComboBox()
         for tier in (AiCostTier.THRIFTY, AiCostTier.BALANCED, AiCostTier.STRONG):
             self._tier_combo.addItem(TR(_TIER_LABEL_KEY[tier]), tier)
         self._tier_combo.setCurrentIndex(1)
@@ -1909,6 +2075,7 @@ class AIWorkspacePanel(QWidget):
     request_save_as_fragment = Signal(str)
     request_locate_excerpt = Signal(str)
     request_locate_selection = Signal(object)
+    request_fragment_changed = Signal(str)
 
     def __init__(self, container: AppContainer, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -1933,6 +2100,9 @@ class AIWorkspacePanel(QWidget):
         self._tools_tab.request_locate_excerpt.connect(self.request_locate_excerpt.emit)
         self._tools_tab.request_locate_selection.connect(
             self.request_locate_selection.emit
+        )
+        self._tools_tab.request_fragment_changed.connect(
+            self.request_fragment_changed.emit
         )
         self._chat_tab.request_save_as_fragment.connect(self.request_save_as_fragment.emit)
 
