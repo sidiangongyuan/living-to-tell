@@ -687,6 +687,41 @@ QLabel#EpigraphAttribution {{
     padding-top: 4px;
 }}
 
+/* ------- Fragment writing notes ------- */
+QFrame#WritingNotesCard {{
+    background: {t.bg_card};
+    border: 1px solid {t.border};
+    border-left: 4px solid {t.accent};
+    border-radius: {t.radius_lg}px;
+}}
+QLabel#WritingNotesTitle {{
+    color: {t.text_primary};
+    font-family: {t.font_serif};
+    font-weight: 700;
+}}
+QLabel#WritingNotesCount,
+QLabel#WritingNotesHint {{
+    color: {t.text_muted};
+    font-size: {t.fs_meta}px;
+}}
+QFrame#WritingNoteRow,
+QFrame#WritingNoteRowPinned {{
+    background: {t.bg_input};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_md}px;
+}}
+QFrame#WritingNoteRowPinned {{
+    border-left: 3px solid {t.accent};
+}}
+QLabel#WritingNoteBody {{
+    color: {t.text_primary};
+    font-family: {t.font_serif};
+    line-height: 150%;
+}}
+QLineEdit#WritingNoteInput {{
+    background: #FFF9EF;
+}}
+
 /* ------- CheckBox ------- */
 QCheckBox {{
     color: {t.text_secondary};
@@ -772,7 +807,8 @@ QScrollArea#AIToolsScroll {{
 }}
 QFrame#AIParamsBox,
 QFrame#AIAdvancedBox,
-QFrame#AISelectionCard {{
+QFrame#AISelectionCard,
+QFrame#AIWritingNotesBox {{
     background: {t.bg_card};
     border: 1px solid {t.border};
     border-radius: {t.radius_lg}px;

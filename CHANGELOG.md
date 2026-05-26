@@ -3,6 +3,19 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.21 — Fragment continuation notes
+
+- Added fragment-bound continuation notes for private "what should happen next"
+  ideas that stay out of the body, export, and full-text search.
+- Added an editor-top notes card with quick add, done, delete, and pin actions,
+  plus a context-pane shortcut and open-note count.
+- Added AI integration so continuation / expansion tasks can include open notes
+  as reference context by default, while analysis tasks keep them opt-in.
+- Added local persistence for multiple notes per fragment with cascade cleanup
+  when a fragment is deleted.
+- Added regression coverage for note persistence, schema upgrades, editor note
+  actions, fragment switching, and AI note attachments.
+
 ## 0.2.0-alpha.20 — AI result isolation and manual checkpoints
 
 - Isolated AI tool results by function so switching from polish to expand,

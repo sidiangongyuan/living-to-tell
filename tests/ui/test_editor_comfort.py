@@ -154,6 +154,65 @@ def test_editor_panel_epigraph_card_hides_when_attribution_removed(qtbot):
     assert panel.body_text() == "人可生如蚁，而美如神。\n\n正文。"
 
 
+def test_editor_panel_writing_notes_card_emits_actions(qtbot):
+    from PySide6.QtWidgets import QCheckBox
+
+    from writer.domain.models.entry import Entry
+    from writer.domain.models.entry_writing_note import EntryWritingNote
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.show()
+    panel.set_entry(Entry(id="entry-1", title="t", body="body"))
+    panel.set_writing_notes(
+        [
+            EntryWritingNote(
+                id="note-1",
+                entry_id="entry-1",
+                body="下一段让母亲先沉默。",
+                pinned=True,
+            )
+        ]
+    )
+
+    assert panel._writing_notes_card.isHidden() is False  # noqa: SLF001
+    assert panel._writing_notes_rows_layout.count() == 1  # noqa: SLF001
+    assert panel._writing_notes_rows.isHidden() is False  # noqa: SLF001
+    assert "1" in panel._writing_notes_count.text()  # noqa: SLF001
+
+    panel._writing_note_input.setText("补一个下雨的细节")  # noqa: SLF001
+    with qtbot.waitSignal(panel.writing_note_add_requested) as add_signal:
+        panel._writing_note_add_btn.click()  # noqa: SLF001
+    assert add_signal.args == ["补一个下雨的细节"]
+
+    checkbox = panel._writing_notes_rows.findChild(QCheckBox)  # noqa: SLF001
+    assert checkbox is not None
+    with qtbot.waitSignal(panel.writing_note_done_requested) as done_signal:
+        checkbox.setChecked(True)
+    assert done_signal.args == ["note-1", True]
+
+
+def test_main_window_writing_notes_do_not_leak_between_fragments(qtbot, container):
+    from writer.ui.main_window import MainWindow
+
+    first = container.entry_repository.create(title="A", body="body a")
+    second = container.entry_repository.create(title="B", body="body b")
+    container.entry_writing_note_repository.create(
+        entry_id=first.id,
+        body="A only",
+    )
+
+    window = MainWindow(container, autosave_debounce_ms=20)
+    qtbot.addWidget(window)
+
+    window._load_entry(first.id)  # noqa: SLF001
+    assert "1" in window._editor_panel._writing_notes_count.text()  # noqa: SLF001
+    window._load_entry(second.id)  # noqa: SLF001
+    assert "0" in window._editor_panel._writing_notes_count.text()  # noqa: SLF001
+    assert window._editor_panel._writing_notes_rows_layout.count() == 0  # noqa: SLF001
+
+
 def test_editor_panel_focus_mode_adds_current_paragraph_selection(qtbot):
     from writer.ui.panels.editor_panel import EditorPanel
     from writer.domain.models.entry import Entry

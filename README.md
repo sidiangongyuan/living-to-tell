@@ -28,7 +28,7 @@ Writer is for writers who collect scenes, sentences, moods, notes, research, and
 
 | Area | Highlights |
 | --- | --- |
-| ✍️ Writing | Fragment editor, autosave, tags, full-text search, version history, focus mode, typography controls |
+| ✍️ Writing | Fragment editor, autosave, tags, continuation notes, full-text search, version history, focus mode, typography controls |
 | 📚 Works | Works, ordered sections, collections, TXT / Markdown / DOCX export |
 | 🗂️ Reference library | Book-shelf browsing, source pages, literary quote cards, tag summaries, duplicate hints, and switchable stats views |
 | 🤖 AI workspace | Polish, style-aware polish, expand, continue, summarize, outline, title ideas, structure diagnosis, consistency checks, library Q&A |
@@ -47,6 +47,7 @@ Writer is for writers who collect scenes, sentences, moods, notes, research, and
 - [x] Scoped AI chat with persisted local history
 - [x] Literary reference library with book shelves, source pages, duplicate hints, tag-based browsing, and switchable stats
 - [x] Editor typography, focus mode, smoother motion, and typewriter comfort
+- [x] Fragment-bound continuation notes for next-session ideas and AI continuation context
 - [ ] Public screenshot gallery and short demo videos
 - [ ] Step-by-step video tutorials for common writing workflows
 - [ ] Better onboarding for first-time writers
@@ -62,8 +63,8 @@ Public screenshots, short walkthrough videos, and workflow demos are on the road
 
 The recommended public distribution format is a **Windows portable zip**.
 
-- Latest alpha: [Writer-0.2.0-alpha.20-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.20/Writer-0.2.0-alpha.20-portable.zip)
-- Release page: [v0.2.0-alpha.20](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.20)
+- Latest alpha: [Writer-0.2.0-alpha.21-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.21/Writer-0.2.0-alpha.21-portable.zip)
+- Release page: [v0.2.0-alpha.21](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.21)
 - If you are testing the latest branch, use the **Build Windows Portable** GitHub Action artifact.
 - To build locally, run the packaging command in [Build from source](#build-from-source).
 

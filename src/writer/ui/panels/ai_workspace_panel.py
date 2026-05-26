@@ -217,6 +217,11 @@ _INTENSITY_TASKS: set[AiTaskType] = {
     AiTaskType.EXPAND,
 }
 
+_WRITING_NOTE_DEFAULT_TASKS: set[AiTaskType] = {
+    AiTaskType.EXPAND,
+    AiTaskType.CONTINUE,
+}
+
 _TASK_STYLE_HINT_KEY: dict[AiTaskType, str] = {
     AiTaskType.POLISH: "ai.params.style_hint.polish",
     AiTaskType.EXPAND: "ai.params.style_hint.expand",
@@ -642,6 +647,24 @@ class AIToolsTab(QWidget):
         self._output_combo.currentIndexChanged.connect(self._refresh_apply_button_state)
 
         # Attachments
+        self._include_writing_notes_check = QCheckBox()
+        self._include_writing_notes_check.setObjectName("AIWritingNotesCheck")
+        self._include_writing_notes_check.toggled.connect(
+            lambda *_: self._refresh_attachments_view()
+        )
+        self._include_writing_notes_hint = QLabel(TR("ai.attachments.writing_notes_hint"))
+        self._include_writing_notes_hint.setObjectName("AIAttachTotal")
+        self._include_writing_notes_hint.setWordWrap(True)
+        writing_notes_box = QFrame()
+        writing_notes_box.setObjectName("AIWritingNotesBox")
+        writing_notes_layout = QVBoxLayout(writing_notes_box)
+        writing_notes_layout.setContentsMargins(10, 8, 10, 8)
+        writing_notes_layout.setSpacing(2)
+        writing_notes_layout.addWidget(self._include_writing_notes_check)
+        writing_notes_layout.addWidget(self._include_writing_notes_hint)
+        self._writing_notes_box = writing_notes_box
+        right_layout.addWidget(self._writing_notes_box)
+
         attach_label = QLabel(TR("ai.attachments.title"))
         attach_label.setObjectName("AIAttachLabel")
         right_layout.addWidget(attach_label)
@@ -796,6 +819,7 @@ class AIToolsTab(QWidget):
 
         self._refresh_output_combo()
         self._refresh_task_params()
+        self._refresh_writing_notes_option()
         self._refresh_attachments_view()
         self._refresh_apply_button_state()
         self._refresh_fragment_undo_button()
@@ -824,6 +848,8 @@ class AIToolsTab(QWidget):
         idx = self._target_combo.findData(target_default)
         if idx >= 0:
             self._target_combo.setCurrentIndex(idx)
+        self._apply_writing_notes_default_for_task(self._current_task_type())
+        self._refresh_writing_notes_option()
         self._refresh_attachments_view()
         self._refresh_apply_button_state()
         self._refresh_fragment_undo_button()
@@ -908,6 +934,7 @@ class AIToolsTab(QWidget):
         self._refresh_output_combo()
         self._refresh_task_params()
         if new_task is not None:
+            self._refresh_writing_notes_option()
             self._apply_result_state(
                 self._task_results.get(new_task, AiTaskResultState())
             )
@@ -924,6 +951,7 @@ class AIToolsTab(QWidget):
             "preserve_voice": self._preserve_voice_check.isChecked(),
             "must_keep": self._must_keep_edit.text(),
             "forbid": self._forbid_edit.text(),
+            "include_writing_notes": self._include_writing_notes_check.isChecked(),
         }
 
     def _apply_task_params(self, task: AiTaskType) -> None:
@@ -940,6 +968,7 @@ class AIToolsTab(QWidget):
             self._preserve_voice_check.setChecked(True)
             self._must_keep_edit.clear()
             self._forbid_edit.clear()
+            self._apply_writing_notes_default_for_task(task)
             return
         self._style_edit.setText(params.get("style", ""))
         intensity_data = params.get("intensity_data", "")
@@ -951,6 +980,20 @@ class AIToolsTab(QWidget):
         self._preserve_voice_check.setChecked(params.get("preserve_voice", True))
         self._must_keep_edit.setText(params.get("must_keep", ""))
         self._forbid_edit.setText(params.get("forbid", ""))
+        self._include_writing_notes_check.setChecked(
+            params.get(
+                "include_writing_notes",
+                self._writing_notes_default_enabled(task),
+            )
+        )
+
+    def _writing_notes_default_enabled(self, task: AiTaskType) -> bool:
+        return task in _WRITING_NOTE_DEFAULT_TASKS
+
+    def _apply_writing_notes_default_for_task(self, task: AiTaskType) -> None:
+        self._include_writing_notes_check.setChecked(
+            self._writing_notes_default_enabled(task)
+        )
 
     def _refresh_task_params(self) -> None:
         task = self._current_task_type()
@@ -1339,6 +1382,58 @@ class AIToolsTab(QWidget):
         self._apply_result_state(AiTaskResultState())
         self._status_label.setText("")
 
+    def _writing_note_count(self) -> int:
+        if self._scope is None or self._scope.kind is not AiThreadScope.FRAGMENT:
+            return 0
+        if not self._scope.ref_id:
+            return 0
+        try:
+            return self._container.entry_writing_note_repository.count_open_for_entry(
+                self._scope.ref_id
+            )
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def _writing_note_attachments(self) -> list[AiContextAttachment]:
+        if not self._include_writing_notes_check.isChecked():
+            return []
+        if self._scope is None or self._scope.kind is not AiThreadScope.FRAGMENT:
+            return []
+        if not self._scope.ref_id:
+            return []
+        try:
+            notes = self._container.entry_writing_note_repository.list_for_entry(
+                self._scope.ref_id
+            )
+        except Exception:  # noqa: BLE001
+            return []
+        attachments: list[AiContextAttachment] = []
+        for index, note in enumerate(notes, start=1):
+            attachments.append(
+                AiContextAttachment(
+                    kind="writing_note",
+                    ref_id=note.id,
+                    name=TR("ai.attachments.writing_note_name").format(index=index),
+                    body=TR("ai.attachments.writing_note_body").format(body=note.body),
+                )
+            )
+        return attachments
+
+    def _refresh_writing_notes_option(self) -> None:
+        count = self._writing_note_count()
+        visible = bool(
+            self._scope is not None
+            and self._scope.kind is AiThreadScope.FRAGMENT
+        )
+        self._writing_notes_box.setVisible(visible)
+        self._include_writing_notes_check.setText(
+            TR("ai.attachments.include_writing_notes").format(count=count)
+        )
+        self._include_writing_notes_check.setEnabled(count > 0)
+        if count <= 0:
+            self._include_writing_notes_check.setChecked(False)
+        self._refresh_attachments_view()
+
     def _refresh_attachments_view(self) -> None:
         self._attach_list.clear()
         for att in self._attachments:
@@ -1361,6 +1456,7 @@ class AIToolsTab(QWidget):
 
     def _estimated_context_chars(self) -> int:
         total = sum(a.size_chars for a in self._attachments)
+        total += sum(a.size_chars for a in self._writing_note_attachments())
         scope = self._scope
         target = _combo_enum(self._target_combo, AiTargetKind, AiTargetKind.PASTE)
         if target == AiTargetKind.PASTE:
@@ -1568,7 +1664,7 @@ class AIToolsTab(QWidget):
             preserve_voice=self._preserve_voice_check.isChecked(),
             forbid_terms=forbid,
             must_keep_terms=must_keep,
-            attachments=list(self._attachments),
+            attachments=list(self._attachments) + self._writing_note_attachments(),
             cost_tier=tier,
             desired_output=output,
             expect_structured=is_structured,

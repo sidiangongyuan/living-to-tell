@@ -40,6 +40,22 @@ CREATE TABLE IF NOT EXISTS entry_versions (
 CREATE INDEX IF NOT EXISTS idx_entry_versions_entry
     ON entry_versions (entry_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS entry_writing_notes (
+    id           TEXT PRIMARY KEY,
+    entry_id     TEXT NOT NULL,
+    body         TEXT NOT NULL DEFAULT '',
+    status       TEXT NOT NULL DEFAULT 'open',
+    pinned       INTEGER NOT NULL DEFAULT 0,
+    sort_order   INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    completed_at TEXT,
+    FOREIGN KEY (entry_id) REFERENCES entries(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_entry_writing_notes_entry
+    ON entry_writing_notes (entry_id, status, pinned DESC, sort_order ASC);
+
 -- FTS5 external-content index over entries(title, body).
 CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
     title,

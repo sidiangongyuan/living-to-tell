@@ -33,6 +33,9 @@ from writer.storage.repositories.ai_thread_repository import AiThreadRepository
 from writer.storage.repositories.chapter_repository import ChapterRepository
 from writer.storage.repositories.collection_repository import CollectionRepository
 from writer.storage.repositories.entry_repository import EntryRepository
+from writer.storage.repositories.entry_writing_note_repository import (
+    EntryWritingNoteRepository,
+)
 from writer.storage.repositories.project_repository import ProjectRepository
 from writer.storage.repositories.reference_repository import ReferenceRepository
 from writer.storage.repositories.settings_repository import SettingsRepository
@@ -57,6 +60,7 @@ class AppContainer:
     settings_repository: SettingsRepository
     settings: Settings
     entry_repository: EntryRepository
+    entry_writing_note_repository: EntryWritingNoteRepository
     version_repository: VersionRepository
     reference_repository: ReferenceRepository
     project_repository: ProjectRepository
@@ -104,6 +108,7 @@ def build_container(db_path: Optional[Path] = None) -> AppContainer:
         pass
 
     entry_repo = EntryRepository(conn)
+    entry_note_repo = EntryWritingNoteRepository(conn)
     version_repo = VersionRepository(conn)
     reference_repo = ReferenceRepository(conn)
     project_repo = ProjectRepository(conn)
@@ -188,6 +193,7 @@ def build_container(db_path: Optional[Path] = None) -> AppContainer:
         settings_repository=settings_repo,
         settings=settings,
         entry_repository=entry_repo,
+        entry_writing_note_repository=entry_note_repo,
         version_repository=version_repo,
         reference_repository=reference_repo,
         project_repository=project_repo,

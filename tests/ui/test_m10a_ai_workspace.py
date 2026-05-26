@@ -518,6 +518,104 @@ def test_current_fragment_is_not_readded_as_attachment(qtbot, container):
     assert tab._attachments == []  # noqa: SLF001
 
 
+def test_fragment_writing_notes_are_default_context_for_continue_and_expand(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    entry = container.entry_repository.create(title="绵绵", body="原文。")
+    note = container.entry_writing_note_repository.create(
+        entry_id=entry.id,
+        body="下一段让人物先回到凉面摊。",
+    )
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(
+            kind=AiThreadScope.FRAGMENT,
+            ref_id=entry.id,
+            name=entry.title,
+            body=entry.body,
+        )
+    )
+
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.CONTINUE))  # noqa: SLF001
+    continue_request = tab._build_request()  # noqa: SLF001
+
+    assert continue_request is not None
+    assert tab._include_writing_notes_check.isChecked() is True  # noqa: SLF001
+    note_attachments = [
+        att for att in continue_request.attachments if att.kind == "writing_note"
+    ]
+    assert len(note_attachments) == 1
+    assert note_attachments[0].ref_id == note.id
+    assert "凉面摊" in note_attachments[0].body
+
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.EXPAND))  # noqa: SLF001
+    expand_request = tab._build_request()  # noqa: SLF001
+
+    assert expand_request is not None
+    assert [att.kind for att in expand_request.attachments].count("writing_note") == 1
+
+
+def test_fragment_writing_notes_are_opt_in_for_analysis_tasks(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    entry = container.entry_repository.create(title="绵绵", body="原文。")
+    container.entry_writing_note_repository.create(
+        entry_id=entry.id,
+        body="下一段写风。",
+    )
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(
+            kind=AiThreadScope.FRAGMENT,
+            ref_id=entry.id,
+            name=entry.title,
+            body=entry.body,
+        )
+    )
+
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.SUMMARIZE))  # noqa: SLF001
+    summary_request = tab._build_request()  # noqa: SLF001
+
+    assert summary_request is not None
+    assert tab._include_writing_notes_check.isChecked() is False  # noqa: SLF001
+    assert all(att.kind != "writing_note" for att in summary_request.attachments)
+
+    tab._include_writing_notes_check.setChecked(True)  # noqa: SLF001
+    opted_in_request = tab._build_request()  # noqa: SLF001
+
+    assert opted_in_request is not None
+    assert [att.kind for att in opted_in_request.attachments] == ["writing_note"]
+
+
+def test_unchecking_fragment_writing_notes_removes_auto_attachment(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    entry = container.entry_repository.create(title="绵绵", body="原文。")
+    container.entry_writing_note_repository.create(
+        entry_id=entry.id,
+        body="下一段写风。",
+    )
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(
+            kind=AiThreadScope.FRAGMENT,
+            ref_id=entry.id,
+            name=entry.title,
+            body=entry.body,
+        )
+    )
+
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.CONTINUE))  # noqa: SLF001
+    tab._include_writing_notes_check.setChecked(False)  # noqa: SLF001
+    request = tab._build_request()  # noqa: SLF001
+
+    assert request is not None
+    assert all(att.kind != "writing_note" for att in request.attachments)
+
+
 def test_add_specimen_attachment_replaces_only_style_specimens(qtbot, container, monkeypatch):
     from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
 

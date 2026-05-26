@@ -17,6 +17,7 @@ from PySide6.QtGui import (
     QMouseEvent,
 )
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -35,6 +36,7 @@ from writer.app.settings import (
     EditorDisplaySettings,
 )
 from writer.domain.models.entry import Entry
+from writer.domain.models.entry_writing_note import EntryWritingNote
 from writer.services.epigraph import detect_epigraph
 from writer.storage.repositories.entry_repository import serialize_tags
 from writer.ui.i18n import TR
@@ -310,6 +312,10 @@ class _WriterBodyEdit(PaperPlainTextEdit):
 class EditorPanel(QWidget):
     content_changed = Signal()
     save_specimen_requested = Signal()
+    writing_note_add_requested = Signal(str)
+    writing_note_done_requested = Signal(str, bool)
+    writing_note_delete_requested = Signal(str)
+    writing_note_pin_requested = Signal(str, bool)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -317,6 +323,8 @@ class EditorPanel(QWidget):
         self._entry_id: Optional[str] = None
         self._display_settings = DEFAULT_EDITOR_DISPLAY_SETTINGS
         self._focus_mode_enabled = False
+        self._writing_notes: list[EntryWritingNote] = []
+        self._writing_notes_collapsed = False
         self._find_bar = EditorFindBar()
         self._page_controls = EditorPageControls()
 
@@ -336,6 +344,54 @@ class EditorPanel(QWidget):
         self._tag_chips_layout.setSpacing(4)
         self._tag_chips_layout.addStretch(1)
         self._tag_chips_widget.setVisible(False)
+
+        self._writing_notes_card = QFrame()
+        self._writing_notes_card.setObjectName("WritingNotesCard")
+        self._writing_notes_card.setVisible(False)
+        notes_layout = QVBoxLayout(self._writing_notes_card)
+        notes_layout.setContentsMargins(14, 12, 14, 12)
+        notes_layout.setSpacing(8)
+
+        notes_header = QHBoxLayout()
+        notes_header.setContentsMargins(0, 0, 0, 0)
+        notes_header.setSpacing(8)
+        self._writing_notes_title = QLabel(TR("editor.writing_notes.title"))
+        self._writing_notes_title.setObjectName("WritingNotesTitle")
+        notes_header.addWidget(self._writing_notes_title)
+        self._writing_notes_count = QLabel("")
+        self._writing_notes_count.setObjectName("WritingNotesCount")
+        notes_header.addWidget(self._writing_notes_count)
+        notes_header.addStretch(1)
+        self._writing_notes_toggle_btn = QPushButton(TR("editor.writing_notes.collapse"))
+        self._writing_notes_toggle_btn.setObjectName("GhostButton")
+        self._writing_notes_toggle_btn.clicked.connect(self._toggle_writing_notes_card)
+        notes_header.addWidget(self._writing_notes_toggle_btn)
+        notes_layout.addLayout(notes_header)
+
+        self._writing_notes_hint = QLabel(TR("editor.writing_notes.hint"))
+        self._writing_notes_hint.setObjectName("WritingNotesHint")
+        self._writing_notes_hint.setWordWrap(True)
+        notes_layout.addWidget(self._writing_notes_hint)
+
+        self._writing_notes_rows = QWidget()
+        self._writing_notes_rows_layout = QVBoxLayout(self._writing_notes_rows)
+        self._writing_notes_rows_layout.setContentsMargins(0, 0, 0, 0)
+        self._writing_notes_rows_layout.setSpacing(6)
+        notes_layout.addWidget(self._writing_notes_rows)
+
+        add_row = QHBoxLayout()
+        add_row.setContentsMargins(0, 0, 0, 0)
+        add_row.setSpacing(8)
+        self._writing_note_input = QLineEdit()
+        self._writing_note_input.setObjectName("WritingNoteInput")
+        self._writing_note_input.setPlaceholderText(TR("editor.writing_notes.placeholder"))
+        self._writing_note_input.returnPressed.connect(self._on_add_writing_note)
+        add_row.addWidget(self._writing_note_input, 1)
+        self._writing_note_add_btn = QPushButton(TR("editor.writing_notes.add"))
+        self._writing_note_add_btn.setObjectName("PrimaryButton")
+        self._writing_note_add_btn.clicked.connect(self._on_add_writing_note)
+        add_row.addWidget(self._writing_note_add_btn)
+        notes_layout.addLayout(add_row)
 
         self._body = _WriterBodyEdit()
         self._body.setPlaceholderText(TR("editor.body_placeholder"))
@@ -402,6 +458,7 @@ class EditorPanel(QWidget):
         content_layout.addWidget(self._title)
         content_layout.addWidget(self._tags)
         content_layout.addWidget(self._tag_chips_widget)
+        content_layout.addWidget(self._writing_notes_card)
         content_layout.addWidget(self._epigraph_card)
         content_layout.addWidget(self._body, 1)
         content_layout.addWidget(self._page_controls)
@@ -440,6 +497,17 @@ class EditorPanel(QWidget):
         tags_font = QFont(self._tags.font())
         tags_font.setPointSizeF(max(settings.font_size - 3, 12))
         self._tags.setFont(tags_font)
+
+        note_title_font = QFont()
+        note_title_font.setFamilies(_font_families(settings.font_family))
+        note_title_font.setPointSizeF(max(settings.font_size - 4, 12))
+        self._writing_notes_title.setFont(note_title_font)
+
+        note_body_font = QFont()
+        note_body_font.setFamilies(_serif_font_families(settings.font_family))
+        note_body_font.setPointSizeF(max(settings.font_size - 3, 12))
+        for label in self._writing_notes_card.findChildren(QLabel, "WritingNoteBody"):
+            label.setFont(note_body_font)
 
         epigraph_label_font = QFont()
         epigraph_label_font.setFamilies(_font_families(settings.font_family))
@@ -526,6 +594,7 @@ class EditorPanel(QWidget):
                 self._body.clear()
                 self._meta.setText("")
                 self._update_tag_chips("")
+                self.set_writing_notes([])
                 self._refresh_epigraph_card()
                 self._find_bar.close_bar(clear_query=True)
                 self._find_bar.clear_matches()
@@ -537,6 +606,7 @@ class EditorPanel(QWidget):
                 self._body.setPlainText(entry.body)
                 self._meta.setText(self._format_meta(entry))
                 self._update_tag_chips(serialize_tags(entry.tags))
+                self.set_writing_notes([])
                 self._refresh_epigraph_card()
                 self._find_bar.refresh_matches()
                 self.setEnabled(True)
@@ -554,6 +624,124 @@ class EditorPanel(QWidget):
 
     def update_meta(self, text: str) -> None:
         self._meta.setText(text)
+
+    def set_writing_notes(self, notes: list[EntryWritingNote]) -> None:
+        had_notes = bool(self._writing_notes)
+        self._writing_notes = list(notes)
+        if not self._writing_notes:
+            self._writing_notes_collapsed = True
+        elif not had_notes:
+            self._writing_notes_collapsed = False
+        self._rebuild_writing_notes_rows()
+        self._refresh_writing_notes_card()
+
+    def focus_writing_note_input(self) -> None:
+        if self._entry_id is None:
+            return
+        self._writing_notes_collapsed = False
+        self._refresh_writing_notes_card()
+        self._writing_note_input.setFocus()
+
+    def _on_add_writing_note(self) -> None:
+        text = self._writing_note_input.text().strip()
+        if not text:
+            return
+        self._writing_note_input.clear()
+        self.writing_note_add_requested.emit(text)
+
+    def _toggle_writing_notes_card(self) -> None:
+        self._writing_notes_collapsed = not self._writing_notes_collapsed
+        self._refresh_writing_notes_card()
+        if not self._writing_notes_collapsed and not self._writing_notes:
+            self._writing_note_input.setFocus()
+
+    def _rebuild_writing_notes_rows(self) -> None:
+        while self._writing_notes_rows_layout.count():
+            item = self._writing_notes_rows_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        for note in self._writing_notes:
+            self._writing_notes_rows_layout.addWidget(
+                self._build_writing_note_row(note)
+            )
+
+    def _build_writing_note_row(self, note: EntryWritingNote) -> QWidget:
+        row = QFrame()
+        row.setObjectName("WritingNoteRowPinned" if note.pinned else "WritingNoteRow")
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(8, 7, 8, 7)
+        layout.setSpacing(8)
+
+        done = QCheckBox()
+        done.setToolTip(TR("editor.writing_notes.done"))
+        done.toggled.connect(
+            lambda checked=False, note_id=note.id: self.writing_note_done_requested.emit(
+                note_id, bool(checked)
+            )
+        )
+        layout.addWidget(done, 0, Qt.AlignmentFlag.AlignTop)
+
+        body = QLabel(note.body)
+        body.setObjectName("WritingNoteBody")
+        body.setWordWrap(True)
+        body.setTextFormat(Qt.TextFormat.PlainText)
+        body_font = QFont()
+        body_font.setFamilies(_serif_font_families(self._display_settings.font_family))
+        body_font.setPointSizeF(max(self._display_settings.font_size - 3, 12))
+        body.setFont(body_font)
+        layout.addWidget(body, 1)
+
+        pin_btn = QPushButton(
+            TR("editor.writing_notes.unpin")
+            if note.pinned
+            else TR("editor.writing_notes.pin")
+        )
+        pin_btn.setObjectName("GhostButton")
+        pin_btn.setToolTip(
+            TR("editor.writing_notes.unpin") if note.pinned else TR("editor.writing_notes.pin")
+        )
+        pin_btn.clicked.connect(
+            lambda _checked=False, note_id=note.id, pinned=note.pinned: (
+                self.writing_note_pin_requested.emit(note_id, not pinned)
+            )
+        )
+        layout.addWidget(pin_btn, 0, Qt.AlignmentFlag.AlignTop)
+
+        delete_btn = QPushButton(TR("editor.writing_notes.delete"))
+        delete_btn.setObjectName("GhostButton")
+        delete_btn.clicked.connect(
+            lambda _checked=False, note_id=note.id: self.writing_note_delete_requested.emit(
+                note_id
+            )
+        )
+        layout.addWidget(delete_btn, 0, Qt.AlignmentFlag.AlignTop)
+        return row
+
+    def _refresh_writing_notes_card(self) -> None:
+        has_entry = self._entry_id is not None
+        self._writing_notes_card.setVisible(has_entry)
+        if not has_entry:
+            self._writing_note_input.clear()
+            return
+        count = len(self._writing_notes)
+        self._writing_notes_count.setText(
+            TR("editor.writing_notes.count").format(count=count)
+        )
+        if self._writing_notes_collapsed:
+            toggle_key = (
+                "editor.writing_notes.add_first"
+                if count == 0
+                else "editor.writing_notes.expand"
+            )
+        else:
+            toggle_key = "editor.writing_notes.collapse"
+        self._writing_notes_toggle_btn.setText(TR(toggle_key))
+        expanded = not self._writing_notes_collapsed
+        self._writing_notes_hint.setVisible(expanded)
+        self._writing_notes_rows.setVisible(expanded and count > 0)
+        self._writing_note_input.setVisible(expanded)
+        self._writing_note_add_btn.setVisible(expanded)
 
     def current_entry_id(self) -> Optional[str]:
         return self._entry_id

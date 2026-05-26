@@ -183,6 +183,7 @@ class MainWindow(QMainWindow):
                 "words": TR("context.label_words"),
                 "chars": TR("context.label_chars"),
                 "tags": TR("context.label_tags"),
+                "writing_notes": TR("context.label_writing_notes"),
                 "created": TR("context.label_created"),
                 "updated": TR("context.label_updated"),
                 "status": TR("context.label_status"),
@@ -193,6 +194,7 @@ class MainWindow(QMainWindow):
             action_labels={
                 "polish": TR("context.action_polish"),
                 "include": TR("context.action_include"),
+                "writing_notes": TR("context.action_writing_notes"),
                 "save_specimen": TR("context.action_save_specimen"),
                 "versions": TR("context.action_versions"),
                 "export_work": TR("context.action_export_work"),
@@ -206,6 +208,9 @@ class MainWindow(QMainWindow):
         )
         self._context_pane.fragment_include_button.clicked.connect(
             self._on_include_fragment
+        )
+        self._context_pane.fragment_writing_notes_button.clicked.connect(
+            self._on_focus_writing_notes
         )
         self._context_pane.fragment_save_specimen_button.clicked.connect(
             self._on_save_style_specimen
@@ -298,6 +303,10 @@ class MainWindow(QMainWindow):
         self._list_panel.show_archived_changed.connect(self._on_show_archived_changed)
         self._editor_panel.content_changed.connect(self._on_editor_changed)
         self._editor_panel.content_changed.connect(self._refresh_fragment_context)
+        self._editor_panel.writing_note_add_requested.connect(self._on_add_writing_note)
+        self._editor_panel.writing_note_done_requested.connect(self._on_set_writing_note_done)
+        self._editor_panel.writing_note_delete_requested.connect(self._on_delete_writing_note)
+        self._editor_panel.writing_note_pin_requested.connect(self._on_pin_writing_note)
         self._works_panel.work_selected.connect(self._on_work_selected_for_context)
         self._collections_panel.collection_selected.connect(
             self._on_collection_selected_for_context
@@ -790,14 +799,73 @@ class MainWindow(QMainWindow):
         entry = self._container.entry_repository.get(entry_id)
         if entry is None:
             self._editor_panel.set_entry(None)
+            self._editor_panel.set_writing_notes([])
             self._refresh_fragment_context()
             return
         from writer.storage.repositories.entry_repository import serialize_tags
         self._editor_panel.set_entry(entry)
+        self._refresh_writing_notes_card(entry.id)
         self._autosave.remember_clean(
             entry.id, entry.title, entry.body, serialize_tags(entry.tags)
         )
         self._refresh_fragment_context()
+
+    def _refresh_writing_notes_card(self, entry_id: Optional[str] = None) -> None:
+        target_id = entry_id or self._editor_panel.current_entry_id()
+        if not target_id:
+            self._editor_panel.set_writing_notes([])
+            return
+        notes = self._container.entry_writing_note_repository.list_for_entry(target_id)
+        self._editor_panel.set_writing_notes(notes)
+
+    def _writing_note_count_text(self, entry_id: str) -> str:
+        count = self._container.entry_writing_note_repository.count_open_for_entry(entry_id)
+        return TR("context.writing_notes_count").format(count=count)
+
+    def _on_focus_writing_notes(self) -> None:
+        if self._editor_panel.current_entry_id() is None:
+            return
+        self._set_mode(MODE_FRAGMENTS)
+        self._editor_panel.focus_writing_note_input()
+
+    def _on_add_writing_note(self, body: str) -> None:
+        entry_id = self._editor_panel.current_entry_id()
+        if entry_id is None:
+            return
+        try:
+            self._container.entry_writing_note_repository.create(
+                entry_id=entry_id,
+                body=body,
+            )
+        except ValueError:
+            return
+        self._refresh_writing_notes_after_change(entry_id)
+
+    def _on_set_writing_note_done(self, note_id: str, done: bool) -> None:
+        note = self._container.entry_writing_note_repository.set_done(note_id, done)
+        entry_id = note.entry_id if note is not None else self._editor_panel.current_entry_id()
+        if entry_id:
+            self._refresh_writing_notes_after_change(entry_id)
+
+    def _on_delete_writing_note(self, note_id: str) -> None:
+        note = self._container.entry_writing_note_repository.get(note_id)
+        self._container.entry_writing_note_repository.delete(note_id)
+        entry_id = note.entry_id if note is not None else self._editor_panel.current_entry_id()
+        if entry_id:
+            self._refresh_writing_notes_after_change(entry_id)
+
+    def _on_pin_writing_note(self, note_id: str, pinned: bool) -> None:
+        note = self._container.entry_writing_note_repository.set_pinned(note_id, pinned)
+        entry_id = note.entry_id if note is not None else self._editor_panel.current_entry_id()
+        if entry_id:
+            self._refresh_writing_notes_after_change(entry_id)
+
+    def _refresh_writing_notes_after_change(self, entry_id: str) -> None:
+        self._refresh_writing_notes_card(entry_id)
+        self._refresh_fragment_context()
+        if self._stack.currentIndex() == MODE_AI:
+            self._bind_ai_workspace_scope()
+            self._refresh_ai_context_from_panel()
 
     # --------------------------------------------------------------
     def _snapshot_for_autosave(self) -> Optional[tuple[str, str, str, str]]:
@@ -1385,6 +1453,7 @@ class MainWindow(QMainWindow):
                 words=str(_count_words(body)),
                 chars=str(len(body)),
                 tags=", ".join(entry.tags) or TR("context.no_value"),
+                writing_notes=self._writing_note_count_text(entry.id),
                 created=entry.created_at or TR("context.no_value"),
                 updated=entry.updated_at or TR("context.no_value"),
                 status=(
@@ -2037,6 +2106,7 @@ class MainWindow(QMainWindow):
             words=str(words),
             chars=str(chars),
             tags=tags,
+            writing_notes=self._writing_note_count_text(entry_id),
             created=entry.created_at or TR("context.no_value"),
             updated=entry.updated_at or TR("context.no_value"),
             status=status,

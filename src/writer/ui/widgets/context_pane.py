@@ -91,6 +91,7 @@ class ContextPane(QWidget):
         self._frag_words = _MetaRow(meta_labels["words"])
         self._frag_chars = _MetaRow(meta_labels["chars"])
         self._frag_tags = _MetaRow(meta_labels["tags"])
+        self._frag_writing_notes = _MetaRow(meta_labels["writing_notes"])
         self._frag_created = _MetaRow(meta_labels["created"])
         self._frag_updated = _MetaRow(meta_labels["updated"])
         self._frag_status = _MetaRow(meta_labels["status"])
@@ -98,6 +99,7 @@ class ContextPane(QWidget):
             self._frag_words,
             self._frag_chars,
             self._frag_tags,
+            self._frag_writing_notes,
             self._frag_status,
             self._frag_created,
             self._frag_updated,
@@ -107,8 +109,10 @@ class ContextPane(QWidget):
         self._frag_actions_row.setSpacing(6)
         self._frag_polish_btn = _make_action_button(action_labels["polish"])
         self._frag_include_btn = _make_action_button(action_labels["include"])
+        self._frag_writing_notes_btn = _make_action_button(action_labels["writing_notes"])
         self._frag_save_specimen_btn = _make_action_button(action_labels["save_specimen"])
         self._frag_actions_row.addWidget(self._frag_polish_btn)
+        self._frag_actions_row.addWidget(self._frag_writing_notes_btn)
         self._frag_actions_row.addWidget(self._frag_include_btn)
         self._frag_actions_row.addWidget(self._frag_save_specimen_btn)
         frag_layout.addLayout(self._frag_actions_row)
@@ -190,6 +194,7 @@ class ContextPane(QWidget):
         words: str,
         chars: str,
         tags: str,
+        writing_notes: str,
         created: str,
         updated: str,
         status: str,
@@ -198,6 +203,7 @@ class ContextPane(QWidget):
         self._frag_words.set_value(words)
         self._frag_chars.set_value(chars)
         self._frag_tags.set_value(tags)
+        self._frag_writing_notes.set_value(writing_notes)
         self._frag_created.set_value(created)
         self._frag_updated.set_value(updated)
         self._frag_status.set_value(status)
@@ -243,6 +249,10 @@ class ContextPane(QWidget):
     @property
     def fragment_include_button(self) -> QPushButton:
         return self._frag_include_btn
+
+    @property
+    def fragment_writing_notes_button(self) -> QPushButton:
+        return self._frag_writing_notes_btn
 
     @property
     def fragment_save_specimen_button(self) -> QPushButton:
