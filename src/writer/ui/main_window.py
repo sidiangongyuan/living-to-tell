@@ -371,6 +371,9 @@ class MainWindow(QMainWindow):
         save_action.setShortcut(QKeySequence.StandardKey.Save)
         save_action.triggered.connect(self._on_manual_save)
         file_menu.addAction(save_action)
+        checkpoint_action = QAction(TR("menu.save_checkpoint"), self)
+        checkpoint_action.triggered.connect(self._on_save_checkpoint)
+        file_menu.addAction(checkpoint_action)
         recover_action = QAction(TR("menu.recover_last_deleted"), self)
         recover_action.triggered.connect(self._on_recover_last_deleted)
         file_menu.addAction(recover_action)
@@ -853,6 +856,22 @@ class MainWindow(QMainWindow):
     def _on_manual_save(self) -> None:
         self._autosave.flush()
         self._set_save_status("saved")
+
+    def _on_save_checkpoint(self) -> None:
+        entry_id = self._editor_panel.current_entry_id()
+        if entry_id is None:
+            return
+        self._autosave.flush()
+        entry = self._container.entry_repository.get(entry_id)
+        if entry is None:
+            return
+        self._container.version_history_service.save_manual_checkpoint(entry_id)
+        self._set_save_status("saved")
+        QMessageBox.information(
+            self,
+            TR("checkpoint.saved_title"),
+            TR("checkpoint.saved_msg"),
+        )
 
     def _on_sort_changed(self, sort: str) -> None:
         self._sort_mode = sort

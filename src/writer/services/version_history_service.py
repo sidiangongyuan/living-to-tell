@@ -27,6 +27,7 @@ _VERSION_LABELS: dict[str, str] = {
     VersionType.AI_POLISH.value: "AI Polish",
     VersionType.AI_EXPAND.value: "AI Expand",
     VersionType.AI_CONTINUE.value: "AI Continue",
+    VersionType.MANUAL_CHECKPOINT.value: "Checkpoint",
     VersionType.MANUAL_SNAPSHOT.value: "Snapshot (pre-restore)",
 }
 
@@ -63,6 +64,17 @@ class VersionHistoryService:
     def version_type_label(version_type: str) -> str:
         """Return a user-friendly label for a raw version_type string."""
         return _VERSION_LABELS.get(version_type, version_type)
+
+    def save_manual_checkpoint(self, entry_id: str) -> EntryVersion:
+        """Persist the current live body as a user-requested checkpoint."""
+        entry = self._entries.get(entry_id)
+        if entry is None:
+            raise ValueError(f"Entry {entry_id!r} not found")
+        return self._versions.add(
+            entry_id=entry_id,
+            version_type=VersionType.MANUAL_CHECKPOINT.value,
+            content=entry.body,
+        )
 
     # ------------------------------------------------------------------
     # Restore

@@ -57,11 +57,31 @@ def test_list_history_newest_first(svc, container):
 def test_version_type_label_known_types():
     assert VersionHistoryService.version_type_label("original") == "Original"
     assert VersionHistoryService.version_type_label("ai_polish") == "AI Polish"
+    assert VersionHistoryService.version_type_label("manual_checkpoint") == "Checkpoint"
     assert VersionHistoryService.version_type_label("manual_snapshot") == "Snapshot (pre-restore)"
 
 
 def test_version_type_label_unknown_falls_back_to_raw():
     assert VersionHistoryService.version_type_label("custom_thing") == "custom_thing"
+
+
+# ------------------------------------------------------------------
+# manual checkpoints
+# ------------------------------------------------------------------
+
+def test_save_manual_checkpoint_persists_current_body(svc, container):
+    entry = container.entry_repository.create(title="t", body="checkpoint body")
+
+    version = svc.save_manual_checkpoint(entry.id)
+
+    assert version.version_type == VersionType.MANUAL_CHECKPOINT.value
+    assert version.content == "checkpoint body"
+    assert svc.list_history(entry.id)[0].id == version.id
+
+
+def test_save_manual_checkpoint_raises_for_missing_entry(svc):
+    with pytest.raises(ValueError, match="not found"):
+        svc.save_manual_checkpoint("missing-entry")
 
 
 # ------------------------------------------------------------------

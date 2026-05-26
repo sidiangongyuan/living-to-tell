@@ -214,6 +214,47 @@ def test_main_window_version_history_no_entry_is_noop(qtbot, container, monkeypa
     window._on_open_version_history()  # noqa: SLF001
 
 
+def test_main_window_save_checkpoint_flushes_current_fragment(
+    qtbot, container, monkeypatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    from writer.ui.main_window import MainWindow
+
+    entry = container.entry_repository.create(title="t", body="initial")
+    window = MainWindow(container, autosave_debounce_ms=50)
+    qtbot.addWidget(window)
+    window._load_entry(entry.id)  # noqa: SLF001
+    window._editor_panel.replace_body("checkpoint now")  # noqa: SLF001
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Ok),
+    )
+
+    window._on_save_checkpoint()  # noqa: SLF001
+
+    versions = container.version_repository.list_for_entry(entry.id)
+    assert len(versions) == 1
+    assert versions[0].version_type == VersionType.MANUAL_CHECKPOINT.value
+    assert versions[0].content == "checkpoint now"
+
+
+def test_main_window_manual_save_does_not_create_checkpoint(qtbot, container):
+    from writer.ui.main_window import MainWindow
+
+    entry = container.entry_repository.create(title="t", body="initial")
+    window = MainWindow(container, autosave_debounce_ms=50)
+    qtbot.addWidget(window)
+    window._load_entry(entry.id)  # noqa: SLF001
+    window._editor_panel.replace_body("manual save only")  # noqa: SLF001
+
+    window._on_manual_save()  # noqa: SLF001
+
+    assert container.entry_repository.get(entry.id).body == "manual save only"
+    assert container.version_repository.list_for_entry(entry.id) == []
+
+
 # ------------------------------------------------------------------
 # Duplicate chapter title fix
 # ------------------------------------------------------------------

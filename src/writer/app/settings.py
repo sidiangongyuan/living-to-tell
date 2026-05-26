@@ -9,6 +9,7 @@ configuration will land alongside the settings dialog in a later milestone.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Optional
 
@@ -23,6 +24,7 @@ KEY_AI_API_KEY_SOURCE = "ai.api_key_source"
 KEY_AI_WIRE_API = "ai.wire_api"
 KEY_AI_PROVIDER = "ai.provider"
 KEY_AI_GEMINI_CLI_PROXY = "ai.gemini_cli_proxy"
+KEY_AI_CUSTOM_TASK_PRESETS = "ai.custom_task_presets"
 
 DEFAULT_GEMINI_CLI_MODEL = "gemini-cli-default"
 OPENAI_DEFAULT_MODELS = ("gpt-4o-mini",)
@@ -226,6 +228,65 @@ class Settings:
             self._repo.set(KEY_AI_GEMINI_CLI_PROXY, proxy)
         else:
             self._repo.delete(KEY_AI_GEMINI_CLI_PROXY)
+
+    def load_ai_custom_task_presets(self) -> dict[str, list[str]]:
+        raw = self._repo.get(KEY_AI_CUSTOM_TASK_PRESETS)
+        if not raw:
+            return {}
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        cleaned: dict[str, list[str]] = {}
+        for task_name, values in data.items():
+            if not isinstance(task_name, str) or not isinstance(values, list):
+                continue
+            seen: set[str] = set()
+            presets: list[str] = []
+            for raw_value in values:
+                if not isinstance(raw_value, str):
+                    continue
+                value = raw_value.strip()
+                if not value:
+                    continue
+                lowered = value.lower()
+                if lowered in seen:
+                    continue
+                seen.add(lowered)
+                presets.append(value)
+            if presets:
+                cleaned[task_name] = presets
+        return cleaned
+
+    def save_ai_custom_task_presets(self, presets: dict[str, list[str]]) -> None:
+        cleaned: dict[str, list[str]] = {}
+        for task_name, values in presets.items():
+            if not isinstance(task_name, str) or not isinstance(values, list):
+                continue
+            seen: set[str] = set()
+            unique_values: list[str] = []
+            for raw_value in values:
+                if not isinstance(raw_value, str):
+                    continue
+                value = raw_value.strip()
+                if not value:
+                    continue
+                lowered = value.lower()
+                if lowered in seen:
+                    continue
+                seen.add(lowered)
+                unique_values.append(value)
+            if unique_values:
+                cleaned[task_name] = unique_values
+        if not cleaned:
+            self._repo.delete(KEY_AI_CUSTOM_TASK_PRESETS)
+            return
+        self._repo.set(
+            KEY_AI_CUSTOM_TASK_PRESETS,
+            json.dumps(cleaned, ensure_ascii=False, sort_keys=True),
+        )
 
     # ------------------------------------------------------------------
     @property

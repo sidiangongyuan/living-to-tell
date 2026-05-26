@@ -381,6 +381,30 @@ def test_style_preset_buttons_append_into_style_input(qtbot, container):
     assert tab._style_edit.text() == first_author + separator + first_goal  # noqa: SLF001
 
 
+def test_custom_style_preset_adds_deletes_and_persists(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.POLISH))  # noqa: SLF001
+    tab._style_edit.setText("雾一样的克制")  # noqa: SLF001
+
+    tab._save_custom_preset_btn.click()  # noqa: SLF001
+
+    assert container.settings.load_ai_custom_task_presets()["polish"] == ["雾一样的克制"]
+    assert "雾一样的克制" in tab._style_preset_buttons  # noqa: SLF001
+
+    tab2 = AIToolsTab(container)
+    qtbot.addWidget(tab2)
+    tab2._task_list.setCurrentRow(_row_for_task(tab2, AiTaskType.POLISH))  # noqa: SLF001
+    assert "雾一样的克制" in tab2._style_preset_buttons  # noqa: SLF001
+
+    tab2._delete_custom_preset("雾一样的克制")  # noqa: SLF001
+
+    assert container.settings.load_ai_custom_task_presets() == {}
+    assert "雾一样的克制" not in tab2._style_preset_buttons  # noqa: SLF001
+
+
 def test_style_transfer_is_not_visible_in_task_list(qtbot, container):
     from writer.ui.panels.ai_workspace_panel import AIToolsTab
 
@@ -1368,7 +1392,106 @@ def test_structured_result_uses_originating_task_even_if_user_switches_task(qtbo
     )
     tab._on_task_succeeded(response)  # noqa: SLF001
 
+    # The current Structure Diagnose task must not be polluted by the Library QA result.
+    assert tab._result_view.toPlainText() == ""  # noqa: SLF001
+
+    tab._task_list.setCurrentRow(qa_row)  # noqa: SLF001
     assert tab._result_view.toPlainText() == "Alice"  # noqa: SLF001
+
+
+def test_task_results_are_isolated_when_switching_tasks(qtbot, container):
+    from writer.services.ai.task_types import AiTaskRequest, AiTaskResponse
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(AiScope(AiThreadScope.GLOBAL, None, "", ""))
+
+    polish_row = _row_for_task(tab, AiTaskType.POLISH)
+    expand_row = _row_for_task(tab, AiTaskType.EXPAND)
+    tab._task_list.setCurrentRow(polish_row)  # noqa: SLF001
+    polish_request = AiTaskRequest(
+        task_type=AiTaskType.POLISH,
+        target_kind=AiTargetKind.PASTE,
+        text="original polish source",
+        cost_tier=AiCostTier.BALANCED,
+        desired_output=AiOutputAction.PREVIEW_ONLY,
+    )
+    tab._on_task_succeeded(  # noqa: SLF001
+        AiTaskResponse(content="POLISHED", model="m", provider="stub"),
+        polish_request,
+    )
+    assert tab._result_view.toPlainText() == "POLISHED"  # noqa: SLF001
+
+    tab._task_list.setCurrentRow(expand_row)  # noqa: SLF001
+
+    assert tab._result_view.toPlainText() == ""  # noqa: SLF001
+    assert tab._last_response is None  # noqa: SLF001
+    assert tab._clear_result_btn.isEnabled() is False  # noqa: SLF001
+
+    tab._task_list.setCurrentRow(polish_row)  # noqa: SLF001
+
+    assert tab._result_view.toPlainText() == "POLISHED"  # noqa: SLF001
+    assert tab._source_view.toPlainText() == "original polish source"  # noqa: SLF001
+    assert tab._clear_result_btn.isEnabled() is True  # noqa: SLF001
+
+
+def test_clear_current_and_all_results_do_not_clear_params_or_presets(
+    qtbot, container, monkeypatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    from writer.services.ai.task_types import AiTaskRequest, AiTaskResponse
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(AiScope(AiThreadScope.GLOBAL, None, "", ""))
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.POLISH))  # noqa: SLF001
+    tab._style_edit.setText("自定义风格")  # noqa: SLF001
+    tab._save_custom_preset_btn.click()  # noqa: SLF001
+
+    polish_request = AiTaskRequest(
+        task_type=AiTaskType.POLISH,
+        target_kind=AiTargetKind.PASTE,
+        text="polish source",
+        cost_tier=AiCostTier.BALANCED,
+        desired_output=AiOutputAction.PREVIEW_ONLY,
+    )
+    tab._on_task_succeeded(  # noqa: SLF001
+        AiTaskResponse(content="POLISHED", model="m", provider="stub"),
+        polish_request,
+    )
+    tab._on_clear_current_result()  # noqa: SLF001
+
+    assert tab._result_view.toPlainText() == ""  # noqa: SLF001
+    assert tab._style_edit.text() == "自定义风格"  # noqa: SLF001
+    assert container.settings.load_ai_custom_task_presets()["polish"] == ["自定义风格"]
+
+    expand_row = _row_for_task(tab, AiTaskType.EXPAND)
+    tab._task_list.setCurrentRow(expand_row)  # noqa: SLF001
+    expand_request = AiTaskRequest(
+        task_type=AiTaskType.EXPAND,
+        target_kind=AiTargetKind.PASTE,
+        text="expand source",
+        cost_tier=AiCostTier.BALANCED,
+        desired_output=AiOutputAction.PREVIEW_ONLY,
+    )
+    tab._on_task_succeeded(  # noqa: SLF001
+        AiTaskResponse(content="EXPANDED", model="m", provider="stub"),
+        expand_request,
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes),
+    )
+    tab._on_clear_all_results()  # noqa: SLF001
+
+    assert tab._result_view.toPlainText() == ""  # noqa: SLF001
+    tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.POLISH))  # noqa: SLF001
+    assert tab._result_view.toPlainText() == ""  # noqa: SLF001
+    assert container.settings.load_ai_custom_task_presets()["polish"] == ["自定义风格"]
 
 
 # ---------------------------------------------------------------------------

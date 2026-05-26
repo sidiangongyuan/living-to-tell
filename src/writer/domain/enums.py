@@ -11,7 +11,8 @@ class EntryType(str, Enum):
 class VersionType(str, Enum):
     """Why a version row exists. Only ``ORIGINAL`` is used in M2;
     AI-generated variants land in M3; ``MANUAL_SNAPSHOT`` is written by
-    the version-history restore flow (M5D) before overwriting the live body."""
+    the version-history restore flow (M5D) before overwriting the live body;
+    ``MANUAL_CHECKPOINT`` is an explicit user-created fragment snapshot."""
 
     ORIGINAL = "original"
     AI_POLISH = "ai_polish"
@@ -19,6 +20,7 @@ class VersionType(str, Enum):
     AI_CONTINUE = "ai_continue"
     AI_OTHER = "ai_other"
     MANUAL_SNAPSHOT = "manual_snapshot"
+    MANUAL_CHECKPOINT = "manual_checkpoint"
 
 
 class RewriteAction(str, Enum):

@@ -62,8 +62,8 @@ Public screenshots, short walkthrough videos, and workflow demos are on the road
 
 The recommended public distribution format is a **Windows portable zip**.
 
-- Latest alpha: [Writer-0.2.0-alpha.19-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.19/Writer-0.2.0-alpha.19-portable.zip)
-- Release page: [v0.2.0-alpha.19](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.19)
+- Latest alpha: [Writer-0.2.0-alpha.20-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.20/Writer-0.2.0-alpha.20-portable.zip)
+- Release page: [v0.2.0-alpha.20](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.20)
 - If you are testing the latest branch, use the **Build Windows Portable** GitHub Action artifact.
 - To build locally, run the packaging command in [Build from source](#build-from-source).
 

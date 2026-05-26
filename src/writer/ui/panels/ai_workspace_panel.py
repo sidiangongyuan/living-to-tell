@@ -106,6 +106,22 @@ class AiScope:
         return bool(self.section_id) and bool(self.work_id)
 
 
+@dataclass
+class AiTaskResultState:
+    """Cached visible result state for one AI task type."""
+
+    response: Optional[AiTaskResponse] = None
+    request: Optional[AiTaskRequest] = None
+    result_text: str = ""
+    source_text: str = ""
+    source_visible: bool = False
+    result_header_visible: bool = False
+    meta_text: str = ""
+    citations_text: str = ""
+    citations_visible: bool = False
+    last_excerpt: str = ""
+
+
 def _combo_enum(combo: QComboBox, enum_cls, default):
     """Return ``combo.currentData()`` normalised back to ``enum_cls``.
 
@@ -432,6 +448,11 @@ class AIToolsTab(QWidget):
         self._last_fragment_undo: Optional[tuple[str, str]] = None
         # Per-task parameter state — isolates style/intensity/extra across tasks.
         self._task_params: dict[AiTaskType, dict] = {}
+        # Per-task result state — prevents one task's output from bleeding into another.
+        self._task_results: dict[AiTaskType, AiTaskResultState] = {}
+        self._custom_task_presets: dict[str, list[str]] = (
+            self._container.settings.load_ai_custom_task_presets()
+        )
 
         # ---- Left: task list ----
         self._task_list = QListWidget()
@@ -550,6 +571,14 @@ class AIToolsTab(QWidget):
         self._style_presets_layout.setContentsMargins(0, 0, 0, 0)
         self._style_presets_layout.setSpacing(4)
         self._style_field_layout.addWidget(self._style_presets_box)
+        custom_preset_row = QHBoxLayout()
+        custom_preset_row.setContentsMargins(0, 0, 0, 0)
+        self._save_custom_preset_btn = QPushButton(TR("ai.params.save_custom_preset"))
+        self._save_custom_preset_btn.setObjectName("AIStylePresetSaveButton")
+        self._save_custom_preset_btn.clicked.connect(self._on_save_custom_preset)
+        custom_preset_row.addWidget(self._save_custom_preset_btn)
+        custom_preset_row.addStretch(1)
+        self._style_field_layout.addLayout(custom_preset_row)
         params_form.addRow(TR("ai.params.style"), self._style_field)
         self._style_field_label = params_form.labelForField(self._style_field)
 
@@ -732,6 +761,13 @@ class AIToolsTab(QWidget):
         self._locate_excerpt_btn.setEnabled(False)
         self._locate_excerpt_btn.clicked.connect(self._on_locate_excerpt)
         action_row.addWidget(self._locate_excerpt_btn)
+        self._clear_result_btn = QPushButton(TR("ai.results.clear_current"))
+        self._clear_result_btn.setEnabled(False)
+        self._clear_result_btn.clicked.connect(self._on_clear_current_result)
+        action_row.addWidget(self._clear_result_btn)
+        self._clear_all_results_btn = QPushButton(TR("ai.results.clear_all"))
+        self._clear_all_results_btn.clicked.connect(self._on_clear_all_results)
+        action_row.addWidget(self._clear_all_results_btn)
         self._undo_apply_btn = QPushButton(TR("ai.results.undo_last_apply"))
         self._undo_apply_btn.setEnabled(False)
         self._undo_apply_btn.setVisible(False)
@@ -857,8 +893,10 @@ class AIToolsTab(QWidget):
             try:
                 prev_task = prev_val if isinstance(prev_val, AiTaskType) else AiTaskType(prev_val)
                 self._task_params[prev_task] = self._read_current_params()
+                self._task_results[prev_task] = self._capture_current_result_state()
             except (TypeError, ValueError):
                 pass
+        new_task: Optional[AiTaskType] = None
         # Restore params for the task we're entering.
         if current is not None:
             new_val = current.data(Qt.ItemDataRole.UserRole)
@@ -869,7 +907,10 @@ class AIToolsTab(QWidget):
                 pass
         self._refresh_output_combo()
         self._refresh_task_params()
-        self._refresh_send_to_chat_button()
+        if new_task is not None:
+            self._apply_result_state(
+                self._task_results.get(new_task, AiTaskResultState())
+            )
 
     # ---- task parameter isolation ----
 
@@ -915,6 +956,7 @@ class AIToolsTab(QWidget):
         task = self._current_task_type()
         show_style = True
         self._style_field.setVisible(show_style)
+        self._save_custom_preset_btn.setVisible(show_style)
         if self._style_field_label is not None:
             self._style_field_label.setVisible(show_style)
             self._style_field_label.setText(
@@ -947,36 +989,49 @@ class AIToolsTab(QWidget):
         )
         self._rebuild_style_preset_sections(self._style_sections_for_task(task))
 
-    def _style_sections_for_task(self, task: AiTaskType) -> List[tuple[str, List[str]]]:
+    def _style_sections_for_task(self, task: AiTaskType) -> List[tuple[str, List[str], bool]]:
+        sections: List[tuple[str, List[str], bool]]
         if task is AiTaskType.POLISH:
-            return [
+            sections = [
                 (
                     TR("ai.params.quick_presets"),
                     _preset_values("ai.params.style_presets.polish_values"),
+                    False,
                 ),
-                (TR("ai.params.style_authors"), self._style_author_presets),
-                (TR("ai.params.style_goals"), self._style_goal_presets),
+                (TR("ai.params.style_authors"), self._style_author_presets, False),
+                (TR("ai.params.style_goals"), self._style_goal_presets, False),
             ]
-        values_key = _TASK_STYLE_PRESET_VALUES_KEY.get(task)
-        if values_key:
-            return [(TR("ai.params.quick_presets"), _preset_values(values_key))]
-        return []
+        else:
+            values_key = _TASK_STYLE_PRESET_VALUES_KEY.get(task)
+            sections = (
+                [(TR("ai.params.quick_presets"), _preset_values(values_key), False)]
+                if values_key
+                else []
+            )
+        custom = self._custom_presets_for_task(task)
+        if custom:
+            sections.append((TR("ai.params.my_presets"), custom, True))
+        return sections
 
-    def _rebuild_style_preset_sections(self, sections: List[tuple[str, List[str]]]) -> None:
+    def _rebuild_style_preset_sections(
+        self, sections: List[tuple[str, List[str], bool]]
+    ) -> None:
         self._style_preset_buttons = {}
         while self._style_presets_layout.count():
             item = self._style_presets_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
-        for title, values in sections:
+        for title, values, custom in sections:
             if values:
                 self._style_presets_layout.addWidget(
-                    self._build_style_preset_section(title, values)
+                    self._build_style_preset_section(title, values, custom=custom)
                 )
         self._style_presets_box.setVisible(bool(sections))
 
-    def _build_style_preset_section(self, title: str, values: List[str]) -> QWidget:
+    def _build_style_preset_section(
+        self, title: str, values: List[str], *, custom: bool = False
+    ) -> QWidget:
         section = QWidget()
         section.setObjectName("AIStylePresetSection")
         layout = QVBoxLayout(section)
@@ -990,6 +1045,15 @@ class AIToolsTab(QWidget):
         buttons_layout = _FlowLayout(spacing=6)
         layout.addLayout(buttons_layout)
         for value in values:
+            if custom:
+                chip = QWidget()
+                chip.setObjectName("AIStyleCustomPresetChip")
+                chip_layout = QHBoxLayout(chip)
+                chip_layout.setContentsMargins(0, 0, 0, 0)
+                chip_layout.setSpacing(2)
+            else:
+                chip = None
+                chip_layout = None
             button = QPushButton(value)
             button.setObjectName("AIStylePresetButton")
             button.setFlat(True)
@@ -1004,7 +1068,20 @@ class AIToolsTab(QWidget):
                 lambda _checked=False, preset=value: self._append_style_preset(preset)
             )
             self._style_preset_buttons[value] = button
-            buttons_layout.addWidget(button)
+            if custom and chip is not None and chip_layout is not None:
+                chip_layout.addWidget(button)
+                delete_btn = QPushButton("×")
+                delete_btn.setObjectName("AIStylePresetDeleteButton")
+                delete_btn.setFlat(True)
+                delete_btn.setToolTip(TR("ai.params.delete_custom_preset"))
+                delete_btn.setMinimumSize(28, 28)
+                delete_btn.clicked.connect(
+                    lambda _checked=False, preset=value: self._delete_custom_preset(preset)
+                )
+                chip_layout.addWidget(delete_btn)
+                buttons_layout.addWidget(chip)
+            else:
+                buttons_layout.addWidget(button)
         return section
 
     def _append_style_preset(self, value: str) -> None:
@@ -1017,6 +1094,63 @@ class AIToolsTab(QWidget):
             separator = "，" if current_locale() == LOCALE_ZH_CN else ", "
             self._style_edit.setText(current + separator + value)
         self._style_edit.setFocus()
+
+    def _custom_presets_for_task(self, task: AiTaskType) -> List[str]:
+        return list(self._custom_task_presets.get(task.value, []))
+
+    def _built_in_presets_for_task(self, task: AiTaskType) -> set[str]:
+        values: list[str] = []
+        for _title, section_values, custom in self._style_sections_for_task_without_custom(task):
+            if not custom:
+                values.extend(section_values)
+        return {value.lower() for value in values}
+
+    def _style_sections_for_task_without_custom(
+        self, task: AiTaskType
+    ) -> List[tuple[str, List[str], bool]]:
+        if task is AiTaskType.POLISH:
+            return [
+                (
+                    TR("ai.params.quick_presets"),
+                    _preset_values("ai.params.style_presets.polish_values"),
+                    False,
+                ),
+                (TR("ai.params.style_authors"), self._style_author_presets, False),
+                (TR("ai.params.style_goals"), self._style_goal_presets, False),
+            ]
+        values_key = _TASK_STYLE_PRESET_VALUES_KEY.get(task)
+        if values_key:
+            return [(TR("ai.params.quick_presets"), _preset_values(values_key), False)]
+        return []
+
+    def _on_save_custom_preset(self) -> None:
+        value = self._style_edit.text().strip()
+        if not value:
+            return
+        task = self._current_task_type()
+        existing = self._built_in_presets_for_task(task) | {
+            item.lower() for item in self._custom_presets_for_task(task)
+        }
+        if value.lower() in existing:
+            return
+        task_values = self._custom_task_presets.setdefault(task.value, [])
+        task_values.append(value)
+        self._container.settings.save_ai_custom_task_presets(self._custom_task_presets)
+        self._refresh_task_params()
+
+    def _delete_custom_preset(self, value: str) -> None:
+        task = self._current_task_type()
+        presets = [
+            item
+            for item in self._custom_presets_for_task(task)
+            if item.lower() != value.strip().lower()
+        ]
+        if presets:
+            self._custom_task_presets[task.value] = presets
+        else:
+            self._custom_task_presets.pop(task.value, None)
+        self._container.settings.save_ai_custom_task_presets(self._custom_task_presets)
+        self._refresh_task_params()
 
     def _on_toggle_advanced(self, checked: bool) -> None:
         self._advanced_box.setVisible(checked)
@@ -1110,6 +1244,8 @@ class AIToolsTab(QWidget):
             self._apply_btn.setToolTip(TR("ai.results.apply_disabled_no_result"))
         else:
             self._apply_btn.setToolTip(TR("ai.results.apply_disabled_preview"))
+        self._save_fragment_btn.setEnabled(has_result)
+        self._clear_result_btn.setEnabled(has_result)
 
     def _clear_fragment_undo(self) -> None:
         self._last_fragment_undo = None
@@ -1144,6 +1280,64 @@ class AIToolsTab(QWidget):
             return AiTaskType(value)
         except (TypeError, ValueError):
             return AiTaskType.POLISH
+
+    def _capture_current_result_state(self) -> AiTaskResultState:
+        return AiTaskResultState(
+            response=self._last_response,
+            request=self._last_request,
+            result_text=self._result_view.toPlainText(),
+            source_text=self._source_view.toPlainText(),
+            source_visible=not self._source_widget.isHidden(),
+            result_header_visible=not self._result_header.isHidden(),
+            meta_text=self._meta_label.text(),
+            citations_text=self._citations_label.text(),
+            citations_visible=not self._citations_label.isHidden(),
+            last_excerpt=self._last_excerpt,
+        )
+
+    def _apply_result_state(self, state: AiTaskResultState) -> None:
+        self._last_response = state.response
+        self._last_request = state.request
+        self._last_excerpt = state.last_excerpt
+        self._result_view.setPlainText(state.result_text)
+        self._source_view.setPlainText(state.source_text)
+        self._source_widget.setVisible(state.source_visible)
+        self._result_header.setVisible(state.result_header_visible)
+        self._meta_label.setText(state.meta_text)
+        self._citations_label.setText(state.citations_text)
+        self._citations_label.setVisible(state.citations_visible)
+        self._refresh_apply_button_state()
+        self._refresh_send_to_chat_button()
+        self._locate_excerpt_btn.setEnabled(bool(self._last_excerpt.strip()))
+
+    def _empty_result_state(self, *, request: Optional[AiTaskRequest] = None) -> AiTaskResultState:
+        return AiTaskResultState(request=request)
+
+    def _pending_result_request(self) -> Optional[AiTaskRequest]:
+        for state in self._task_results.values():
+            if state.request is not None and state.response is None:
+                return state.request
+        return None
+
+    def _on_clear_current_result(self) -> None:
+        task = self._current_task_type()
+        self._task_results.pop(task, None)
+        self._apply_result_state(AiTaskResultState())
+        self._status_label.setText("")
+
+    def _on_clear_all_results(self) -> None:
+        choice = QMessageBox.question(
+            self,
+            TR("ai.results.clear_all_confirm_title"),
+            TR("ai.results.clear_all_confirm_msg"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if choice != QMessageBox.StandardButton.Yes:
+            return
+        self._task_results.clear()
+        self._apply_result_state(AiTaskResultState())
+        self._status_label.setText("")
 
     def _refresh_attachments_view(self) -> None:
         self._attach_list.clear()
@@ -1391,39 +1585,43 @@ class AIToolsTab(QWidget):
         self._status_label.setText(
             TR("ai.status.running_provider").format(provider=_display_provider_name(provider))
         )
-        self._last_response = None
-        self._refresh_apply_button_state()
-        self._send_chat_btn.setVisible(False)
-        self._send_chat_btn.setEnabled(False)
+        self._apply_result_state(self._empty_result_state(request=request))
         self._last_request = request
+        self._task_results[request.task_type] = self._capture_current_result_state()
 
         worker = AiTaskWorker(self._container.ai_task_service, request, parent=self)
-        worker.succeeded.connect(self._on_task_succeeded)
+        worker.succeeded.connect(
+            lambda response, request=request: self._on_task_succeeded(response, request)
+        )
         worker.failed.connect(self._on_task_failed)
         worker.finished.connect(lambda: self._run_btn.setEnabled(True))
         self._worker = worker
         worker.start()
 
-    def _on_task_succeeded(self, response: AiTaskResponse) -> None:
-        self._last_response = response
-        self._last_excerpt = self._extract_excerpt(response)
+    def _on_task_succeeded(
+        self,
+        response: AiTaskResponse,
+        request: Optional[AiTaskRequest] = None,
+    ) -> None:
+        request = request or self._last_request or self._pending_result_request()
+        task_type = request.task_type if request is not None else self._current_task_type()
+        last_excerpt = self._extract_excerpt(response)
         self._clear_fragment_undo()
         self._status_label.setText("")
-        task_type = self._result_task_type()
         rendered = (
             self._render_structured(response, task_type=task_type) if response.structured else None
         )
-        self._result_view.setPlainText(rendered if rendered is not None else response.content)
+        result_text = rendered if rendered is not None else response.content
 
         # Compare layout — show source pane for rewrite tasks.
-        if task_type in _COMPARE_TASKS and self._last_request is not None:
-            source_text = self._last_request.text
-            self._source_view.setPlainText(source_text)
-            self._source_widget.setVisible(True)
-            self._result_header.setVisible(True)
+        if task_type in _COMPARE_TASKS and request is not None:
+            source_text = request.text
+            source_visible = True
+            result_header_visible = True
         else:
-            self._source_widget.setVisible(False)
-            self._result_header.setVisible(False)
+            source_text = ""
+            source_visible = False
+            result_header_visible = False
 
         meta_parts = []
         if response.provider:
@@ -1435,22 +1633,34 @@ class AIToolsTab(QWidget):
         if response.input_tokens is not None or response.output_tokens is not None:
             tokens = f"{response.input_tokens or 0}/{response.output_tokens or 0}"
             meta_parts.append(f"{TR('ai.results.tokens_label')}: {tokens}")
-        self._meta_label.setText("  ·  ".join(meta_parts))
+        meta_text = "  ·  ".join(meta_parts)
 
         if response.citations:
             cite_lines = [TR("ai.results.citations_label") + ":"]
             for c in response.citations:
                 tag = TR("ai.results.unresolved") + " " if c.kind == "unresolved" else ""
                 cite_lines.append(f"  • {tag}{c.name}")
-            self._citations_label.setText("\n".join(cite_lines))
-            self._citations_label.setVisible(True)
+            citations_text = "\n".join(cite_lines)
+            citations_visible = True
         else:
-            self._citations_label.setVisible(False)
+            citations_text = ""
+            citations_visible = False
 
-        self._refresh_apply_button_state()
-        self._save_fragment_btn.setEnabled(True)
-        self._refresh_send_to_chat_button()
-        self._locate_excerpt_btn.setEnabled(bool(self._last_excerpt.strip()))
+        state = AiTaskResultState(
+            response=response,
+            request=request,
+            result_text=result_text,
+            source_text=source_text,
+            source_visible=source_visible,
+            result_header_visible=result_header_visible,
+            meta_text=meta_text,
+            citations_text=citations_text,
+            citations_visible=citations_visible,
+            last_excerpt=last_excerpt,
+        )
+        self._task_results[task_type] = state
+        if self._current_task_type() == task_type:
+            self._apply_result_state(state)
 
     def _result_task_type(self) -> AiTaskType:
         if self._last_request is not None:

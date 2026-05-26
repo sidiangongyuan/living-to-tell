@@ -3,6 +3,24 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.20 — AI result isolation and manual checkpoints
+
+- Isolated AI tool results by function so switching from polish to expand,
+  continue, summarize, or diagnostics no longer shows the wrong result.
+- Added clear-current-result and clear-all-results actions for the AI tools
+  workspace without clearing attachments, parameters, custom presets, or
+  version history.
+- Added user-defined AI task presets stored locally per task, with inline add
+  and delete controls alongside the built-in presets.
+- Added fragment version checkpoints so writers can deliberately save a
+  recoverable point in Version History without turning every autosave into a
+  historical version.
+- Clarified the save model: autosave keeps the live text current; checkpoints
+  and AI/write-back snapshots are the recoverable history.
+- Added regression coverage for AI task result isolation, result clearing,
+  custom preset persistence, manual checkpoints, and Ctrl+S staying a normal
+  save.
+
 ## 0.2.0-alpha.19 — AI write-back safety hotfix
 
 - Prevented mouse-wheel scrolling from changing AI target, output destination,

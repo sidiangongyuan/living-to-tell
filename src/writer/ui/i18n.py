@@ -522,11 +522,17 @@ _CATALOG: dict[str, dict[str, str]] = {
         ),
         # ── Save / recovery (M7B) ──────────────────────────────────────────────
         "menu.save": "&Save",
+        "menu.save_checkpoint": "Save Version &Checkpoint…",
         "menu.recover_last_deleted": "Recover last deleted fragment",
         "status.saved": "All changes saved",
         "status.saving": "Saving…",
         "status.unsaved": "Unsaved changes",
         "status.no_entry": "",
+        "checkpoint.saved_title": "Checkpoint saved",
+        "checkpoint.saved_msg": (
+            "A version checkpoint was saved. Autosave keeps the current text; "
+            "checkpoints are available from Version History when you need to roll back."
+        ),
         "dlg.nothing_to_recover_title": "Nothing to recover",
         "dlg.nothing_to_recover_msg": (
             "No recently deleted fragment is available for recovery."
@@ -723,6 +729,9 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.params.style_goals": "Writing goals",
         "ai.params.style_authors_values": "Camus|Marquez|Hesse|Borges|Hemingway|Kafka|Poe|Ishiguro|Paustovsky|Maugham",
         "ai.params.style_goals_values": "more concise|more restrained|more imagistic|colder tone",
+        "ai.params.my_presets": "My presets",
+        "ai.params.save_custom_preset": "+ Save current as preset",
+        "ai.params.delete_custom_preset": "Delete custom preset",
         "ai.params.intensity": "Intensity",
         "ai.params.intensity.polish": "Polish scope",
         "ai.params.intensity.expand": "Detail density",
@@ -800,6 +809,13 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.results.locate_excerpt": "Locate excerpt",
         "ai.results.locate_excerpt_missing": "No excerpt available in this item.",
         "ai.results.locate_excerpt_not_found": "Excerpt not found in the current editor.",
+        "ai.results.clear_current": "Clear result",
+        "ai.results.clear_all": "Clear all",
+        "ai.results.clear_all_confirm_title": "Clear all AI results",
+        "ai.results.clear_all_confirm_msg": (
+            "Clear cached results for every AI function? Attachments, parameters, "
+            "custom presets, and version history will stay unchanged."
+        ),
         "ai.results.undo_last_apply": "Undo last write-back",
         "ai.results.undo_last_apply_hint": "Restore the snapshot saved before the last AI write-back.",
         # chat
@@ -1425,11 +1441,14 @@ _CATALOG: dict[str, dict[str, str]] = {
         ),
         # ── Save / recovery (M7B) ──────────────────────────────────────────────
         "menu.save": "保存(&S)",
+        "menu.save_checkpoint": "保存版本快照(&C)…",
         "menu.recover_last_deleted": "恢复最近删除的片段",
         "status.saved": "所有更改已保存",
         "status.saving": "保存中…",
         "status.unsaved": "有未保存的更改",
         "status.no_entry": "",
+        "checkpoint.saved_title": "已保存版本快照",
+        "checkpoint.saved_msg": "已保存一个可从版本历史恢复的 checkpoint。自动保存只保留当前正文；需要回溯节点时请主动保存版本快照。",
         "dlg.nothing_to_recover_title": "没有可恢复的片段",
         "dlg.nothing_to_recover_msg": "当前没有最近被删除的片段可供恢复。",
         "dlg.recovered_title": "已恢复",
@@ -1624,6 +1643,9 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.params.style_goals": "写法目标",
         "ai.params.style_authors_values": "加缪|马尔克斯|黑塞|博尔赫斯|海明威|卡夫卡|爱伦坡|石黑一雄|帕乌斯托夫斯基|毛姆",
         "ai.params.style_goals_values": "更凝练|更克制|更有意象|更冷峻",
+        "ai.params.my_presets": "我的预设",
+        "ai.params.save_custom_preset": "+ 保存当前为预设",
+        "ai.params.delete_custom_preset": "删除自定义预设",
         "ai.params.intensity": "强度",
         "ai.params.intensity.polish": "润色幅度",
         "ai.params.intensity.expand": "细节密度",
@@ -1695,6 +1717,10 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.results.locate_excerpt": "定位摘录",
         "ai.results.locate_excerpt_missing": "当前条目没有可定位的摘录。",
         "ai.results.locate_excerpt_not_found": "当前编辑器中未找到该摘录。",
+        "ai.results.clear_current": "清空结果",
+        "ai.results.clear_all": "清空全部",
+        "ai.results.clear_all_confirm_title": "清空全部 AI 结果",
+        "ai.results.clear_all_confirm_msg": "清空所有 AI 功能缓存的结果？附件、参数、自定义预设和版本历史都会保留。",
         "ai.results.undo_last_apply": "撤回上次写回",
         "ai.results.undo_last_apply_hint": "恢复 AI 写回前自动保存的版本历史快照。",
         # chat
