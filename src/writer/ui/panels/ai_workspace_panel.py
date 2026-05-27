@@ -878,6 +878,10 @@ class AIToolsTab(QWidget):
             if idx >= 0:
                 self._target_combo.setCurrentIndex(idx)
 
+    def set_include_writing_notes(self, enabled: bool) -> None:
+        self._include_writing_notes_check.setChecked(bool(enabled))
+        self._refresh_attachments_view()
+
     # ---- internal ----
     def _update_scope_label(self) -> None:
         if self._scope is None or self._scope.is_global:
@@ -2449,3 +2453,6 @@ class AIWorkspacePanel(QWidget):
         """Switch to the Tools tab, select *task_type*, and optionally set target."""
         self._tabs.setCurrentWidget(self._tools_tab)
         self._tools_tab.focus_task(task_type, target_kind=target_kind)
+
+    def set_include_writing_notes(self, enabled: bool) -> None:
+        self._tools_tab.set_include_writing_notes(enabled)

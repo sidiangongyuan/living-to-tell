@@ -304,9 +304,15 @@ class MainWindow(QMainWindow):
         self._editor_panel.content_changed.connect(self._on_editor_changed)
         self._editor_panel.content_changed.connect(self._refresh_fragment_context)
         self._editor_panel.writing_note_add_requested.connect(self._on_add_writing_note)
+        self._editor_panel.writing_note_update_requested.connect(
+            self._on_update_writing_note
+        )
         self._editor_panel.writing_note_done_requested.connect(self._on_set_writing_note_done)
         self._editor_panel.writing_note_delete_requested.connect(self._on_delete_writing_note)
         self._editor_panel.writing_note_pin_requested.connect(self._on_pin_writing_note)
+        self._editor_panel.writing_notes_continue_requested.connect(
+            self._on_continue_with_writing_notes
+        )
         self._works_panel.work_selected.connect(self._on_work_selected_for_context)
         self._collections_panel.collection_selected.connect(
             self._on_collection_selected_for_context
@@ -841,6 +847,18 @@ class MainWindow(QMainWindow):
             return
         self._refresh_writing_notes_after_change(entry_id)
 
+    def _on_update_writing_note(self, note_id: str, body: str) -> None:
+        try:
+            note = self._container.entry_writing_note_repository.update_body(
+                note_id,
+                body,
+            )
+        except ValueError:
+            return
+        entry_id = note.entry_id if note is not None else self._editor_panel.current_entry_id()
+        if entry_id:
+            self._refresh_writing_notes_after_change(entry_id)
+
     def _on_set_writing_note_done(self, note_id: str, done: bool) -> None:
         note = self._container.entry_writing_note_repository.set_done(note_id, done)
         entry_id = note.entry_id if note is not None else self._editor_panel.current_entry_id()
@@ -866,6 +884,18 @@ class MainWindow(QMainWindow):
         if self._stack.currentIndex() == MODE_AI:
             self._bind_ai_workspace_scope()
             self._refresh_ai_context_from_panel()
+
+    def _on_continue_with_writing_notes(self) -> None:
+        entry_id = self._editor_panel.current_entry_id()
+        if entry_id is None:
+            return
+        self._autosave.flush()
+        self._set_mode(MODE_AI)
+        self._ai_workspace_panel.focus_task(
+            AiTaskType.CONTINUE,
+            target_kind=AiTargetKind.FRAGMENT,
+        )
+        self._ai_workspace_panel.set_include_writing_notes(True)
 
     # --------------------------------------------------------------
     def _snapshot_for_autosave(self) -> Optional[tuple[str, str, str, str]]:

@@ -3,6 +3,19 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.22 — Continuation note UX fixes
+
+- Replaced the ambiguous left-side completion checkbox with a non-clickable
+  accent rail and an explicit "Done" action, preventing accidental note
+  disappearance.
+- Added inline editing for continuation notes with save and cancel controls.
+- Added a "Continue with notes" shortcut that opens the AI workspace on the
+  Continue task, targets the current fragment, and forces note context on.
+- Clarified note-completion copy so "done" means hidden from the active
+  continuation list, not deleted from the database.
+- Added regression coverage for editing notes and launching AI continuation
+  directly from the notes card.
+
 ## 0.2.0-alpha.21 — Fragment continuation notes
 
 - Added fragment-bound continuation notes for private "what should happen next"

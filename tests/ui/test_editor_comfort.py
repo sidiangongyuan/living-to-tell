@@ -155,10 +155,11 @@ def test_editor_panel_epigraph_card_hides_when_attribution_removed(qtbot):
 
 
 def test_editor_panel_writing_notes_card_emits_actions(qtbot):
-    from PySide6.QtWidgets import QCheckBox
+    from PySide6.QtWidgets import QPushButton
 
     from writer.domain.models.entry import Entry
     from writer.domain.models.entry_writing_note import EntryWritingNote
+    from writer.ui.i18n import TR
     from writer.ui.panels.editor_panel import EditorPanel
 
     panel = EditorPanel()
@@ -186,11 +187,32 @@ def test_editor_panel_writing_notes_card_emits_actions(qtbot):
         panel._writing_note_add_btn.click()  # noqa: SLF001
     assert add_signal.args == ["补一个下雨的细节"]
 
-    checkbox = panel._writing_notes_rows.findChild(QCheckBox)  # noqa: SLF001
-    assert checkbox is not None
+    buttons = panel._writing_notes_rows.findChildren(QPushButton)  # noqa: SLF001
+    edit_button = next(button for button in buttons if button.text() == TR("editor.writing_notes.edit"))
+    done_button = next(button for button in buttons if button.text() == TR("editor.writing_notes.done"))
+
+    edit_button.click()
+    edit_input = next(
+        child
+        for child in panel._writing_notes_rows.findChildren(type(panel._writing_note_input))  # noqa: SLF001
+        if child.isVisible() and child.text() == "下一段让母亲先沉默。"
+    )
+    edit_input.setText("下一段让母亲先沉默，然后看雨。")
+    save_button = next(
+        button
+        for button in panel._writing_notes_rows.findChildren(QPushButton)  # noqa: SLF001
+        if button.text() == TR("editor.writing_notes.save") and button.isVisible()
+    )
+    with qtbot.waitSignal(panel.writing_note_update_requested) as update_signal:
+        save_button.click()
+    assert update_signal.args == ["note-1", "下一段让母亲先沉默，然后看雨。"]
+
     with qtbot.waitSignal(panel.writing_note_done_requested) as done_signal:
-        checkbox.setChecked(True)
+        done_button.click()
     assert done_signal.args == ["note-1", True]
+
+    with qtbot.waitSignal(panel.writing_notes_continue_requested):
+        panel._writing_notes_continue_btn.click()  # noqa: SLF001
 
 
 def test_main_window_writing_notes_do_not_leak_between_fragments(qtbot, container):
@@ -211,6 +233,28 @@ def test_main_window_writing_notes_do_not_leak_between_fragments(qtbot, containe
     window._load_entry(second.id)  # noqa: SLF001
     assert "0" in window._editor_panel._writing_notes_count.text()  # noqa: SLF001
     assert window._editor_panel._writing_notes_rows_layout.count() == 0  # noqa: SLF001
+
+
+def test_main_window_continue_with_writing_notes_opens_ai_continue(qtbot, container):
+    from writer.domain.enums import AiTargetKind, AiTaskType
+    from writer.ui.main_window import MainWindow
+
+    entry = container.entry_repository.create(title="A", body="body a")
+    container.entry_writing_note_repository.create(
+        entry_id=entry.id,
+        body="next beat",
+    )
+
+    window = MainWindow(container, autosave_debounce_ms=20)
+    qtbot.addWidget(window)
+    window._load_entry(entry.id)  # noqa: SLF001
+
+    window._editor_panel._writing_notes_continue_btn.click()  # noqa: SLF001
+
+    tools = window._ai_workspace_panel.tools_tab  # noqa: SLF001
+    assert tools._current_task_type() is AiTaskType.CONTINUE  # noqa: SLF001
+    assert tools._target_combo.currentData() == AiTargetKind.FRAGMENT  # noqa: SLF001
+    assert tools._include_writing_notes_check.isChecked() is True  # noqa: SLF001
 
 
 def test_editor_panel_focus_mode_adds_current_paragraph_selection(qtbot):

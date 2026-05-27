@@ -713,6 +713,11 @@ QFrame#WritingNoteRowPinned {{
 QFrame#WritingNoteRowPinned {{
     border-left: 3px solid {t.accent};
 }}
+QFrame#WritingNoteAccent {{
+    background: {t.accent};
+    border: none;
+    border-radius: 2px;
+}}
 QLabel#WritingNoteBody {{
     color: {t.text_primary};
     font-family: {t.font_serif};
