@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -138,7 +140,10 @@ class SettingsDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(TR("settings.title"))
-        self.resize(680, 700)
+        self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
+        self.setSizeGripEnabled(True)
+        self.setMinimumSize(620, 420)
+        self.resize(760, 740)
 
         self._settings = settings
         self._importer = importer or CodexConfigImporter()
@@ -332,11 +337,11 @@ class SettingsDialog(QDialog):
         test_button = QPushButton(TR("settings.test_btn"))
         test_button.clicked.connect(self._on_test_config)
 
-        button_box = QDialogButtonBox(
+        self._button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        button_box.accepted.connect(self._on_accept)
-        button_box.rejected.connect(self.reject)
+        self._button_box.accepted.connect(self._on_accept)
+        self._button_box.rejected.connect(self.reject)
 
         action_row = QHBoxLayout()
         action_row.addWidget(import_button)
@@ -345,13 +350,34 @@ class SettingsDialog(QDialog):
         action_row.addWidget(test_button)
         action_row.addStretch(1)
 
+        self._content_widget = QWidget()
+        content_layout = QVBoxLayout(self._content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(10)
+        content_layout.addWidget(appearance_group)
+        content_layout.addWidget(writing_group)
+        content_layout.addWidget(ai_group)
+        content_layout.addLayout(action_row)
+        content_layout.addWidget(quick_capture_group)
+        content_layout.addStretch(1)
+
+        self._scroll_area = QScrollArea()
+        self._scroll_area.setObjectName("SettingsScrollArea")
+        self._scroll_area.setWidgetResizable(True)
+        self._scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+        self._scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._scroll_area.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self._scroll_area.setWidget(self._content_widget)
+
         layout = QVBoxLayout(self)
-        layout.addWidget(appearance_group)
-        layout.addWidget(writing_group)
-        layout.addWidget(ai_group)
-        layout.addLayout(action_row)
-        layout.addWidget(quick_capture_group)
-        layout.addWidget(button_box)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+        layout.addWidget(self._scroll_area, 1)
+        layout.addWidget(self._button_box, 0)
 
         self._refresh_provider_ui()
         self._refresh_key_status()

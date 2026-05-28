@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from PySide6.QtWidgets import QDialog
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QDialog, QScrollArea
 
 from writer.app.container import build_container
 from writer.app.settings import (
@@ -105,6 +106,29 @@ def test_settings_dialog_controls_ignore_mouse_wheel(qtbot, container):
         after = control.currentIndex() if hasattr(control, "currentIndex") else control.value()
         assert event.ignored is True
         assert after == before
+
+
+def test_settings_dialog_content_scrolls_and_buttons_stay_visible(qtbot, container):
+    dialog = SettingsDialog(container.settings)
+    qtbot.addWidget(dialog)
+    dialog.resize(620, 420)
+    dialog.show()
+    qtbot.waitUntil(dialog.isVisible)
+
+    dialog._provider_combo.setCurrentIndex(  # noqa: SLF001
+        dialog._provider_combo.findData("gemini_cli")  # noqa: SLF001
+    )
+
+    scroll_area = dialog.findChild(QScrollArea, "SettingsScrollArea")
+    assert scroll_area is dialog._scroll_area  # noqa: SLF001
+    assert scroll_area.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    assert scroll_area.viewport().height() < dialog._content_widget.sizeHint().height()  # noqa: SLF001
+    assert scroll_area.verticalScrollBar().maximum() > 0
+    assert dialog._button_box.isVisible() is True  # noqa: SLF001
+    assert dialog._button_box.geometry().bottom() <= dialog.rect().bottom()  # noqa: SLF001
+    assert dialog.minimumSize().width() <= 620
+    assert dialog.minimumSize().height() <= 420
+    assert dialog.testAttribute(Qt.WidgetAttribute.WA_Resized) is True
 
 
 def test_settings_dialog_accept_persists_changes(qtbot, container):

@@ -3,6 +3,15 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.29 — Resizable settings dialog
+
+- Made the Settings dialog resizable and maximizable.
+- Moved settings content into a scrollable area so provider-specific fields no
+  longer push Save / Cancel off-screen.
+- Kept the dialog buttons fixed at the bottom, even when switching to Gemini
+  CLI or other taller provider configurations.
+- Added UI regression coverage for small-window settings layouts.
+
 ## 0.2.0-alpha.28 — Startup and reference-library polish
 
 - Fixed transient label windows that could flash during startup, while opening
