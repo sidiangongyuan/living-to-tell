@@ -58,6 +58,10 @@ _CATALOG: dict[str, dict[str, str]] = {
         "editor.writing_notes.pin": "Pin",
         "editor.writing_notes.unpin": "Unpin",
         "editor.writing_notes.delete": "Delete",
+        "editor.writing_notes.delete_hint": "Delete this continuation note permanently.",
+        "editor.writing_notes.state_open": "Active note",
+        "editor.writing_notes.state_pinned": "Active note · pinned",
+        "editor.writing_notes.state_done": "Completed · can be restored",
         "editor.writing_notes.use_for_continue": "Continue with notes",
         # ── Main window – menus ───────────────────────────────────────────────
         "menu.file": "&File",
@@ -798,15 +802,36 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.attachments.heavy_warning": "Context is large; cost and latency may be high.",
         "ai.attachments.include_writing_notes": "Include continuation notes ({count})",
         "ai.attachments.writing_notes_hint": (
-            "Used only as private guidance for expansion/continuation. It does "
-            "not alter the source text."
+            "These notes stay out of the fragment body and are sent only as private "
+            "reference for the AI."
+        ),
+        "ai.attachments.writing_notes_status_default_on": (
+            'Task "{task}" includes continuation notes by default. You can turn them off '
+            "for this run."
+        ),
+        "ai.attachments.writing_notes_status_default_off": (
+            'Task "{task}" would usually include continuation notes by default, but you '
+            "have turned them off for this run."
+        ),
+        "ai.attachments.writing_notes_status_manual_on": (
+            'Task "{task}" does not include continuation notes by default. You have '
+            "turned them on for this run."
+        ),
+        "ai.attachments.writing_notes_status_optional_off": (
+            'Task "{task}" does not include continuation notes by default. Turn them on '
+            "if you want the AI to use them as reference."
+        ),
+        "ai.attachments.writing_notes_status_empty": (
+            'Task "{task}" has no continuation notes to use yet. Add one in the fragment '
+            "and you will return here automatically."
         ),
         "ai.attachments.writing_notes_empty": (
-            "No continuation notes for this fragment yet. Add notes from the "
-            "fragment editor, then click Continue with notes to return here."
+            "No continuation notes yet. Add one in the fragment and it will appear "
+            "here as AI reference."
         ),
-        "ai.attachments.writing_notes_preview": "Notes to include:\n{notes}",
-        "ai.attachments.manage_writing_notes": "Add / edit notes",
+        "ai.attachments.writing_notes_preview": "Continuation notes preview:\n{notes}",
+        "ai.attachments.manage_writing_notes_add": "Add note in fragment and return",
+        "ai.attachments.manage_writing_notes_edit": "Open fragment notes to add / edit",
         "ai.attachments.writing_note_name": "Continuation note {index}",
         "ai.attachments.writing_note_body": "Private continuation note:\n{body}",
         # task descriptions
@@ -1095,6 +1120,10 @@ _CATALOG: dict[str, dict[str, str]] = {
         "editor.writing_notes.pin": "置顶",
         "editor.writing_notes.unpin": "取消置顶",
         "editor.writing_notes.delete": "删除",
+        "editor.writing_notes.delete_hint": "永久删除这条续写提示。",
+        "editor.writing_notes.state_open": "未完成提示",
+        "editor.writing_notes.state_pinned": "未完成提示 · 已置顶",
+        "editor.writing_notes.state_done": "已完成 · 可恢复",
         "editor.writing_notes.use_for_continue": "用提示续写",
         # ── Main window – menus ───────────────────────────────────────────────
         "menu.file": "文件(&F)",
@@ -1748,10 +1777,16 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.attachments.total": "估算上下文：{chars} 字符",
         "ai.attachments.heavy_warning": "上下文较大，开销与延迟可能较高。",
         "ai.attachments.include_writing_notes": "带入续写提示（{count}）",
-        "ai.attachments.writing_notes_hint": "只作为扩写/续写参考，不改动原文，也不会写入正文。",
-        "ai.attachments.writing_notes_empty": "当前片段还没有续写提示。点击“添加 / 编辑提示”回到片段顶部，写下想法后点“用提示续写”回到 AI。",
-        "ai.attachments.writing_notes_preview": "将带入这些提示：\n{notes}",
-        "ai.attachments.manage_writing_notes": "添加 / 编辑提示",
+        "ai.attachments.writing_notes_hint": "这些提示只作为 AI 参考发送，不会写入正文，也不会改动原文。",
+        "ai.attachments.writing_notes_status_default_on": "当前任务“{task}”默认带入续写提示；你可以按需关闭。",
+        "ai.attachments.writing_notes_status_default_off": "当前任务“{task}”通常会默认带入续写提示；你已关闭，本次不会发送。",
+        "ai.attachments.writing_notes_status_manual_on": "当前任务“{task}”默认不带入续写提示；你已手动开启，本次会把下面这些提示作为参考。",
+        "ai.attachments.writing_notes_status_optional_off": "当前任务“{task}”默认不带入续写提示；需要时可以手动开启。",
+        "ai.attachments.writing_notes_status_empty": "当前任务“{task}”还没有可带入的续写提示。先去片段添加一条，保存后会自动回到 AI。",
+        "ai.attachments.writing_notes_empty": "当前片段还没有续写提示。添加后会在这里预览，并作为 AI 的参考材料。",
+        "ai.attachments.writing_notes_preview": "续写提示预览：\n{notes}",
+        "ai.attachments.manage_writing_notes_add": "去片段添加提示并返回 AI",
+        "ai.attachments.manage_writing_notes_edit": "回片段添加 / 编辑提示",
         "ai.attachments.writing_note_name": "续写提示 {index}",
         "ai.attachments.writing_note_body": "片段续写提示，仅供参考：\n{body}",
         # task descriptions

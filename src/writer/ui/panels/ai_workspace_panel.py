@@ -674,8 +674,11 @@ class AIToolsTab(QWidget):
         self._include_writing_notes_check = QCheckBox()
         self._include_writing_notes_check.setObjectName("AIWritingNotesCheck")
         self._include_writing_notes_check.toggled.connect(
-            lambda *_: self._refresh_attachments_view()
+            self._on_include_writing_notes_toggled
         )
+        self._writing_notes_status_label = QLabel("")
+        self._writing_notes_status_label.setObjectName("AIWritingNotesStatus")
+        self._writing_notes_status_label.setWordWrap(True)
         self._include_writing_notes_hint = QLabel(TR("ai.attachments.writing_notes_hint"))
         self._include_writing_notes_hint.setObjectName("AIAttachTotal")
         self._include_writing_notes_hint.setWordWrap(True)
@@ -685,6 +688,7 @@ class AIToolsTab(QWidget):
         writing_notes_layout.setContentsMargins(10, 8, 10, 8)
         writing_notes_layout.setSpacing(6)
         writing_notes_layout.addWidget(self._include_writing_notes_check)
+        writing_notes_layout.addWidget(self._writing_notes_status_label)
         writing_notes_layout.addWidget(self._include_writing_notes_hint)
         self._writing_notes_preview = QPlainTextEdit()
         self._writing_notes_preview.setObjectName("AIWritingNotesPreview")
@@ -696,7 +700,7 @@ class AIToolsTab(QWidget):
         )
         writing_notes_layout.addWidget(self._writing_notes_preview)
         self._manage_writing_notes_btn = QPushButton(
-            TR("ai.attachments.manage_writing_notes")
+            TR("ai.attachments.manage_writing_notes_add")
         )
         self._manage_writing_notes_btn.setObjectName("GhostButton")
         self._manage_writing_notes_btn.clicked.connect(
@@ -929,6 +933,10 @@ class AIToolsTab(QWidget):
         self._refresh_attachments_view()
 
     # ---- internal ----
+    def _on_include_writing_notes_toggled(self, _checked: bool) -> None:
+        self._refresh_writing_notes_guidance()
+        self._refresh_attachments_view()
+
     def _update_scope_label(self) -> None:
         if self._scope is None or self._scope.is_global:
             self._scope_label.setText(TR("ai.scope_global"))
@@ -1463,6 +1471,26 @@ class AIToolsTab(QWidget):
             )
         return attachments
 
+    def _refresh_writing_notes_guidance(self, count: Optional[int] = None) -> None:
+        if count is None:
+            count = self._writing_note_count()
+        task = self._current_task_type()
+        task_label = TR(_TASK_LABEL_KEY.get(task, "ai.task.continue"))
+        if count <= 0:
+            key = "ai.attachments.writing_notes_status_empty"
+        else:
+            default_enabled = self._writing_notes_default_enabled(task)
+            checked = self._include_writing_notes_check.isChecked()
+            if checked and default_enabled:
+                key = "ai.attachments.writing_notes_status_default_on"
+            elif checked:
+                key = "ai.attachments.writing_notes_status_manual_on"
+            elif default_enabled:
+                key = "ai.attachments.writing_notes_status_default_off"
+            else:
+                key = "ai.attachments.writing_notes_status_optional_off"
+        self._writing_notes_status_label.setText(TR(key).format(task=task_label))
+
     def _refresh_writing_notes_option(self) -> None:
         notes = self._open_writing_notes()
         count = len(notes)
@@ -1480,6 +1508,9 @@ class AIToolsTab(QWidget):
             self._writing_notes_preview.setPlainText(
                 TR("ai.attachments.writing_notes_empty")
             )
+            self._manage_writing_notes_btn.setText(
+                TR("ai.attachments.manage_writing_notes_add")
+            )
         else:
             preview_lines = []
             for index, note in enumerate(notes[:4], start=1):
@@ -1494,6 +1525,10 @@ class AIToolsTab(QWidget):
                     notes="\n".join(preview_lines)
                 )
             )
+            self._manage_writing_notes_btn.setText(
+                TR("ai.attachments.manage_writing_notes_edit")
+            )
+        self._refresh_writing_notes_guidance(count)
         self._writing_notes_preview.setVisible(visible)
         self._manage_writing_notes_btn.setVisible(visible)
         self._refresh_attachments_view()

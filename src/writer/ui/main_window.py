@@ -174,6 +174,7 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._collections_panel)      # 3 — Collections
         self._stack.addWidget(self._ai_workspace_panel)     # 4 — AI workspace
         self._last_mode_before_ai = MODE_FRAGMENTS
+        self._return_to_ai_after_writing_note_add_entry_id: Optional[str] = None
 
         # ---- Context pane ----
         self._context_pane = ContextPane(
@@ -827,6 +828,8 @@ class MainWindow(QMainWindow):
             self._editor_panel.set_writing_notes([])
             self._refresh_fragment_context()
             return
+        if self._return_to_ai_after_writing_note_add_entry_id not in {None, entry_id}:
+            self._return_to_ai_after_writing_note_add_entry_id = None
         from writer.storage.repositories.entry_repository import serialize_tags
         self._editor_panel.set_entry(entry)
         self._refresh_writing_notes_card(entry.id)
@@ -851,8 +854,18 @@ class MainWindow(QMainWindow):
         return TR("context.writing_notes_count").format(count=count)
 
     def _on_focus_writing_notes(self) -> None:
-        if self._editor_panel.current_entry_id() is None:
+        entry_id = self._editor_panel.current_entry_id()
+        if entry_id is None:
             return
+        if self._stack.currentIndex() == MODE_AI:
+            open_count = self._container.entry_writing_note_repository.count_open_for_entry(
+                entry_id
+            )
+            self._return_to_ai_after_writing_note_add_entry_id = (
+                entry_id if open_count == 0 else None
+            )
+        else:
+            self._return_to_ai_after_writing_note_add_entry_id = None
         self._set_mode(MODE_FRAGMENTS)
         self._editor_panel.focus_writing_note_input()
 
@@ -868,6 +881,10 @@ class MainWindow(QMainWindow):
         except ValueError:
             return
         self._refresh_writing_notes_after_change(entry_id)
+        if self._return_to_ai_after_writing_note_add_entry_id == entry_id:
+            self._return_to_ai_after_writing_note_add_entry_id = None
+            self._set_mode(MODE_AI)
+            self._ai_workspace_panel.set_include_writing_notes(True)
 
     def _on_update_writing_note(self, note_id: str, body: str) -> None:
         try:
@@ -957,6 +974,7 @@ class MainWindow(QMainWindow):
         self._refresh_list(select_id=self._editor_panel.current_entry_id())
 
     def _on_editor_changed(self) -> None:
+        self._return_to_ai_after_writing_note_add_entry_id = None
         self._autosave.mark_dirty()
 
     def _on_autosaved(self, entry_id: str) -> None:
@@ -1261,6 +1279,8 @@ class MainWindow(QMainWindow):
         previous_mode = self._stack.currentIndex()
         if mode == MODE_AI and previous_mode != MODE_AI:
             self._last_mode_before_ai = previous_mode
+        if mode != MODE_FRAGMENTS:
+            self._return_to_ai_after_writing_note_add_entry_id = None
         set_stack_index(self._stack, mode, reduced=self._reduced_motion)
         self._rail.set_active_mode(mode)
         # Persist the active mode so the next launch lands on the same view.

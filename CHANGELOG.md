@@ -3,6 +3,21 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.24 — Continuation note workflow clarity
+
+- Made continuation-note completion explicit: completing a note now reveals the
+  completed section automatically so it feels moved and recoverable, not lost.
+- Added clearer note state labels for active, pinned, and completed notes, plus
+  a permanent-delete tooltip to separate "done" from deletion.
+- Kept inline note editing visible and grouped note actions into a calmer two-row
+  layout that avoids the old ambiguous left-side control.
+- Clarified the AI workspace continuation-note panel with task-aware status
+  text that explains whether the current AI tool will include notes by default.
+- Split the AI note management action into "add" and "edit" states, and return
+  automatically to AI after adding the first note from an empty AI note panel.
+- Added regression coverage for completion visibility, AI status copy, empty
+  note guidance, and add-note-return-to-AI flow.
+
 ## 0.2.0-alpha.23 — UI design and interaction polish
 
 - Added a written UI design refresh plan with acceptance checks for the

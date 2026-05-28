@@ -519,6 +519,7 @@ def test_current_fragment_is_not_readded_as_attachment(qtbot, container):
 
 
 def test_fragment_writing_notes_are_default_context_for_continue_and_expand(qtbot, container):
+    from writer.ui.i18n import TR
     from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
 
     entry = container.entry_repository.create(title="绵绵", body="原文。")
@@ -542,6 +543,9 @@ def test_fragment_writing_notes_are_default_context_for_continue_and_expand(qtbo
 
     assert continue_request is not None
     assert tab._include_writing_notes_check.isChecked() is True  # noqa: SLF001
+    assert tab._writing_notes_status_label.text() == TR(  # noqa: SLF001
+        "ai.attachments.writing_notes_status_default_on"
+    ).format(task=TR("ai.task.continue"))
     note_attachments = [
         att for att in continue_request.attachments if att.kind == "writing_note"
     ]
@@ -554,9 +558,13 @@ def test_fragment_writing_notes_are_default_context_for_continue_and_expand(qtbo
 
     assert expand_request is not None
     assert [att.kind for att in expand_request.attachments].count("writing_note") == 1
+    assert tab._writing_notes_status_label.text() == TR(  # noqa: SLF001
+        "ai.attachments.writing_notes_status_default_on"
+    ).format(task=TR("ai.task.expand"))
 
 
 def test_fragment_writing_notes_preview_and_manage_action(qtbot, container):
+    from writer.ui.i18n import TR
     from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
 
     entry = container.entry_repository.create(title="绵绵", body="原文。")
@@ -576,11 +584,18 @@ def test_fragment_writing_notes_preview_and_manage_action(qtbot, container):
     )
 
     assert "凉面摊" in tab._writing_notes_preview.toPlainText()  # noqa: SLF001
+    assert tab._manage_writing_notes_btn.text() == TR(  # noqa: SLF001
+        "ai.attachments.manage_writing_notes_edit"
+    )
+    assert tab._writing_notes_status_label.text() == TR(  # noqa: SLF001
+        "ai.attachments.writing_notes_status_optional_off"
+    ).format(task=TR("ai.task.polish"))
     with qtbot.waitSignal(tab.request_focus_writing_notes):
         tab._manage_writing_notes_btn.click()  # noqa: SLF001
 
 
 def test_fragment_writing_notes_are_opt_in_for_analysis_tasks(qtbot, container):
+    from writer.ui.i18n import TR
     from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
 
     entry = container.entry_repository.create(title="绵绵", body="原文。")
@@ -604,12 +619,18 @@ def test_fragment_writing_notes_are_opt_in_for_analysis_tasks(qtbot, container):
 
     assert summary_request is not None
     assert tab._include_writing_notes_check.isChecked() is False  # noqa: SLF001
+    assert tab._writing_notes_status_label.text() == TR(  # noqa: SLF001
+        "ai.attachments.writing_notes_status_optional_off"
+    ).format(task=TR("ai.task.summarize"))
     assert all(att.kind != "writing_note" for att in summary_request.attachments)
 
     tab._include_writing_notes_check.setChecked(True)  # noqa: SLF001
     opted_in_request = tab._build_request()  # noqa: SLF001
 
     assert opted_in_request is not None
+    assert tab._writing_notes_status_label.text() == TR(  # noqa: SLF001
+        "ai.attachments.writing_notes_status_manual_on"
+    ).format(task=TR("ai.task.summarize"))
     assert [att.kind for att in opted_in_request.attachments] == ["writing_note"]
 
 
@@ -638,6 +659,52 @@ def test_unchecking_fragment_writing_notes_removes_auto_attachment(qtbot, contai
 
     assert request is not None
     assert all(att.kind != "writing_note" for att in request.attachments)
+
+
+def test_fragment_writing_notes_empty_state_explains_add_and_return(qtbot, container):
+    from writer.ui.i18n import TR
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    entry = container.entry_repository.create(title="绵绵", body="原文。")
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(
+            kind=AiThreadScope.FRAGMENT,
+            ref_id=entry.id,
+            name=entry.title,
+            body=entry.body,
+        )
+    )
+
+    assert tab._include_writing_notes_check.isEnabled() is False  # noqa: SLF001
+    assert tab._manage_writing_notes_btn.text() == TR(  # noqa: SLF001
+        "ai.attachments.manage_writing_notes_add"
+    )
+    assert tab._writing_notes_status_label.text() == TR(  # noqa: SLF001
+        "ai.attachments.writing_notes_status_empty"
+    ).format(task=TR("ai.task.polish"))
+
+
+def test_ai_workspace_add_writing_note_returns_to_ai_and_enables_context(qtbot, container):
+    from writer.ui.main_window import MODE_AI, MODE_FRAGMENTS, MainWindow
+
+    entry = container.entry_repository.create(title="绵绵", body="原文。")
+    window = MainWindow(container, autosave_debounce_ms=20)
+    qtbot.addWidget(window)
+    window._load_entry(entry.id)  # noqa: SLF001
+    window._set_mode(MODE_AI)  # noqa: SLF001
+    tools = window._ai_workspace_panel.tools_tab  # noqa: SLF001
+
+    tools._manage_writing_notes_btn.click()  # noqa: SLF001
+
+    assert window._stack.currentIndex() == MODE_FRAGMENTS  # noqa: SLF001
+    window._editor_panel._writing_note_input.setText("下一段让人物先回到凉面摊。")  # noqa: SLF001
+    window._editor_panel._writing_note_add_btn.click()  # noqa: SLF001
+
+    qtbot.waitUntil(lambda: window._stack.currentIndex() == MODE_AI)  # noqa: SLF001
+    assert tools._include_writing_notes_check.isChecked() is True  # noqa: SLF001
+    assert "凉面摊" in tools._writing_notes_preview.toPlainText()  # noqa: SLF001
 
 
 def test_add_specimen_attachment_replaces_only_style_specimens(qtbot, container, monkeypatch):

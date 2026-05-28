@@ -48,6 +48,7 @@ Writer is for writers who collect scenes, sentences, moods, notes, research, and
 - [x] Literary reference library with book shelves, source pages, duplicate hints, tag-based browsing, and switchable stats
 - [x] Editor typography, focus mode, smoother motion, and typewriter comfort
 - [x] Fragment-bound continuation notes for next-session ideas and AI continuation context
+- [x] Clear continuation-note workflow: edit notes, mark done without losing them, and send active notes to AI
 - [x] UI design refresh: semantic theme surfaces, clearer toolbar controls, calmer scrollbars, and no-wheel form controls
 - [ ] Public screenshot gallery and short demo videos
 - [ ] Step-by-step video tutorials for common writing workflows
@@ -64,8 +65,8 @@ Public screenshots, short walkthrough videos, and workflow demos are on the road
 
 The recommended public distribution format is a **Windows portable zip**.
 
-- Latest alpha: [Writer-0.2.0-alpha.23-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.23/Writer-0.2.0-alpha.23-portable.zip)
-- Release page: [v0.2.0-alpha.23](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.23)
+- Latest alpha: [Writer-0.2.0-alpha.24-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.24/Writer-0.2.0-alpha.24-portable.zip)
+- Release page: [v0.2.0-alpha.24](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.24)
 - If you are testing the latest branch, use the **Build Windows Portable** GitHub Action artifact.
 - To build locally, run the packaging command in [Build from source](#build-from-source).
 

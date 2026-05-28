@@ -716,6 +716,11 @@ QLabel#WritingNotesHint {{
     color: {t.text_muted};
     font-size: {t.fs_meta}px;
 }}
+QLabel#WritingNoteState {{
+    color: {t.text_muted};
+    font-size: {t.fs_meta}px;
+    font-weight: 600;
+}}
 QFrame#WritingNoteRow,
 QFrame#WritingNoteRowPinned,
 QFrame#WritingNoteRowDone {{
@@ -844,6 +849,10 @@ QFrame#AIWritingNotesBox {{
 QFrame#AIParamsBox QLabel,
 QFrame#AIAdvancedBox QLabel {{
     color: {t.text_secondary};
+}}
+QLabel#AIWritingNotesStatus {{
+    color: {t.text_primary};
+    font-weight: 600;
 }}
 QLabel#AISelectionTitle {{
     color: {t.text_primary};
