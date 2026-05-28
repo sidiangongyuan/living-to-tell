@@ -196,8 +196,10 @@ class MainWindow(QMainWindow):
                 "polish": TR("context.action_polish"),
                 "include": TR("context.action_include"),
                 "writing_notes": TR("context.action_writing_notes"),
+                "checkpoint": TR("context.action_checkpoint"),
                 "save_specimen": TR("context.action_save_specimen"),
                 "versions": TR("context.action_versions"),
+                "export_fragment": TR("context.action_export_fragment"),
                 "export_work": TR("context.action_export_work"),
                 "export_collection": TR("context.action_export_collection"),
             },
@@ -212,6 +214,15 @@ class MainWindow(QMainWindow):
         )
         self._context_pane.fragment_writing_notes_button.clicked.connect(
             self._on_focus_writing_notes
+        )
+        self._context_pane.fragment_checkpoint_button.clicked.connect(
+            self._on_save_checkpoint
+        )
+        self._context_pane.fragment_versions_button.clicked.connect(
+            self._on_open_version_history
+        )
+        self._context_pane.fragment_export_button.clicked.connect(
+            self._on_export_current_fragment_from_context
         )
         self._context_pane.fragment_save_specimen_button.clicked.connect(
             self._on_save_style_specimen
@@ -2254,6 +2265,10 @@ class MainWindow(QMainWindow):
     def _on_export_current_work_from_context(self) -> None:
         if self._works_panel._current_work_id():
             self._works_panel._on_export_work()
+
+    def _on_export_current_fragment_from_context(self) -> None:
+        if self._editor_panel.current_entry_id():
+            self._on_export("fragment", "markdown")
 
     def _on_export_current_collection_from_context(self) -> None:
         if self._collections_panel._current_collection_id():

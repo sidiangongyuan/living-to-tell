@@ -154,8 +154,10 @@ _CATALOG: dict[str, dict[str, str]] = {
         "context.action_polish": "AI Polish…",
         "context.action_include": "Include in work…",
         "context.action_writing_notes": "Add continuation note…",
+        "context.action_checkpoint": "Save checkpoint…",
         "context.action_save_specimen": "Save as specimen…",
         "context.action_versions": "Versions…",
+        "context.action_export_fragment": "Export Markdown…",
         "context.action_export_work": "Export…",
         "context.action_export_collection": "Export…",
         "context.no_value": "—",
@@ -396,6 +398,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "vhd.no_version_selected_placeholder": "No version selected",
         "vhd.no_history": "No version history yet.",
         "vhd.restore_btn": "Restore Selected Version",
+        "vhd.delete_btn": "Delete Selected",
         "vhd.close_btn": "Close",
         "vhd.restore_confirm_title": "Restore version",
         "vhd.restore_confirm_msg": (
@@ -403,7 +406,13 @@ _CATALOG: dict[str, dict[str, str]] = {
             "Your current body will be saved as a snapshot so you can "
             "restore it again later."
         ),
+        "vhd.delete_confirm_title": "Delete version",
+        "vhd.delete_confirm_msg": (
+            "Delete this stored version? This only removes the history row; "
+            "the current body will not change."
+        ),
         "vhd.restore_failed": "Restore failed",
+        "vhd.delete_failed": "Delete failed",
         "vhd.nothing_changed_title": "Nothing changed",
         "vhd.nothing_changed_msg": "The selected version is identical to the current body.",
         "vhd.restored_title": "Restored",
@@ -1204,8 +1213,10 @@ _CATALOG: dict[str, dict[str, str]] = {
         "context.action_polish": "AI 润色…",
         "context.action_include": "收入作品…",
         "context.action_writing_notes": "添加续写提示…",
+        "context.action_checkpoint": "保存快照…",
         "context.action_save_specimen": "收藏为文脉标本…",
         "context.action_versions": "版本…",
+        "context.action_export_fragment": "导出 Markdown…",
         "context.action_export_work": "导出…",
         "context.action_export_collection": "导出…",
         "context.no_value": "—",
@@ -1391,13 +1402,17 @@ _CATALOG: dict[str, dict[str, str]] = {
         "vhd.no_version_selected_placeholder": "未选择版本",
         "vhd.no_history": "暂无版本历史。",
         "vhd.restore_btn": "还原所选版本",
+        "vhd.delete_btn": "删除所选",
         "vhd.close_btn": "关闭",
         "vhd.restore_confirm_title": "还原版本",
         "vhd.restore_confirm_msg": (
             "用此版本替换当前正文？\n\n"
             "当前正文将被保存为快照，以便日后还原。"
         ),
+        "vhd.delete_confirm_title": "删除版本",
+        "vhd.delete_confirm_msg": "删除这条历史版本？这只会清理历史记录，不会改动当前正文。",
         "vhd.restore_failed": "还原失败",
+        "vhd.delete_failed": "删除失败",
         "vhd.nothing_changed_title": "无变化",
         "vhd.nothing_changed_msg": "所选版本与当前正文完全相同。",
         "vhd.restored_title": "已还原",

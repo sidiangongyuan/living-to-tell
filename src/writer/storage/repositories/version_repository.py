@@ -68,3 +68,16 @@ class VersionRepository:
             "SELECT * FROM entry_versions WHERE id = ?", (version_id,)
         ).fetchone()
         return _row_to_version(row) if row else None
+
+    def delete(self, version_id: str, *, entry_id: Optional[str] = None) -> bool:
+        if entry_id is None:
+            cur = self._conn.execute(
+                "DELETE FROM entry_versions WHERE id = ?",
+                (version_id,),
+            )
+        else:
+            cur = self._conn.execute(
+                "DELETE FROM entry_versions WHERE id = ? AND entry_id = ?",
+                (version_id, entry_id),
+            )
+        return cur.rowcount > 0

@@ -41,6 +41,7 @@ Writer is for writers who collect scenes, sentences, moods, notes, research, and
 - [x] Fragment-first writing desk
 - [x] Works, sections, collections, and export
 - [x] Version history and safe write-back snapshots
+- [x] Visible checkpoint controls and version cleanup for recoverable writing sessions
 - [x] GPT / OpenAI-compatible providers
 - [x] Gemini API key and Gemini CLI / OAuth support
 - [x] AI workspace with differentiated writing tools
@@ -65,8 +66,8 @@ Public screenshots, short walkthrough videos, and workflow demos are on the road
 
 The recommended public distribution format is a **Windows portable zip**.
 
-- Latest alpha: [Writer-0.2.0-alpha.24-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.24/Writer-0.2.0-alpha.24-portable.zip)
-- Release page: [v0.2.0-alpha.24](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.24)
+- Latest alpha: [Writer-0.2.0-alpha.25-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.25/Writer-0.2.0-alpha.25-portable.zip)
+- Release page: [v0.2.0-alpha.25](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.25)
 - If you are testing the latest branch, use the **Build Windows Portable** GitHub Action artifact.
 - To build locally, run the packaging command in [Build from source](#build-from-source).
 

@@ -84,6 +84,37 @@ def test_save_manual_checkpoint_raises_for_missing_entry(svc):
         svc.save_manual_checkpoint("missing-entry")
 
 
+def test_delete_version_removes_one_history_row(svc, container):
+    entry = container.entry_repository.create(title="t", body="body")
+    keep = container.version_repository.add(
+        entry_id=entry.id,
+        version_type=VersionType.ORIGINAL.value,
+        content="keep",
+    )
+    remove = container.version_repository.add(
+        entry_id=entry.id,
+        version_type=VersionType.MANUAL_CHECKPOINT.value,
+        content="remove",
+    )
+
+    svc.delete_version(entry.id, remove.id)
+
+    assert [version.id for version in svc.list_history(entry.id)] == [keep.id]
+
+
+def test_delete_version_rejects_mismatched_entry(svc, container):
+    entry = container.entry_repository.create(title="t", body="body")
+    other = container.entry_repository.create(title="other", body="body")
+    version = container.version_repository.add(
+        entry_id=entry.id,
+        version_type=VersionType.MANUAL_CHECKPOINT.value,
+        content="remove",
+    )
+
+    with pytest.raises(ValueError, match="not found"):
+        svc.delete_version(other.id, version.id)
+
+
 # ------------------------------------------------------------------
 # restore — happy path
 # ------------------------------------------------------------------

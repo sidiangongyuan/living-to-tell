@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QTextEdit,
     QVBoxLayout,
@@ -332,6 +333,8 @@ class EditorPanel(QWidget):
         self._writing_notes: list[EntryWritingNote] = []
         self._writing_notes_collapsed = False
         self._writing_notes_show_done = False
+        self._writing_notes_collapsed_by_entry: dict[str, bool] = {}
+        self._writing_notes_show_done_by_entry: dict[str, bool] = {}
         self._find_bar = EditorFindBar()
         self._page_controls = EditorPageControls()
 
@@ -398,7 +401,20 @@ class EditorPanel(QWidget):
         self._writing_notes_rows_layout = QVBoxLayout(self._writing_notes_rows)
         self._writing_notes_rows_layout.setContentsMargins(0, 0, 0, 0)
         self._writing_notes_rows_layout.setSpacing(6)
-        notes_layout.addWidget(self._writing_notes_rows)
+        self._writing_notes_rows_scroll = QScrollArea()
+        self._writing_notes_rows_scroll.setObjectName("WritingNotesRowsScroll")
+        self._writing_notes_rows_scroll.setWidgetResizable(True)
+        self._writing_notes_rows_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._writing_notes_rows_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._writing_notes_rows_scroll.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Maximum,
+        )
+        self._writing_notes_rows_scroll.setMaximumHeight(240)
+        self._writing_notes_rows_scroll.setWidget(self._writing_notes_rows)
+        notes_layout.addWidget(self._writing_notes_rows_scroll)
 
         add_row = QHBoxLayout()
         add_row.setContentsMargins(0, 0, 0, 0)
@@ -606,6 +622,9 @@ class EditorPanel(QWidget):
         self.updateGeometry()
 
     def set_entry(self, entry: Optional[Entry]) -> None:
+        previous_entry_id = self._entry_id
+        if previous_entry_id and (entry is None or entry.id != previous_entry_id):
+            self._remember_writing_notes_view_state(previous_entry_id)
         self._loading = True
         try:
             if entry is None:
@@ -615,7 +634,11 @@ class EditorPanel(QWidget):
                 self._body.clear()
                 self._meta.setText("")
                 self._update_tag_chips("")
-                self.set_writing_notes([])
+                self._writing_notes = []
+                self._writing_notes_collapsed = True
+                self._writing_notes_show_done = False
+                self._rebuild_writing_notes_rows()
+                self._refresh_writing_notes_card()
                 self._refresh_epigraph_card()
                 self._find_bar.close_bar(clear_query=True)
                 self._find_bar.clear_matches()
@@ -627,7 +650,10 @@ class EditorPanel(QWidget):
                 self._body.setPlainText(entry.body)
                 self._meta.setText(self._format_meta(entry))
                 self._update_tag_chips(serialize_tags(entry.tags))
-                self.set_writing_notes([])
+                self._restore_writing_notes_view_state(entry.id)
+                self._writing_notes = []
+                self._rebuild_writing_notes_rows()
+                self._refresh_writing_notes_card()
                 self._refresh_epigraph_card()
                 self._find_bar.refresh_matches()
                 self.setEnabled(True)
@@ -648,6 +674,10 @@ class EditorPanel(QWidget):
 
     def set_writing_notes(self, notes: list[EntryWritingNote]) -> None:
         had_notes = bool(self._writing_notes)
+        has_stored_collapsed_state = (
+            self._entry_id is not None
+            and self._entry_id in self._writing_notes_collapsed_by_entry
+        )
         previous_done_count = sum(
             1 for note in self._writing_notes if note.status == NOTE_STATUS_DONE
         )
@@ -656,14 +686,16 @@ class EditorPanel(QWidget):
             1 for note in self._writing_notes if note.status == NOTE_STATUS_DONE
         )
         if not self._writing_notes:
-            self._writing_notes_collapsed = True
+            if self._entry_id is None or not has_stored_collapsed_state:
+                self._writing_notes_collapsed = True
             self._writing_notes_show_done = False
-        elif not had_notes:
+        elif not had_notes and not has_stored_collapsed_state:
             self._writing_notes_collapsed = False
         elif done_count > previous_done_count:
             # Newly completed notes should stay visible in the completed section
             # so the user can tell they were moved rather than deleted.
             self._writing_notes_show_done = True
+            self._writing_notes_collapsed = False
         self._rebuild_writing_notes_rows()
         self._refresh_writing_notes_card()
 
@@ -671,6 +703,7 @@ class EditorPanel(QWidget):
         if self._entry_id is None:
             return
         self._writing_notes_collapsed = False
+        self._remember_writing_notes_view_state()
         self._refresh_writing_notes_card()
         self._writing_note_input.setFocus()
 
@@ -683,14 +716,33 @@ class EditorPanel(QWidget):
 
     def _toggle_writing_notes_card(self) -> None:
         self._writing_notes_collapsed = not self._writing_notes_collapsed
+        self._remember_writing_notes_view_state()
         self._refresh_writing_notes_card()
         if not self._writing_notes_collapsed and not self._writing_notes:
             self._writing_note_input.setFocus()
 
     def _toggle_completed_writing_notes(self) -> None:
         self._writing_notes_show_done = not self._writing_notes_show_done
+        self._remember_writing_notes_view_state()
         self._rebuild_writing_notes_rows()
         self._refresh_writing_notes_card()
+
+    def _remember_writing_notes_view_state(self, entry_id: Optional[str] = None) -> None:
+        target_id = entry_id or self._entry_id
+        if not target_id:
+            return
+        self._writing_notes_collapsed_by_entry[target_id] = self._writing_notes_collapsed
+        self._writing_notes_show_done_by_entry[target_id] = self._writing_notes_show_done
+
+    def _restore_writing_notes_view_state(self, entry_id: str) -> None:
+        self._writing_notes_collapsed = self._writing_notes_collapsed_by_entry.get(
+            entry_id,
+            True,
+        )
+        self._writing_notes_show_done = self._writing_notes_show_done_by_entry.get(
+            entry_id,
+            False,
+        )
 
     def _rebuild_writing_notes_rows(self) -> None:
         while self._writing_notes_rows_layout.count():
@@ -931,10 +983,24 @@ class EditorPanel(QWidget):
             ).format(count=done_count)
         )
         visible_rows = count > 0 or (self._writing_notes_show_done and done_count > 0)
+        self._writing_notes_rows_scroll.setVisible(expanded and visible_rows)
         self._writing_notes_rows.setVisible(expanded and visible_rows)
+        self._writing_notes_rows_scroll.setMaximumHeight(
+            self._writing_notes_rows_max_height(count, done_count)
+        )
         self._writing_note_input.setVisible(expanded)
         self._writing_note_add_btn.setVisible(expanded)
         self._writing_notes_continue_btn.setVisible(count > 0)
+
+    def _writing_notes_rows_max_height(self, open_count: int, done_count: int) -> int:
+        visible_count = open_count
+        if self._writing_notes_show_done:
+            visible_count += done_count
+        if visible_count <= 1:
+            return 136
+        if visible_count == 2:
+            return 204
+        return 260
 
     def current_entry_id(self) -> Optional[str]:
         return self._entry_id

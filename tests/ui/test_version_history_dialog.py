@@ -166,6 +166,49 @@ def test_dialog_restore_noop_shows_info_not_error(qtbot, container, monkeypatch)
     assert len(info_calls) == 1  # "Nothing changed" information was shown
 
 
+def test_dialog_delete_selected_version_removes_history_row(qtbot, container, monkeypatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QMessageBox
+
+    from writer.ui.dialogs.version_history_dialog import VersionHistoryDialog
+
+    entry = container.entry_repository.create(title="t", body="current")
+    first = container.version_repository.add(
+        entry_id=entry.id,
+        version_type=VersionType.ORIGINAL.value,
+        content="first",
+    )
+    second = container.version_repository.add(
+        entry_id=entry.id,
+        version_type=VersionType.MANUAL_CHECKPOINT.value,
+        content="second",
+    )
+    dialog = VersionHistoryDialog(
+        entry_id=entry.id,
+        live_body=entry.body,
+        service=container.version_history_service,
+    )
+    qtbot.addWidget(dialog)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes),
+    )
+
+    target_row = next(
+        row
+        for row in range(dialog._version_list.count())  # noqa: SLF001
+        if dialog._version_list.item(row).data(Qt.ItemDataRole.UserRole) == second.id  # noqa: SLF001
+    )
+    dialog._version_list.setCurrentRow(target_row)  # noqa: SLF001
+    assert dialog._delete_btn.isEnabled()  # noqa: SLF001
+    dialog._on_delete_selected()  # noqa: SLF001
+
+    remaining_ids = [version.id for version in container.version_repository.list_for_entry(entry.id)]
+    assert remaining_ids == [first.id]
+    assert second.id not in remaining_ids
+
+
 # ------------------------------------------------------------------
 # MainWindow Version History integration
 # ------------------------------------------------------------------

@@ -716,6 +716,13 @@ QLabel#WritingNotesHint {{
     color: {t.text_muted};
     font-size: {t.fs_meta}px;
 }}
+QScrollArea#WritingNotesRowsScroll {{
+    background: transparent;
+    border: none;
+}}
+QScrollArea#WritingNotesRowsScroll QWidget {{
+    background: transparent;
+}}
 QLabel#WritingNoteState {{
     color: {t.text_muted};
     font-size: {t.fs_meta}px;

@@ -3,6 +3,23 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.25 — Notes layout and checkpoint access
+
+- Remembered each fragment's continuation-note collapsed state during fragment
+  switching, so a manually collapsed notes card no longer reopens and squeezes
+  the writing area.
+- Capped long continuation-note lists inside a small scroll area, keeping many
+  notes available without pushing the body editor off the page.
+- Added fragment context-pane shortcuts for saving a checkpoint, opening
+  version history, and exporting the current fragment to Markdown.
+- Added delete-selected-version support in Version History so old checkpoints
+  and snapshots can be cleaned up without changing the live body.
+- Clarified checkpoint access: fragment checkpoints live in File / context
+  actions, work snapshots remain inside the Works editor, and exports still ask
+  for an explicit save path.
+- Added regression coverage for notes collapse persistence, notes scroll caps,
+  version deletion, and the version-history delete UI.
+
 ## 0.2.0-alpha.24 — Continuation note workflow clarity
 
 - Made continuation-note completion explicit: completing a note now reveals the

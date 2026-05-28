@@ -110,10 +110,16 @@ class ContextPane(QWidget):
         self._frag_polish_btn = _make_action_button(action_labels["polish"])
         self._frag_include_btn = _make_action_button(action_labels["include"])
         self._frag_writing_notes_btn = _make_action_button(action_labels["writing_notes"])
+        self._frag_checkpoint_btn = _make_action_button(action_labels["checkpoint"])
+        self._frag_versions_btn = _make_action_button(action_labels["versions"])
+        self._frag_export_btn = _make_action_button(action_labels["export_fragment"])
         self._frag_save_specimen_btn = _make_action_button(action_labels["save_specimen"])
         self._frag_actions_row.addWidget(self._frag_polish_btn)
         self._frag_actions_row.addWidget(self._frag_writing_notes_btn)
+        self._frag_actions_row.addWidget(self._frag_checkpoint_btn)
+        self._frag_actions_row.addWidget(self._frag_versions_btn)
         self._frag_actions_row.addWidget(self._frag_include_btn)
+        self._frag_actions_row.addWidget(self._frag_export_btn)
         self._frag_actions_row.addWidget(self._frag_save_specimen_btn)
         frag_layout.addLayout(self._frag_actions_row)
         frag_layout.addStretch(1)
@@ -253,6 +259,18 @@ class ContextPane(QWidget):
     @property
     def fragment_writing_notes_button(self) -> QPushButton:
         return self._frag_writing_notes_btn
+
+    @property
+    def fragment_checkpoint_button(self) -> QPushButton:
+        return self._frag_checkpoint_btn
+
+    @property
+    def fragment_versions_button(self) -> QPushButton:
+        return self._frag_versions_btn
+
+    @property
+    def fragment_export_button(self) -> QPushButton:
+        return self._frag_export_btn
 
     @property
     def fragment_save_specimen_button(self) -> QPushButton:

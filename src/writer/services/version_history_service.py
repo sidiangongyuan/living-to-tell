@@ -76,6 +76,13 @@ class VersionHistoryService:
             content=entry.body,
         )
 
+    def delete_version(self, entry_id: str, version_id: str) -> None:
+        """Delete one stored version row for *entry_id*."""
+        if not self._versions.delete(version_id, entry_id=entry_id):
+            raise ValueError(
+                f"Version {version_id!r} not found for entry {entry_id!r}"
+            )
+
     # ------------------------------------------------------------------
     # Restore
     # ------------------------------------------------------------------

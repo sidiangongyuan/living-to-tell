@@ -331,6 +331,58 @@ def test_editor_panel_newly_completed_note_stays_visible_in_completed_section(qt
     )
 
 
+def test_editor_panel_writing_notes_collapse_is_remembered_per_fragment(qtbot, container):
+    from writer.ui.main_window import MainWindow
+    from writer.ui.i18n import TR
+
+    first = container.entry_repository.create(title="A", body="body a")
+    second = container.entry_repository.create(title="B", body="body b")
+    container.entry_writing_note_repository.create(entry_id=first.id, body="A note")
+    container.entry_writing_note_repository.create(entry_id=second.id, body="B note")
+
+    window = MainWindow(container, autosave_debounce_ms=20)
+    qtbot.addWidget(window)
+    panel = window._editor_panel  # noqa: SLF001
+
+    window._load_entry(first.id)  # noqa: SLF001
+    assert panel._writing_notes_rows_scroll.isHidden() is False  # noqa: SLF001
+    panel._writing_notes_toggle_btn.click()  # noqa: SLF001
+    assert panel._writing_notes_collapsed is True  # noqa: SLF001
+
+    window._load_entry(second.id)  # noqa: SLF001
+    assert panel._writing_notes_collapsed is False  # noqa: SLF001
+
+    window._load_entry(first.id)  # noqa: SLF001
+    assert panel._writing_notes_collapsed is True  # noqa: SLF001
+    assert panel._writing_notes_rows_scroll.isHidden() is True  # noqa: SLF001
+    assert panel._writing_notes_toggle_btn.text() == TR("editor.writing_notes.expand")  # noqa: SLF001
+
+
+def test_editor_panel_many_writing_notes_are_scroll_capped(qtbot):
+    from writer.domain.models.entry import Entry
+    from writer.domain.models.entry_writing_note import EntryWritingNote
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.show()
+    panel.set_entry(Entry(id="entry-1", title="t", body="body"))
+    panel.set_writing_notes(
+        [
+            EntryWritingNote(
+                id=f"note-{index}",
+                entry_id="entry-1",
+                body=f"第 {index} 条续写提示，内容稍微长一点用于测试高度。",
+            )
+            for index in range(8)
+        ]
+    )
+
+    assert panel._writing_notes_rows_layout.count() == 8  # noqa: SLF001
+    assert panel._writing_notes_rows_scroll.maximumHeight() <= 260  # noqa: SLF001
+    assert panel._writing_notes_rows_scroll.widgetResizable() is True  # noqa: SLF001
+
+
 def test_main_window_writing_notes_do_not_leak_between_fragments(qtbot, container):
     from writer.ui.main_window import MainWindow
 

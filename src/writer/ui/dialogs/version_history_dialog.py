@@ -135,12 +135,17 @@ class VersionHistoryDialog(QDialog):
         self._restore_btn = QPushButton(TR("vhd.restore_btn"))
         self._restore_btn.setEnabled(False)
         self._restore_btn.clicked.connect(self._on_restore)
+        self._delete_btn = QPushButton(TR("vhd.delete_btn"))
+        self._delete_btn.setObjectName("DangerButton")
+        self._delete_btn.setEnabled(False)
+        self._delete_btn.clicked.connect(self._on_delete_selected)
 
         close_btn = QPushButton(TR("vhd.close_btn"))
         close_btn.clicked.connect(self.reject)
 
         btn_row = QHBoxLayout()
         btn_row.addWidget(self._restore_btn)
+        btn_row.addWidget(self._delete_btn)
         btn_row.addStretch()
         btn_row.addWidget(close_btn)
 
@@ -160,6 +165,7 @@ class VersionHistoryDialog(QDialog):
             placeholder.setFlags(Qt.ItemFlag.NoItemFlags)
             self._version_list.addItem(placeholder)
             self._restore_btn.setEnabled(False)
+            self._delete_btn.setEnabled(False)
             return
 
         for v in versions:
@@ -186,12 +192,14 @@ class VersionHistoryDialog(QDialog):
             self._selected_label.setText(TR("vhd.no_version_selected"))
             self._selected_edit.setPlainText("")
             self._restore_btn.setEnabled(False)
+            self._delete_btn.setEnabled(False)
             return
         version_id = current.data(Qt.ItemDataRole.UserRole)
         content = current.data(Qt.ItemDataRole.UserRole + 1)
         self._selected_label.setText(current.text())
         self._selected_edit.setPlainText(content or "")
         self._restore_btn.setEnabled(bool(version_id))
+        self._delete_btn.setEnabled(bool(version_id))
 
     def _on_restore(self) -> None:
         item = self._version_list.currentItem()
@@ -232,3 +240,31 @@ class VersionHistoryDialog(QDialog):
             TR("vhd.restored_title"),
             TR("vhd.restored_msg"),
         )
+
+    def _on_delete_selected(self) -> None:
+        item = self._version_list.currentItem()
+        if item is None:
+            return
+        version_id = item.data(Qt.ItemDataRole.UserRole)
+        if not version_id:
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            TR("vhd.delete_confirm_title"),
+            TR("vhd.delete_confirm_msg"),
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            self._service.delete_version(self._entry_id, version_id)
+        except ValueError as err:
+            QMessageBox.critical(self, TR("vhd.delete_failed"), str(err))
+            return
+
+        self._selected_label.setText(TR("vhd.no_version_selected"))
+        self._selected_edit.setPlainText("")
+        self._restore_btn.setEnabled(False)
+        self._delete_btn.setEnabled(False)
+        self._load_versions()
