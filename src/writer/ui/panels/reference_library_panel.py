@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from PySide6.QtCore import QEvent, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QSignalBlocker, QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
@@ -217,8 +217,8 @@ class _ReferenceShelfCard(_ClickableCard):
         meta_label = QLabel(" · ".join(meta_parts))
         meta_label.setObjectName("ReferenceShelfMeta")
         meta_label.setWordWrap(True)
-        meta_label.setVisible(bool(meta_parts))
         layout.addWidget(meta_label)
+        meta_label.setVisible(bool(meta_parts))
 
         for widget in (self, title_label, meta_label):
             self._bind_click_target(widget)
@@ -293,15 +293,15 @@ class _ReferenceListCard(_ClickableCard):
         author = QLabel(author_text)
         author.setObjectName("ReferenceCardAuthor")
         author.setWordWrap(True)
-        author.setVisible(bool(author_text))
         layout.addWidget(author)
+        author.setVisible(bool(author_text))
 
         note = passage.personal_note.strip()
         note_label = QLabel(note if len(note) <= 120 else compact_text(note, limit=120))
         note_label.setObjectName("ReferenceCardNote")
         note_label.setWordWrap(True)
-        note_label.setVisible(bool(note))
         layout.addWidget(note_label)
+        note_label.setVisible(bool(note))
 
         chips = QWidget()
         chips_layout = QHBoxLayout(chips)
@@ -376,6 +376,7 @@ class ReferenceLibraryPanel(QWidget):
         self._duplicate_ids_cache: set[str] = set()
         self._stat_labels: dict[str, QLabel] = {}
         self._stat_body_layouts = {}
+        self._restoring_layout_state = False
         self._stats_collapsed = self._initial_stats_collapsed()
         self._shelf_collapsed = self._initial_shelf_collapsed()
         self._editor_drawer_visible = self._initial_editor_drawer_visible()
@@ -697,10 +698,14 @@ class ReferenceLibraryPanel(QWidget):
             if self._settings is not None
             else []
         )
-        self._apply_layout_state(
-            sizes=sizes if sizes else None,
-            persist=False,
-        )
+        self._restoring_layout_state = True
+        try:
+            self._apply_layout_state(
+                sizes=sizes if sizes else None,
+                persist=False,
+            )
+        finally:
+            self._restoring_layout_state = False
 
     def _apply_layout_state(
         self,
@@ -730,13 +735,17 @@ class ReferenceLibraryPanel(QWidget):
         )
         self._editor_drawer.setVisible(self._editor_drawer_visible)
         if sizes is not None:
-            self._splitter.setSizes(sizes)
+            with QSignalBlocker(self._splitter):
+                self._splitter.setSizes(sizes)
         elif self._editor_drawer_visible:
-            self._splitter.setSizes(_OPEN_EDITOR_SPLITTER_SIZES)
+            with QSignalBlocker(self._splitter):
+                self._splitter.setSizes(_OPEN_EDITOR_SPLITTER_SIZES)
         elif self._shelf_collapsed:
-            self._splitter.setSizes(_COLLAPSED_SHELF_SPLITTER_SIZES)
+            with QSignalBlocker(self._splitter):
+                self._splitter.setSizes(_COLLAPSED_SHELF_SPLITTER_SIZES)
         else:
-            self._splitter.setSizes(_DEFAULT_LIBRARY_SPLITTER_SIZES)
+            with QSignalBlocker(self._splitter):
+                self._splitter.setSizes(_DEFAULT_LIBRARY_SPLITTER_SIZES)
         if persist:
             self._persist_layout_state()
 
@@ -767,6 +776,8 @@ class ReferenceLibraryPanel(QWidget):
         self._apply_layout_state()
 
     def _on_splitter_moved(self, _pos: int, _index: int) -> None:
+        if self._restoring_layout_state:
+            return
         if self._settings is None:
             return
         sizes = self._splitter.sizes()

@@ -3,6 +3,17 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.28 — Startup and reference-library polish
+
+- Fixed transient label windows that could flash during startup, while opening
+  the reference library, or while opening the AI specimen picker.
+- Adjusted widget construction order so labels are attached to their parent
+  layouts before their visibility is changed.
+- Blocked reference-library splitter signals while restoring saved layout state,
+  preventing initialization-time layout feedback and state churn.
+- Added regression tests that watch for accidental top-level label windows in
+  the main shell, reference library, and specimen picker.
+
 ## 0.2.0-alpha.27 — Reading-first reference library
 
 - Reworked the reference library into a reading-first layout with a visible

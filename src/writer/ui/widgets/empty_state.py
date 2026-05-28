@@ -47,13 +47,13 @@ class EmptyStateCard(QFrame):
         self._description = QLabel(description)
         self._description.setObjectName("EmptyStateDescription")
         self._description.setWordWrap(True)
-        self._description.setVisible(bool(description))
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(10)
         layout.addWidget(self._title)
         layout.addWidget(self._description)
+        self._description.setVisible(bool(description))
 
         # CTA row
         self._primary_btn: Optional[QPushButton] = None

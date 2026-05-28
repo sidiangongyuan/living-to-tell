@@ -144,8 +144,8 @@ class _GroupShelfCard(_ClickableCard):
         meta_label = QLabel(" · ".join(meta_parts))
         meta_label.setObjectName("SpecimenShelfMeta")
         meta_label.setWordWrap(True)
-        meta_label.setVisible(bool(meta_parts))
         layout.addWidget(meta_label)
+        meta_label.setVisible(bool(meta_parts))
 
         for widget in (self, title_label, meta_label):
             self._bind_click_target(widget)
@@ -234,8 +234,8 @@ class _SpecimenListCard(_ClickableCard):
         self._note_label = QLabel(compact_text(note, limit=110) if note else "")
         self._note_label.setObjectName("SpecimenListNote")
         self._note_label.setWordWrap(True)
-        self._note_label.setVisible(bool(note))
         layout.addWidget(self._note_label)
+        self._note_label.setVisible(bool(note))
 
         self.set_checked(checked)
 

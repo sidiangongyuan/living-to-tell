@@ -812,6 +812,54 @@ def test_specimen_picker_select_badge_syncs_check_state_and_preview(qtbot, isola
         container.close()
 
 
+def test_specimen_picker_does_not_flash_label_windows(qtbot, isolated_data_dir):
+    from PySide6.QtCore import QObject, QEvent
+    from PySide6.QtWidgets import QApplication, QLabel
+
+    from writer.app.container import build_container
+    from writer.ui.dialogs.specimen_picker_dialog import SpecimenPickerDialog
+
+    container = build_container()
+    try:
+        repo = container.reference_repository
+        repo.create(
+            source_title="Quiet Book",
+            source_author="Quiet Author",
+            content="Quiet body",
+            personal_note="Quiet note",
+        )
+
+        class WindowShowSpy(QObject):
+            def __init__(self) -> None:
+                super().__init__()
+                self.label_windows = []
+
+            def eventFilter(self, obj, event) -> bool:  # noqa: N802
+                if (
+                    event.type() == QEvent.Type.Show
+                    and isinstance(obj, QLabel)
+                    and obj.isWindow()
+                ):
+                    self.label_windows.append(obj.objectName())
+                return False
+
+        app = QApplication.instance()
+        assert app is not None
+        spy = WindowShowSpy()
+        app.installEventFilter(spy)
+        try:
+            dlg = SpecimenPickerDialog(repo)
+            qtbot.addWidget(dlg)
+            dlg.show()
+            qtbot.waitUntil(dlg.isVisible)
+        finally:
+            app.removeEventFilter(spy)
+
+        assert spy.label_windows == []
+    finally:
+        container.close()
+
+
 def test_specimen_picker_save_default_group_mode(qtbot, isolated_data_dir):
     from writer.app.container import build_container
     from writer.ui.dialogs.specimen_picker_dialog import SpecimenPickerDialog

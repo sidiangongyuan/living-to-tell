@@ -48,6 +48,39 @@ def test_main_window_constructs_and_shows(qtbot, container) -> None:
     assert window._fragments_stack.currentIndex() == 1
 
 
+def test_main_window_startup_does_not_flash_label_windows(qtbot, container) -> None:
+    from PySide6.QtCore import QObject, QEvent
+    from PySide6.QtWidgets import QApplication, QLabel
+
+    class WindowShowSpy(QObject):
+        def __init__(self) -> None:
+            super().__init__()
+            self.label_windows = []
+
+        def eventFilter(self, obj, event) -> bool:  # noqa: N802
+            if (
+                event.type() == QEvent.Type.Show
+                and isinstance(obj, QLabel)
+                and obj.isWindow()
+            ):
+                self.label_windows.append(obj.objectName())
+            return False
+
+    app = QApplication.instance()
+    assert app is not None
+    spy = WindowShowSpy()
+    app.installEventFilter(spy)
+    try:
+        window = create_main_window(container)
+        qtbot.addWidget(window)
+        window.show()
+        qtbot.waitUntil(window.isVisible)
+    finally:
+        app.removeEventFilter(spy)
+
+    assert spy.label_windows == []
+
+
 # ---------------------------------------------------------------------------
 # M6B: launch polish / metadata tests
 # ---------------------------------------------------------------------------

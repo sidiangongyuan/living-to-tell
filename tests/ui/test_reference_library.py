@@ -390,6 +390,77 @@ def test_library_panel_layout_state_persists(qtbot, container):
     assert second._splitter.sizes()[2] > 8  # noqa: SLF001
 
 
+def test_library_panel_restore_layout_does_not_emit_splitter_state_changes(
+    qtbot,
+    container,
+):
+    from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+    repo = container.reference_repository
+    repo.create(source_title="Quiet Book", content="Quiet body")
+    container.settings.save_reference_library_splitter_sizes([230, 610, 0])
+
+    calls = []
+    original = container.settings.save_reference_library_splitter_sizes
+
+    def _recording_save(sizes):
+        calls.append(list(sizes))
+        original(sizes)
+
+    container.settings.save_reference_library_splitter_sizes = _recording_save
+
+    panel = ReferenceLibraryPanel(repo, settings=container.settings)
+    qtbot.addWidget(panel)
+
+    assert calls == []
+    assert panel._editor_drawer.isHidden() is True  # noqa: SLF001
+
+
+def test_reference_library_dialog_does_not_flash_label_windows(qtbot, container):
+    from PySide6.QtCore import QObject, QEvent
+    from PySide6.QtWidgets import QApplication, QLabel
+
+    from writer.ui.dialogs.reference_library_dialog import ReferenceLibraryDialog
+
+    container.reference_repository.create(
+        source_title="Quiet Book",
+        source_author="Quiet Author",
+        content="Quiet body",
+        personal_note="Quiet note",
+    )
+
+    class WindowShowSpy(QObject):
+        def __init__(self) -> None:
+            super().__init__()
+            self.label_windows = []
+
+        def eventFilter(self, obj, event) -> bool:  # noqa: N802
+            if (
+                event.type() == QEvent.Type.Show
+                and isinstance(obj, QLabel)
+                and obj.isWindow()
+            ):
+                self.label_windows.append(obj.objectName())
+            return False
+
+    app = QApplication.instance()
+    assert app is not None
+    spy = WindowShowSpy()
+    app.installEventFilter(spy)
+    try:
+        dialog = ReferenceLibraryDialog(
+            container.reference_repository,
+            settings=container.settings,
+        )
+        qtbot.addWidget(dialog)
+        dialog.show()
+        qtbot.waitUntil(dialog.isVisible)
+    finally:
+        app.removeEventFilter(spy)
+
+    assert spy.label_windows == []
+
+
 def test_library_panel_stats_toggle_updates_persisted_state(qtbot, container):
     from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
 
