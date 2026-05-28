@@ -36,7 +36,7 @@ from writer.domain.enums import SectionType, WorkStatus
 from writer.domain.models.work_section import WorkSection
 from writer.ui.dialogs.work_versions_dialog import WorkVersionsDialog
 from writer.ui.i18n import TR
-from writer.ui.panels.editor_panel import _font_families
+from writer.ui.panels.editor_panel import _editor_font_style, _font_families
 from writer.ui.widgets.controls import NoWheelComboBox, NoWheelSpinBox
 from writer.ui.widgets.editor_find import (
     EditorFindBar,
@@ -293,10 +293,12 @@ class WorkEditorPanel(QWidget):
         self._title.setFont(title_font)
 
         body_font = QFont()
-        body_font.setFamilies(_font_families(settings.font_family))
+        body_families = _font_families(settings.font_family)
+        body_font.setFamilies(body_families)
         body_font.setPointSizeF(settings.font_size)
         self._editor.setFont(body_font)
         self._editor.document().setDefaultFont(body_font)
+        self._editor.setStyleSheet(_editor_font_style(body_families, settings.font_size))
         self._editor.set_soft_page_guides_enabled(settings.soft_page_guides_enabled)
         self._editor.set_paper_layout(settings.page_vertical_padding, settings.page_gap)
         self._page_controls.refresh()

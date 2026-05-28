@@ -1994,6 +1994,9 @@ class MainWindow(QMainWindow):
     def _apply_editor_preferences(self) -> None:
         settings = self._container.settings.load_editor_display_settings()
         self._editor_panel.apply_display_settings(settings)
+        self._editor_panel.set_writing_notes_collapsed_by_default(
+            self._container.settings.writing_notes_card_collapsed_by_default()
+        )
         try:
             self._works_panel._editor.apply_display_settings(settings)  # noqa: SLF001
         except Exception:  # noqa: BLE001

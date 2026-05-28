@@ -80,7 +80,7 @@ DEFAULT_EDITOR_VISUAL_FIRST_LINE_INDENT_ENABLED = True
 DEFAULT_EDITOR_TYPEWRITER_MODE_ENABLED = True
 DEFAULT_EDITOR_AUTO_PARAGRAPH_INDENT_ENABLED = True
 DEFAULT_EDITOR_SOFT_PAGE_GUIDES_ENABLED = True
-DEFAULT_EDITOR_WRITING_NOTES_CARD_COLLAPSED_BY_DEFAULT = False
+DEFAULT_EDITOR_WRITING_NOTES_CARD_COLLAPSED_BY_DEFAULT = True
 DEFAULT_REDUCED_MOTION_ENABLED = False
 
 # Quick capture / tray
@@ -395,6 +395,18 @@ class Settings:
         self._repo.set(
             KEY_EDITOR_SOFT_PAGE_GUIDES_ENABLED,
             "true" if settings.soft_page_guides_enabled else "false",
+        )
+
+    def writing_notes_card_collapsed_by_default(self) -> bool:
+        return _coerce_bool(
+            self._repo.get(KEY_EDITOR_WRITING_NOTES_CARD_COLLAPSED_BY_DEFAULT),
+            default=DEFAULT_EDITOR_WRITING_NOTES_CARD_COLLAPSED_BY_DEFAULT,
+        )
+
+    def save_writing_notes_card_collapsed_by_default(self, enabled: bool) -> None:
+        self._repo.set(
+            KEY_EDITOR_WRITING_NOTES_CARD_COLLAPSED_BY_DEFAULT,
+            "true" if enabled else "false",
         )
 
     def reduced_motion_enabled(self) -> bool:

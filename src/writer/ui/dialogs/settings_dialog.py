@@ -267,6 +267,12 @@ class SettingsDialog(QDialog):
         self._soft_page_guides_checkbox.setChecked(
             editor_settings.soft_page_guides_enabled
         )
+        self._writing_notes_collapsed_checkbox = QCheckBox(
+            TR("settings.editor_writing_notes_collapsed")
+        )
+        self._writing_notes_collapsed_checkbox.setChecked(
+            settings.writing_notes_card_collapsed_by_default()
+        )
         self._reduced_motion_checkbox = QCheckBox(TR("settings.reduced_motion"))
         self._reduced_motion_checkbox.setChecked(settings.reduced_motion_enabled())
 
@@ -294,6 +300,7 @@ class SettingsDialog(QDialog):
         writing_form.addRow("", self._typewriter_checkbox)
         writing_form.addRow("", self._auto_indent_checkbox)
         writing_form.addRow("", self._soft_page_guides_checkbox)
+        writing_form.addRow("", self._writing_notes_collapsed_checkbox)
         writing_form.addRow("", self._reduced_motion_checkbox)
 
         ai_group = QGroupBox(TR("settings.group_ai"))
@@ -753,6 +760,9 @@ class SettingsDialog(QDialog):
         )
         self._settings.save_reduced_motion_enabled(
             self._reduced_motion_checkbox.isChecked()
+        )
+        self._settings.save_writing_notes_card_collapsed_by_default(
+            self._writing_notes_collapsed_checkbox.isChecked()
         )
 
         # Persist language selection; inform user a restart is required.

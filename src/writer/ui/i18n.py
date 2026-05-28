@@ -329,6 +329,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "settings.editor_typewriter_mode": "Typewriter mode",
         "settings.editor_auto_paragraph_indent": "Insert two full-width spaces after Enter",
         "settings.editor_soft_page_guides": "Paper separators / soft page guides",
+        "settings.editor_writing_notes_collapsed": "Collapse continuation notes by default",
         "settings.reduced_motion": "Reduce motion",
         "settings.key_only_env": (
               "Use env:VAR or the literal string 'codex' / 'gemini'. The API key is "
@@ -1343,6 +1344,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "settings.editor_typewriter_mode": "打字机模式",
         "settings.editor_auto_paragraph_indent": "回车后自动空两格",
         "settings.editor_soft_page_guides": "纸页分隔 / 软分页提示",
+        "settings.editor_writing_notes_collapsed": "默认收起续写提示",
         "settings.reduced_motion": "减少动效",
         # ── Quick capture ─────────────────────────────────────────────────────
         "quick.window_title": "快速速记",

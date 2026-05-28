@@ -10,6 +10,7 @@ from PySide6.QtGui import (
     QColor,
     QFont,
     QFontDatabase,
+    QPalette,
     QTextBlockFormat,
     QTextCharFormat,
     QTextCursor,
@@ -18,7 +19,6 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -98,11 +98,13 @@ class _WriterBodyEdit(PaperPlainTextEdit):
 
     def apply_display_settings(self, settings: EditorDisplaySettings) -> None:
         self._display_settings = settings
+        families = _font_families(settings.font_family)
         font = QFont()
-        font.setFamilies(_font_families(settings.font_family))
+        font.setFamilies(families)
         font.setPointSizeF(settings.font_size)
         self.setFont(font)
         self.document().setDefaultFont(font)
+        self.setStyleSheet(_editor_font_style(families, settings.font_size))
         self._schedule_paragraph_formatting()
         self._refresh_focus_paragraph()
 
@@ -331,8 +333,11 @@ class EditorPanel(QWidget):
         self._display_settings = DEFAULT_EDITOR_DISPLAY_SETTINGS
         self._focus_mode_enabled = False
         self._writing_notes: list[EntryWritingNote] = []
-        self._writing_notes_collapsed = False
+        self._writing_notes_default_collapsed = True
+        self._writing_notes_collapsed = self._writing_notes_default_collapsed
         self._writing_notes_show_done = False
+        self._writing_notes_view_state_loaded_for: Optional[str] = None
+        self._suppress_writing_notes_auto_expand_once = False
         self._writing_notes_collapsed_by_entry: dict[str, bool] = {}
         self._writing_notes_show_done_by_entry: dict[str, bool] = {}
         self._find_bar = EditorFindBar()
@@ -400,7 +405,7 @@ class EditorPanel(QWidget):
         self._writing_notes_rows = QWidget()
         self._writing_notes_rows_layout = QVBoxLayout(self._writing_notes_rows)
         self._writing_notes_rows_layout.setContentsMargins(0, 0, 0, 0)
-        self._writing_notes_rows_layout.setSpacing(6)
+        self._writing_notes_rows_layout.setSpacing(4)
         self._writing_notes_rows_scroll = QScrollArea()
         self._writing_notes_rows_scroll.setObjectName("WritingNotesRowsScroll")
         self._writing_notes_rows_scroll.setWidgetResizable(True)
@@ -412,7 +417,7 @@ class EditorPanel(QWidget):
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Maximum,
         )
-        self._writing_notes_rows_scroll.setMaximumHeight(240)
+        self._writing_notes_rows_scroll.setMaximumHeight(320)
         self._writing_notes_rows_scroll.setWidget(self._writing_notes_rows)
         notes_layout.addWidget(self._writing_notes_rows_scroll)
 
@@ -566,6 +571,15 @@ class EditorPanel(QWidget):
         self._page_controls.refresh()
         self.updateGeometry()
 
+    def set_writing_notes_collapsed_by_default(self, collapsed: bool) -> None:
+        self._writing_notes_default_collapsed = bool(collapsed)
+        if self._entry_id is None:
+            self._writing_notes_collapsed = self._writing_notes_default_collapsed
+        elif self._entry_id not in self._writing_notes_collapsed_by_entry:
+            self._writing_notes_collapsed = self._writing_notes_default_collapsed
+            self._remember_writing_notes_view_state()
+            self._refresh_writing_notes_card()
+
     def set_reduced_motion(self, enabled: bool) -> None:
         self._body.set_reduced_motion(enabled)
 
@@ -635,8 +649,10 @@ class EditorPanel(QWidget):
                 self._meta.setText("")
                 self._update_tag_chips("")
                 self._writing_notes = []
-                self._writing_notes_collapsed = True
+                self._writing_notes_collapsed = self._writing_notes_default_collapsed
                 self._writing_notes_show_done = False
+                self._writing_notes_view_state_loaded_for = None
+                self._suppress_writing_notes_auto_expand_once = False
                 self._rebuild_writing_notes_rows()
                 self._refresh_writing_notes_card()
                 self._refresh_epigraph_card()
@@ -650,8 +666,10 @@ class EditorPanel(QWidget):
                 self._body.setPlainText(entry.body)
                 self._meta.setText(self._format_meta(entry))
                 self._update_tag_chips(serialize_tags(entry.tags))
-                self._restore_writing_notes_view_state(entry.id)
+                if self._writing_notes_view_state_loaded_for != entry.id:
+                    self._restore_writing_notes_view_state(entry.id)
                 self._writing_notes = []
+                self._suppress_writing_notes_auto_expand_once = True
                 self._rebuild_writing_notes_rows()
                 self._refresh_writing_notes_card()
                 self._refresh_epigraph_card()
@@ -673,7 +691,9 @@ class EditorPanel(QWidget):
         self._meta.setText(text)
 
     def set_writing_notes(self, notes: list[EntryWritingNote]) -> None:
-        had_notes = bool(self._writing_notes)
+        previous_open_ids = {
+            note.id for note in self._writing_notes if note.status == NOTE_STATUS_OPEN
+        }
         has_stored_collapsed_state = (
             self._entry_id is not None
             and self._entry_id in self._writing_notes_collapsed_by_entry
@@ -685,17 +705,24 @@ class EditorPanel(QWidget):
         done_count = sum(
             1 for note in self._writing_notes if note.status == NOTE_STATUS_DONE
         )
+        open_ids = {note.id for note in self._writing_notes if note.status == NOTE_STATUS_OPEN}
+        added_open_note = bool(open_ids - previous_open_ids)
+        suppress_auto_expand = self._suppress_writing_notes_auto_expand_once
+        self._suppress_writing_notes_auto_expand_once = False
         if not self._writing_notes:
             if self._entry_id is None or not has_stored_collapsed_state:
-                self._writing_notes_collapsed = True
+                self._writing_notes_collapsed = self._writing_notes_default_collapsed
             self._writing_notes_show_done = False
-        elif not had_notes and not has_stored_collapsed_state:
+            self._remember_writing_notes_view_state()
+        elif added_open_note and not has_stored_collapsed_state and not suppress_auto_expand:
             self._writing_notes_collapsed = False
-        elif done_count > previous_done_count:
+            self._remember_writing_notes_view_state()
+        elif done_count > previous_done_count and not suppress_auto_expand:
             # Newly completed notes should stay visible in the completed section
             # so the user can tell they were moved rather than deleted.
             self._writing_notes_show_done = True
             self._writing_notes_collapsed = False
+            self._remember_writing_notes_view_state()
         self._rebuild_writing_notes_rows()
         self._refresh_writing_notes_card()
 
@@ -737,12 +764,13 @@ class EditorPanel(QWidget):
     def _restore_writing_notes_view_state(self, entry_id: str) -> None:
         self._writing_notes_collapsed = self._writing_notes_collapsed_by_entry.get(
             entry_id,
-            True,
+            self._writing_notes_default_collapsed,
         )
         self._writing_notes_show_done = self._writing_notes_show_done_by_entry.get(
             entry_id,
             False,
         )
+        self._writing_notes_view_state_loaded_for = entry_id
 
     def _rebuild_writing_notes_rows(self) -> None:
         while self._writing_notes_rows_layout.count():
@@ -777,76 +805,17 @@ class EditorPanel(QWidget):
             row.setObjectName("WritingNoteRowDone")
         else:
             row.setObjectName("WritingNoteRowPinned" if note.pinned else "WritingNoteRow")
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(8, 7, 8, 7)
-        layout.setSpacing(8)
+        layout = QVBoxLayout(row)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(4)
 
-        accent = QFrame()
-        accent.setObjectName("WritingNoteAccent")
-        accent.setFixedWidth(3)
-        layout.addWidget(accent)
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(6)
 
-        content_box = QWidget()
-        content_layout = QVBoxLayout(content_box)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(6)
-
-        state_label = QLabel(self._writing_note_state_text(note))
-        state_label.setObjectName("WritingNoteState")
-        state_label.setWordWrap(True)
-        content_layout.addWidget(state_label)
-
-        body = QLabel(note.body)
-        body.setObjectName("WritingNoteBody")
-        body.setWordWrap(True)
-        body.setTextFormat(Qt.TextFormat.PlainText)
-        body_font = QFont()
-        body_font.setFamilies(_serif_font_families(self._display_settings.font_family))
-        body_font.setPointSizeF(max(self._display_settings.font_size - 3, 12))
-        body.setFont(body_font)
-        content_layout.addWidget(body)
-
-        edit_input = QLineEdit(note.body)
-        edit_input.setObjectName("WritingNoteInput")
-        edit_input.setVisible(False)
-        content_layout.addWidget(edit_input)
-
-        actions_box = QWidget()
-        actions_layout = QGridLayout(actions_box)
-        actions_layout.setContentsMargins(0, 0, 0, 0)
-        actions_layout.setHorizontalSpacing(8)
-        actions_layout.setVerticalSpacing(6)
-
-        edit_btn = QPushButton(TR("editor.writing_notes.edit"))
-        edit_btn.setObjectName("GhostButton")
-        save_btn = QPushButton(TR("editor.writing_notes.save"))
-        save_btn.setObjectName("PrimaryButton")
-        save_btn.setVisible(False)
-        cancel_btn = QPushButton(TR("editor.writing_notes.cancel"))
-        cancel_btn.setObjectName("GhostButton")
-        cancel_btn.setVisible(False)
-
-        pin_btn = QPushButton(
-            TR("editor.writing_notes.unpin")
-            if note.pinned
-            else TR("editor.writing_notes.pin")
-        )
-        pin_btn.setObjectName("GhostButton")
-        pin_btn.setToolTip(
-            TR("editor.writing_notes.unpin") if note.pinned else TR("editor.writing_notes.pin")
-        )
-        pin_btn.clicked.connect(
-            lambda _checked=False, note_id=note.id, pinned=note.pinned: (
-                self.writing_note_pin_requested.emit(note_id, not pinned)
-            )
-        )
-
-        done_btn = QPushButton(
-            TR("editor.writing_notes.restore")
-            if is_done
-            else TR("editor.writing_notes.done")
-        )
-        done_btn.setObjectName("GhostButton")
+        done_btn = QPushButton("↺" if is_done else "✓")
+        done_btn.setObjectName("WritingNoteDoneToggle")
+        done_btn.setFixedSize(26, 24)
         done_btn.setToolTip(
             TR("editor.writing_notes.restore_hint")
             if is_done
@@ -857,45 +826,125 @@ class EditorPanel(QWidget):
                 self.writing_note_done_requested.emit(note_id, done)
             )
         )
+        top_row.addWidget(done_btn, 0, Qt.AlignmentFlag.AlignTop)
 
-        delete_btn = QPushButton(TR("editor.writing_notes.delete"))
-        delete_btn.setObjectName("GhostButton")
-        delete_btn.setToolTip(TR("editor.writing_notes.delete_hint"))
+        content_box = QWidget()
+        content_layout = QVBoxLayout(content_box)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(2)
+
+        state_label = QLabel(self._writing_note_state_text(note))
+        state_label.setObjectName("WritingNoteState")
+        state_label.setWordWrap(True)
+
+        actions_box = QWidget()
+        actions_box.setObjectName("WritingNoteActions")
+        actions_layout = QHBoxLayout(actions_box)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setSpacing(4)
+        state_line = QHBoxLayout()
+        state_line.setContentsMargins(0, 0, 0, 0)
+        state_line.setSpacing(6)
+        state_line.addWidget(state_label, 1)
+        state_line.addWidget(actions_box, 0, Qt.AlignmentFlag.AlignRight)
+        content_layout.addLayout(state_line)
+
+        body = QLabel(note.body)
+        body.setObjectName("WritingNoteBody")
+        body.setWordWrap(True)
+        body.setTextFormat(Qt.TextFormat.PlainText)
+        if is_done:
+            body_font = QFont()
+            body_font.setFamilies(_serif_font_families(self._display_settings.font_family))
+            body_font.setPointSizeF(max(self._display_settings.font_size - 5, 11))
+            body_font.setStrikeOut(True)
+            body.setFont(body_font)
+            body.setStyleSheet(
+                f"color: {self.palette().color(QPalette.ColorRole.PlaceholderText).name()};"
+            )
+        else:
+            body_font = QFont()
+            body_font.setFamilies(_serif_font_families(self._display_settings.font_family))
+            body_font.setPointSizeF(max(self._display_settings.font_size - 4, 11))
+            body.setFont(body_font)
+            body.setStyleSheet("")
+        body.setToolTip(note.body)
+        content_layout.addWidget(body)
+
+        top_row.addWidget(content_box, 1)
+
+        def _compact_action(text: str, tooltip: str = "") -> QPushButton:
+            button = QPushButton(text)
+            button.setObjectName("WritingNoteMiniButton")
+            button.setFlat(True)
+            button.setMinimumWidth(0)
+            button.setToolTip(tooltip or text)
+            return button
+
+        edit_btn = _compact_action(TR("editor.writing_notes.edit"))
+        pin_btn = _compact_action(
+            TR("editor.writing_notes.unpin")
+            if note.pinned
+            else TR("editor.writing_notes.pin")
+        )
+        delete_btn = _compact_action(TR("editor.writing_notes.delete"), TR("editor.writing_notes.delete_hint"))
+        actions_layout.addWidget(edit_btn)
+        if not is_done:
+            actions_layout.addWidget(pin_btn)
+        actions_layout.addWidget(delete_btn)
+        layout.addLayout(top_row)
+
+        editor_box = QWidget()
+        editor_layout = QHBoxLayout(editor_box)
+        editor_layout.setContentsMargins(32, 0, 0, 0)
+        editor_layout.setSpacing(6)
+
+        edit_input = QLineEdit(note.body)
+        edit_input.setObjectName("WritingNoteInput")
+        edit_input.setVisible(False)
+        editor_layout.addWidget(edit_input, 1)
+
+        save_btn = QPushButton(TR("editor.writing_notes.save"))
+        save_btn.setObjectName("PrimaryButton")
+        save_btn.setVisible(False)
+        cancel_btn = QPushButton(TR("editor.writing_notes.cancel"))
+        cancel_btn.setObjectName("GhostButton")
+        cancel_btn.setVisible(False)
+        editor_layout.addWidget(save_btn)
+        editor_layout.addWidget(cancel_btn)
+        editor_box.setVisible(False)
+        layout.addWidget(editor_box)
+
+        edit_btn.clicked.connect(
+            lambda _checked=False, b=body, e=edit_input, eb=editor_box, ab=actions_box, sb=save_btn, cb=cancel_btn: (
+                self._set_writing_note_editing(b, e, eb, ab, sb, cb, True)
+            )
+        )
+        save_btn.clicked.connect(
+            lambda _checked=False, note_id=note.id, b=body, e=edit_input, eb=editor_box, ab=actions_box, sb=save_btn, cb=cancel_btn: (
+                self._commit_writing_note_edit(note_id, b, e, eb, ab, sb, cb)
+            )
+        )
+        edit_input.returnPressed.connect(
+            lambda note_id=note.id, b=body, e=edit_input, eb=editor_box, ab=actions_box, sb=save_btn, cb=cancel_btn: (
+                self._commit_writing_note_edit(note_id, b, e, eb, ab, sb, cb)
+            )
+        )
+        cancel_btn.clicked.connect(
+            lambda _checked=False, b=body, e=edit_input, eb=editor_box, ab=actions_box, sb=save_btn, cb=cancel_btn: (
+                self._cancel_writing_note_edit(b, e, eb, ab, sb, cb)
+            )
+        )
+        pin_btn.clicked.connect(
+            lambda _checked=False, note_id=note.id, pinned=note.pinned: (
+                self.writing_note_pin_requested.emit(note_id, not pinned)
+            )
+        )
         delete_btn.clicked.connect(
             lambda _checked=False, note_id=note.id: self.writing_note_delete_requested.emit(
                 note_id
             )
         )
-        view_actions = [edit_btn, pin_btn, done_btn, delete_btn]
-        edit_actions = [save_btn, cancel_btn]
-        edit_btn.clicked.connect(
-            lambda _checked=False, b=body, e=edit_input, va=view_actions, ea=edit_actions: (
-                self._set_writing_note_editing(b, e, va, ea, True)
-            )
-        )
-        save_btn.clicked.connect(
-            lambda _checked=False, note_id=note.id, b=body, e=edit_input, va=view_actions, ea=edit_actions: (
-                self._commit_writing_note_edit(note_id, b, e, va, ea)
-            )
-        )
-        edit_input.returnPressed.connect(
-            lambda note_id=note.id, b=body, e=edit_input, va=view_actions, ea=edit_actions: (
-                self._commit_writing_note_edit(note_id, b, e, va, ea)
-            )
-        )
-        cancel_btn.clicked.connect(
-            lambda _checked=False, b=body, e=edit_input, va=view_actions, ea=edit_actions: (
-                self._cancel_writing_note_edit(b, e, va, ea)
-            )
-        )
-        actions_layout.addWidget(edit_btn, 0, 0)
-        actions_layout.addWidget(pin_btn, 0, 1)
-        actions_layout.addWidget(done_btn, 1, 0)
-        actions_layout.addWidget(delete_btn, 1, 1)
-        actions_layout.addWidget(save_btn, 0, 0)
-        actions_layout.addWidget(cancel_btn, 0, 1)
-        content_layout.addWidget(actions_box)
-        layout.addWidget(content_box, 1)
         return row
 
     def _writing_note_state_text(self, note: EntryWritingNote) -> str:
@@ -909,17 +958,19 @@ class EditorPanel(QWidget):
         self,
         body: QLabel,
         edit_input: QLineEdit,
-        view_actions: list[QPushButton],
-        edit_actions: list[QPushButton],
+        editor_box: QWidget,
+        actions_box: QWidget,
+        save_btn: QPushButton,
+        cancel_btn: QPushButton,
         editing: bool,
     ) -> None:
         edit_input.setText(body.text())
         body.setVisible(not editing)
+        editor_box.setVisible(editing)
         edit_input.setVisible(editing)
-        for button in view_actions:
-            button.setVisible(not editing)
-        for button in edit_actions:
-            button.setVisible(editing)
+        actions_box.setVisible(not editing)
+        save_btn.setVisible(editing)
+        cancel_btn.setVisible(editing)
         if editing:
             edit_input.setFocus()
             edit_input.selectAll()
@@ -929,8 +980,10 @@ class EditorPanel(QWidget):
         note_id: str,
         body: QLabel,
         edit_input: QLineEdit,
-        view_actions: list[QPushButton],
-        edit_actions: list[QPushButton],
+        editor_box: QWidget,
+        actions_box: QWidget,
+        save_btn: QPushButton,
+        cancel_btn: QPushButton,
     ) -> None:
         text = edit_input.text().strip()
         if not text:
@@ -938,17 +991,35 @@ class EditorPanel(QWidget):
             return
         if text != body.text():
             self.writing_note_update_requested.emit(note_id, text)
-        self._set_writing_note_editing(body, edit_input, view_actions, edit_actions, False)
+        self._set_writing_note_editing(
+            body,
+            edit_input,
+            editor_box,
+            actions_box,
+            save_btn,
+            cancel_btn,
+            False,
+        )
 
     def _cancel_writing_note_edit(
         self,
         body: QLabel,
         edit_input: QLineEdit,
-        view_actions: list[QPushButton],
-        edit_actions: list[QPushButton],
+        editor_box: QWidget,
+        actions_box: QWidget,
+        save_btn: QPushButton,
+        cancel_btn: QPushButton,
     ) -> None:
         edit_input.setText(body.text())
-        self._set_writing_note_editing(body, edit_input, view_actions, edit_actions, False)
+        self._set_writing_note_editing(
+            body,
+            edit_input,
+            editor_box,
+            actions_box,
+            save_btn,
+            cancel_btn,
+            False,
+        )
 
     def _refresh_writing_notes_card(self) -> None:
         has_entry = self._entry_id is not None
@@ -997,10 +1068,12 @@ class EditorPanel(QWidget):
         if self._writing_notes_show_done:
             visible_count += done_count
         if visible_count <= 1:
-            return 136
-        if visible_count == 2:
-            return 204
-        return 260
+            return 128
+        if visible_count <= 3:
+            return 240
+        if visible_count <= 6:
+            return 320
+        return 360
 
     def current_entry_id(self) -> Optional[str]:
         return self._entry_id
@@ -1199,6 +1272,15 @@ def _has_installed_family(families: list[str]) -> bool:
     except Exception:  # noqa: BLE001
         return True
     return any(family.casefold() in installed for family in families)
+
+
+def _editor_font_style(families: list[str], point_size: float | int) -> str:
+    family_css = ", ".join(
+        f'"{family.replace(chr(34), "")}"' for family in families if family.strip()
+    )
+    if not family_css:
+        return ""
+    return f"font-family: {family_css}; font-size: {float(point_size):.1f}pt;"
 
 
 def _is_cjk(ch: str) -> bool:

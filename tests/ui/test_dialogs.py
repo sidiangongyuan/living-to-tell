@@ -154,6 +154,7 @@ def test_settings_dialog_loads_editor_display_settings(qtbot, container):
         )
     )
     container.settings.save_reduced_motion_enabled(True)
+    container.settings.save_writing_notes_card_collapsed_by_default(False)
 
     dialog = SettingsDialog(container.settings)
     qtbot.addWidget(dialog)
@@ -167,6 +168,7 @@ def test_settings_dialog_loads_editor_display_settings(qtbot, container):
     assert dialog._font_family_combo.currentText() == "Georgia, Cambria"  # noqa: SLF001
     assert dialog._visual_indent_checkbox.isChecked() is False  # noqa: SLF001
     assert dialog._typewriter_checkbox.isChecked() is True  # noqa: SLF001
+    assert dialog._writing_notes_collapsed_checkbox.isChecked() is False  # noqa: SLF001
     assert dialog._reduced_motion_checkbox.isChecked() is True  # noqa: SLF001
 
 
@@ -183,6 +185,7 @@ def test_settings_dialog_persists_editor_display_settings(qtbot, container):
     dialog._font_family_combo.setCurrentText("Noto Serif SC, 宋体")  # noqa: SLF001
     dialog._visual_indent_checkbox.setChecked(False)  # noqa: SLF001
     dialog._typewriter_checkbox.setChecked(False)  # noqa: SLF001
+    dialog._writing_notes_collapsed_checkbox.setChecked(True)  # noqa: SLF001
     dialog._reduced_motion_checkbox.setChecked(True)  # noqa: SLF001
     dialog._on_accept()  # noqa: SLF001
 
@@ -196,6 +199,7 @@ def test_settings_dialog_persists_editor_display_settings(qtbot, container):
     assert saved.font_family == "Noto Serif SC, 宋体"
     assert saved.visual_first_line_indent_enabled is False
     assert saved.typewriter_mode_enabled is False
+    assert container.settings.writing_notes_card_collapsed_by_default() is True
     assert container.settings.reduced_motion_enabled() is True
 
 

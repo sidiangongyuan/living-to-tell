@@ -733,7 +733,7 @@ QFrame#WritingNoteRowPinned,
 QFrame#WritingNoteRowDone {{
     background: {t.bg_input};
     border: 1px solid {t.border};
-    border-radius: {t.radius_md}px;
+    border-radius: {t.radius_sm}px;
 }}
 QFrame#WritingNoteRowPinned {{
     border-left: 3px solid {t.accent};
@@ -742,15 +742,37 @@ QFrame#WritingNoteRowDone {{
     background: {t.bg_done};
     border-style: dashed;
 }}
-QFrame#WritingNoteAccent {{
-    background: {t.accent};
-    border: none;
-    border-radius: 2px;
-}}
 QLabel#WritingNoteBody {{
     color: {t.text_primary};
     font-family: {t.font_serif};
     line-height: 150%;
+}}
+QPushButton#WritingNoteDoneToggle {{
+    background: {t.bg_card};
+    border: 1px solid {t.border_strong};
+    border-radius: 12px;
+    color: {t.text_secondary};
+    font-weight: 700;
+    padding: 0;
+}}
+QPushButton#WritingNoteDoneToggle:hover {{
+    border-color: {t.accent};
+    color: {t.accent};
+}}
+QWidget#WritingNoteActions {{
+    background: transparent;
+}}
+QPushButton#WritingNoteMiniButton {{
+    background: transparent;
+    border: none;
+    color: {t.text_muted};
+    font-size: {t.fs_meta}px;
+    padding: 2px 4px;
+}}
+QPushButton#WritingNoteMiniButton:hover {{
+    color: {t.text_primary};
+    background: {t.bg_search};
+    border-radius: {t.radius_sm}px;
 }}
 QLabel#WritingNoteDoneSection {{
     color: {t.text_muted};

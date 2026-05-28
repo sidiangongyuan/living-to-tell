@@ -81,9 +81,36 @@ def test_editor_panel_applies_display_settings_to_body(qtbot):
 
     assert panel._body.font().pointSize() == 22  # noqa: SLF001
     assert panel._body.font().families()[: len(expected_families)] == expected_families  # noqa: SLF001
+    assert expected_families[0] in panel._body.styleSheet()  # noqa: SLF001
     assert panel._content_wrap.maximumWidth() == 680  # noqa: SLF001
     assert block_format.lineHeight() == 210.0
     assert block_format.textIndent() > 0
+
+
+def test_editor_body_font_survives_global_theme_stylesheet(qtbot):
+    from PySide6.QtWidgets import QApplication
+
+    from writer.ui.panels.editor_panel import EditorPanel, _font_families
+    from writer.ui.theme import LIGHT_TOKENS, build_qss
+
+    app = QApplication.instance()
+    previous_stylesheet = app.styleSheet() if app is not None else ""
+    if app is not None:
+        app.setStyleSheet(build_qss(LIGHT_TOKENS))
+    try:
+        panel = EditorPanel()
+        qtbot.addWidget(panel)
+        custom = EditorDisplaySettings(font_size=22, font_family="Georgia, Cambria")
+
+        panel.apply_display_settings(custom)
+        panel.replace_body("第一段\n第二段")
+        qtbot.wait(0)
+
+        expected_families = _font_families(custom.font_family)
+        assert panel._body.font().families()[: len(expected_families)] == expected_families  # noqa: SLF001
+    finally:
+        if app is not None:
+            app.setStyleSheet(previous_stylesheet)
 
 
 def test_visual_first_line_indent_does_not_mutate_plain_text(qtbot):
@@ -166,6 +193,7 @@ def test_editor_panel_writing_notes_card_emits_actions(qtbot):
     qtbot.addWidget(panel)
     panel.show()
     panel.set_entry(Entry(id="entry-1", title="t", body="body"))
+    panel._writing_notes_toggle_btn.click()  # noqa: SLF001
     panel.set_writing_notes(
         [
             EntryWritingNote(
@@ -189,7 +217,7 @@ def test_editor_panel_writing_notes_card_emits_actions(qtbot):
 
     buttons = panel._writing_notes_rows.findChildren(QPushButton)  # noqa: SLF001
     edit_button = next(button for button in buttons if button.text() == TR("editor.writing_notes.edit"))
-    done_button = next(button for button in buttons if button.text() == TR("editor.writing_notes.done"))
+    done_button = next(button for button in buttons if button.objectName() == "WritingNoteDoneToggle")
     delete_button = next(
         button for button in buttons if button.text() == TR("editor.writing_notes.delete")
     )
@@ -269,7 +297,7 @@ def test_editor_panel_completed_writing_notes_can_be_restored(qtbot):
     restore_button = next(
         button
         for button in panel._writing_notes_rows.findChildren(QPushButton)  # noqa: SLF001
-        if button.text() == TR("editor.writing_notes.restore")
+        if button.objectName() == "WritingNoteDoneToggle" and button.text() == "↺"
     )
     with qtbot.waitSignal(panel.writing_note_done_requested) as restore_signal:
         restore_button.click()
@@ -326,7 +354,7 @@ def test_editor_panel_newly_completed_note_stays_visible_in_completed_section(qt
         lambda: any(
             button.isVisible()
             for button in panel._writing_notes_rows.findChildren(QPushButton)  # noqa: SLF001
-            if button.text() == TR("editor.writing_notes.restore")
+            if button.objectName() == "WritingNoteDoneToggle" and button.text() == "↺"
         )
     )
 
@@ -345,11 +373,15 @@ def test_editor_panel_writing_notes_collapse_is_remembered_per_fragment(qtbot, c
     panel = window._editor_panel  # noqa: SLF001
 
     window._load_entry(first.id)  # noqa: SLF001
+    assert panel._writing_notes_rows_scroll.isHidden() is True  # noqa: SLF001
+    panel._writing_notes_toggle_btn.click()  # noqa: SLF001
     assert panel._writing_notes_rows_scroll.isHidden() is False  # noqa: SLF001
     panel._writing_notes_toggle_btn.click()  # noqa: SLF001
     assert panel._writing_notes_collapsed is True  # noqa: SLF001
 
     window._load_entry(second.id)  # noqa: SLF001
+    assert panel._writing_notes_collapsed is True  # noqa: SLF001
+    panel._writing_notes_toggle_btn.click()  # noqa: SLF001
     assert panel._writing_notes_collapsed is False  # noqa: SLF001
 
     window._load_entry(first.id)  # noqa: SLF001
@@ -379,7 +411,7 @@ def test_editor_panel_many_writing_notes_are_scroll_capped(qtbot):
     )
 
     assert panel._writing_notes_rows_layout.count() == 8  # noqa: SLF001
-    assert panel._writing_notes_rows_scroll.maximumHeight() <= 260  # noqa: SLF001
+    assert 320 <= panel._writing_notes_rows_scroll.maximumHeight() <= 360  # noqa: SLF001
     assert panel._writing_notes_rows_scroll.widgetResizable() is True  # noqa: SLF001
 
 

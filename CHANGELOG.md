@@ -3,6 +3,21 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.26 — Continuation notes density redesign
+
+- Changed continuation notes to load collapsed by default and to preserve the
+  user's per-fragment collapsed/expanded state during switching.
+- Prevented normal fragment loading from being mistaken for a newly added note,
+  so existing notes no longer auto-expand when returning to a fragment.
+- Reworked note rows into a compact checklist-style layout with a small
+  done/restore toggle, lighter inline actions, and text-first scanning.
+- Styled completed notes like a TODO item: muted, struck through, recoverable,
+  and visible only when the completed section is shown.
+- Increased the notes scroll area only when needed so several notes are visible
+  at once without making the body editor feel squeezed or clipping long notes.
+- Added a writing setting for whether continuation notes should load collapsed
+  by default.
+
 ## 0.2.0-alpha.25 — Notes layout and checkpoint access
 
 - Remembered each fragment's continuation-note collapsed state during fragment
