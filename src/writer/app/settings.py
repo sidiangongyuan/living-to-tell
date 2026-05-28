@@ -38,8 +38,17 @@ DEFAULT_LANGUAGE = "en"
 KEY_SPLITTER_SIZES = "ui.splitter_sizes"
 KEY_SIDEBAR_COLLAPSED = "ui.sidebar_collapsed"
 KEY_REFERENCE_LIBRARY_DEFAULT_GROUP_MODE = "reference_library.default_group_mode"
+KEY_REFERENCE_LIBRARY_STATS_COLLAPSED = "reference_library.stats_collapsed"
+KEY_REFERENCE_LIBRARY_SHELF_COLLAPSED = "reference_library.shelf_collapsed"
+KEY_REFERENCE_LIBRARY_EDITOR_DRAWER_VISIBLE = (
+    "reference_library.editor_drawer_visible"
+)
+KEY_REFERENCE_LIBRARY_SPLITTER_SIZES = "reference_library.splitter_sizes"
 KEY_SPECIMEN_PICKER_DEFAULT_GROUP_MODE = "specimen_picker.default_group_mode"
 DEFAULT_REFERENCE_LIBRARY_GROUP_MODE = "source"
+DEFAULT_REFERENCE_LIBRARY_STATS_COLLAPSED = True
+DEFAULT_REFERENCE_LIBRARY_SHELF_COLLAPSED = False
+DEFAULT_REFERENCE_LIBRARY_EDITOR_DRAWER_VISIBLE = False
 DEFAULT_SPECIMEN_PICKER_GROUP_MODE = "source_usage"
 
 # M9A — visual shell upgrade
@@ -429,6 +438,68 @@ class Settings:
 
     def save_reference_library_default_group_mode(self, mode: str) -> None:
         self._repo.set(KEY_REFERENCE_LIBRARY_DEFAULT_GROUP_MODE, mode)
+
+    def reference_library_stats_collapsed(self) -> bool:
+        return _coerce_bool(
+            self._repo.get(KEY_REFERENCE_LIBRARY_STATS_COLLAPSED),
+            default=DEFAULT_REFERENCE_LIBRARY_STATS_COLLAPSED,
+        )
+
+    def save_reference_library_stats_collapsed(self, collapsed: bool) -> None:
+        self._repo.set(
+            KEY_REFERENCE_LIBRARY_STATS_COLLAPSED,
+            "true" if collapsed else "false",
+        )
+
+    def reference_library_shelf_collapsed(self) -> bool:
+        return _coerce_bool(
+            self._repo.get(KEY_REFERENCE_LIBRARY_SHELF_COLLAPSED),
+            default=DEFAULT_REFERENCE_LIBRARY_SHELF_COLLAPSED,
+        )
+
+    def save_reference_library_shelf_collapsed(self, collapsed: bool) -> None:
+        self._repo.set(
+            KEY_REFERENCE_LIBRARY_SHELF_COLLAPSED,
+            "true" if collapsed else "false",
+        )
+
+    def reference_library_editor_drawer_visible(self) -> bool:
+        return _coerce_bool(
+            self._repo.get(KEY_REFERENCE_LIBRARY_EDITOR_DRAWER_VISIBLE),
+            default=DEFAULT_REFERENCE_LIBRARY_EDITOR_DRAWER_VISIBLE,
+        )
+
+    def save_reference_library_editor_drawer_visible(self, visible: bool) -> None:
+        self._repo.set(
+            KEY_REFERENCE_LIBRARY_EDITOR_DRAWER_VISIBLE,
+            "true" if visible else "false",
+        )
+
+    def reference_library_splitter_sizes(self) -> list[int]:
+        raw = self._repo.get(KEY_REFERENCE_LIBRARY_SPLITTER_SIZES)
+        if not raw:
+            return []
+        try:
+            values = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return []
+        if not isinstance(values, list):
+            return []
+        sizes: list[int] = []
+        for value in values[:3]:
+            try:
+                size = int(value)
+            except (TypeError, ValueError):
+                return []
+            if size < 0:
+                return []
+            sizes.append(size)
+        return sizes if len(sizes) == 3 else []
+
+    def save_reference_library_splitter_sizes(self, sizes: list[int]) -> None:
+        clean = [max(0, int(size)) for size in sizes[:3]]
+        if len(clean) == 3:
+            self._repo.set(KEY_REFERENCE_LIBRARY_SPLITTER_SIZES, json.dumps(clean))
 
     def specimen_picker_default_group_mode(self) -> str:
         return (

@@ -81,7 +81,10 @@ _STAT_TABS: tuple[tuple[str, str], ...] = (
 
 _ITEM_AUX_TEXT_ROLE = Qt.ItemDataRole.UserRole + 8
 _SHELF_ITEM_MIN_HEIGHT = 96
-_REFERENCE_CARD_MIN_HEIGHT = 248
+_REFERENCE_CARD_MIN_HEIGHT = 220
+_DEFAULT_LIBRARY_SPLITTER_SIZES = [270, 820, 0]
+_OPEN_EDITOR_SPLITTER_SIZES = [250, 620, 390]
+_COLLAPSED_SHELF_SPLITTER_SIZES = [0, 900, 0]
 
 
 @dataclass(frozen=True)
@@ -229,6 +232,7 @@ class _ReferenceShelfCard(_ClickableCard):
 
 class _ReferenceListCard(_ClickableCard):
     delete_requested = Signal(str)
+    edit_requested = Signal(str)
 
     def __init__(
         self,
@@ -241,8 +245,13 @@ class _ReferenceListCard(_ClickableCard):
         self.setObjectName("ReferenceListCard")
         self.setProperty("current", False)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(8)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
+
+        quote = QLabel(compact_text(passage.content, limit=520))
+        quote.setObjectName("ReferenceQuoteText")
+        quote.setWordWrap(True)
+        layout.addWidget(quote)
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
@@ -252,6 +261,19 @@ class _ReferenceListCard(_ClickableCard):
         source.setObjectName("ReferenceCardSource")
         source.setWordWrap(True)
         header.addWidget(source, 1)
+
+        self._edit_button = QPushButton(TR("reflib.edit_btn"))
+        self._edit_button.setObjectName("GhostButton")
+        self._edit_button.setAutoDefault(False)
+        self._edit_button.setToolTip(TR("reflib.edit_btn"))
+        self._edit_button.clicked.connect(
+            lambda _checked=False, passage_id=passage.id: self.edit_requested.emit(passage_id)
+        )
+        header.addWidget(
+            self._edit_button,
+            0,
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
+        )
 
         self._delete_button = QPushButton(TR("rlp.delete_btn"))
         self._delete_button.setObjectName("DangerButton")
@@ -267,15 +289,12 @@ class _ReferenceListCard(_ClickableCard):
         )
         layout.addLayout(header)
 
-        author = QLabel(_blank(passage.source_author))
+        author_text = _blank(passage.source_author)
+        author = QLabel(author_text)
         author.setObjectName("ReferenceCardAuthor")
         author.setWordWrap(True)
+        author.setVisible(bool(author_text))
         layout.addWidget(author)
-
-        quote = QLabel(compact_text(passage.content, limit=240))
-        quote.setObjectName("ReferenceQuoteText")
-        quote.setWordWrap(True)
-        layout.addWidget(quote)
 
         note = passage.personal_note.strip()
         note_label = QLabel(note if len(note) <= 120 else compact_text(note, limit=120))
@@ -357,6 +376,9 @@ class ReferenceLibraryPanel(QWidget):
         self._duplicate_ids_cache: set[str] = set()
         self._stat_labels: dict[str, QLabel] = {}
         self._stat_body_layouts = {}
+        self._stats_collapsed = self._initial_stats_collapsed()
+        self._shelf_collapsed = self._initial_shelf_collapsed()
+        self._editor_drawer_visible = self._initial_editor_drawer_visible()
 
         self._search = QLineEdit()
         self._search.setPlaceholderText(TR("rlp.search_placeholder"))
@@ -389,12 +411,20 @@ class ReferenceLibraryPanel(QWidget):
         self._group_list = QListWidget()
         self._group_list.setObjectName("ReferenceShelfList")
         self._group_list.setSpacing(6)
+        self._toggle_shelf_btn = QPushButton(TR("reflib.hide_shelf"))
+        self._toggle_shelf_btn.setObjectName("GhostButton")
+        self._toggle_shelf_btn.clicked.connect(self._toggle_shelf_collapsed)
 
         left = QWidget()
+        self._shelf_panel = left
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(8)
-        left_layout.addWidget(self._group_label)
+        shelf_header = QHBoxLayout()
+        shelf_header.setContentsMargins(0, 0, 0, 0)
+        shelf_header.addWidget(self._group_label, 1)
+        shelf_header.addWidget(self._toggle_shelf_btn)
+        left_layout.addLayout(shelf_header)
         left_layout.addWidget(self._group_list, 1)
 
         self._book_header = QFrame()
@@ -436,6 +466,18 @@ class ReferenceLibraryPanel(QWidget):
         center_layout = QVBoxLayout(center)
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.setSpacing(10)
+        center_toolbar = QHBoxLayout()
+        center_toolbar.setContentsMargins(0, 0, 0, 0)
+        self._show_shelf_btn = QPushButton(TR("reflib.show_shelf"))
+        self._show_shelf_btn.setObjectName("GhostButton")
+        self._show_shelf_btn.clicked.connect(self._toggle_shelf_collapsed)
+        self._center_new_btn = QPushButton(TR("rlp.new_btn"))
+        self._center_new_btn.setObjectName("PrimaryButton")
+        self._center_new_btn.clicked.connect(self._on_new)
+        center_toolbar.addWidget(self._show_shelf_btn)
+        center_toolbar.addStretch(1)
+        center_toolbar.addWidget(self._center_new_btn)
+        center_layout.addLayout(center_toolbar)
         center_layout.addWidget(self._book_header)
         center_layout.addWidget(self._list, 1)
 
@@ -464,11 +506,16 @@ class ReferenceLibraryPanel(QWidget):
         self._new_btn.setObjectName("GhostButton")
         self._delete_btn = QPushButton(TR("rlp.delete_btn"))
         self._delete_btn.setObjectName("DangerButton")
+        self._close_editor_btn = QPushButton(TR("reflib.close_editor"))
+        self._close_editor_btn.setObjectName("GhostButton")
+        self._close_editor_btn.clicked.connect(self._close_editor_drawer)
 
         editor_form = QWidget()
         editor_form_layout = QVBoxLayout(editor_form)
         editor_form_layout.setContentsMargins(0, 0, 0, 0)
         editor_form_layout.setSpacing(8)
+        editor_form_layout.addWidget(QLabel(TR("rlp.content_label")))
+        editor_form_layout.addWidget(self._content_edit, 2)
         editor_form_layout.addWidget(QLabel(TR("rlp.source_title_label")))
         editor_form_layout.addWidget(self._title_edit)
         editor_form_layout.addWidget(QLabel(TR("rlp.author_label")))
@@ -481,8 +528,6 @@ class ReferenceLibraryPanel(QWidget):
         editor_form_layout.addWidget(self._tags_edit)
         editor_form_layout.addWidget(QLabel(TR("reflib.personal_note_label")))
         editor_form_layout.addWidget(self._personal_note_edit)
-        editor_form_layout.addWidget(QLabel(TR("rlp.content_label")))
-        editor_form_layout.addWidget(self._content_edit, 1)
 
         editor_scroll = QScrollArea()
         editor_scroll.setWidgetResizable(True)
@@ -490,26 +535,30 @@ class ReferenceLibraryPanel(QWidget):
         editor_scroll.setWidget(editor_form)
 
         editor = QWidget()
+        self._editor_drawer = editor
+        editor.setObjectName("ReferenceEditorDrawer")
         editor.setMinimumWidth(360)
         editor_layout = QVBoxLayout(editor)
         editor_layout.setContentsMargins(0, 0, 0, 0)
         editor_layout.setSpacing(10)
         editor_layout.addWidget(editor_scroll, 1)
         button_row = QHBoxLayout()
+        button_row.addWidget(self._close_editor_btn)
         button_row.addWidget(self._new_btn)
         button_row.addWidget(self._delete_btn)
         button_row.addStretch(1)
         button_row.addWidget(self._save_btn)
         editor_layout.addLayout(button_row)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(left)
-        splitter.addWidget(center)
-        splitter.addWidget(editor)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setStretchFactor(2, 1)
-        splitter.setSizes([260, 520, 430])
+        self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter.addWidget(left)
+        self._splitter.addWidget(center)
+        self._splitter.addWidget(editor)
+        self._splitter.setStretchFactor(0, 0)
+        self._splitter.setStretchFactor(1, 1)
+        self._splitter.setStretchFactor(2, 0)
+        self._splitter.setChildrenCollapsible(True)
+        self._splitter.splitterMoved.connect(self._on_splitter_moved)
 
         controls_row = QHBoxLayout()
         controls_row.setSpacing(8)
@@ -522,9 +571,9 @@ class ReferenceLibraryPanel(QWidget):
         controls_row.addWidget(self._group_mode_combo)
         controls_row.addWidget(self._save_default_view_btn)
 
-        stats_box = QFrame()
-        stats_box.setObjectName("RefStatsBox")
-        stats_layout = QVBoxLayout(stats_box)
+        self._stats_box = QFrame()
+        self._stats_box.setObjectName("RefStatsBox")
+        stats_layout = QVBoxLayout(self._stats_box)
         stats_layout.setContentsMargins(12, 12, 12, 12)
         stats_layout.setSpacing(10)
 
@@ -532,10 +581,20 @@ class ReferenceLibraryPanel(QWidget):
         stats_tabs_row.setSpacing(8)
         self._stats_scope_label = QLabel("")
         self._stats_scope_label.setObjectName("RefStatScope")
+        self._stats_summary_label = QLabel("")
+        self._stats_summary_label.setObjectName("RefStatScope")
+        self._stats_summary_label.setWordWrap(True)
+        self._stats_toggle_btn = QPushButton("")
+        self._stats_toggle_btn.setObjectName("RefStatTab")
+        self._stats_toggle_btn.clicked.connect(self._toggle_stats_collapsed)
         self._stats_tab_group = QButtonGroup(self)
         self._stats_tab_group.setExclusive(True)
         self._stats_stack = QStackedWidget()
+        self._stats_stack.setMaximumHeight(240)
         self._stats_pages: dict[str, QWidget] = {}
+        self._stats_tab_buttons: list[QPushButton] = []
+        stats_tabs_row.addWidget(self._stats_toggle_btn)
+        stats_tabs_row.addWidget(self._stats_summary_label, 1)
         for index, (key, label_key) in enumerate(_STAT_TABS):
             button = QPushButton(TR(label_key))
             button.setObjectName("RefStatTab")
@@ -549,6 +608,7 @@ class ReferenceLibraryPanel(QWidget):
             )
             self._stats_tab_group.addButton(button)
             stats_tabs_row.addWidget(button)
+            self._stats_tab_buttons.append(button)
             page = self._create_stat_page(key)
             self._stats_stack.addWidget(page)
             self._stats_pages[key] = page
@@ -561,9 +621,9 @@ class ReferenceLibraryPanel(QWidget):
 
         root = QVBoxLayout(self)
         root.setSpacing(10)
-        root.addWidget(stats_box)
+        root.addWidget(self._stats_box)
         root.addLayout(controls_row)
-        root.addWidget(splitter, 1)
+        root.addWidget(self._splitter, 1)
 
         self._search.textChanged.connect(self._on_search_changed)
         self._kind_filter_combo.currentIndexChanged.connect(self._on_filter_changed)
@@ -578,6 +638,7 @@ class ReferenceLibraryPanel(QWidget):
         if initial_usage_kind_filter is not None:
             self.set_usage_kind_filter(initial_usage_kind_filter)
 
+        self._restore_layout_state()
         self.refresh()
 
     def _create_stat_page(self, key: str) -> QWidget:
@@ -611,9 +672,111 @@ class ReferenceLibraryPanel(QWidget):
                 pass
         return DEFAULT_REFERENCE_LIBRARY_GROUP_MODE
 
+    def _initial_stats_collapsed(self) -> bool:
+        if self._settings is None:
+            return True
+        return self._settings.reference_library_stats_collapsed()
+
+    def _initial_shelf_collapsed(self) -> bool:
+        if self._settings is None:
+            return False
+        return self._settings.reference_library_shelf_collapsed()
+
+    def _initial_editor_drawer_visible(self) -> bool:
+        if self._settings is None:
+            return False
+        return self._settings.reference_library_editor_drawer_visible()
+
     def _set_group_mode(self, mode: str) -> None:
         idx = self._group_mode_combo.findData(mode)
         self._group_mode_combo.setCurrentIndex(max(0, idx))
+
+    def _restore_layout_state(self) -> None:
+        sizes = (
+            self._settings.reference_library_splitter_sizes()
+            if self._settings is not None
+            else []
+        )
+        self._apply_layout_state(
+            sizes=sizes if sizes else None,
+            persist=False,
+        )
+
+    def _apply_layout_state(
+        self,
+        *,
+        sizes: Optional[list[int]] = None,
+        persist: bool = True,
+    ) -> None:
+        if self._stats_collapsed:
+            self._stats_box.setMaximumHeight(58)
+        else:
+            self._stats_box.setMaximumHeight(320)
+        self._stats_stack.setVisible(not self._stats_collapsed)
+        self._stats_scope_label.setVisible(not self._stats_collapsed)
+        for button in self._stats_tab_buttons:
+            button.setVisible(not self._stats_collapsed)
+        self._stats_toggle_btn.setText(
+            TR("reflib.hide_stats")
+            if not self._stats_collapsed
+            else TR("reflib.show_stats")
+        )
+        self._shelf_panel.setVisible(not self._shelf_collapsed)
+        self._show_shelf_btn.setVisible(self._shelf_collapsed)
+        self._toggle_shelf_btn.setText(
+            TR("reflib.hide_shelf")
+            if not self._shelf_collapsed
+            else TR("reflib.show_shelf")
+        )
+        self._editor_drawer.setVisible(self._editor_drawer_visible)
+        if sizes is not None:
+            self._splitter.setSizes(sizes)
+        elif self._editor_drawer_visible:
+            self._splitter.setSizes(_OPEN_EDITOR_SPLITTER_SIZES)
+        elif self._shelf_collapsed:
+            self._splitter.setSizes(_COLLAPSED_SHELF_SPLITTER_SIZES)
+        else:
+            self._splitter.setSizes(_DEFAULT_LIBRARY_SPLITTER_SIZES)
+        if persist:
+            self._persist_layout_state()
+
+    def _persist_layout_state(self) -> None:
+        if self._settings is None:
+            return
+        self._settings.save_reference_library_stats_collapsed(self._stats_collapsed)
+        self._settings.save_reference_library_shelf_collapsed(self._shelf_collapsed)
+        self._settings.save_reference_library_editor_drawer_visible(
+            self._editor_drawer_visible
+        )
+        self._settings.save_reference_library_splitter_sizes(self._splitter.sizes())
+
+    def _toggle_stats_collapsed(self) -> None:
+        self._stats_collapsed = not self._stats_collapsed
+        self._apply_layout_state()
+
+    def _toggle_shelf_collapsed(self) -> None:
+        self._shelf_collapsed = not self._shelf_collapsed
+        self._apply_layout_state()
+
+    def _open_editor_drawer(self) -> None:
+        self._editor_drawer_visible = True
+        self._apply_layout_state()
+
+    def _close_editor_drawer(self) -> None:
+        self._editor_drawer_visible = False
+        self._apply_layout_state()
+
+    def _on_splitter_moved(self, _pos: int, _index: int) -> None:
+        if self._settings is None:
+            return
+        sizes = self._splitter.sizes()
+        self._shelf_collapsed = len(sizes) >= 1 and sizes[0] <= 8
+        self._editor_drawer_visible = len(sizes) >= 3 and sizes[2] > 8
+        self._settings.save_reference_library_shelf_collapsed(self._shelf_collapsed)
+        self._settings.save_reference_library_editor_drawer_visible(
+            self._editor_drawer_visible
+        )
+        self._settings.save_reference_library_splitter_sizes(sizes)
 
     def _current_kind_filter(self) -> Optional[str]:
         return self._kind_filter_combo.currentData()
@@ -853,13 +1016,14 @@ class ReferenceLibraryPanel(QWidget):
                     parent=self._list,
                 )
                 card.clicked.connect(lambda selected_item=item: self._select_item(selected_item))
+                card.edit_requested.connect(self._open_passage_for_edit)
                 card.delete_requested.connect(self._request_delete_passage)
                 self._list.setItemWidget(item, card)
                 _apply_conservative_size_hint(
                     item,
                     card,
                     min_height=_REFERENCE_CARD_MIN_HEIGHT,
-                    width_hint=max(self._list.viewport().width(), 440),
+                    width_hint=max(self._list.viewport().width(), 620),
                 )
                 if preferred_id and passage.id == preferred_id:
                     target_row = self._list.row(item)
@@ -1031,6 +1195,14 @@ class ReferenceLibraryPanel(QWidget):
         scope_items = self._visible_passages
         stats = self._build_scope_stats(scope_items)
         self._stats_scope_label.setText(self._stats_scope_text(stats))
+        self._stats_summary_label.setText(
+            TR("reflib.stats_collapsed_summary").format(
+                count=stats.total,
+                sources=stats.source_count,
+                duplicates=stats.duplicate_risk_count,
+                tags=len(stats.top_tags),
+            )
+        )
 
         self._stat_labels["total"].setText(
             TR("reflib.stats_total_value").format(
@@ -1390,6 +1562,12 @@ class ReferenceLibraryPanel(QWidget):
     def _select_item(self, item: QListWidgetItem) -> None:
         self._list.setCurrentItem(item)
 
+    def _open_passage_for_edit(self, passage_id: str) -> None:
+        item = self._select_passage_by_id(passage_id)
+        if item is not None:
+            self._open_editor_drawer()
+            self._content_edit.setFocus()
+
     def _select_passage_by_id(self, passage_id: str) -> Optional[QListWidgetItem]:
         for row in range(self._list.count()):
             item = self._list.item(row)
@@ -1425,6 +1603,7 @@ class ReferenceLibraryPanel(QWidget):
         return title, group.subtitle
 
     def _on_new(self) -> None:
+        self._open_editor_drawer()
         self._current_id = None
         default_title, default_author = self._prefill_from_active_group()
         self._title_edit.setText(default_title)
@@ -1437,7 +1616,7 @@ class ReferenceLibraryPanel(QWidget):
         uidx = self._usage_kind_combo.findData(USAGE_KIND_STYLE)
         self._usage_kind_combo.setCurrentIndex(max(0, uidx))
         self._delete_btn.setEnabled(False)
-        self._title_edit.setFocus()
+        self._content_edit.setFocus()
 
     def _on_save(self) -> None:
         title = self._title_edit.text().strip()
@@ -1483,6 +1662,7 @@ class ReferenceLibraryPanel(QWidget):
             self.refresh()
             return
         self.refresh(select_id=passage.id)
+        self._open_editor_drawer()
 
     def _on_delete(self) -> None:
         self._request_delete_passage(self._current_id)

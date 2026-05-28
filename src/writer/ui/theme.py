@@ -985,6 +985,12 @@ QFrame#RefStatsBox {{
     border: 1px solid {t.border};
     border-radius: {t.radius_lg}px;
 }}
+QWidget#ReferenceEditorDrawer {{
+    background: {t.bg_card};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_lg}px;
+    padding: 4px;
+}}
 QPushButton#RefStatTab {{
     background: transparent;
     color: {t.text_secondary};
@@ -1126,7 +1132,7 @@ QWidget#ReferenceListCard,
 QWidget#SpecimenListCard {{
     background: {t.bg_card};
     border: 1px solid {t.border};
-    border-radius: {t.radius_md}px;
+    border-radius: {t.radius_lg}px;
 }}
 QWidget#ReferenceListCard:hover,
 QWidget#SpecimenListCard:hover {{
@@ -1135,6 +1141,7 @@ QWidget#SpecimenListCard:hover {{
 QWidget#ReferenceListCard[current="true"],
 QWidget#SpecimenListCard[current="true"] {{
     border-color: {t.accent};
+    background: {t.bg_preview};
 }}
 QWidget#SpecimenListCard[checked="true"] {{
     background: {t.selected_bg};
@@ -1147,10 +1154,10 @@ QLabel#SpecimenPreviewTitle {{
     font-weight: 600;
 }}
 QLabel#ReferenceCardSource {{
-    color: {t.text_primary};
+    color: {t.text_secondary};
     font-family: {t.font_serif};
-    font-size: {t.fs_panel_title}px;
-    font-weight: 700;
+    font-size: {t.fs_meta + 1}px;
+    font-weight: 600;
 }}
 QLabel#ReferenceCardAuthor,
 QLabel#SpecimenListAuthor {{
@@ -1167,6 +1174,7 @@ QLabel#SpecimenListExcerpt {{
     color: {t.text_primary};
     font-family: {t.font_serif};
     font-size: {t.fs_editor_body}px;
+    line-height: 165%;
 }}
 QLabel#ReferenceCardMeta,
 QLabel#SpecimenListMeta,
@@ -1178,6 +1186,7 @@ QLabel#SpecimenPreviewNote {{
 QLabel#ReferenceCardNote {{
     color: {t.text_secondary};
     font-size: {t.fs_meta}px;
+    line-height: 145%;
 }}
 QLabel#SpecimenListTitle {{
     color: {t.text_primary};

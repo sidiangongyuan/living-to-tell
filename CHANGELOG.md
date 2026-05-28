@@ -3,6 +3,20 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.27 — Reading-first reference library
+
+- Reworked the reference library into a reading-first layout with a visible
+  shelf, a large passage card stream, and an editor drawer that stays hidden
+  until creating or editing a passage.
+- Collapsed library statistics into a compact summary by default, with the
+  full stats views still available on demand.
+- Made passage cards body-first, so selecting a book shows the saved sentences
+  immediately instead of repeating the same source title in the main list.
+- Moved passage content to the top of the editor drawer and pushed source,
+  author, type, usage, tags, and personal notes below it.
+- Added persisted UI state for the stats panel, shelf visibility, editor drawer,
+  and reference-library splitter sizes.
+
 ## 0.2.0-alpha.26 — Continuation notes density redesign
 
 - Changed continuation notes to load collapsed by default and to preserve the

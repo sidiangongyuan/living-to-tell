@@ -46,7 +46,7 @@ Writer is for writers who collect scenes, sentences, moods, notes, research, and
 - [x] Gemini API key and Gemini CLI / OAuth support
 - [x] AI workspace with differentiated writing tools
 - [x] Scoped AI chat with persisted local history
-- [x] Literary reference library with book shelves, source pages, duplicate hints, tag-based browsing, and switchable stats
+- [x] Reading-first literary reference library with collapsible stats, book shelves, source pages, duplicate hints, and tag browsing
 - [x] Editor typography, focus mode, smoother motion, and typewriter comfort
 - [x] Fragment-bound continuation notes for next-session ideas and AI continuation context
 - [x] Clear continuation-note workflow: edit notes, mark done without losing them, and send active notes to AI
@@ -68,8 +68,8 @@ Public screenshots, short walkthrough videos, and workflow demos are on the road
 
 The recommended public distribution format is a **Windows portable zip**.
 
-- Latest alpha: [Writer-0.2.0-alpha.26-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.26/Writer-0.2.0-alpha.26-portable.zip)
-- Release page: [v0.2.0-alpha.26](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.26)
+- Latest alpha: [Writer-0.2.0-alpha.27-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.27/Writer-0.2.0-alpha.27-portable.zip)
+- Release page: [v0.2.0-alpha.27](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.27)
 - If you are testing the latest branch, use the **Build Windows Portable** GitHub Action artifact.
 - To build locally, run the packaging command in [Build from source](#build-from-source).
 

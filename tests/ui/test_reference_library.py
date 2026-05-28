@@ -4,7 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from writer.app.container import build_container
 
 
@@ -20,10 +19,15 @@ def container(isolated_data_dir: Path):
 def test_library_panel_create_edit_delete(qtbot, container):
     from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
 
-    panel = ReferenceLibraryPanel(container.reference_repository)
+    panel = ReferenceLibraryPanel(
+        container.reference_repository,
+        settings=container.settings,
+    )
     qtbot.addWidget(panel)
 
+    assert panel._editor_drawer.isHidden() is True  # noqa: SLF001
     panel._on_new()  # noqa: SLF001
+    assert panel._editor_drawer.isHidden() is False  # noqa: SLF001
     panel._title_edit.setText("Moby Dick")  # noqa: SLF001
     panel._author_edit.setText("Melville")  # noqa: SLF001
     panel._content_edit.setPlainText("Call me Ishmael.")  # noqa: SLF001
@@ -101,9 +105,14 @@ def test_library_panel_shows_stats_cards(qtbot, container):
     repo.create(source_title="A", content="same text", tags="moon", usage_kind="imagery")
     repo.create(source_title="B", content="same text", tags="moon", usage_kind="imagery")
 
-    panel = ReferenceLibraryPanel(repo)
+    panel = ReferenceLibraryPanel(repo, settings=container.settings)
     qtbot.addWidget(panel)
 
+    assert panel._stats_collapsed is True  # noqa: SLF001
+    assert panel._stats_stack.isHidden() is True  # noqa: SLF001
+    assert panel._stats_toggle_btn.text() in {"Show stats", "展开统计"}  # noqa: SLF001
+
+    panel._toggle_stats_collapsed()  # noqa: SLF001
     assert "2" in panel._stat_labels["total"].text()  # noqa: SLF001
     assert "moon" in panel._stat_labels["tags"].text()  # noqa: SLF001
     assert "2" in panel._stat_labels["duplicates"].text()  # noqa: SLF001
@@ -170,9 +179,11 @@ def test_library_panel_source_mode_acts_like_bookshelf(qtbot, container):
     )
     repo.create(source_title="Book B", source_author="Author B", content="gamma")
 
-    panel = ReferenceLibraryPanel(repo)
+    panel = ReferenceLibraryPanel(repo, settings=container.settings)
     qtbot.addWidget(panel)
 
+    assert panel._shelf_panel.isHidden() is False  # noqa: SLF001
+    assert panel._show_shelf_btn.isHidden() is True  # noqa: SLF001
     assert panel._group_list.count() == 3  # noqa: SLF001
     panel._select_group_key("book a")  # noqa: SLF001
 
@@ -231,7 +242,10 @@ def test_library_grouping_helper_groups_unlabeled_source_and_tag():
 def test_library_panel_save_refreshes_and_selects_new_passage(qtbot, container):
     from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
 
-    panel = ReferenceLibraryPanel(container.reference_repository)
+    panel = ReferenceLibraryPanel(
+        container.reference_repository,
+        settings=container.settings,
+    )
     qtbot.addWidget(panel)
 
     idx = panel._group_mode_combo.findData("usage")  # noqa: SLF001
@@ -246,6 +260,7 @@ def test_library_panel_save_refreshes_and_selects_new_passage(qtbot, container):
     assert current is not None
     assert current.data(0x0100) is not None
     assert panel._title_edit.text() == "New Book"  # noqa: SLF001
+    assert panel._editor_drawer.isHidden() is False  # noqa: SLF001
 
 
 def test_library_panel_uses_widget_cards_without_native_item_text(qtbot, container):
@@ -265,6 +280,158 @@ def test_library_panel_uses_widget_cards_without_native_item_text(qtbot, contain
     assert card is not None
     assert card.objectName() == "ReferenceListCard"
     assert card.property("current") is True
+    assert card.layout().itemAt(0).widget().objectName() == "ReferenceQuoteText"
+
+
+def test_library_panel_reading_first_defaults(qtbot, container):
+    from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+    panel = ReferenceLibraryPanel(
+        container.reference_repository,
+        settings=container.settings,
+    )
+    qtbot.addWidget(panel)
+
+    assert panel._stats_collapsed is True  # noqa: SLF001
+    assert panel._stats_stack.isHidden() is True  # noqa: SLF001
+    assert all(button.isHidden() for button in panel._stats_tab_buttons)  # noqa: SLF001
+    assert panel._stats_box.maximumHeight() == 58  # noqa: SLF001
+    assert panel._shelf_collapsed is False  # noqa: SLF001
+    assert panel._shelf_panel.isHidden() is False  # noqa: SLF001
+    assert panel._show_shelf_btn.isHidden() is True  # noqa: SLF001
+    assert panel._editor_drawer_visible is False  # noqa: SLF001
+    assert panel._editor_drawer.isHidden() is True  # noqa: SLF001
+    assert panel._splitter.sizes()[2] == 0  # noqa: SLF001
+
+
+def test_library_panel_card_edit_opens_editor_drawer(qtbot, container):
+    from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+    passage = container.reference_repository.create(
+        source_title="Edit Book",
+        source_author="Author",
+        content="A card body worth editing.",
+    )
+
+    panel = ReferenceLibraryPanel(
+        container.reference_repository,
+        settings=container.settings,
+    )
+    qtbot.addWidget(panel)
+
+    card = panel._list.itemWidget(panel._list.item(0))  # noqa: SLF001
+    assert panel._editor_drawer.isHidden() is True  # noqa: SLF001
+
+    card._edit_button.click()  # noqa: SLF001
+
+    assert panel._editor_drawer.isHidden() is False  # noqa: SLF001
+    assert panel._editor_drawer_visible is True  # noqa: SLF001
+    assert panel._current_id == passage.id  # noqa: SLF001
+    assert panel._content_edit.toPlainText() == "A card body worth editing."  # noqa: SLF001
+
+
+def test_library_panel_shelf_toggle_persists_and_show_button_restores(qtbot, container):
+    from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+    repo = container.reference_repository
+    repo.create(source_title="Book A", content="alpha")
+    repo.create(source_title="Book B", content="beta")
+
+    first = ReferenceLibraryPanel(repo, settings=container.settings)
+    qtbot.addWidget(first)
+
+    assert first._shelf_panel.isHidden() is False  # noqa: SLF001
+    first._toggle_shelf_collapsed()  # noqa: SLF001
+
+    assert first._shelf_collapsed is True  # noqa: SLF001
+    assert first._shelf_panel.isHidden() is True  # noqa: SLF001
+    assert first._show_shelf_btn.isHidden() is False  # noqa: SLF001
+    assert container.settings.reference_library_shelf_collapsed() is True
+
+    second = ReferenceLibraryPanel(repo, settings=container.settings)
+    qtbot.addWidget(second)
+    assert second._shelf_panel.isHidden() is True  # noqa: SLF001
+    assert second._show_shelf_btn.isHidden() is False  # noqa: SLF001
+
+    second._show_shelf_btn.click()  # noqa: SLF001
+    assert second._shelf_panel.isHidden() is False  # noqa: SLF001
+    assert second._show_shelf_btn.isHidden() is True  # noqa: SLF001
+    assert container.settings.reference_library_shelf_collapsed() is False
+
+
+def test_library_panel_layout_state_persists(qtbot, container):
+    from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+    repo = container.reference_repository
+    repo.create(source_title="Shelf Book", content="Visible body")
+
+    first = ReferenceLibraryPanel(repo, settings=container.settings)
+    qtbot.addWidget(first)
+
+    first._toggle_stats_collapsed()  # noqa: SLF001
+    first._on_new()  # noqa: SLF001
+    custom_sizes = [210, 640, 410]
+    first._splitter.setSizes(custom_sizes)  # noqa: SLF001
+    first._on_splitter_moved(0, 0)  # noqa: SLF001
+
+    persisted_sizes = container.settings.reference_library_splitter_sizes()
+    assert container.settings.reference_library_stats_collapsed() is False
+    assert container.settings.reference_library_editor_drawer_visible() is True
+    assert len(persisted_sizes) == 3
+    assert persisted_sizes[2] > 8
+
+    second = ReferenceLibraryPanel(repo, settings=container.settings)
+    qtbot.addWidget(second)
+
+    assert second._stats_collapsed is False  # noqa: SLF001
+    assert second._stats_stack.isHidden() is False  # noqa: SLF001
+    assert second._editor_drawer.isHidden() is False  # noqa: SLF001
+    assert second._editor_drawer_visible is True  # noqa: SLF001
+    assert second._splitter.sizes()[2] > 8  # noqa: SLF001
+
+
+def test_library_panel_stats_toggle_updates_persisted_state(qtbot, container):
+    from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+    panel = ReferenceLibraryPanel(
+        container.reference_repository,
+        settings=container.settings,
+    )
+    qtbot.addWidget(panel)
+
+    assert container.settings.reference_library_stats_collapsed() is True
+    panel._toggle_stats_collapsed()  # noqa: SLF001
+    assert panel._stats_stack.isHidden() is False  # noqa: SLF001
+    assert all(not button.isHidden() for button in panel._stats_tab_buttons)  # noqa: SLF001
+    assert panel._stats_toggle_btn.text() in {"Hide stats", "收起统计"}  # noqa: SLF001
+    assert container.settings.reference_library_stats_collapsed() is False
+
+
+def test_library_panel_card_body_precedes_source_header(qtbot, container):
+    from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+    container.reference_repository.create(
+        source_title="Body First",
+        source_author="Author",
+        content="This body should appear before the source header in the card.",
+        personal_note="Margin note",
+        tags="ocean",
+    )
+    panel = ReferenceLibraryPanel(
+        container.reference_repository,
+        settings=container.settings,
+    )
+    qtbot.addWidget(panel)
+
+    card = panel._list.itemWidget(panel._list.item(0))  # noqa: SLF001
+    layout = card.layout()
+
+    assert layout.itemAt(0).widget().objectName() == "ReferenceQuoteText"
+    assert layout.itemAt(1).layout() is not None
+    header_layout = layout.itemAt(1).layout()
+    assert header_layout.itemAt(0).widget().objectName() == "ReferenceCardSource"
+    assert header_layout.itemAt(1).widget() is card._edit_button  # noqa: SLF001
+    assert header_layout.itemAt(2).widget() is card._delete_button  # noqa: SLF001
 
 
 def test_library_panel_loads_selected_passage_content_and_new_starts_blank(qtbot, container):
@@ -277,7 +444,10 @@ def test_library_panel_loads_selected_passage_content_and_new_starts_blank(qtbot
         tags="心理描写",
     )
 
-    panel = ReferenceLibraryPanel(container.reference_repository)
+    panel = ReferenceLibraryPanel(
+        container.reference_repository,
+        settings=container.settings,
+    )
     qtbot.addWidget(panel)
 
     current = panel._list.currentItem()  # noqa: SLF001
@@ -287,6 +457,7 @@ def test_library_panel_loads_selected_passage_content_and_new_starts_blank(qtbot
 
     panel._on_new()  # noqa: SLF001
     assert panel._content_edit.toPlainText() == ""  # noqa: SLF001
+    assert panel._editor_drawer.isHidden() is False  # noqa: SLF001
     assert not hasattr(panel, "_category_chip_buttons")  # noqa: SLF001
 
 
