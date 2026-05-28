@@ -3,6 +3,24 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.23 — UI design and interaction polish
+
+- Added a written UI design refresh plan with acceptance checks for the
+  literary writing desk direction.
+- Reworked theme tokens so preview, search, and completed-note surfaces use
+  semantic colours instead of hard-coded light patches, improving dark-mode
+  consistency.
+- Split the top toolbar into clear Sidebar and Context controls so button
+  labels, tooltips, and behaviour no longer conflict.
+- Relaxed AI workspace text preview heights for selected text, extra
+  instructions, pasted text, continuation notes, attachments, and chat input.
+- Shared no-wheel combo and spin controls across AI, settings, reference
+  library, specimen picker, and project/include dialogs to prevent accidental
+  value changes while scrolling.
+- Made continuation notes safer to complete by keeping completed notes
+  recoverable from the editor card.
+- Reduced scrollbar visual noise for a calmer reading and writing surface.
+
 ## 0.2.0-alpha.22 — Continuation note UX fixes
 
 - Replaced the ambiguous left-side completion checkbox with a non-clickable

@@ -215,6 +215,62 @@ def test_editor_panel_writing_notes_card_emits_actions(qtbot):
         panel._writing_notes_continue_btn.click()  # noqa: SLF001
 
 
+def test_editor_panel_completed_writing_notes_can_be_restored(qtbot):
+    from PySide6.QtWidgets import QLabel, QPushButton
+
+    from writer.domain.models.entry import Entry
+    from writer.domain.models.entry_writing_note import (
+        NOTE_STATUS_DONE,
+        EntryWritingNote,
+    )
+    from writer.ui.i18n import TR
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.show()
+    panel.set_entry(Entry(id="entry-1", title="t", body="body"))
+    panel.set_writing_notes(
+        [
+            EntryWritingNote(
+                id="note-open",
+                entry_id="entry-1",
+                body="未完成提示",
+            ),
+            EntryWritingNote(
+                id="note-done",
+                entry_id="entry-1",
+                body="已经处理过的提示",
+                status=NOTE_STATUS_DONE,
+            ),
+        ]
+    )
+
+    assert "1" in panel._writing_notes_count.text()  # noqa: SLF001
+    assert panel._writing_notes_done_toggle_btn.isVisible()  # noqa: SLF001
+    visible_label_text = "\n".join(
+        label.text()
+        for label in panel._writing_notes_rows.findChildren(QLabel)  # noqa: SLF001
+    )
+    assert "已经处理过的提示" not in visible_label_text
+
+    panel._writing_notes_done_toggle_btn.click()  # noqa: SLF001
+
+    visible_label_text = "\n".join(
+        label.text()
+        for label in panel._writing_notes_rows.findChildren(QLabel)  # noqa: SLF001
+    )
+    assert "已经处理过的提示" in visible_label_text
+    restore_button = next(
+        button
+        for button in panel._writing_notes_rows.findChildren(QPushButton)  # noqa: SLF001
+        if button.text() == TR("editor.writing_notes.restore")
+    )
+    with qtbot.waitSignal(panel.writing_note_done_requested) as restore_signal:
+        restore_button.click()
+    assert restore_signal.args == ["note-done", False]
+
+
 def test_main_window_writing_notes_do_not_leak_between_fragments(qtbot, container):
     from writer.ui.main_window import MainWindow
 

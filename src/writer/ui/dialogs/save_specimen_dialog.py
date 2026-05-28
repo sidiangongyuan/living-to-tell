@@ -4,7 +4,6 @@ from __future__ import annotations
 from typing import Optional
 
 from PySide6.QtWidgets import (
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
@@ -26,6 +25,7 @@ from writer.domain.models.reference_passage import (
 from writer.storage.repositories.reference_repository import ReferenceRepository
 from writer.ui.dialogs.specimen_similarity import rank_similar_passages
 from writer.ui.i18n import TR
+from writer.ui.widgets.controls import NoWheelComboBox
 
 _USAGE_LABEL_KEYS = {
     "style": "reflib.usage_kind_style",
@@ -65,7 +65,7 @@ class SaveSpecimenDialog(QDialog):
         self._title_edit = QLineEdit(default_source_title)
         self._author_edit = QLineEdit(default_source_author)
         self._tags_edit = QLineEdit(default_tags)
-        self._usage_kind_combo = QComboBox()
+        self._usage_kind_combo = NoWheelComboBox()
         for usage_kind in USAGE_KINDS:
             self._usage_kind_combo.addItem(_usage_kind_label(usage_kind), usage_kind)
         self._note_edit = QPlainTextEdit()

@@ -18,8 +18,6 @@ from typing import Optional
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
-    QDoubleSpinBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -30,7 +28,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -69,6 +66,11 @@ from writer.services.ai.gemini_cli_provider import (
     gemini_cli_oauth_status,
 )
 from writer.ui.i18n import TR
+from writer.ui.widgets.controls import (
+    NoWheelComboBox,
+    NoWheelDoubleSpinBox,
+    NoWheelSpinBox,
+)
 
 
 def _language_options():
@@ -147,7 +149,7 @@ class SettingsDialog(QDialog):
         config = settings.load_ai_config()
         editor_settings = settings.load_editor_display_settings()
 
-        self._provider_combo = QComboBox()
+        self._provider_combo = NoWheelComboBox()
         for provider_key, display_name in _provider_options():
             self._provider_combo.addItem(display_name, provider_key)
         provider_index = self._provider_combo.findData(config.provider_key())
@@ -158,10 +160,10 @@ class SettingsDialog(QDialog):
 
         self._model = QLineEdit(config.model)
 
-        self._model_preset_combo = QComboBox()
+        self._model_preset_combo = NoWheelComboBox()
         self._model_preset_combo.currentIndexChanged.connect(self._on_model_preset_changed)
 
-        self._wire_api = QComboBox()
+        self._wire_api = NoWheelComboBox()
         for value in SUPPORTED_WIRE_APIS:
             self._wire_api.addItem(value)
         idx = self._wire_api.findText(config.wire_api)
@@ -180,7 +182,7 @@ class SettingsDialog(QDialog):
         self._api_key_source.textChanged.connect(self._refresh_key_status)
 
         # Language selector
-        self._language_combo = QComboBox()
+        self._language_combo = NoWheelComboBox()
         for locale_code, display_name in _language_options():
             self._language_combo.addItem(display_name, locale_code)
         current_lang = settings.language
@@ -198,12 +200,12 @@ class SettingsDialog(QDialog):
             (close_to_tray_raw or "").strip().lower() == "true"
         )
 
-        self._font_size = QSpinBox()
+        self._font_size = NoWheelSpinBox()
         self._font_size.setRange(12, 32)
         self._font_size.setValue(editor_settings.font_size)
         self._font_size.setSuffix(" px")
 
-        self._font_preset_combo = QComboBox()
+        self._font_preset_combo = NoWheelComboBox()
         for key, label_key, _family in _EDITOR_FONT_PRESETS:
             self._font_preset_combo.addItem(TR(label_key), key)
         self._font_preset_combo.addItem(
@@ -213,7 +215,7 @@ class SettingsDialog(QDialog):
             self._on_editor_font_preset_changed
         )
 
-        self._font_family_combo = QComboBox()
+        self._font_family_combo = NoWheelComboBox()
         self._font_family_combo.setEditable(True)
         self._populate_font_family_combo(editor_settings.font_family)
         self._font_family_combo.currentTextChanged.connect(
@@ -221,31 +223,31 @@ class SettingsDialog(QDialog):
         )
         self._sync_font_preset_to_family(editor_settings.font_family)
 
-        self._line_height = QDoubleSpinBox()
+        self._line_height = NoWheelDoubleSpinBox()
         self._line_height.setRange(1.2, 2.6)
         self._line_height.setSingleStep(0.1)
         self._line_height.setDecimals(1)
         self._line_height.setValue(editor_settings.line_height)
 
-        self._paragraph_spacing = QDoubleSpinBox()
+        self._paragraph_spacing = NoWheelDoubleSpinBox()
         self._paragraph_spacing.setRange(0.0, 2.0)
         self._paragraph_spacing.setSingleStep(0.1)
         self._paragraph_spacing.setDecimals(1)
         self._paragraph_spacing.setValue(editor_settings.paragraph_spacing)
 
-        self._content_width = QSpinBox()
+        self._content_width = NoWheelSpinBox()
         self._content_width.setRange(520, MAX_EDITOR_CONTENT_WIDTH)
         self._content_width.setSingleStep(20)
         self._content_width.setValue(editor_settings.content_width)
         self._content_width.setSuffix(" px")
 
-        self._page_vertical_padding = QSpinBox()
+        self._page_vertical_padding = NoWheelSpinBox()
         self._page_vertical_padding.setRange(12, 96)
         self._page_vertical_padding.setSingleStep(4)
         self._page_vertical_padding.setValue(editor_settings.page_vertical_padding)
         self._page_vertical_padding.setSuffix(" px")
 
-        self._page_gap = QSpinBox()
+        self._page_gap = NoWheelSpinBox()
         self._page_gap.setRange(0, 96)
         self._page_gap.setSingleStep(4)
         self._page_gap.setValue(editor_settings.page_gap)

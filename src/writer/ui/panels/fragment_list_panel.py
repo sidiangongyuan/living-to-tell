@@ -8,7 +8,6 @@ from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
-    QComboBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -30,6 +29,7 @@ from writer.storage.repositories.entry_repository import (
 )
 from writer.ui.i18n import TR
 from writer.ui.tag_colors import get_tag_color
+from writer.ui.widgets.controls import NoWheelComboBox
 from writer.ui.widgets.empty_state import EmptyStateCard
 
 
@@ -116,12 +116,12 @@ class FragmentListPanel(QWidget):
         top.addWidget(self._new_button, 0)
         top.addWidget(self._delete_button, 0)
 
-        self._tag_combo = QComboBox()
+        self._tag_combo = NoWheelComboBox()
         self._tag_combo.addItem(TR("list.all_tags"))
         self._tag_combo.currentIndexChanged.connect(self._on_tag_changed)
 
         # Sort + archive row
-        self._sort_combo = QComboBox()
+        self._sort_combo = NoWheelComboBox()
         self._sort_combo.addItem(TR("list.sort_updated"), SORT_UPDATED)
         self._sort_combo.addItem(TR("list.sort_created"), SORT_CREATED)
         self._sort_combo.addItem(TR("list.sort_title"), SORT_TITLE)

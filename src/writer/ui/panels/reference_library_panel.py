@@ -9,7 +9,6 @@ from typing import Optional
 from PySide6.QtCore import QEvent, QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
-    QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -61,6 +60,7 @@ from writer.ui.reference_grouping import (
     tag_group_title,
     usage_kind_label,
 )
+from writer.ui.widgets.controls import NoWheelComboBox
 
 
 _KIND_LABEL_KEYS = {
@@ -361,19 +361,19 @@ class ReferenceLibraryPanel(QWidget):
         self._search = QLineEdit()
         self._search.setPlaceholderText(TR("rlp.search_placeholder"))
 
-        self._kind_filter_combo = QComboBox()
+        self._kind_filter_combo = NoWheelComboBox()
         self._kind_filter_combo.setObjectName("RefKindFilter")
         self._kind_filter_combo.addItem(TR("reflib.kind_filter_all"), None)
         for kind in REFERENCE_KINDS:
             self._kind_filter_combo.addItem(_kind_label(kind), kind)
 
-        self._usage_kind_filter_combo = QComboBox()
+        self._usage_kind_filter_combo = NoWheelComboBox()
         self._usage_kind_filter_combo.setObjectName("RefUsageKindFilter")
         self._usage_kind_filter_combo.addItem(TR("reflib.usage_kind_filter_all"), None)
         for uk in USAGE_KINDS:
             self._usage_kind_filter_combo.addItem(_usage_kind_label(uk), uk)
 
-        self._group_mode_combo = QComboBox()
+        self._group_mode_combo = NoWheelComboBox()
         self._group_mode_combo.setObjectName("RefGroupModeCombo")
         for mode, label in group_mode_options():
             self._group_mode_combo.addItem(label, mode)
@@ -442,11 +442,11 @@ class ReferenceLibraryPanel(QWidget):
         self._title_edit = QLineEdit()
         self._author_edit = QLineEdit()
         self._tags_edit = QLineEdit()
-        self._kind_combo = QComboBox()
+        self._kind_combo = NoWheelComboBox()
         self._kind_combo.setObjectName("RefKindCombo")
         for kind in REFERENCE_KINDS:
             self._kind_combo.addItem(_kind_label(kind), kind)
-        self._usage_kind_combo = QComboBox()
+        self._usage_kind_combo = NoWheelComboBox()
         self._usage_kind_combo.setObjectName("RefUsageKindCombo")
         for uk in USAGE_KINDS:
             self._usage_kind_combo.addItem(_usage_kind_label(uk), uk)

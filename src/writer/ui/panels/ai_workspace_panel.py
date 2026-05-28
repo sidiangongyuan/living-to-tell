@@ -33,7 +33,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
-    QSpinBox,
     QSplitter,
     QTabWidget,
     QTextEdit,
@@ -68,6 +67,7 @@ from writer.ui.services.ai_apply import (
     apply_to_section,
     save_as_new_fragment,
 )
+from writer.ui.widgets.controls import NoWheelComboBox, NoWheelSpinBox
 
 
 # ---------------------------------------------------------------------------
@@ -141,18 +141,25 @@ def _combo_enum(combo: QComboBox, enum_cls, default):
         return default
 
 
-class _NoWheelComboBox(QComboBox):
-    """Combo box that never changes value from accidental hover scrolling."""
+def _set_relaxed_vertical_sizing(
+    widget: QWidget,
+    *,
+    minimum: int,
+    maximum: int,
+    policy: QSizePolicy.Policy = QSizePolicy.Policy.Preferred,
+) -> None:
+    widget.setMinimumHeight(minimum)
+    widget.setMaximumHeight(maximum)
+    widget.setSizePolicy(QSizePolicy.Policy.Expanding, policy)
 
-    def wheelEvent(self, event) -> None:  # noqa: N802
-        event.ignore()
 
-
-class _NoWheelSpinBox(QSpinBox):
-    """Spin box that avoids accidental value changes while scrolling a page."""
-
-    def wheelEvent(self, event) -> None:  # noqa: N802
-        event.ignore()
+def _refresh_widget_style(widget: QWidget) -> None:
+    style = widget.style()
+    if style is None:
+        return
+    style.unpolish(widget)
+    style.polish(widget)
+    widget.update()
 
 
 # ---------------------------------------------------------------------------
@@ -435,6 +442,7 @@ class AIToolsTab(QWidget):
     request_send_to_chat = Signal(str)  # text to seed chat
     request_locate_excerpt = Signal(str)
     request_locate_selection = Signal(object)
+    request_focus_writing_notes = Signal()
     request_fragment_changed = Signal(str)
 
     def __init__(self, container: AppContainer, parent: Optional[QWidget] = None) -> None:
@@ -473,6 +481,10 @@ class AIToolsTab(QWidget):
         # ---- Right: form + results ----
         right = QWidget()
         right.setObjectName("AIToolsRight")
+        right.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.MinimumExpanding,
+        )
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(12, 12, 12, 12)
         right_layout.setSpacing(8)
@@ -510,7 +522,11 @@ class AIToolsTab(QWidget):
         self._selection_view = QPlainTextEdit()
         self._selection_view.setObjectName("AISelectionPreview")
         self._selection_view.setReadOnly(True)
-        self._selection_view.setMaximumHeight(116)
+        _set_relaxed_vertical_sizing(
+            self._selection_view,
+            minimum=96,
+            maximum=220,
+        )
         selection_layout.addWidget(self._selection_view)
         self._selection_card.setVisible(False)
         right_layout.addWidget(self._selection_card)
@@ -526,7 +542,7 @@ class AIToolsTab(QWidget):
         params_form = QFormLayout(params_box)
         params_form.setContentsMargins(0, 0, 0, 0)
 
-        self._target_combo = _NoWheelComboBox()
+        self._target_combo = NoWheelComboBox()
         for kind, key in (
             (AiTargetKind.SELECTION, "ai.target.selection"),
             (AiTargetKind.FRAGMENT, "ai.target.fragment"),
@@ -538,7 +554,7 @@ class AIToolsTab(QWidget):
             self._target_combo.addItem(TR(key), kind)
         params_form.addRow(TR("ai.target.label"), self._target_combo)
 
-        self._tier_combo = _NoWheelComboBox()
+        self._tier_combo = NoWheelComboBox()
         for tier in (AiCostTier.THRIFTY, AiCostTier.BALANCED, AiCostTier.STRONG):
             self._tier_combo.addItem(TR(_TIER_LABEL_KEY[tier]), tier)
         self._tier_combo.setCurrentIndex(1)
@@ -555,7 +571,7 @@ class AIToolsTab(QWidget):
         params_form.addRow(TR("ai.params.cost_tier"), self._tier_field)
         self._tier_field_label = params_form.labelForField(self._tier_field)
 
-        self._output_combo = _NoWheelComboBox()
+        self._output_combo = NoWheelComboBox()
         params_form.addRow(TR("ai.output.label"), self._output_combo)
 
         self._style_edit = QLineEdit()
@@ -587,7 +603,7 @@ class AIToolsTab(QWidget):
         params_form.addRow(TR("ai.params.style"), self._style_field)
         self._style_field_label = params_form.labelForField(self._style_field)
 
-        self._intensity_combo = _NoWheelComboBox()
+        self._intensity_combo = NoWheelComboBox()
         for label, value in (
             ("—", ""),
             ("light", "light"),
@@ -602,7 +618,11 @@ class AIToolsTab(QWidget):
 
         self._extra_edit = QPlainTextEdit()
         self._extra_edit.setObjectName("AIExtraInstructions")
-        self._extra_edit.setMaximumHeight(72)
+        _set_relaxed_vertical_sizing(
+            self._extra_edit,
+            minimum=88,
+            maximum=180,
+        )
         self._extra_edit.setPlaceholderText(TR("ai.params.extra_placeholder.polish"))
         right_layout.addWidget(QLabel(TR("ai.params.extra_instructions")))
         right_layout.addWidget(self._extra_edit)
@@ -618,7 +638,7 @@ class AIToolsTab(QWidget):
         self._advanced_box.setObjectName("AIAdvancedBox")
         adv_form = QFormLayout(self._advanced_box)
         adv_form.setContentsMargins(0, 0, 0, 0)
-        self._max_output_spin = _NoWheelSpinBox()
+        self._max_output_spin = NoWheelSpinBox()
         self._max_output_spin.setRange(0, 100_000)
         self._max_output_spin.setSingleStep(200)
         self._max_output_spin.setSpecialValueText("—")
@@ -639,7 +659,11 @@ class AIToolsTab(QWidget):
         # Pasted-text input (shown only when target=PASTE)
         self._paste_edit = QPlainTextEdit()
         self._paste_edit.setPlaceholderText(TR("ai.target.paste"))
-        self._paste_edit.setMaximumHeight(120)
+        _set_relaxed_vertical_sizing(
+            self._paste_edit,
+            minimum=128,
+            maximum=260,
+        )
         self._paste_edit.setVisible(False)
         right_layout.addWidget(self._paste_edit)
         self._target_combo.currentIndexChanged.connect(self._on_target_changed)
@@ -659,9 +683,26 @@ class AIToolsTab(QWidget):
         writing_notes_box.setObjectName("AIWritingNotesBox")
         writing_notes_layout = QVBoxLayout(writing_notes_box)
         writing_notes_layout.setContentsMargins(10, 8, 10, 8)
-        writing_notes_layout.setSpacing(2)
+        writing_notes_layout.setSpacing(6)
         writing_notes_layout.addWidget(self._include_writing_notes_check)
         writing_notes_layout.addWidget(self._include_writing_notes_hint)
+        self._writing_notes_preview = QPlainTextEdit()
+        self._writing_notes_preview.setObjectName("AIWritingNotesPreview")
+        self._writing_notes_preview.setReadOnly(True)
+        _set_relaxed_vertical_sizing(
+            self._writing_notes_preview,
+            minimum=84,
+            maximum=180,
+        )
+        writing_notes_layout.addWidget(self._writing_notes_preview)
+        self._manage_writing_notes_btn = QPushButton(
+            TR("ai.attachments.manage_writing_notes")
+        )
+        self._manage_writing_notes_btn.setObjectName("GhostButton")
+        self._manage_writing_notes_btn.clicked.connect(
+            self.request_focus_writing_notes.emit
+        )
+        writing_notes_layout.addWidget(self._manage_writing_notes_btn)
         self._writing_notes_box = writing_notes_box
         right_layout.addWidget(self._writing_notes_box)
 
@@ -673,7 +714,12 @@ class AIToolsTab(QWidget):
         self._attach_empty_label.setObjectName("AIAttachEmpty")
         right_layout.addWidget(self._attach_empty_label)
         self._attach_list = QListWidget()
-        self._attach_list.setMaximumHeight(110)
+        _set_relaxed_vertical_sizing(
+            self._attach_list,
+            minimum=96,
+            maximum=220,
+            policy=QSizePolicy.Policy.MinimumExpanding,
+        )
         self._attach_list.setVisible(False)
         right_layout.addWidget(self._attach_list)
         attach_btn_row = QHBoxLayout()
@@ -1387,30 +1433,24 @@ class AIToolsTab(QWidget):
         self._status_label.setText("")
 
     def _writing_note_count(self) -> int:
+        return len(self._open_writing_notes())
+
+    def _open_writing_notes(self):
         if self._scope is None or self._scope.kind is not AiThreadScope.FRAGMENT:
-            return 0
+            return []
         if not self._scope.ref_id:
-            return 0
+            return []
         try:
-            return self._container.entry_writing_note_repository.count_open_for_entry(
+            return self._container.entry_writing_note_repository.list_for_entry(
                 self._scope.ref_id
             )
         except Exception:  # noqa: BLE001
-            return 0
+            return []
 
     def _writing_note_attachments(self) -> list[AiContextAttachment]:
         if not self._include_writing_notes_check.isChecked():
             return []
-        if self._scope is None or self._scope.kind is not AiThreadScope.FRAGMENT:
-            return []
-        if not self._scope.ref_id:
-            return []
-        try:
-            notes = self._container.entry_writing_note_repository.list_for_entry(
-                self._scope.ref_id
-            )
-        except Exception:  # noqa: BLE001
-            return []
+        notes = self._open_writing_notes()
         attachments: list[AiContextAttachment] = []
         for index, note in enumerate(notes, start=1):
             attachments.append(
@@ -1424,7 +1464,8 @@ class AIToolsTab(QWidget):
         return attachments
 
     def _refresh_writing_notes_option(self) -> None:
-        count = self._writing_note_count()
+        notes = self._open_writing_notes()
+        count = len(notes)
         visible = bool(
             self._scope is not None
             and self._scope.kind is AiThreadScope.FRAGMENT
@@ -1436,6 +1477,25 @@ class AIToolsTab(QWidget):
         self._include_writing_notes_check.setEnabled(count > 0)
         if count <= 0:
             self._include_writing_notes_check.setChecked(False)
+            self._writing_notes_preview.setPlainText(
+                TR("ai.attachments.writing_notes_empty")
+            )
+        else:
+            preview_lines = []
+            for index, note in enumerate(notes[:4], start=1):
+                clean = " ".join(note.body.split())
+                if len(clean) > 70:
+                    clean = clean[:67] + "..."
+                preview_lines.append(f"{index}. {clean}")
+            if len(notes) > 4:
+                preview_lines.append(f"... +{len(notes) - 4}")
+            self._writing_notes_preview.setPlainText(
+                TR("ai.attachments.writing_notes_preview").format(
+                    notes="\n".join(preview_lines)
+                )
+            )
+        self._writing_notes_preview.setVisible(visible)
+        self._manage_writing_notes_btn.setVisible(visible)
         self._refresh_attachments_view()
 
     def _refresh_attachments_view(self) -> None:
@@ -1450,11 +1510,12 @@ class AIToolsTab(QWidget):
         # total
         total = self._estimated_context_chars()
         self._attach_total_label.setText(TR("ai.attachments.total").format(chars=total))
-        if total > SOFT_CONTEXT_BUDGET_CHARS:
-            self._attach_total_label.setStyleSheet("color: #c1440e;")
+        over_budget = total > SOFT_CONTEXT_BUDGET_CHARS
+        self._attach_total_label.setProperty("overBudget", over_budget)
+        _refresh_widget_style(self._attach_total_label)
+        if over_budget:
             self._attach_total_label.setToolTip(TR("ai.attachments.heavy_warning"))
         else:
-            self._attach_total_label.setStyleSheet("")
             self._attach_total_label.setToolTip("")
         self._remove_attach_btn.setEnabled(self._attach_list.currentItem() is not None)
 
@@ -2166,7 +2227,7 @@ class AIChatTab(QWidget):
         self._clear_attach_btn.clicked.connect(self._on_clear_attachments)
         attach_row.addWidget(self._clear_attach_btn)
         attach_row.addStretch(1)
-        self._tier_combo = _NoWheelComboBox()
+        self._tier_combo = NoWheelComboBox()
         for tier in (AiCostTier.THRIFTY, AiCostTier.BALANCED, AiCostTier.STRONG):
             self._tier_combo.addItem(TR(_TIER_LABEL_KEY[tier]), tier)
         self._tier_combo.setCurrentIndex(1)
@@ -2176,7 +2237,11 @@ class AIChatTab(QWidget):
 
         self._input = QPlainTextEdit()
         self._input.setPlaceholderText(TR("ai.chat.input_placeholder").format(scope="object"))
-        self._input.setMaximumHeight(110)
+        _set_relaxed_vertical_sizing(
+            self._input,
+            minimum=96,
+            maximum=180,
+        )
         layout.addWidget(self._input)
 
         send_row = QHBoxLayout()
@@ -2385,6 +2450,7 @@ class AIWorkspacePanel(QWidget):
     request_save_as_fragment = Signal(str)
     request_locate_excerpt = Signal(str)
     request_locate_selection = Signal(object)
+    request_focus_writing_notes = Signal()
     request_fragment_changed = Signal(str)
 
     def __init__(self, container: AppContainer, parent: Optional[QWidget] = None) -> None:
@@ -2410,6 +2476,9 @@ class AIWorkspacePanel(QWidget):
         self._tools_tab.request_locate_excerpt.connect(self.request_locate_excerpt.emit)
         self._tools_tab.request_locate_selection.connect(
             self.request_locate_selection.emit
+        )
+        self._tools_tab.request_focus_writing_notes.connect(
+            self.request_focus_writing_notes.emit
         )
         self._tools_tab.request_fragment_changed.connect(
             self.request_fragment_changed.emit

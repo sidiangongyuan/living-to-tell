@@ -17,7 +17,6 @@ from typing import Optional
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QTextCursor
 from PySide6.QtWidgets import (
-    QComboBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -25,7 +24,6 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
-    QSpinBox,
     QSplitter,
     QTextEdit,
     QVBoxLayout,
@@ -39,6 +37,7 @@ from writer.domain.models.work_section import WorkSection
 from writer.ui.dialogs.work_versions_dialog import WorkVersionsDialog
 from writer.ui.i18n import TR
 from writer.ui.panels.editor_panel import _font_families
+from writer.ui.widgets.controls import NoWheelComboBox, NoWheelSpinBox
 from writer.ui.widgets.editor_find import (
     EditorFindBar,
     EditorPageControls,
@@ -70,10 +69,10 @@ class WorkEditorPanel(QWidget):
         self._summary.setPlaceholderText(TR("work.summary_placeholder"))
         self._tags = QLineEdit()
         self._tags.setPlaceholderText(TR("work.tags_placeholder"))
-        self._status = QComboBox()
+        self._status = NoWheelComboBox()
         for s in WorkStatus.values():
             self._status.addItem(TR(f"work.status.{s}"), s)
-        self._target_wc = QSpinBox()
+        self._target_wc = NoWheelSpinBox()
         self._target_wc.setRange(0, 10_000_000)
         self._target_wc.setSpecialValueText(TR("work.no_target"))
 

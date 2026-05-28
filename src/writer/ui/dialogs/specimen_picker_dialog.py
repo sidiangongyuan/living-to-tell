@@ -6,7 +6,6 @@ from typing import List, Optional
 
 from PySide6.QtCore import QEvent, QSignalBlocker, QSize, Qt, Signal
 from PySide6.QtWidgets import (
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFrame,
@@ -50,6 +49,7 @@ from writer.ui.reference_grouping import (
     split_tags,
     usage_kind_label,
 )
+from writer.ui.widgets.controls import NoWheelComboBox
 
 _KIND_LABEL_KEYS = {
     REFERENCE_KIND_CHARACTER: "reflib.kind_character",
@@ -302,19 +302,19 @@ class SpecimenPickerDialog(QDialog):
         if preselect_query:
             self._search.setText(preselect_query)
 
-        self._kind_filter = QComboBox()
+        self._kind_filter = NoWheelComboBox()
         self._kind_filter.setObjectName("SpecimenKindFilter")
         self._kind_filter.addItem(TR("reflib.kind_filter_all"), None)
         for kind in REFERENCE_KINDS:
             self._kind_filter.addItem(_kind_label(kind), kind)
 
-        self._usage_filter = QComboBox()
+        self._usage_filter = NoWheelComboBox()
         self._usage_filter.setObjectName("SpecimenUsageKindFilter")
         self._usage_filter.addItem(TR("reflib.usage_kind_filter_all"), None)
         for uk in USAGE_KINDS:
             self._usage_filter.addItem(usage_kind_label(uk), uk)
 
-        self._group_mode_combo = QComboBox()
+        self._group_mode_combo = NoWheelComboBox()
         self._group_mode_combo.setObjectName("SpecimenGroupModeCombo")
         for mode, label in group_mode_options():
             self._group_mode_combo.addItem(label, mode)

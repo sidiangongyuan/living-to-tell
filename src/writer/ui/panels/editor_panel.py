@@ -35,7 +35,11 @@ from writer.app.settings import (
     EditorDisplaySettings,
 )
 from writer.domain.models.entry import Entry
-from writer.domain.models.entry_writing_note import EntryWritingNote
+from writer.domain.models.entry_writing_note import (
+    NOTE_STATUS_DONE,
+    NOTE_STATUS_OPEN,
+    EntryWritingNote,
+)
 from writer.services.epigraph import detect_epigraph
 from writer.storage.repositories.entry_repository import serialize_tags
 from writer.ui.i18n import TR
@@ -326,6 +330,7 @@ class EditorPanel(QWidget):
         self._focus_mode_enabled = False
         self._writing_notes: list[EntryWritingNote] = []
         self._writing_notes_collapsed = False
+        self._writing_notes_show_done = False
         self._find_bar = EditorFindBar()
         self._page_controls = EditorPageControls()
 
@@ -363,6 +368,12 @@ class EditorPanel(QWidget):
         self._writing_notes_count.setObjectName("WritingNotesCount")
         notes_header.addWidget(self._writing_notes_count)
         notes_header.addStretch(1)
+        self._writing_notes_done_toggle_btn = QPushButton("")
+        self._writing_notes_done_toggle_btn.setObjectName("GhostButton")
+        self._writing_notes_done_toggle_btn.clicked.connect(
+            self._toggle_completed_writing_notes
+        )
+        notes_header.addWidget(self._writing_notes_done_toggle_btn)
         self._writing_notes_continue_btn = QPushButton(
             TR("editor.writing_notes.use_for_continue")
         )
@@ -639,6 +650,7 @@ class EditorPanel(QWidget):
         self._writing_notes = list(notes)
         if not self._writing_notes:
             self._writing_notes_collapsed = True
+            self._writing_notes_show_done = False
         elif not had_notes:
             self._writing_notes_collapsed = False
         self._rebuild_writing_notes_rows()
@@ -664,20 +676,44 @@ class EditorPanel(QWidget):
         if not self._writing_notes_collapsed and not self._writing_notes:
             self._writing_note_input.setFocus()
 
+    def _toggle_completed_writing_notes(self) -> None:
+        self._writing_notes_show_done = not self._writing_notes_show_done
+        self._rebuild_writing_notes_rows()
+        self._refresh_writing_notes_card()
+
     def _rebuild_writing_notes_rows(self) -> None:
         while self._writing_notes_rows_layout.count():
             item = self._writing_notes_rows_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
-        for note in self._writing_notes:
+
+        open_notes = [
+            note for note in self._writing_notes if note.status == NOTE_STATUS_OPEN
+        ]
+        done_notes = [
+            note for note in self._writing_notes if note.status == NOTE_STATUS_DONE
+        ]
+        for note in open_notes:
             self._writing_notes_rows_layout.addWidget(
                 self._build_writing_note_row(note)
             )
+        if self._writing_notes_show_done and done_notes:
+            done_label = QLabel(TR("editor.writing_notes.done_section"))
+            done_label.setObjectName("WritingNoteDoneSection")
+            self._writing_notes_rows_layout.addWidget(done_label)
+            for note in done_notes:
+                self._writing_notes_rows_layout.addWidget(
+                    self._build_writing_note_row(note)
+                )
 
     def _build_writing_note_row(self, note: EntryWritingNote) -> QWidget:
         row = QFrame()
-        row.setObjectName("WritingNoteRowPinned" if note.pinned else "WritingNoteRow")
+        is_done = note.status == NOTE_STATUS_DONE
+        if is_done:
+            row.setObjectName("WritingNoteRowDone")
+        else:
+            row.setObjectName("WritingNoteRowPinned" if note.pinned else "WritingNoteRow")
         layout = QHBoxLayout(row)
         layout.setContentsMargins(8, 7, 8, 7)
         layout.setSpacing(8)
@@ -726,6 +762,11 @@ class EditorPanel(QWidget):
                 self._commit_writing_note_edit(note_id, b, e, eb, sb, cb)
             )
         )
+        edit_input.returnPressed.connect(
+            lambda note_id=note.id, b=body, e=edit_input, eb=edit_btn, sb=save_btn, cb=cancel_btn: (
+                self._commit_writing_note_edit(note_id, b, e, eb, sb, cb)
+            )
+        )
         cancel_btn.clicked.connect(
             lambda _checked=False, b=body, e=edit_input, eb=edit_btn, sb=save_btn, cb=cancel_btn: (
                 self._cancel_writing_note_edit(b, e, eb, sb, cb)
@@ -751,12 +792,20 @@ class EditorPanel(QWidget):
         )
         layout.addWidget(pin_btn, 0, Qt.AlignmentFlag.AlignTop)
 
-        done_btn = QPushButton(TR("editor.writing_notes.done"))
+        done_btn = QPushButton(
+            TR("editor.writing_notes.restore")
+            if is_done
+            else TR("editor.writing_notes.done")
+        )
         done_btn.setObjectName("GhostButton")
-        done_btn.setToolTip(TR("editor.writing_notes.done_hint"))
+        done_btn.setToolTip(
+            TR("editor.writing_notes.restore_hint")
+            if is_done
+            else TR("editor.writing_notes.done_hint")
+        )
         done_btn.clicked.connect(
-            lambda _checked=False, note_id=note.id: self.writing_note_done_requested.emit(
-                note_id, True
+            lambda _checked=False, note_id=note.id, done=not is_done: (
+                self.writing_note_done_requested.emit(note_id, done)
             )
         )
         layout.addWidget(done_btn, 0, Qt.AlignmentFlag.AlignTop)
@@ -824,7 +873,10 @@ class EditorPanel(QWidget):
         if not has_entry:
             self._writing_note_input.clear()
             return
-        count = len(self._writing_notes)
+        count = sum(1 for note in self._writing_notes if note.status == NOTE_STATUS_OPEN)
+        done_count = sum(
+            1 for note in self._writing_notes if note.status == NOTE_STATUS_DONE
+        )
         self._writing_notes_count.setText(
             TR("editor.writing_notes.count").format(count=count)
         )
@@ -839,7 +891,16 @@ class EditorPanel(QWidget):
         self._writing_notes_toggle_btn.setText(TR(toggle_key))
         expanded = not self._writing_notes_collapsed
         self._writing_notes_hint.setVisible(expanded)
-        self._writing_notes_rows.setVisible(expanded and count > 0)
+        self._writing_notes_done_toggle_btn.setVisible(done_count > 0)
+        self._writing_notes_done_toggle_btn.setText(
+            TR(
+                "editor.writing_notes.hide_done"
+                if self._writing_notes_show_done
+                else "editor.writing_notes.show_done"
+            ).format(count=done_count)
+        )
+        visible_rows = count > 0 or (self._writing_notes_show_done and done_count > 0)
+        self._writing_notes_rows.setVisible(expanded and visible_rows)
         self._writing_note_input.setVisible(expanded)
         self._writing_note_add_btn.setVisible(expanded)
         self._writing_notes_continue_btn.setVisible(count > 0)

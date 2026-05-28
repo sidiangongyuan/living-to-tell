@@ -341,6 +341,9 @@ class MainWindow(QMainWindow):
         self._ai_workspace_panel.request_locate_selection.connect(
             self._on_locate_ai_selection
         )
+        self._ai_workspace_panel.request_focus_writing_notes.connect(
+            self._on_focus_writing_notes
+        )
         self._ai_workspace_panel.request_fragment_changed.connect(
             self._on_ai_fragment_changed
         )
@@ -489,17 +492,19 @@ class MainWindow(QMainWindow):
         toolbar.setObjectName("WriterTopToolbar")
         self._top_toolbar = toolbar
 
-        # Toggle context-pane button (replaces the old "◀" sidebar toggle —
-        # the keystroke and persisted key live on for backwards compat).
-        self._context_toggle_btn = QPushButton("⇆")
+        self._sidebar_btn = QPushButton(TR("toolbar.sidebar"))
+        self._sidebar_btn.setObjectName("GhostButton")
+        self._sidebar_btn.setCheckable(True)
+        self._sidebar_btn.setToolTip(TR("toolbar.toggle_sidebar"))
+        self._sidebar_btn.clicked.connect(self._toggle_sidebar)
+        toolbar.addWidget(self._sidebar_btn)
+
+        self._context_toggle_btn = QPushButton(TR("toolbar.context"))
         self._context_toggle_btn.setObjectName("GhostButton")
+        self._context_toggle_btn.setCheckable(True)
         self._context_toggle_btn.setToolTip(TR("shell.toggle_context_pane"))
-        self._context_toggle_btn.setFixedWidth(36)
         self._context_toggle_btn.clicked.connect(self._toggle_context_pane)
         toolbar.addWidget(self._context_toggle_btn)
-
-        # Legacy attribute name kept so older tests / call sites still work.
-        self._sidebar_btn = self._context_toggle_btn
 
         self._focus_toggle_btn = QPushButton(TR("toolbar.focus_mode"))
         self._focus_toggle_btn.setObjectName("GhostButton")
@@ -515,11 +520,17 @@ class MainWindow(QMainWindow):
         self._lang_btn = QPushButton(TR("toolbar.language_switch"))
         self._lang_btn.setObjectName("GhostButton")
         self._lang_btn.setToolTip(TR("toolbar.language_switch_tooltip"))
-        self._lang_btn.setFixedWidth(48)
+        self._lang_btn.setMinimumWidth(
+            max(
+                self._lang_btn.sizeHint().width(),
+                self._lang_btn.fontMetrics().height() + 28,
+            )
+        )
         self._lang_btn.clicked.connect(self._on_toggle_language)
         toolbar.addWidget(self._lang_btn)
 
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
+        self._update_shell_toggle_buttons()
 
         # Extra (non-menu) actions exposed in the command palette
         focus_search_action = QAction(TR("cmd.focus_search"), self)
@@ -577,6 +588,7 @@ class MainWindow(QMainWindow):
             self._splitter.setSizes([0, _DEFAULT_EDITOR_WIDTH])
         else:
             self._splitter.setSizes([_DEFAULT_SIDEBAR_WIDTH, _DEFAULT_EDITOR_WIDTH])
+        self._update_shell_toggle_buttons()
 
     def _on_splitter_moved(self, _pos: int, _index: int) -> None:
         sizes = self._splitter.sizes()
@@ -586,22 +598,29 @@ class MainWindow(QMainWindow):
         self._container.settings.set(
             _SIDEBAR_COLLAPSED_KEY, "true" if self._sidebar_collapsed else "false"
         )
-        self._sidebar_btn.setText("▶" if self._sidebar_collapsed else "◀")
+        self._update_shell_toggle_buttons()
 
     def _toggle_sidebar(self) -> None:
         if self._sidebar_collapsed:
             self._splitter.setSizes([_DEFAULT_SIDEBAR_WIDTH, _DEFAULT_EDITOR_WIDTH])
             self._sidebar_collapsed = False
-            self._sidebar_btn.setText("◀")
         else:
             self._splitter.setSizes([0, self._splitter.width()])
             self._sidebar_collapsed = True
-            self._sidebar_btn.setText("▶")
         sizes = self._splitter.sizes()
         self._container.settings.set(_SPLITTER_SIZES_KEY, json.dumps(sizes))
         self._container.settings.set(
             _SIDEBAR_COLLAPSED_KEY, "true" if self._sidebar_collapsed else "false"
         )
+        self._update_shell_toggle_buttons()
+
+    def _update_shell_toggle_buttons(self) -> None:
+        if hasattr(self, "_sidebar_btn"):
+            self._sidebar_btn.setChecked(not self._sidebar_collapsed)
+            self._sidebar_btn.setToolTip(TR("toolbar.toggle_sidebar"))
+        if hasattr(self, "_context_toggle_btn"):
+            self._context_toggle_btn.setChecked(self._context_pane_visible)
+            self._context_toggle_btn.setToolTip(TR("shell.toggle_context_pane"))
 
     def _on_toggle_language(self) -> None:
         from writer.app.locale import current_locale
@@ -821,7 +840,10 @@ class MainWindow(QMainWindow):
         if not target_id:
             self._editor_panel.set_writing_notes([])
             return
-        notes = self._container.entry_writing_note_repository.list_for_entry(target_id)
+        notes = self._container.entry_writing_note_repository.list_for_entry(
+            target_id,
+            include_done=True,
+        )
         self._editor_panel.set_writing_notes(notes)
 
     def _writing_note_count_text(self, entry_id: str) -> str:
@@ -1987,6 +2009,7 @@ class MainWindow(QMainWindow):
     def _toggle_context_pane(self) -> None:
         self._context_pane_visible = not self._context_pane_visible
         self._context_pane.setVisible(self._context_pane_visible)
+        self._update_shell_toggle_buttons()
         try:
             self._container.settings.set(
                 KEY_CONTEXT_PANE_VISIBLE,

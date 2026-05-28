@@ -53,6 +53,33 @@ def test_library_panel_create_edit_delete(qtbot, container):
     assert panel._list.count() == 0  # noqa: SLF001
 
 
+def test_reference_library_filters_ignore_mouse_wheel(qtbot, container):
+    from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+    class _Wheel:
+        ignored = False
+
+        def ignore(self):
+            self.ignored = True
+
+    panel = ReferenceLibraryPanel(container.reference_repository)
+    qtbot.addWidget(panel)
+
+    controls = [
+        panel._kind_filter_combo,  # noqa: SLF001
+        panel._usage_kind_filter_combo,  # noqa: SLF001
+        panel._group_mode_combo,  # noqa: SLF001
+        panel._kind_combo,  # noqa: SLF001
+        panel._usage_kind_combo,  # noqa: SLF001
+    ]
+    for control in controls:
+        before = control.currentIndex()
+        event = _Wheel()
+        control.wheelEvent(event)  # noqa: SLF001
+        assert event.ignored is True
+        assert control.currentIndex() == before
+
+
 def test_reference_library_dialog_enables_resize_controls(qtbot, container):
     from PySide6.QtCore import Qt
 

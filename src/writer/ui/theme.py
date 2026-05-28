@@ -56,6 +56,10 @@ class Tokens:
     bg_context: str     # right context pane
     bg_input: str
     bg_card: str
+    bg_soft: str
+    bg_preview: str
+    bg_done: str
+    bg_search: str
 
     # Text
     text_primary: str
@@ -120,6 +124,10 @@ LIGHT_TOKENS = Tokens(
     bg_context="#EFE7D8",
     bg_input="#FFFDF8",
     bg_card="#FBF7EF",
+    bg_soft="#F8F1E5",
+    bg_preview="#FFF9EF",
+    bg_done="#F1E8D9",
+    bg_search="#FFF7E8",
     text_primary="#2D2418",
     text_secondary="#625443",
     text_muted="#9A8872",
@@ -146,6 +154,10 @@ DARK_TOKENS = Tokens(
     bg_context="#18212A",
     bg_input="#1F2933",
     bg_card="#1E2731",
+    bg_soft="#18212A",
+    bg_preview="#202B35",
+    bg_done="#232A2F",
+    bg_search="#232D36",
     text_primary="#E9EEF5",
     text_secondary="#A9B3C2",
     text_muted="#7D8898",
@@ -506,14 +518,14 @@ QSplitter::handle:vertical {{
 /* ------- Scroll bars ------- */
 QScrollBar:vertical {{
     background: {t.hover_bg};
-    width: 14px;
+    width: 10px;
     margin: 2px 2px 2px 0;
-    border-radius: 7px;
+    border-radius: 5px;
 }}
 QScrollBar::handle:vertical {{
-    background: {t.text_secondary};
+    background: {t.border_strong};
     border: 2px solid {t.hover_bg};
-    border-radius: 7px;
+    border-radius: 5px;
     min-height: 36px;
 }}
 QScrollBar::handle:vertical:hover {{
@@ -521,14 +533,14 @@ QScrollBar::handle:vertical:hover {{
 }}
 QScrollBar:horizontal {{
     background: {t.hover_bg};
-    height: 14px;
+    height: 10px;
     margin: 0 2px 2px 2px;
-    border-radius: 7px;
+    border-radius: 5px;
 }}
 QScrollBar::handle:horizontal {{
-    background: {t.text_secondary};
+    background: {t.border_strong};
     border: 2px solid {t.hover_bg};
-    border-radius: 7px;
+    border-radius: 5px;
     min-width: 36px;
 }}
 QScrollBar::handle:horizontal:hover {{
@@ -581,7 +593,7 @@ QFrame#EditorFindBar {{
     border-radius: {t.radius_lg}px;
 }}
 QLineEdit#EditorFindInput {{
-    background: #FFF9EF;
+    background: {t.bg_search};
     border: 1px solid {t.border};
     border-radius: {t.radius_md}px;
     padding: 7px 12px;
@@ -705,13 +717,18 @@ QLabel#WritingNotesHint {{
     font-size: {t.fs_meta}px;
 }}
 QFrame#WritingNoteRow,
-QFrame#WritingNoteRowPinned {{
+QFrame#WritingNoteRowPinned,
+QFrame#WritingNoteRowDone {{
     background: {t.bg_input};
     border: 1px solid {t.border};
     border-radius: {t.radius_md}px;
 }}
 QFrame#WritingNoteRowPinned {{
     border-left: 3px solid {t.accent};
+}}
+QFrame#WritingNoteRowDone {{
+    background: {t.bg_done};
+    border-style: dashed;
 }}
 QFrame#WritingNoteAccent {{
     background: {t.accent};
@@ -723,8 +740,13 @@ QLabel#WritingNoteBody {{
     font-family: {t.font_serif};
     line-height: 150%;
 }}
+QLabel#WritingNoteDoneSection {{
+    color: {t.text_muted};
+    font-size: {t.fs_meta}px;
+    padding: 6px 2px 2px 2px;
+}}
 QLineEdit#WritingNoteInput {{
-    background: #FFF9EF;
+    background: {t.bg_search};
 }}
 
 /* ------- CheckBox ------- */
@@ -832,8 +854,16 @@ QLabel#AISelectionMeta {{
     font-size: {t.fs_meta}px;
 }}
 QPlainTextEdit#AISelectionPreview {{
-    background: #FFF9EF;
+    background: {t.bg_preview};
     color: {t.text_primary};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_md}px;
+    padding: 8px;
+    font-family: {t.font_serif};
+}}
+QPlainTextEdit#AIWritingNotesPreview {{
+    background: {t.bg_preview};
+    color: {t.text_secondary};
     border: 1px solid {t.border};
     border-radius: {t.radius_md}px;
     padding: 8px;
@@ -969,6 +999,10 @@ QLabel#RefBarLabel,
 QLabel#RefBarValue {{
     color: {t.text_secondary};
     font-size: {t.fs_meta}px;
+}}
+QLabel#AIAttachTotal[overBudget="true"] {{
+    color: {t.danger};
+    font-weight: 600;
 }}
 QProgressBar#RefStatBar {{
     background: {t.hover_bg};

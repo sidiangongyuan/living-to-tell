@@ -18,7 +18,6 @@ from typing import Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
@@ -34,6 +33,7 @@ from writer.app.container import AppContainer
 from writer.domain.enums import SectionType
 from writer.domain.models.entry import Entry
 from writer.ui.i18n import TR
+from writer.ui.widgets.controls import NoWheelComboBox
 
 NEW_SECTION_SENTINEL = "__new__"
 
@@ -65,10 +65,10 @@ class IncludeFragmentDialog(QDialog):
         self.setWindowTitle(TR("include.title"))
         self.resize(600, 540)
 
-        self._work_combo = QComboBox()
+        self._work_combo = NoWheelComboBox()
         self._work_combo.currentIndexChanged.connect(self._reload_sections)
 
-        self._section_combo = QComboBox()
+        self._section_combo = NoWheelComboBox()
         self._section_combo.currentIndexChanged.connect(self._reload_preview)
 
         self._editor = QTextEdit()

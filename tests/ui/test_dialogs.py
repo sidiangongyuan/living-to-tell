@@ -74,6 +74,39 @@ def test_settings_dialog_loads_initial_values(qtbot, container):
     assert dialog._wire_api.currentText() == "responses"  # noqa: SLF001
 
 
+def test_settings_dialog_controls_ignore_mouse_wheel(qtbot, container):
+    dialog = SettingsDialog(container.settings)
+    qtbot.addWidget(dialog)
+
+    class _Wheel:
+        ignored = False
+
+        def ignore(self):
+            self.ignored = True
+
+    controls = [
+        dialog._provider_combo,  # noqa: SLF001
+        dialog._model_preset_combo,  # noqa: SLF001
+        dialog._wire_api,  # noqa: SLF001
+        dialog._language_combo,  # noqa: SLF001
+        dialog._font_size,  # noqa: SLF001
+        dialog._font_preset_combo,  # noqa: SLF001
+        dialog._font_family_combo,  # noqa: SLF001
+        dialog._line_height,  # noqa: SLF001
+        dialog._paragraph_spacing,  # noqa: SLF001
+        dialog._content_width,  # noqa: SLF001
+        dialog._page_vertical_padding,  # noqa: SLF001
+        dialog._page_gap,  # noqa: SLF001
+    ]
+    for control in controls:
+        before = control.currentIndex() if hasattr(control, "currentIndex") else control.value()
+        event = _Wheel()
+        control.wheelEvent(event)  # noqa: SLF001
+        after = control.currentIndex() if hasattr(control, "currentIndex") else control.value()
+        assert event.ignored is True
+        assert after == before
+
+
 def test_settings_dialog_accept_persists_changes(qtbot, container):
     dialog = SettingsDialog(container.settings)
     qtbot.addWidget(dialog)

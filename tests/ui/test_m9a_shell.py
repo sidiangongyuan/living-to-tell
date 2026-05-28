@@ -67,6 +67,17 @@ class TestThemeTokens:
         assert "QWidget#AIWorkspacePanel QComboBox QAbstractItemView" in qss
         assert LIGHT_TOKENS.bg_card in qss
 
+    def test_build_qss_uses_semantic_preview_tokens(self):
+        from writer.ui.theme import DARK_TOKENS, LIGHT_TOKENS, build_qss
+
+        light_qss = build_qss(LIGHT_TOKENS)
+        dark_qss = build_qss(DARK_TOKENS)
+
+        assert LIGHT_TOKENS.bg_preview in light_qss
+        assert DARK_TOKENS.bg_preview in dark_qss
+        assert "#FFF9EF" not in dark_qss
+        assert "#F5F1E8" not in dark_qss
+
 
 # ---------------------------------------------------------------------------
 # Theme persistence via settings
@@ -155,6 +166,26 @@ class TestShellLayout:
         qtbot.addWidget(window)
 
         assert len(window.findChildren(QToolBar)) >= 1
+
+    def test_toolbar_shell_toggles_have_distinct_semantics(self, qtbot, container):
+        from writer.ui.main_window import MainWindow
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        assert window._sidebar_btn is not window._context_toggle_btn  # noqa: SLF001
+        assert window._sidebar_btn.text() in {"Sidebar", "侧栏"}  # noqa: SLF001
+        assert window._context_toggle_btn.text() in {"Context", "上下文"}  # noqa: SLF001
+
+        before_context = window._context_pane_visible  # noqa: SLF001
+        window._context_toggle_btn.click()  # noqa: SLF001
+        assert window._context_pane_visible is (not before_context)  # noqa: SLF001
+        assert window._context_toggle_btn.isChecked() is window._context_pane_visible  # noqa: SLF001
+
+        before_sidebar = window._sidebar_collapsed  # noqa: SLF001
+        window._sidebar_btn.click()  # noqa: SLF001
+        assert window._sidebar_collapsed is (not before_sidebar)  # noqa: SLF001
+        assert window._sidebar_btn.isChecked() is (not window._sidebar_collapsed)  # noqa: SLF001
 
     def test_focus_mode_hides_and_restores_shell_surfaces(self, qtbot, container):
         from writer.ui.main_window import MainWindow, MODE_FRAGMENTS

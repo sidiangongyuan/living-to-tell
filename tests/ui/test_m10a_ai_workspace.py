@@ -556,6 +556,30 @@ def test_fragment_writing_notes_are_default_context_for_continue_and_expand(qtbo
     assert [att.kind for att in expand_request.attachments].count("writing_note") == 1
 
 
+def test_fragment_writing_notes_preview_and_manage_action(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
+
+    entry = container.entry_repository.create(title="绵绵", body="原文。")
+    container.entry_writing_note_repository.create(
+        entry_id=entry.id,
+        body="下一段让人物先回到凉面摊，再听见风。",
+    )
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(
+            kind=AiThreadScope.FRAGMENT,
+            ref_id=entry.id,
+            name=entry.title,
+            body=entry.body,
+        )
+    )
+
+    assert "凉面摊" in tab._writing_notes_preview.toPlainText()  # noqa: SLF001
+    with qtbot.waitSignal(tab.request_focus_writing_notes):
+        tab._manage_writing_notes_btn.click()  # noqa: SLF001
+
+
 def test_fragment_writing_notes_are_opt_in_for_analysis_tasks(qtbot, container):
     from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
 

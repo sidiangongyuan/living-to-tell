@@ -37,16 +37,22 @@ _CATALOG: dict[str, dict[str, str]] = {
         "editor.writing_notes.count": "{count} open",
         "editor.writing_notes.hint": (
             "Private notes for the next writing session. They stay out of the "
-            "body, export, and search, but can be sent to AI as reference."
+            "body, export, and search. Use Continue with notes to send active "
+            "notes to AI as reference."
         ),
         "editor.writing_notes.placeholder": "What should happen next in this fragment?",
         "editor.writing_notes.add": "Add",
         "editor.writing_notes.add_first": "Add note",
         "editor.writing_notes.collapse": "Collapse",
         "editor.writing_notes.expand": "Show notes",
-        "editor.writing_notes.done": "Mark done",
-        "editor.writing_notes.done_hint": "Hide this note from the active continuation list.",
-        "editor.writing_notes.edit": "Edit",
+        "editor.writing_notes.done": "Done · move to completed",
+        "editor.writing_notes.done_hint": "Move this note to Completed. It is not deleted and can be restored.",
+        "editor.writing_notes.restore": "Restore",
+        "editor.writing_notes.restore_hint": "Move this note back to active continuation notes.",
+        "editor.writing_notes.show_done": "Show completed ({count})",
+        "editor.writing_notes.hide_done": "Hide completed",
+        "editor.writing_notes.done_section": "Completed notes",
+        "editor.writing_notes.edit": "Edit note",
         "editor.writing_notes.save": "Save",
         "editor.writing_notes.cancel": "Cancel",
         "editor.writing_notes.pin": "Pin",
@@ -79,6 +85,8 @@ _CATALOG: dict[str, dict[str, str]] = {
         "menu.command_palette": "&Command Palette…",
         # ── Main window – toolbar / status bar ───────────────────────────────
         "toolbar.toggle_sidebar": "Toggle sidebar",
+        "toolbar.sidebar": "Sidebar",
+        "toolbar.context": "Context",
         "toolbar.focus_mode": "Focus",
         "toolbar.exit_focus_mode": "Exit focus",
         "toolbar.language_switch": "中文",
@@ -793,6 +801,12 @@ _CATALOG: dict[str, dict[str, str]] = {
             "Used only as private guidance for expansion/continuation. It does "
             "not alter the source text."
         ),
+        "ai.attachments.writing_notes_empty": (
+            "No continuation notes for this fragment yet. Add notes from the "
+            "fragment editor, then click Continue with notes to return here."
+        ),
+        "ai.attachments.writing_notes_preview": "Notes to include:\n{notes}",
+        "ai.attachments.manage_writing_notes": "Add / edit notes",
         "ai.attachments.writing_note_name": "Continuation note {index}",
         "ai.attachments.writing_note_body": "Private continuation note:\n{body}",
         # task descriptions
@@ -1062,15 +1076,20 @@ _CATALOG: dict[str, dict[str, str]] = {
         "editor.epigraph_label": "题辞",
         "editor.writing_notes.title": "续写提示",
         "editor.writing_notes.count": "{count} 条未完成",
-        "editor.writing_notes.hint": "写给下次继续这个片段时的自己：不会进入正文、导出或正文搜索；需要时可作为 AI 参考。",
+        "editor.writing_notes.hint": "写给下次继续这个片段时的自己：不会进入正文、导出或正文搜索；添加后点“用提示续写”可带入 AI。",
         "editor.writing_notes.placeholder": "这个片段接下来怎么写？",
         "editor.writing_notes.add": "添加",
         "editor.writing_notes.add_first": "添加续写提示",
         "editor.writing_notes.collapse": "收起",
         "editor.writing_notes.expand": "展开提示",
-        "editor.writing_notes.done": "标记完成",
-        "editor.writing_notes.done_hint": "从当前未完成续写提示中移除。",
-        "editor.writing_notes.edit": "编辑",
+        "editor.writing_notes.done": "完成，移到已完成",
+        "editor.writing_notes.done_hint": "这不是删除，只是移到“已完成提示”，之后可以恢复。",
+        "editor.writing_notes.restore": "恢复",
+        "editor.writing_notes.restore_hint": "恢复到未完成续写提示，AI 可继续带入。",
+        "editor.writing_notes.show_done": "显示已完成（{count}）",
+        "editor.writing_notes.hide_done": "隐藏已完成",
+        "editor.writing_notes.done_section": "已完成提示",
+        "editor.writing_notes.edit": "编辑内容",
         "editor.writing_notes.save": "保存",
         "editor.writing_notes.cancel": "取消",
         "editor.writing_notes.pin": "置顶",
@@ -1103,6 +1122,8 @@ _CATALOG: dict[str, dict[str, str]] = {
         "menu.command_palette": "命令面板(&P)…",
         # ── Toolbar ────────────────────────────────────────────────────────────
         "toolbar.toggle_sidebar": "切换侧栏",
+        "toolbar.sidebar": "侧栏",
+        "toolbar.context": "上下文",
         "toolbar.focus_mode": "专注",
         "toolbar.exit_focus_mode": "退出专注",
         "toolbar.language_switch": "EN",
@@ -1728,6 +1749,9 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.attachments.heavy_warning": "上下文较大，开销与延迟可能较高。",
         "ai.attachments.include_writing_notes": "带入续写提示（{count}）",
         "ai.attachments.writing_notes_hint": "只作为扩写/续写参考，不改动原文，也不会写入正文。",
+        "ai.attachments.writing_notes_empty": "当前片段还没有续写提示。点击“添加 / 编辑提示”回到片段顶部，写下想法后点“用提示续写”回到 AI。",
+        "ai.attachments.writing_notes_preview": "将带入这些提示：\n{notes}",
+        "ai.attachments.manage_writing_notes": "添加 / 编辑提示",
         "ai.attachments.writing_note_name": "续写提示 {index}",
         "ai.attachments.writing_note_body": "片段续写提示，仅供参考：\n{body}",
         # task descriptions

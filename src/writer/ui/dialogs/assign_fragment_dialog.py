@@ -5,7 +5,6 @@ from typing import Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -16,6 +15,7 @@ from PySide6.QtWidgets import (
 from writer.storage.repositories.chapter_repository import ChapterRepository
 from writer.storage.repositories.project_repository import ProjectRepository
 from writer.ui.i18n import TR
+from writer.ui.widgets.controls import NoWheelComboBox
 
 
 _NO_PROJECT_ID = ""
@@ -37,8 +37,8 @@ class AssignFragmentDialog(QDialog):
         self._chapters = chapter_repo
         self.setWindowTitle(TR("assign.title"))
 
-        self._project_combo = QComboBox()
-        self._chapter_combo = QComboBox()
+        self._project_combo = NoWheelComboBox()
+        self._chapter_combo = NoWheelComboBox()
 
         self._project_combo.addItem(TR("assign.no_project"), _NO_PROJECT_ID)
         for project in self._projects.list_all():
