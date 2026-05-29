@@ -6,7 +6,7 @@ from time import monotonic
 from typing import Optional
 
 from PySide6.QtCore import QTimer, Signal
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QRect
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -459,7 +459,14 @@ class EditorPanel(QWidget):
         content_layout.addWidget(self._tags)
         content_layout.addWidget(self._tag_chips_widget)
         content_layout.addWidget(self._epigraph_card)
-        content_layout.addWidget(self._body, 1)
+        self._editor_stack = QFrame()
+        self._editor_stack.setObjectName("EditorStack")
+        editor_stack_layout = QVBoxLayout(self._editor_stack)
+        editor_stack_layout.setContentsMargins(0, 0, 0, 0)
+        editor_stack_layout.setSpacing(0)
+        editor_stack_layout.addWidget(self._body)
+        self._writing_notes_board.set_note_layer(self._editor_stack)
+        content_layout.addWidget(self._editor_stack, 1)
         content_layout.addWidget(self._page_controls)
         content_layout.addLayout(bottom_row)
 
@@ -547,10 +554,15 @@ class EditorPanel(QWidget):
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         self._apply_content_width()
-        if self.width() < 880 and not self._writing_notes_board.is_collapsed():
+        self._update_writing_notes_float_layer()
+        if self.width() < 760 and not self._writing_notes_board.is_collapsed():
             self._writing_notes_collapsed = True
             self._remember_writing_notes_view_state()
             self._sync_writing_notes_board_state()
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._update_writing_notes_float_layer()
 
     def _target_content_width(self) -> int:
         base_width = self._display_settings.content_width
@@ -587,6 +599,23 @@ class EditorPanel(QWidget):
         self._content_wrap.setMinimumWidth(minimum_width)
         self._content_wrap.setMaximumWidth(width)
         self.updateGeometry()
+        self._update_writing_notes_float_layer()
+
+    def _update_writing_notes_float_layer(self) -> None:
+        if not hasattr(self, "_editor_stack"):
+            return
+        rect = self._editor_stack.rect()
+        board_width = self._writing_notes_board.width()
+        reserved = board_width + 18 if not self._writing_notes_board.is_collapsed() else 0
+        self._writing_notes_board.set_drag_bounds(
+            QRect(
+                12,
+                12,
+                max(12, rect.width() - reserved - 24),
+                max(12, rect.height() - 24),
+            )
+        )
+        self._writing_notes_board.raise_()
 
     def set_entry(self, entry: Optional[Entry]) -> None:
         previous_entry_id = self._entry_id

@@ -3,6 +3,19 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.31 — Freer sticky-note interaction
+
+- Changed fragment notes from a constrained right-side card area into floating
+  sticky notes over the editor surface.
+- Fixed the note collapse control so it remains readable and can be reopened /
+  closed reliably.
+- Added direct pin buttons on notes; pinned notes stay fixed and cannot be
+  dragged accidentally.
+- Made note dragging smoother by removing snap-on-release and keeping movement
+  continuous within the editor bounds.
+- Improved note-board responsiveness so the board no longer squeezes note text
+  into an unreadable narrow rail.
+
 ## 0.2.0-alpha.30 — Sticky fragment note board
 
 - Replaced the rigid continuation-note list with a right-side sticky fragment

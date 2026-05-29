@@ -1,10 +1,10 @@
-"""Visual board for fragment-bound writing notes."""
+"""Floating sticky-note board for fragment-bound writing notes."""
 
 from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import QPoint, QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
 from PySide6.QtGui import QFont, QMouseEvent, QPalette
 from PySide6.QtWidgets import (
     QFrame,
@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMenu,
     QPushButton,
-    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -30,13 +29,14 @@ NOTE_COLOR_KEYS = ("cream", "amber", "mist", "blue", "rose", "paper")
 DEFAULT_NOTE_COLOR_KEY = "cream"
 DEFAULT_NOTE_WIDTH = 188
 MIN_NOTE_WIDTH = 150
-MAX_NOTE_WIDTH = 260
+MAX_NOTE_WIDTH = 280
 BOARD_GRID = 8
 BOARD_PADDING = 12
 BOARD_COLUMN_GAP = 14
 BOARD_ROW_GAP = 14
-BOARD_MIN_WIDTH = 276
-BOARD_MAX_WIDTH = 360
+BOARD_MIN_WIDTH = 260
+BOARD_MAX_WIDTH = 340
+COLLAPSED_WIDTH = 120
 
 
 class WritingNoteCard(QFrame):
@@ -57,7 +57,7 @@ class WritingNoteCard(QFrame):
         self.note = note
         self._drag_start: Optional[QPoint] = None
         self._drag_origin: Optional[QPoint] = None
-        self._board_size = QPoint(0, 0)
+        self._drag_bounds = QRect(0, 0, 0, 0)
         self.setObjectName("WritingNoteSticky")
         self.setProperty("color", _color_key(note))
         self.setProperty("pinned", note.pinned)
@@ -72,10 +72,18 @@ class WritingNoteCard(QFrame):
         top = QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
         top.setSpacing(4)
-        pin = QLabel("●" if note.pinned else "○")
-        pin.setObjectName("WritingNotePin")
-        pin.setToolTip(TR("editor.writing_notes.unpin" if note.pinned else "editor.writing_notes.pin"))
-        top.addWidget(pin)
+        pin_btn = QPushButton("●" if note.pinned else "○")
+        pin_btn.setObjectName("WritingNotePinButton")
+        pin_btn.setFixedSize(24, 22)
+        pin_btn.setToolTip(
+            TR("editor.writing_notes.unpin" if note.pinned else "editor.writing_notes.pin")
+        )
+        pin_btn.clicked.connect(
+            lambda _checked=False, note_id=note.id, pinned=note.pinned: (
+                self.pin_requested.emit(note_id, not pinned)
+            )
+        )
+        top.addWidget(pin_btn)
         state = QLabel(_state_text(note))
         state.setObjectName("WritingNoteState")
         top.addWidget(state, 1)
@@ -94,7 +102,7 @@ class WritingNoteCard(QFrame):
         body_font = QFont()
         if display_font_family:
             body_font.setFamilies(_font_families(display_font_family))
-        body_font.setPointSizeF(11.5)
+        body_font.setPointSizeF(11.2)
         body_font.setStrikeOut(note.status == NOTE_STATUS_DONE)
         self._body.setFont(body_font)
         if note.status == NOTE_STATUS_DONE:
@@ -133,14 +141,16 @@ class WritingNoteCard(QFrame):
         actions.addStretch(1)
         layout.addLayout(actions)
 
-    def set_board_size(self, size) -> None:
-        self._board_size = QSize(max(0, size.width()), max(0, size.height()))
+    def set_drag_bounds(self, bounds: QRect) -> None:
+        self._drag_bounds = bounds
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        if event.button() == Qt.MouseButton.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton and not self.note.pinned:
             self._drag_start = event.globalPosition().toPoint()
             self._drag_origin = self.pos()
             self.raise_()
+            event.accept()
+            return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
@@ -155,7 +165,7 @@ class WritingNoteCard(QFrame):
         if self._drag_start is not None:
             self._drag_start = None
             self._drag_origin = None
-            pos = self._snapped_position(self.pos())
+            pos = self._bounded_position(self.pos())
             self.move(pos)
             self.layout_changed.emit(
                 self.note.id,
@@ -170,16 +180,15 @@ class WritingNoteCard(QFrame):
         super().mouseReleaseEvent(event)
 
     def _bounded_position(self, point: QPoint) -> QPoint:
-        max_x = max(BOARD_PADDING, self._board_size.width() - self.width() - BOARD_PADDING)
-        max_y = max(BOARD_PADDING, self._board_size.height() - self.height() - BOARD_PADDING)
+        bounds = self._drag_bounds
+        if bounds.isNull() or not bounds.isValid():
+            bounds = self.parentWidget().rect() if self.parentWidget() else QRect(0, 0, 0, 0)
+        max_x = max(BOARD_PADDING, bounds.right() - self.width())
+        max_y = max(BOARD_PADDING, bounds.bottom() - self.height())
         return QPoint(
-            min(max(point.x(), BOARD_PADDING), max_x),
-            min(max(point.y(), BOARD_PADDING), max_y),
+            min(max(point.x(), bounds.left()), max_x),
+            min(max(point.y(), bounds.top()), max_y),
         )
-
-    def _snapped_position(self, point: QPoint) -> QPoint:
-        bounded = self._bounded_position(point)
-        return QPoint(_snap(bounded.x()), _snap(bounded.y()))
 
     def _start_edit(self) -> None:
         self._body.setVisible(False)
@@ -213,7 +222,7 @@ class WritingNoteCard(QFrame):
         for label_key, width in (
             ("editor.writing_notes.width_small", 160),
             ("editor.writing_notes.width_medium", DEFAULT_NOTE_WIDTH),
-            ("editor.writing_notes.width_large", 240),
+            ("editor.writing_notes.width_large", 248),
         ):
             width_menu.addAction(
                 TR(label_key),
@@ -255,20 +264,38 @@ class WritingNotesBoard(QFrame):
     collapsed_changed = Signal(bool)
     show_done_changed = Signal(bool)
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        *,
+        note_layer: Optional[QWidget] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("WritingNotesBoard")
         self.setMinimumWidth(BOARD_MIN_WIDTH)
         self.setMaximumWidth(BOARD_MAX_WIDTH)
         self._notes: list[EntryWritingNote] = []
+        self._cards: dict[str, WritingNoteCard] = {}
         self._entry_id: Optional[str] = None
         self._show_done = True
         self._collapsed = False
         self._display_font_family = ""
+        self._note_layer = note_layer
+        self._drag_bounds = QRect()
 
-        self._root = QVBoxLayout(self)
-        self._root.setContentsMargins(10, 10, 10, 10)
-        self._root.setSpacing(8)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(8)
+
+        self._collapsed_button = QPushButton(TR("editor.writing_notes.expand"))
+        self._collapsed_button.setObjectName("WritingNotesCollapsedTab")
+        self._collapsed_button.clicked.connect(self.toggle_collapsed)
+        root.addWidget(self._collapsed_button)
+
+        self._content = QWidget()
+        content = QVBoxLayout(self._content)
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(8)
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
@@ -279,26 +306,11 @@ class WritingNotesBoard(QFrame):
         self._count.setObjectName("WritingNotesCount")
         header.addWidget(self._count)
         header.addStretch(1)
-        self._collapse_btn = QPushButton("›")
+        self._collapse_btn = QPushButton(TR("editor.writing_notes.collapse"))
         self._collapse_btn.setObjectName("GhostButton")
         self._collapse_btn.clicked.connect(self.toggle_collapsed)
         header.addWidget(self._collapse_btn)
-        self._root.addLayout(header)
-        self._header_widgets = (
-            self._title,
-            self._count,
-            self._collapse_btn,
-        )
-
-        self._collapsed_button = QPushButton(TR("editor.writing_notes.expand"))
-        self._collapsed_button.setObjectName("WritingNotesCollapsedTab")
-        self._collapsed_button.clicked.connect(self.toggle_collapsed)
-        self._root.addWidget(self._collapsed_button)
-
-        self._content = QWidget()
-        content = QVBoxLayout(self._content)
-        content.setContentsMargins(0, 0, 0, 0)
-        content.setSpacing(8)
+        content.addLayout(header)
 
         add_row = QHBoxLayout()
         add_row.setContentsMargins(0, 0, 0, 0)
@@ -330,23 +342,17 @@ class WritingNotesBoard(QFrame):
         action_row.addWidget(self._continue_btn)
         content.addLayout(action_row)
 
-        self._scroll = QScrollArea()
-        self._scroll.setObjectName("WritingNotesBoardScroll")
-        self._scroll.setWidgetResizable(False)
-        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._canvas = QWidget()
-        self._canvas.setObjectName("WritingNotesCanvas")
-        self._canvas.setMinimumHeight(420)
-        self._scroll.setWidget(self._canvas)
-        content.addWidget(self._scroll, 1)
-
         self._empty = QLabel(TR("editor.writing_notes.empty_board"))
         self._empty.setObjectName("WritingNotesHint")
         self._empty.setWordWrap(True)
         content.addWidget(self._empty)
 
-        self._root.addWidget(self._content, 1)
+        root.addWidget(self._content, 1)
         self._refresh_visibility()
+
+    def set_note_layer(self, layer: QWidget) -> None:
+        self._note_layer = layer
+        self._sync_card_bounds()
 
     def set_display_font_family(self, family: str) -> None:
         self._display_font_family = family
@@ -361,6 +367,12 @@ class WritingNotesBoard(QFrame):
         self.setVisible(entry_id is not None)
         if entry_id is None:
             self._input.clear()
+            self._notes = []
+            self._rebuild_cards()
+
+    def set_drag_bounds(self, bounds: QRect) -> None:
+        self._drag_bounds = bounds
+        self._sync_card_bounds()
 
     def focus_input(self) -> None:
         self.set_collapsed(False, emit_signal=True)
@@ -371,6 +383,7 @@ class WritingNotesBoard(QFrame):
         changed = self._collapsed != collapsed
         self._collapsed = collapsed
         self._refresh_visibility()
+        self._sync_card_visibility()
         if changed and emit_signal:
             self.collapsed_changed.emit(self._collapsed)
 
@@ -395,15 +408,16 @@ class WritingNotesBoard(QFrame):
         self.set_show_done(not self._show_done, emit_signal=True)
 
     def arrange_notes(self) -> None:
+        bounds = self._effective_bounds()
         visible = [note for note in self._visible_notes() if not note.pinned]
-        width = max(BOARD_MIN_WIDTH - BOARD_PADDING * 2, self._canvas.width() - BOARD_PADDING * 2)
-        x = BOARD_PADDING
-        y = BOARD_PADDING
+        x = bounds.right()
+        y = bounds.top()
         for note in visible:
             note_width = _note_width(note)
-            if x + note_width > width:
-                x = BOARD_PADDING
-                y += 150
+            x = max(bounds.left(), x - note_width)
+            if y + 138 > bounds.bottom():
+                y = bounds.top()
+                x = max(bounds.left(), x - note_width - BOARD_COLUMN_GAP)
             self.layout_changed.emit(
                 note.id,
                 x,
@@ -412,7 +426,7 @@ class WritingNotesBoard(QFrame):
                 _color_key(note),
                 _z_index(note),
             )
-            x += note_width + BOARD_COLUMN_GAP
+            y += 138 + BOARD_ROW_GAP
 
     def _on_add(self) -> None:
         text = self._input.text().strip()
@@ -429,53 +443,67 @@ class WritingNotesBoard(QFrame):
         ]
 
     def _rebuild_cards(self) -> None:
-        for child in self._canvas.findChildren(WritingNoteCard):
-            child.hide()
-            child.setParent(None)
-            child.deleteLater()
-        max_bottom = 420
-        canvas_width = max(BOARD_MIN_WIDTH, self._scroll.viewport().width() or BOARD_MIN_WIDTH)
+        for card in self._cards.values():
+            card.hide()
+            card.setParent(None)
+            card.deleteLater()
+        self._cards.clear()
+        parent = self._note_layer
+        if parent is None:
+            self._refresh_visibility()
+            return
+        bounds = self._effective_bounds()
         for index, note in enumerate(self._visible_notes()):
-            x, y = _note_position(note, index, canvas_width)
+            x, y = _note_position(note, index, bounds)
             card = WritingNoteCard(
                 note,
                 display_font_family=self._display_font_family,
-                parent=self._canvas,
+                parent=parent,
             )
-            card.set_board_size(QSize(canvas_width, max(self._canvas.height(), max_bottom)))
+            card.set_drag_bounds(bounds)
             card.move(x, y)
             card.edit_requested.connect(self.edit_requested)
             card.done_requested.connect(self.done_requested)
             card.delete_requested.connect(self.delete_requested)
             card.pin_requested.connect(self.pin_requested)
             card.layout_changed.connect(self.layout_changed)
-            card.show()
-            max_bottom = max(max_bottom, y + card.sizeHint().height() + BOARD_PADDING)
-        self._canvas.setMinimumSize(canvas_width, max_bottom)
-        self._empty.setVisible(not self._visible_notes())
+            card.raise_()
+            self._cards[note.id] = card
+        self._sync_card_visibility()
         self._refresh_visibility()
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
-        super().resizeEvent(event)
-        size = QSize(
-            max(BOARD_MIN_WIDTH, self._scroll.viewport().width() or BOARD_MIN_WIDTH),
-            max(420, self._canvas.height()),
-        )
-        for card in self._canvas.findChildren(WritingNoteCard):
-            card.set_board_size(size)
+    def _sync_card_bounds(self) -> None:
+        bounds = self._effective_bounds()
+        for card in self._cards.values():
+            card.set_drag_bounds(bounds)
+            card.move(card._bounded_position(card.pos()))  # noqa: SLF001
+
+    def _sync_card_visibility(self) -> None:
+        visible = bool(self._entry_id) and not self._collapsed
+        for card in self._cards.values():
+            card.setVisible(visible)
+            if visible:
+                card.raise_()
+        if visible:
+            self.raise_()
+
+    def _effective_bounds(self) -> QRect:
+        if self._drag_bounds.isValid() and not self._drag_bounds.isNull():
+            return self._drag_bounds
+        parent = self._note_layer
+        if parent is None:
+            return QRect(BOARD_PADDING, BOARD_PADDING, 640, 420)
+        return parent.rect().adjusted(BOARD_PADDING, BOARD_PADDING, -BOARD_PADDING, -BOARD_PADDING)
 
     def _refresh_visibility(self) -> None:
         if self._collapsed:
-            self.setMinimumWidth(46)
-            self.setMaximumWidth(52)
+            self.setMinimumWidth(COLLAPSED_WIDTH)
+            self.setMaximumWidth(COLLAPSED_WIDTH)
         else:
             self.setMinimumWidth(BOARD_MIN_WIDTH)
             self.setMaximumWidth(BOARD_MAX_WIDTH)
-        for widget in self._header_widgets:
-            widget.setVisible(not self._collapsed)
         self._content.setVisible(not self._collapsed)
         self._collapsed_button.setVisible(self._collapsed)
-        self._collapse_btn.setText("‹" if self._collapsed else "›")
         open_count = sum(1 for note in self._notes if note.status == NOTE_STATUS_OPEN)
         done_count = sum(1 for note in self._notes if note.status == NOTE_STATUS_DONE)
         self._count.setText(TR("editor.writing_notes.count").format(count=open_count))
@@ -486,6 +514,7 @@ class WritingNotesBoard(QFrame):
             )
         )
         self._continue_btn.setVisible(open_count > 0)
+        self._empty.setVisible(open_count == 0 and done_count == 0)
 
 
 def _state_text(note: EntryWritingNote) -> str:
@@ -501,10 +530,6 @@ def _font_families(value: str) -> list[str]:
     return families or ["Georgia", "Cambria"]
 
 
-def _snap(value: int) -> int:
-    return int(round(value / BOARD_GRID) * BOARD_GRID)
-
-
 def _normalize_color_key(value: object) -> str:
     key = str(value or "").strip().lower()
     return key if key in NOTE_COLOR_KEYS else DEFAULT_NOTE_COLOR_KEY
@@ -515,27 +540,40 @@ def _color_key(note: EntryWritingNote) -> str:
 
 
 def _note_width(note: EntryWritingNote) -> int:
-    return max(MIN_NOTE_WIDTH, min(MAX_NOTE_WIDTH, int(getattr(note, "board_width", DEFAULT_NOTE_WIDTH) or DEFAULT_NOTE_WIDTH)))
+    return max(
+        MIN_NOTE_WIDTH,
+        min(MAX_NOTE_WIDTH, int(getattr(note, "board_width", DEFAULT_NOTE_WIDTH) or DEFAULT_NOTE_WIDTH)),
+    )
 
 
 def _z_index(note: EntryWritingNote) -> int:
     return int(getattr(note, "z_index", 0) or 0)
 
 
-def _note_position(note: EntryWritingNote, index: int, canvas_width: int) -> tuple[int, int]:
+def _note_position(note: EntryWritingNote, index: int, bounds: QRect) -> tuple[int, int]:
     x = getattr(note, "board_x", None)
     y = getattr(note, "board_y", None)
     if x is not None and y is not None:
         try:
-            return _snap(int(x)), _snap(int(y))
+            return _bounded_point(QPoint(int(x), int(y)), bounds, _note_width(note))
         except (TypeError, ValueError):
             pass
     note_width = _note_width(note)
-    usable = max(note_width, canvas_width - BOARD_PADDING * 2)
-    columns = max(1, usable // (note_width + BOARD_COLUMN_GAP))
+    columns = max(1, max(note_width, bounds.width()) // (note_width + BOARD_COLUMN_GAP))
     column = index % columns
     row = index // columns
+    return _bounded_point(
+        QPoint(
+            bounds.right() - note_width - column * (note_width + BOARD_COLUMN_GAP),
+            bounds.top() + row * 138,
+        ),
+        bounds,
+        note_width,
+    )
+
+
+def _bounded_point(point: QPoint, bounds: QRect, width: int) -> tuple[int, int]:
     return (
-        BOARD_PADDING + column * (note_width + BOARD_COLUMN_GAP),
-        BOARD_PADDING + row * 150,
+        min(max(point.x(), bounds.left()), max(bounds.left(), bounds.right() - width)),
+        min(max(point.y(), bounds.top()), max(bounds.top(), bounds.bottom() - 100)),
     )

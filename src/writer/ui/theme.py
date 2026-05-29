@@ -717,9 +717,11 @@ QFrame#WritingNotesCard {{
 QPushButton#WritingNotesCollapsedTab {{
     background: {t.bg_card};
     border: 1px solid {t.border};
-    border-radius: {t.radius_sm}px;
+    border-radius: 16px;
     color: {t.text_secondary};
-    padding: 10px 4px;
+    padding: 7px 12px;
+    text-align: center;
+    min-width: 88px;
 }}
 QPushButton#WritingNotesCollapsedTab:hover {{
     border-color: {t.accent};
@@ -742,24 +744,22 @@ QScrollArea#WritingNotesRowsScroll {{
 QScrollArea#WritingNotesRowsScroll QWidget {{
     background: transparent;
 }}
-QScrollArea#WritingNotesBoardScroll {{
-    background: transparent;
-    border: none;
-}}
-QScrollArea#WritingNotesBoardScroll QWidget#WritingNotesCanvas {{
-    background: transparent;
-}}
-QWidget#WritingNotesCanvas {{
-    background: transparent;
-}}
 QLabel#WritingNoteState {{
     color: {t.text_muted};
     font-size: {t.fs_meta}px;
     font-weight: 600;
 }}
-QLabel#WritingNotePin {{
+QPushButton#WritingNotePinButton {{
+    background: rgba(255, 255, 255, 70);
+    border: 1px solid rgba(80, 64, 44, 30);
+    border-radius: 11px;
     color: {t.accent};
     font-size: {t.fs_meta}px;
+    padding: 0;
+}}
+QPushButton#WritingNotePinButton:hover {{
+    background: rgba(255, 255, 255, 145);
+    border-color: {t.accent};
 }}
 QFrame#WritingNoteSticky {{
     border: 1px solid rgba(80, 64, 44, 46);
@@ -767,6 +767,9 @@ QFrame#WritingNoteSticky {{
 }}
 QFrame#WritingNoteSticky[pinned="true"] {{
     border-top: 3px solid {t.accent};
+}}
+QFrame#WritingNoteSticky[pinned="false"]:hover {{
+    border-color: {t.accent};
 }}
 QFrame#WritingNoteSticky[done="true"] {{
     border-style: dashed;

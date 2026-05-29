@@ -209,21 +209,21 @@ def test_editor_panel_writing_notes_board_emits_actions(qtbot):
     board = panel._writing_notes_board  # noqa: SLF001
     assert board.isHidden() is False
     assert "1" in board._count.text()  # noqa: SLF001
-    assert len(board._canvas.findChildren(WritingNoteCard)) == 1  # noqa: SLF001
+    assert len(panel._editor_stack.findChildren(WritingNoteCard)) == 1  # noqa: SLF001
 
     board._input.setText("补一个下雨的细节")  # noqa: SLF001
     with qtbot.waitSignal(panel.writing_note_add_requested) as add_signal:
         board._add_btn.click()  # noqa: SLF001
     assert add_signal.args == ["补一个下雨的细节"]
 
-    buttons = board._canvas.findChildren(QPushButton)  # noqa: SLF001
+    buttons = panel._editor_stack.findChildren(QPushButton)  # noqa: SLF001
     edit_button = next(button for button in buttons if button.text() == TR("editor.writing_notes.edit"))
     done_button = next(button for button in buttons if button.objectName() == "WritingNoteDoneToggle")
 
     edit_button.click()
     edit_input = next(
         child
-        for child in board._canvas.findChildren(type(board._input))  # noqa: SLF001
+        for child in panel._editor_stack.findChildren(type(board._input))  # noqa: SLF001
         if child.isVisible() and child.text() == "下一段让母亲先沉默。"
     )
     edit_input.setText("下一段让母亲先沉默，然后看雨。")
@@ -278,7 +278,7 @@ def test_editor_panel_completed_writing_notes_can_be_restored(qtbot):
     assert board._done_toggle_btn.isVisible()  # noqa: SLF001
     visible_label_text = "\n".join(
         card.note.body
-        for card in board._canvas.findChildren(WritingNoteCard)  # noqa: SLF001
+        for card in panel._editor_stack.findChildren(WritingNoteCard)  # noqa: SLF001
     )
     assert "已经处理过的提示" in visible_label_text
 
@@ -286,13 +286,13 @@ def test_editor_panel_completed_writing_notes_can_be_restored(qtbot):
 
     visible_label_text = "\n".join(
         card.note.body
-        for card in board._canvas.findChildren(WritingNoteCard)  # noqa: SLF001
+        for card in panel._editor_stack.findChildren(WritingNoteCard)  # noqa: SLF001
     )
     assert "已经处理过的提示" not in visible_label_text
     board._done_toggle_btn.click()  # noqa: SLF001
     restore_button = next(
         button
-        for button in board._canvas.findChildren(QPushButton)  # noqa: SLF001
+        for button in panel._editor_stack.findChildren(QPushButton)  # noqa: SLF001
         if button.objectName() == "WritingNoteDoneToggle" and button.text() == "↺"
     )
     with qtbot.waitSignal(panel.writing_note_done_requested) as restore_signal:
@@ -342,13 +342,13 @@ def test_editor_panel_newly_completed_note_stays_visible_in_completed_section(qt
     assert panel._writing_notes_show_done is True  # noqa: SLF001
     visible_text = "\n".join(
         label.text()
-        for label in panel._writing_notes_board._canvas.findChildren(QLabel)  # noqa: SLF001
+        for label in panel._editor_stack.findChildren(QLabel)  # noqa: SLF001
     )
     assert TR("editor.writing_notes.state_done") in visible_text
     assert "还没处理的提示" in visible_text
     done_cards = [
         card
-        for card in panel._writing_notes_board._canvas.findChildren(WritingNoteCard)  # noqa: SLF001
+        for card in panel._editor_stack.findChildren(WritingNoteCard)  # noqa: SLF001
         if card.note.status == NOTE_STATUS_DONE
     ]
     assert done_cards
@@ -356,7 +356,7 @@ def test_editor_panel_newly_completed_note_stays_visible_in_completed_section(qt
     qtbot.waitUntil(
         lambda: any(
             button.isVisible()
-            for button in panel._writing_notes_board._canvas.findChildren(QPushButton)  # noqa: SLF001
+            for button in panel._editor_stack.findChildren(QPushButton)  # noqa: SLF001
             if button.objectName() == "WritingNoteDoneToggle" and button.text() == "↺"
         )
     )
@@ -391,7 +391,7 @@ def test_editor_panel_writing_notes_collapse_is_remembered_per_fragment(qtbot, c
     assert panel._writing_notes_board.is_collapsed() is True  # noqa: SLF001
 
 
-def test_editor_panel_many_writing_notes_use_scrollable_board(qtbot):
+def test_editor_panel_many_writing_notes_float_on_editor_stack(qtbot):
     from writer.domain.models.entry import Entry
     from writer.domain.models.entry_writing_note import EntryWritingNote
     from writer.ui.panels.editor_panel import EditorPanel
@@ -413,9 +413,8 @@ def test_editor_panel_many_writing_notes_use_scrollable_board(qtbot):
     )
 
     board = panel._writing_notes_board  # noqa: SLF001
-    assert len(board._canvas.findChildren(WritingNoteCard)) == 8  # noqa: SLF001
-    assert board._scroll.widgetResizable() is False  # noqa: SLF001
-    assert board._canvas.minimumHeight() >= 420  # noqa: SLF001
+    assert len(panel._editor_stack.findChildren(WritingNoteCard)) == 8  # noqa: SLF001
+    assert board.is_collapsed() is True  # noqa: SLF001
 
 
 def test_editor_panel_writing_note_board_layout_signal(qtbot):
@@ -442,11 +441,47 @@ def test_editor_panel_writing_note_board_layout_signal(qtbot):
         ]
     )
 
-    card = panel._writing_notes_board._canvas.findChildren(WritingNoteCard)[0]  # noqa: SLF001
+    card = panel._editor_stack.findChildren(WritingNoteCard)[0]  # noqa: SLF001
     with qtbot.waitSignal(panel.writing_note_layout_requested) as signal:
         card.layout_changed.emit("note-1", 48, 64, 240, "mist", 2)
 
     assert signal.args == ["note-1", 48, 64, 240, "mist", 2]
+
+
+def test_editor_panel_pinned_writing_note_does_not_drag(qtbot):
+    from PySide6.QtCore import QPoint, Qt
+
+    from writer.domain.models.entry import Entry
+    from writer.domain.models.entry_writing_note import EntryWritingNote
+    from writer.ui.panels.editor_panel import EditorPanel
+    from writer.ui.widgets.writing_notes_board import WritingNoteCard
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.resize(900, 560)
+    panel.show()
+    panel.set_entry(Entry(id="entry-1", title="t", body="body"))
+    panel.focus_writing_note_input()
+    panel.set_writing_notes(
+        [
+            EntryWritingNote(
+                id="note-1",
+                entry_id="entry-1",
+                body="固定后不应该被拖走。",
+                pinned=True,
+                board_x=80,
+                board_y=80,
+            )
+        ]
+    )
+
+    card = panel._editor_stack.findChildren(WritingNoteCard)[0]  # noqa: SLF001
+    original = card.pos()
+    qtbot.mousePress(card, Qt.MouseButton.LeftButton, pos=QPoint(12, 12))
+    qtbot.mouseMove(card, QPoint(110, 90))
+    qtbot.mouseRelease(card, Qt.MouseButton.LeftButton, pos=QPoint(110, 90))
+
+    assert card.pos() == original
 
 
 def test_main_window_writing_notes_do_not_leak_between_fragments(qtbot, container):
@@ -469,7 +504,7 @@ def test_main_window_writing_notes_do_not_leak_between_fragments(qtbot, containe
     from writer.ui.widgets.writing_notes_board import WritingNoteCard
 
     assert (
-        len(window._editor_panel._writing_notes_board._canvas.findChildren(WritingNoteCard))  # noqa: SLF001
+        len(window._editor_panel._editor_stack.findChildren(WritingNoteCard))  # noqa: SLF001
         == 0
     )
 
