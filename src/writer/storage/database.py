@@ -124,6 +124,30 @@ def _migrate(conn: sqlite3.Connection) -> None:
         force_rebuild=added_usage_kind or added_personal_note,
     )
 
+    note_cols = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(entry_writing_notes)")
+    }
+    if "board_x" not in note_cols:
+        conn.execute("ALTER TABLE entry_writing_notes ADD COLUMN board_x INTEGER")
+    if "board_y" not in note_cols:
+        conn.execute("ALTER TABLE entry_writing_notes ADD COLUMN board_y INTEGER")
+    if "board_width" not in note_cols:
+        conn.execute(
+            "ALTER TABLE entry_writing_notes "
+            "ADD COLUMN board_width INTEGER NOT NULL DEFAULT 188"
+        )
+    if "color_key" not in note_cols:
+        conn.execute(
+            "ALTER TABLE entry_writing_notes "
+            "ADD COLUMN color_key TEXT NOT NULL DEFAULT 'cream'"
+        )
+    if "z_index" not in note_cols:
+        conn.execute(
+            "ALTER TABLE entry_writing_notes "
+            "ADD COLUMN z_index INTEGER NOT NULL DEFAULT 0"
+        )
+
 
 def _ensure_reference_passages_fts_schema(
     conn: sqlite3.Connection, *, force_rebuild: bool = False
@@ -321,6 +345,25 @@ def _ensure_post_migration_indexes(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_entries_project_container_order "
         "ON entries (project_id, chapter_id, sequence_order)"
+    )
+    note_table = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'entry_writing_notes'"
+    ).fetchone()
+    if note_table is None:
+        return
+    conn.execute("DROP INDEX IF EXISTS idx_entry_writing_notes_entry")
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_entry_writing_notes_entry
+            ON entry_writing_notes (
+                entry_id,
+                status,
+                pinned DESC,
+                board_y ASC,
+                board_x ASC,
+                sort_order ASC
+            )
+        """
     )
 
 

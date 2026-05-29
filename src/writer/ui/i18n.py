@@ -33,14 +33,14 @@ _CATALOG: dict[str, dict[str, str]] = {
         "editor.meta_created": "created",
         "editor.meta_updated": "updated",
         "editor.epigraph_label": "Epigraph",
-        "editor.writing_notes.title": "Continuation Notes",
+        "editor.writing_notes.title": "Fragment Notes",
         "editor.writing_notes.count": "{count} open",
         "editor.writing_notes.hint": (
             "Private notes for the next writing session. They stay out of the "
             "body, export, and search. Use Continue with notes to send active "
             "notes to AI as reference."
         ),
-        "editor.writing_notes.placeholder": "What should happen next in this fragment?",
+        "editor.writing_notes.placeholder": "Pin a thought for this fragment…",
         "editor.writing_notes.add": "Add",
         "editor.writing_notes.add_first": "Add note",
         "editor.writing_notes.collapse": "Collapse",
@@ -48,7 +48,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "editor.writing_notes.done": "Done · move to completed",
         "editor.writing_notes.done_hint": "Move this note to Completed. It is not deleted and can be restored.",
         "editor.writing_notes.restore": "Restore",
-        "editor.writing_notes.restore_hint": "Move this note back to active continuation notes.",
+        "editor.writing_notes.restore_hint": "Move this note back to active fragment notes.",
         "editor.writing_notes.show_done": "Show completed ({count})",
         "editor.writing_notes.hide_done": "Hide completed",
         "editor.writing_notes.done_section": "Completed notes",
@@ -58,11 +58,24 @@ _CATALOG: dict[str, dict[str, str]] = {
         "editor.writing_notes.pin": "Pin",
         "editor.writing_notes.unpin": "Unpin",
         "editor.writing_notes.delete": "Delete",
-        "editor.writing_notes.delete_hint": "Delete this continuation note permanently.",
+        "editor.writing_notes.delete_hint": "Delete this fragment note permanently.",
         "editor.writing_notes.state_open": "Active note",
         "editor.writing_notes.state_pinned": "Active note · pinned",
-        "editor.writing_notes.state_done": "Completed · can be restored",
-        "editor.writing_notes.use_for_continue": "Continue with notes",
+        "editor.writing_notes.state_done": "Done · can be restored",
+        "editor.writing_notes.use_for_continue": "Use in AI",
+        "editor.writing_notes.empty_board": "Drop quick ideas here. They stay beside the page like sticky notes and never enter the body.",
+        "editor.writing_notes.arrange": "Arrange",
+        "editor.writing_notes.color": "Color",
+        "editor.writing_notes.color_cream": "Cream",
+        "editor.writing_notes.color_amber": "Amber",
+        "editor.writing_notes.color_mist": "Mist green",
+        "editor.writing_notes.color_blue": "Pale blue",
+        "editor.writing_notes.color_rose": "Dusty rose",
+        "editor.writing_notes.color_paper": "Paper",
+        "editor.writing_notes.width": "Width",
+        "editor.writing_notes.width_small": "Small",
+        "editor.writing_notes.width_medium": "Medium",
+        "editor.writing_notes.width_large": "Large",
         # ── Main window – menus ───────────────────────────────────────────────
         "menu.file": "&File",
         "menu.new_fragment": "&New Fragment",
@@ -144,7 +157,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "context.label_words": "Words",
         "context.label_chars": "Characters",
         "context.label_tags": "Tags",
-        "context.label_writing_notes": "Continuation notes",
+        "context.label_writing_notes": "Fragment notes",
         "context.label_created": "Created",
         "context.label_updated": "Updated",
         "context.label_status": "Status",
@@ -153,7 +166,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "context.label_work_count": "Works in collection",
         "context.action_polish": "AI Polish…",
         "context.action_include": "Include in work…",
-        "context.action_writing_notes": "Add continuation note…",
+        "context.action_writing_notes": "Add fragment note…",
         "context.action_checkpoint": "Save checkpoint…",
         "context.action_save_specimen": "Save as specimen…",
         "context.action_versions": "Versions…",
@@ -329,7 +342,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "settings.editor_typewriter_mode": "Typewriter mode",
         "settings.editor_auto_paragraph_indent": "Insert two full-width spaces after Enter",
         "settings.editor_soft_page_guides": "Paper separators / soft page guides",
-        "settings.editor_writing_notes_collapsed": "Collapse continuation notes by default",
+        "settings.editor_writing_notes_collapsed": "Collapse fragment notes by default",
         "settings.reduced_motion": "Reduce motion",
         "settings.key_only_env": (
               "Use env:VAR or the literal string 'codex' / 'gemini'. The API key is "
@@ -810,40 +823,40 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.attachments.already_added": "This fragment is already attached.",
         "ai.attachments.total": "Estimated context: {chars} chars",
         "ai.attachments.heavy_warning": "Context is large; cost and latency may be high.",
-        "ai.attachments.include_writing_notes": "Include continuation notes ({count})",
+        "ai.attachments.include_writing_notes": "Include fragment notes ({count})",
         "ai.attachments.writing_notes_hint": (
             "These notes stay out of the fragment body and are sent only as private "
             "reference for the AI."
         ),
         "ai.attachments.writing_notes_status_default_on": (
-            'Task "{task}" includes continuation notes by default. You can turn them off '
+            'Task "{task}" includes fragment notes by default. You can turn them off '
             "for this run."
         ),
         "ai.attachments.writing_notes_status_default_off": (
-            'Task "{task}" would usually include continuation notes by default, but you '
+            'Task "{task}" would usually include fragment notes by default, but you '
             "have turned them off for this run."
         ),
         "ai.attachments.writing_notes_status_manual_on": (
-            'Task "{task}" does not include continuation notes by default. You have '
+            'Task "{task}" does not include fragment notes by default. You have '
             "turned them on for this run."
         ),
         "ai.attachments.writing_notes_status_optional_off": (
-            'Task "{task}" does not include continuation notes by default. Turn them on '
+            'Task "{task}" does not include fragment notes by default. Turn them on '
             "if you want the AI to use them as reference."
         ),
         "ai.attachments.writing_notes_status_empty": (
-            'Task "{task}" has no continuation notes to use yet. Add one in the fragment '
+            'Task "{task}" has no fragment notes to use yet. Add one in the fragment '
             "and you will return here automatically."
         ),
         "ai.attachments.writing_notes_empty": (
-            "No continuation notes yet. Add one in the fragment and it will appear "
+            "No fragment notes yet. Add one in the fragment and it will appear "
             "here as AI reference."
         ),
-        "ai.attachments.writing_notes_preview": "Continuation notes preview:\n{notes}",
+        "ai.attachments.writing_notes_preview": "Fragment notes preview:\n{notes}",
         "ai.attachments.manage_writing_notes_add": "Add note in fragment and return",
         "ai.attachments.manage_writing_notes_edit": "Open fragment notes to add / edit",
-        "ai.attachments.writing_note_name": "Continuation note {index}",
-        "ai.attachments.writing_note_body": "Private continuation note:\n{body}",
+        "ai.attachments.writing_note_name": "Fragment note {index}",
+        "ai.attachments.writing_note_body": "Private fragment note:\n{body}",
         # task descriptions
         "ai.task_desc.polish": "Does: improve wording, rhythm, clarity, and style. Does not: add new facts or plot. Output: full polished text.",
         "ai.task_desc.expand": "Does: add detail inside the existing premise. Does not: continue into later plot. Output: full expanded text.",
@@ -1116,32 +1129,45 @@ _CATALOG: dict[str, dict[str, str]] = {
         "editor.meta_created": "创建于",
         "editor.meta_updated": "更新于",
         "editor.epigraph_label": "题辞",
-        "editor.writing_notes.title": "续写提示",
+        "editor.writing_notes.title": "片段便签",
         "editor.writing_notes.count": "{count} 条未完成",
-        "editor.writing_notes.hint": "写给下次继续这个片段时的自己：不会进入正文、导出或正文搜索；添加后点“用提示续写”可带入 AI。",
-        "editor.writing_notes.placeholder": "这个片段接下来怎么写？",
+        "editor.writing_notes.hint": "写给处理这个片段时的自己：不会进入正文、导出或正文搜索；需要时可带入 AI。",
+        "editor.writing_notes.placeholder": "给这个片段贴一张便签…",
         "editor.writing_notes.add": "添加",
-        "editor.writing_notes.add_first": "添加续写提示",
+        "editor.writing_notes.add_first": "添加便签",
         "editor.writing_notes.collapse": "收起",
-        "editor.writing_notes.expand": "展开提示",
+        "editor.writing_notes.expand": "展开便签",
         "editor.writing_notes.done": "完成，移到已完成",
-        "editor.writing_notes.done_hint": "这不是删除，只是移到“已完成提示”，之后可以恢复。",
+        "editor.writing_notes.done_hint": "这不是删除，只是划为已完成，之后可以恢复。",
         "editor.writing_notes.restore": "恢复",
-        "editor.writing_notes.restore_hint": "恢复到未完成续写提示，AI 可继续带入。",
+        "editor.writing_notes.restore_hint": "恢复到未完成便签，AI 可继续带入。",
         "editor.writing_notes.show_done": "显示已完成（{count}）",
         "editor.writing_notes.hide_done": "隐藏已完成",
-        "editor.writing_notes.done_section": "已完成提示",
+        "editor.writing_notes.done_section": "已完成便签",
         "editor.writing_notes.edit": "编辑内容",
         "editor.writing_notes.save": "保存",
         "editor.writing_notes.cancel": "取消",
         "editor.writing_notes.pin": "置顶",
         "editor.writing_notes.unpin": "取消置顶",
         "editor.writing_notes.delete": "删除",
-        "editor.writing_notes.delete_hint": "永久删除这条续写提示。",
-        "editor.writing_notes.state_open": "未完成提示",
-        "editor.writing_notes.state_pinned": "未完成提示 · 已置顶",
+        "editor.writing_notes.delete_hint": "永久删除这张片段便签。",
+        "editor.writing_notes.state_open": "未完成便签",
+        "editor.writing_notes.state_pinned": "未完成便签 · 已固定",
         "editor.writing_notes.state_done": "已完成 · 可恢复",
-        "editor.writing_notes.use_for_continue": "用提示续写",
+        "editor.writing_notes.use_for_continue": "带入 AI",
+        "editor.writing_notes.empty_board": "把突然想到的写法、意象、伏笔贴在这里。它们像便利贴一样陪在正文旁边，不会进入正文。",
+        "editor.writing_notes.arrange": "整理便签",
+        "editor.writing_notes.color": "纸张颜色",
+        "editor.writing_notes.color_cream": "奶油",
+        "editor.writing_notes.color_amber": "杏黄",
+        "editor.writing_notes.color_mist": "雾绿",
+        "editor.writing_notes.color_blue": "浅蓝",
+        "editor.writing_notes.color_rose": "淡粉",
+        "editor.writing_notes.color_paper": "灰白",
+        "editor.writing_notes.width": "便签宽度",
+        "editor.writing_notes.width_small": "小",
+        "editor.writing_notes.width_medium": "中",
+        "editor.writing_notes.width_large": "大",
         # ── Main window – menus ───────────────────────────────────────────────
         "menu.file": "文件(&F)",
         "menu.new_fragment": "新建片段(&N)",
@@ -1211,7 +1237,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "context.label_words": "字数",
         "context.label_chars": "字符数",
         "context.label_tags": "标签",
-        "context.label_writing_notes": "续写提示",
+        "context.label_writing_notes": "片段便签",
         "context.label_created": "创建",
         "context.label_updated": "更新",
         "context.label_status": "状态",
@@ -1220,7 +1246,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "context.label_work_count": "作品数量",
         "context.action_polish": "AI 润色…",
         "context.action_include": "收入作品…",
-        "context.action_writing_notes": "添加续写提示…",
+        "context.action_writing_notes": "添加片段便签…",
         "context.action_checkpoint": "保存快照…",
         "context.action_save_specimen": "收藏为文脉标本…",
         "context.action_versions": "版本…",
@@ -1351,7 +1377,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "settings.editor_typewriter_mode": "打字机模式",
         "settings.editor_auto_paragraph_indent": "回车后自动空两格",
         "settings.editor_soft_page_guides": "纸页分隔 / 软分页提示",
-        "settings.editor_writing_notes_collapsed": "默认收起续写提示",
+        "settings.editor_writing_notes_collapsed": "默认收起片段便签",
         "settings.reduced_motion": "减少动效",
         # ── Quick capture ─────────────────────────────────────────────────────
         "quick.window_title": "快速速记",
@@ -1800,19 +1826,19 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.attachments.already_added": "这个片段已经在附件里了。",
         "ai.attachments.total": "估算上下文：{chars} 字符",
         "ai.attachments.heavy_warning": "上下文较大，开销与延迟可能较高。",
-        "ai.attachments.include_writing_notes": "带入续写提示（{count}）",
-        "ai.attachments.writing_notes_hint": "这些提示只作为 AI 参考发送，不会写入正文，也不会改动原文。",
-        "ai.attachments.writing_notes_status_default_on": "当前任务“{task}”默认带入续写提示；你可以按需关闭。",
-        "ai.attachments.writing_notes_status_default_off": "当前任务“{task}”通常会默认带入续写提示；你已关闭，本次不会发送。",
-        "ai.attachments.writing_notes_status_manual_on": "当前任务“{task}”默认不带入续写提示；你已手动开启，本次会把下面这些提示作为参考。",
-        "ai.attachments.writing_notes_status_optional_off": "当前任务“{task}”默认不带入续写提示；需要时可以手动开启。",
-        "ai.attachments.writing_notes_status_empty": "当前任务“{task}”还没有可带入的续写提示。先去片段添加一条，保存后会自动回到 AI。",
-        "ai.attachments.writing_notes_empty": "当前片段还没有续写提示。添加后会在这里预览，并作为 AI 的参考材料。",
-        "ai.attachments.writing_notes_preview": "续写提示预览：\n{notes}",
-        "ai.attachments.manage_writing_notes_add": "去片段添加提示并返回 AI",
-        "ai.attachments.manage_writing_notes_edit": "回片段添加 / 编辑提示",
-        "ai.attachments.writing_note_name": "续写提示 {index}",
-        "ai.attachments.writing_note_body": "片段续写提示，仅供参考：\n{body}",
+        "ai.attachments.include_writing_notes": "带入片段便签（{count}）",
+        "ai.attachments.writing_notes_hint": "这些便签只作为 AI 参考发送，不会写入正文，也不会改动原文。",
+        "ai.attachments.writing_notes_status_default_on": "当前任务“{task}”默认带入片段便签；你可以按需关闭。",
+        "ai.attachments.writing_notes_status_default_off": "当前任务“{task}”通常会默认带入片段便签；你已关闭，本次不会发送。",
+        "ai.attachments.writing_notes_status_manual_on": "当前任务“{task}”默认不带入片段便签；你已手动开启，本次会把下面这些便签作为参考。",
+        "ai.attachments.writing_notes_status_optional_off": "当前任务“{task}”默认不带入片段便签；需要时可以手动开启。",
+        "ai.attachments.writing_notes_status_empty": "当前任务“{task}”还没有可带入的片段便签。先去片段添加一条，保存后会自动回到 AI。",
+        "ai.attachments.writing_notes_empty": "当前片段还没有片段便签。添加后会在这里预览，并作为 AI 的参考材料。",
+        "ai.attachments.writing_notes_preview": "片段便签预览：\n{notes}",
+        "ai.attachments.manage_writing_notes_add": "去片段添加便签并返回 AI",
+        "ai.attachments.manage_writing_notes_edit": "回片段添加 / 编辑便签",
+        "ai.attachments.writing_note_name": "片段便签 {index}",
+        "ai.attachments.writing_note_body": "片段便签，仅供参考：\n{body}",
         # task descriptions
         "ai.task_desc.polish": "会做：改善措辞、节奏、清晰度和风格。不会：新增事实或剧情。输出：完整润色正文。",
         "ai.task_desc.expand": "会做：在已有前提内补充细节。不会：写后续剧情。输出：完整扩写正文。",

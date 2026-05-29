@@ -322,6 +322,9 @@ class MainWindow(QMainWindow):
         self._editor_panel.writing_note_done_requested.connect(self._on_set_writing_note_done)
         self._editor_panel.writing_note_delete_requested.connect(self._on_delete_writing_note)
         self._editor_panel.writing_note_pin_requested.connect(self._on_pin_writing_note)
+        self._editor_panel.writing_note_layout_requested.connect(
+            self._on_update_writing_note_layout
+        )
         self._editor_panel.writing_notes_continue_requested.connect(
             self._on_continue_with_writing_notes
         )
@@ -924,6 +927,27 @@ class MainWindow(QMainWindow):
 
     def _on_pin_writing_note(self, note_id: str, pinned: bool) -> None:
         note = self._container.entry_writing_note_repository.set_pinned(note_id, pinned)
+        entry_id = note.entry_id if note is not None else self._editor_panel.current_entry_id()
+        if entry_id:
+            self._refresh_writing_notes_after_change(entry_id)
+
+    def _on_update_writing_note_layout(
+        self,
+        note_id: str,
+        x: int,
+        y: int,
+        width: int,
+        color_key: str,
+        z_index: int,
+    ) -> None:
+        note = self._container.entry_writing_note_repository.update_layout(
+            note_id,
+            x=x,
+            y=y,
+            width=width,
+            color_key=color_key,
+            z_index=z_index,
+        )
         entry_id = note.entry_id if note is not None else self._editor_panel.current_entry_id()
         if entry_id:
             self._refresh_writing_notes_after_change(entry_id)

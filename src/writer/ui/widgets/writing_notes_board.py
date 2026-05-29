@@ -1,0 +1,541 @@
+"""Visual board for fragment-bound writing notes."""
+
+from __future__ import annotations
+
+from typing import Optional
+
+from PySide6.QtCore import QPoint, QSize, Qt, Signal
+from PySide6.QtGui import QFont, QMouseEvent, QPalette
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
+
+from writer.domain.models.entry_writing_note import (
+    NOTE_STATUS_DONE,
+    NOTE_STATUS_OPEN,
+    EntryWritingNote,
+)
+from writer.ui.i18n import TR
+
+NOTE_COLOR_KEYS = ("cream", "amber", "mist", "blue", "rose", "paper")
+DEFAULT_NOTE_COLOR_KEY = "cream"
+DEFAULT_NOTE_WIDTH = 188
+MIN_NOTE_WIDTH = 150
+MAX_NOTE_WIDTH = 260
+BOARD_GRID = 8
+BOARD_PADDING = 12
+BOARD_COLUMN_GAP = 14
+BOARD_ROW_GAP = 14
+BOARD_MIN_WIDTH = 276
+BOARD_MAX_WIDTH = 360
+
+
+class WritingNoteCard(QFrame):
+    edit_requested = Signal(str, str)
+    done_requested = Signal(str, bool)
+    delete_requested = Signal(str)
+    pin_requested = Signal(str, bool)
+    layout_changed = Signal(str, int, int, int, str, int)
+
+    def __init__(
+        self,
+        note: EntryWritingNote,
+        *,
+        display_font_family: str = "",
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.note = note
+        self._drag_start: Optional[QPoint] = None
+        self._drag_origin: Optional[QPoint] = None
+        self._board_size = QPoint(0, 0)
+        self.setObjectName("WritingNoteSticky")
+        self.setProperty("color", _color_key(note))
+        self.setProperty("pinned", note.pinned)
+        self.setProperty("done", note.status == NOTE_STATUS_DONE)
+        self.setFixedWidth(_note_width(note))
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Maximum)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 10)
+        layout.setSpacing(6)
+
+        top = QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
+        top.setSpacing(4)
+        pin = QLabel("●" if note.pinned else "○")
+        pin.setObjectName("WritingNotePin")
+        pin.setToolTip(TR("editor.writing_notes.unpin" if note.pinned else "editor.writing_notes.pin"))
+        top.addWidget(pin)
+        state = QLabel(_state_text(note))
+        state.setObjectName("WritingNoteState")
+        top.addWidget(state, 1)
+        menu_btn = QPushButton("⋯")
+        menu_btn.setObjectName("WritingNoteMenuButton")
+        menu_btn.setFixedSize(24, 22)
+        menu_btn.clicked.connect(lambda _checked=False: self._open_menu(menu_btn))
+        top.addWidget(menu_btn)
+        layout.addLayout(top)
+
+        self._body = QLabel(note.body)
+        self._body.setObjectName("WritingNoteBody")
+        self._body.setWordWrap(True)
+        self._body.setTextFormat(Qt.TextFormat.PlainText)
+        self._body.setToolTip(note.body)
+        body_font = QFont()
+        if display_font_family:
+            body_font.setFamilies(_font_families(display_font_family))
+        body_font.setPointSizeF(11.5)
+        body_font.setStrikeOut(note.status == NOTE_STATUS_DONE)
+        self._body.setFont(body_font)
+        if note.status == NOTE_STATUS_DONE:
+            self._body.setStyleSheet(
+                f"color: {self.palette().color(QPalette.ColorRole.PlaceholderText).name()};"
+            )
+        layout.addWidget(self._body)
+
+        edit = QLineEdit(note.body)
+        edit.setObjectName("WritingNoteInput")
+        edit.setVisible(False)
+        edit.returnPressed.connect(lambda note_id=note.id: self._commit_edit(note_id))
+        layout.addWidget(edit)
+        self._edit_input = edit
+
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(4)
+        done_btn = QPushButton("↺" if note.status == NOTE_STATUS_DONE else "✓")
+        done_btn.setObjectName("WritingNoteDoneToggle")
+        done_btn.setToolTip(
+            TR("editor.writing_notes.restore_hint")
+            if note.status == NOTE_STATUS_DONE
+            else TR("editor.writing_notes.done_hint")
+        )
+        done_btn.clicked.connect(
+            lambda _checked=False, note_id=note.id, done=note.status != NOTE_STATUS_DONE: (
+                self.done_requested.emit(note_id, done)
+            )
+        )
+        actions.addWidget(done_btn)
+        edit_btn = QPushButton(TR("editor.writing_notes.edit"))
+        edit_btn.setObjectName("WritingNoteMiniButton")
+        edit_btn.clicked.connect(self._start_edit)
+        actions.addWidget(edit_btn)
+        actions.addStretch(1)
+        layout.addLayout(actions)
+
+    def set_board_size(self, size) -> None:
+        self._board_size = QSize(max(0, size.width()), max(0, size.height()))
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start = event.globalPosition().toPoint()
+            self._drag_origin = self.pos()
+            self.raise_()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if self._drag_start is None or self._drag_origin is None:
+            super().mouseMoveEvent(event)
+            return
+        delta = event.globalPosition().toPoint() - self._drag_start
+        self.move(self._bounded_position(self._drag_origin + delta))
+        event.accept()
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if self._drag_start is not None:
+            self._drag_start = None
+            self._drag_origin = None
+            pos = self._snapped_position(self.pos())
+            self.move(pos)
+            self.layout_changed.emit(
+                self.note.id,
+                pos.x(),
+                pos.y(),
+                self.width(),
+                _color_key(self.note),
+                max(_z_index(self.note), 0),
+            )
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def _bounded_position(self, point: QPoint) -> QPoint:
+        max_x = max(BOARD_PADDING, self._board_size.width() - self.width() - BOARD_PADDING)
+        max_y = max(BOARD_PADDING, self._board_size.height() - self.height() - BOARD_PADDING)
+        return QPoint(
+            min(max(point.x(), BOARD_PADDING), max_x),
+            min(max(point.y(), BOARD_PADDING), max_y),
+        )
+
+    def _snapped_position(self, point: QPoint) -> QPoint:
+        bounded = self._bounded_position(point)
+        return QPoint(_snap(bounded.x()), _snap(bounded.y()))
+
+    def _start_edit(self) -> None:
+        self._body.setVisible(False)
+        self._edit_input.setVisible(True)
+        self._edit_input.setFocus()
+        self._edit_input.selectAll()
+
+    def _commit_edit(self, note_id: str) -> None:
+        text = self._edit_input.text().strip()
+        if not text:
+            self._edit_input.setFocus()
+            return
+        self._body.setVisible(True)
+        self._edit_input.setVisible(False)
+        if text != self.note.body:
+            self.edit_requested.emit(note_id, text)
+
+    def _open_menu(self, button: QPushButton) -> None:
+        menu = QMenu(self)
+        menu.addAction(
+            TR("editor.writing_notes.unpin" if self.note.pinned else "editor.writing_notes.pin"),
+            lambda: self.pin_requested.emit(self.note.id, not self.note.pinned),
+        )
+        color_menu = menu.addMenu(TR("editor.writing_notes.color"))
+        for color in NOTE_COLOR_KEYS:
+            color_menu.addAction(
+                TR(f"editor.writing_notes.color_{color}"),
+                lambda checked=False, selected=color: self._set_color(selected),
+            )
+        width_menu = menu.addMenu(TR("editor.writing_notes.width"))
+        for label_key, width in (
+            ("editor.writing_notes.width_small", 160),
+            ("editor.writing_notes.width_medium", DEFAULT_NOTE_WIDTH),
+            ("editor.writing_notes.width_large", 240),
+        ):
+            width_menu.addAction(
+                TR(label_key),
+                lambda checked=False, selected=width: self._set_width(selected),
+            )
+        menu.addSeparator()
+        menu.addAction(TR("editor.writing_notes.delete"), lambda: self.delete_requested.emit(self.note.id))
+        menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
+
+    def _set_color(self, color_key: str) -> None:
+        self.layout_changed.emit(
+            self.note.id,
+            self.x(),
+            self.y(),
+            self.width(),
+            _normalize_color_key(color_key),
+            max(_z_index(self.note), 0),
+        )
+
+    def _set_width(self, width: int) -> None:
+        self.layout_changed.emit(
+            self.note.id,
+            self.x(),
+            self.y(),
+            max(MIN_NOTE_WIDTH, min(MAX_NOTE_WIDTH, int(width))),
+            _color_key(self.note),
+            max(_z_index(self.note), 0),
+        )
+
+
+class WritingNotesBoard(QFrame):
+    add_requested = Signal(str)
+    edit_requested = Signal(str, str)
+    done_requested = Signal(str, bool)
+    delete_requested = Signal(str)
+    pin_requested = Signal(str, bool)
+    layout_changed = Signal(str, int, int, int, str, int)
+    continue_requested = Signal()
+    collapsed_changed = Signal(bool)
+    show_done_changed = Signal(bool)
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("WritingNotesBoard")
+        self.setMinimumWidth(BOARD_MIN_WIDTH)
+        self.setMaximumWidth(BOARD_MAX_WIDTH)
+        self._notes: list[EntryWritingNote] = []
+        self._entry_id: Optional[str] = None
+        self._show_done = True
+        self._collapsed = False
+        self._display_font_family = ""
+
+        self._root = QVBoxLayout(self)
+        self._root.setContentsMargins(10, 10, 10, 10)
+        self._root.setSpacing(8)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        self._title = QLabel(TR("editor.writing_notes.title"))
+        self._title.setObjectName("WritingNotesTitle")
+        header.addWidget(self._title)
+        self._count = QLabel("")
+        self._count.setObjectName("WritingNotesCount")
+        header.addWidget(self._count)
+        header.addStretch(1)
+        self._collapse_btn = QPushButton("›")
+        self._collapse_btn.setObjectName("GhostButton")
+        self._collapse_btn.clicked.connect(self.toggle_collapsed)
+        header.addWidget(self._collapse_btn)
+        self._root.addLayout(header)
+        self._header_widgets = (
+            self._title,
+            self._count,
+            self._collapse_btn,
+        )
+
+        self._collapsed_button = QPushButton(TR("editor.writing_notes.expand"))
+        self._collapsed_button.setObjectName("WritingNotesCollapsedTab")
+        self._collapsed_button.clicked.connect(self.toggle_collapsed)
+        self._root.addWidget(self._collapsed_button)
+
+        self._content = QWidget()
+        content = QVBoxLayout(self._content)
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(8)
+
+        add_row = QHBoxLayout()
+        add_row.setContentsMargins(0, 0, 0, 0)
+        self._input = QLineEdit()
+        self._input.setObjectName("WritingNoteInput")
+        self._input.setPlaceholderText(TR("editor.writing_notes.placeholder"))
+        self._input.returnPressed.connect(self._on_add)
+        add_row.addWidget(self._input, 1)
+        self._add_btn = QPushButton(TR("editor.writing_notes.add"))
+        self._add_btn.setObjectName("PrimaryButton")
+        self._add_btn.clicked.connect(self._on_add)
+        add_row.addWidget(self._add_btn)
+        content.addLayout(add_row)
+
+        action_row = QHBoxLayout()
+        action_row.setContentsMargins(0, 0, 0, 0)
+        self._arrange_btn = QPushButton(TR("editor.writing_notes.arrange"))
+        self._arrange_btn.setObjectName("GhostButton")
+        self._arrange_btn.clicked.connect(self.arrange_notes)
+        action_row.addWidget(self._arrange_btn)
+        self._done_toggle_btn = QPushButton(TR("editor.writing_notes.hide_done"))
+        self._done_toggle_btn.setObjectName("GhostButton")
+        self._done_toggle_btn.clicked.connect(self.toggle_done)
+        action_row.addWidget(self._done_toggle_btn)
+        action_row.addStretch(1)
+        self._continue_btn = QPushButton(TR("editor.writing_notes.use_for_continue"))
+        self._continue_btn.setObjectName("PrimaryButton")
+        self._continue_btn.clicked.connect(self.continue_requested.emit)
+        action_row.addWidget(self._continue_btn)
+        content.addLayout(action_row)
+
+        self._scroll = QScrollArea()
+        self._scroll.setObjectName("WritingNotesBoardScroll")
+        self._scroll.setWidgetResizable(False)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._canvas = QWidget()
+        self._canvas.setObjectName("WritingNotesCanvas")
+        self._canvas.setMinimumHeight(420)
+        self._scroll.setWidget(self._canvas)
+        content.addWidget(self._scroll, 1)
+
+        self._empty = QLabel(TR("editor.writing_notes.empty_board"))
+        self._empty.setObjectName("WritingNotesHint")
+        self._empty.setWordWrap(True)
+        content.addWidget(self._empty)
+
+        self._root.addWidget(self._content, 1)
+        self._refresh_visibility()
+
+    def set_display_font_family(self, family: str) -> None:
+        self._display_font_family = family
+        self._rebuild_cards()
+
+    def set_notes(self, notes: list[EntryWritingNote]) -> None:
+        self._notes = list(notes)
+        self._rebuild_cards()
+
+    def set_entry_id(self, entry_id: Optional[str]) -> None:
+        self._entry_id = entry_id
+        self.setVisible(entry_id is not None)
+        if entry_id is None:
+            self._input.clear()
+
+    def focus_input(self) -> None:
+        self.set_collapsed(False, emit_signal=True)
+        self._input.setFocus()
+
+    def set_collapsed(self, collapsed: bool, *, emit_signal: bool = False) -> None:
+        collapsed = bool(collapsed)
+        changed = self._collapsed != collapsed
+        self._collapsed = collapsed
+        self._refresh_visibility()
+        if changed and emit_signal:
+            self.collapsed_changed.emit(self._collapsed)
+
+    def is_collapsed(self) -> bool:
+        return self._collapsed
+
+    def toggle_collapsed(self) -> None:
+        self.set_collapsed(not self._collapsed, emit_signal=True)
+
+    def set_show_done(self, show_done: bool, *, emit_signal: bool = False) -> None:
+        show_done = bool(show_done)
+        changed = self._show_done != show_done
+        self._show_done = show_done
+        self._rebuild_cards()
+        if changed and emit_signal:
+            self.show_done_changed.emit(self._show_done)
+
+    def show_done(self) -> bool:
+        return self._show_done
+
+    def toggle_done(self) -> None:
+        self.set_show_done(not self._show_done, emit_signal=True)
+
+    def arrange_notes(self) -> None:
+        visible = [note for note in self._visible_notes() if not note.pinned]
+        width = max(BOARD_MIN_WIDTH - BOARD_PADDING * 2, self._canvas.width() - BOARD_PADDING * 2)
+        x = BOARD_PADDING
+        y = BOARD_PADDING
+        for note in visible:
+            note_width = _note_width(note)
+            if x + note_width > width:
+                x = BOARD_PADDING
+                y += 150
+            self.layout_changed.emit(
+                note.id,
+                x,
+                y,
+                note_width,
+                _color_key(note),
+                _z_index(note),
+            )
+            x += note_width + BOARD_COLUMN_GAP
+
+    def _on_add(self) -> None:
+        text = self._input.text().strip()
+        if not text:
+            return
+        self._input.clear()
+        self.add_requested.emit(text)
+
+    def _visible_notes(self) -> list[EntryWritingNote]:
+        return [
+            note
+            for note in self._notes
+            if note.status == NOTE_STATUS_OPEN or self._show_done
+        ]
+
+    def _rebuild_cards(self) -> None:
+        for child in self._canvas.findChildren(WritingNoteCard):
+            child.hide()
+            child.setParent(None)
+            child.deleteLater()
+        max_bottom = 420
+        canvas_width = max(BOARD_MIN_WIDTH, self._scroll.viewport().width() or BOARD_MIN_WIDTH)
+        for index, note in enumerate(self._visible_notes()):
+            x, y = _note_position(note, index, canvas_width)
+            card = WritingNoteCard(
+                note,
+                display_font_family=self._display_font_family,
+                parent=self._canvas,
+            )
+            card.set_board_size(QSize(canvas_width, max(self._canvas.height(), max_bottom)))
+            card.move(x, y)
+            card.edit_requested.connect(self.edit_requested)
+            card.done_requested.connect(self.done_requested)
+            card.delete_requested.connect(self.delete_requested)
+            card.pin_requested.connect(self.pin_requested)
+            card.layout_changed.connect(self.layout_changed)
+            card.show()
+            max_bottom = max(max_bottom, y + card.sizeHint().height() + BOARD_PADDING)
+        self._canvas.setMinimumSize(canvas_width, max_bottom)
+        self._empty.setVisible(not self._visible_notes())
+        self._refresh_visibility()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        size = QSize(
+            max(BOARD_MIN_WIDTH, self._scroll.viewport().width() or BOARD_MIN_WIDTH),
+            max(420, self._canvas.height()),
+        )
+        for card in self._canvas.findChildren(WritingNoteCard):
+            card.set_board_size(size)
+
+    def _refresh_visibility(self) -> None:
+        if self._collapsed:
+            self.setMinimumWidth(46)
+            self.setMaximumWidth(52)
+        else:
+            self.setMinimumWidth(BOARD_MIN_WIDTH)
+            self.setMaximumWidth(BOARD_MAX_WIDTH)
+        for widget in self._header_widgets:
+            widget.setVisible(not self._collapsed)
+        self._content.setVisible(not self._collapsed)
+        self._collapsed_button.setVisible(self._collapsed)
+        self._collapse_btn.setText("‹" if self._collapsed else "›")
+        open_count = sum(1 for note in self._notes if note.status == NOTE_STATUS_OPEN)
+        done_count = sum(1 for note in self._notes if note.status == NOTE_STATUS_DONE)
+        self._count.setText(TR("editor.writing_notes.count").format(count=open_count))
+        self._done_toggle_btn.setVisible(done_count > 0)
+        self._done_toggle_btn.setText(
+            TR("editor.writing_notes.hide_done" if self._show_done else "editor.writing_notes.show_done").format(
+                count=done_count
+            )
+        )
+        self._continue_btn.setVisible(open_count > 0)
+
+
+def _state_text(note: EntryWritingNote) -> str:
+    if note.status == NOTE_STATUS_DONE:
+        return TR("editor.writing_notes.state_done")
+    if note.pinned:
+        return TR("editor.writing_notes.state_pinned")
+    return TR("editor.writing_notes.state_open")
+
+
+def _font_families(value: str) -> list[str]:
+    families = [part.strip() for part in (value or "").split(",") if part.strip()]
+    return families or ["Georgia", "Cambria"]
+
+
+def _snap(value: int) -> int:
+    return int(round(value / BOARD_GRID) * BOARD_GRID)
+
+
+def _normalize_color_key(value: object) -> str:
+    key = str(value or "").strip().lower()
+    return key if key in NOTE_COLOR_KEYS else DEFAULT_NOTE_COLOR_KEY
+
+
+def _color_key(note: EntryWritingNote) -> str:
+    return _normalize_color_key(getattr(note, "color_key", DEFAULT_NOTE_COLOR_KEY))
+
+
+def _note_width(note: EntryWritingNote) -> int:
+    return max(MIN_NOTE_WIDTH, min(MAX_NOTE_WIDTH, int(getattr(note, "board_width", DEFAULT_NOTE_WIDTH) or DEFAULT_NOTE_WIDTH)))
+
+
+def _z_index(note: EntryWritingNote) -> int:
+    return int(getattr(note, "z_index", 0) or 0)
+
+
+def _note_position(note: EntryWritingNote, index: int, canvas_width: int) -> tuple[int, int]:
+    x = getattr(note, "board_x", None)
+    y = getattr(note, "board_y", None)
+    if x is not None and y is not None:
+        try:
+            return _snap(int(x)), _snap(int(y))
+        except (TypeError, ValueError):
+            pass
+    note_width = _note_width(note)
+    usable = max(note_width, canvas_width - BOARD_PADDING * 2)
+    columns = max(1, usable // (note_width + BOARD_COLUMN_GAP))
+    column = index % columns
+    row = index // columns
+    return (
+        BOARD_PADDING + column * (note_width + BOARD_COLUMN_GAP),
+        BOARD_PADDING + row * 150,
+    )

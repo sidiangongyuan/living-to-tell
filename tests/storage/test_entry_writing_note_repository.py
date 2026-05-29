@@ -59,6 +59,11 @@ def test_create_get_update_and_delete(
     assert created.status == NOTE_STATUS_OPEN
     assert created.pinned is True
     assert created.sort_order == 0
+    assert created.board_x is None
+    assert created.board_y is None
+    assert created.board_width == 188
+    assert created.color_key == "cream"
+    assert created.z_index == 0
     assert created.created_at and created.updated_at
     assert repo.get(created.id) == created
 
@@ -68,6 +73,22 @@ def test_create_get_update_and_delete(
     assert updated is not None
     assert updated.body == "revised note"
     assert updated.updated_at > created.updated_at
+
+    layout_updated = repo.update_layout(
+        created.id,
+        x=42,
+        y=58,
+        width=240,
+        color_key="mist",
+        z_index=3,
+    )
+
+    assert layout_updated is not None
+    assert layout_updated.board_x == 42
+    assert layout_updated.board_y == 58
+    assert layout_updated.board_width == 240
+    assert layout_updated.color_key == "mist"
+    assert layout_updated.z_index == 3
 
     repo.delete(created.id)
 
@@ -89,6 +110,8 @@ def test_list_for_entry_orders_open_pinned_then_sort_order(
 
     pinned_second = repo.set_pinned(second.id, True)
     done_fourth = repo.set_done(fourth.id, True)
+    repo.update_layout(third.id, x=8, y=80, width=188, color_key="cream", z_index=0)
+    repo.update_layout(second.id, x=8, y=16, width=188, color_key="cream", z_index=0)
 
     assert pinned_second is not None
     assert pinned_second.pinned is True
@@ -192,6 +215,11 @@ def test_initialize_schema_adds_entry_writing_notes_table_to_legacy_db(
             "status",
             "pinned",
             "sort_order",
+            "board_x",
+            "board_y",
+            "board_width",
+            "color_key",
+            "z_index",
             "created_at",
             "updated_at",
             "completed_at",
@@ -207,6 +235,75 @@ def test_initialize_schema_adds_entry_writing_notes_table_to_legacy_db(
 
         assert note.entry_id == "e1"
         assert note.body == "migrated note"
+        assert note.board_width == 188
+        assert note.color_key == "cream"
+    finally:
+        upgraded.close()
+
+
+def test_initialize_schema_adds_writing_note_board_columns_to_existing_table(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "legacy-notes.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE entries (
+            id          TEXT PRIMARY KEY,
+            title       TEXT NOT NULL DEFAULT '',
+            body        TEXT NOT NULL DEFAULT '',
+            entry_type  TEXT NOT NULL DEFAULT 'fragment',
+            created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+            updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        );
+        CREATE TABLE entry_writing_notes (
+            id           TEXT PRIMARY KEY,
+            entry_id     TEXT NOT NULL,
+            body         TEXT NOT NULL DEFAULT '',
+            status       TEXT NOT NULL DEFAULT 'open',
+            pinned       INTEGER NOT NULL DEFAULT 0,
+            sort_order   INTEGER NOT NULL DEFAULT 0,
+            created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+            updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+            completed_at TEXT
+        );
+        INSERT INTO entries (id, title, body) VALUES ('e1', 'Old', 'body');
+        INSERT INTO entry_writing_notes (id, entry_id, body) VALUES ('n1', 'e1', 'keep layout');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    upgraded = open_and_initialize(db_path)
+    try:
+        assert {
+            "board_x",
+            "board_y",
+            "board_width",
+            "color_key",
+            "z_index",
+        }.issubset(_columns(upgraded, "entry_writing_notes"))
+
+        repo = EntryWritingNoteRepository(upgraded)
+        note = repo.get("n1")
+        assert note is not None
+        assert note.body == "keep layout"
+        assert note.board_width == 188
+        assert note.color_key == "cream"
+        moved = repo.update_layout(
+            "n1",
+            x=12,
+            y=24,
+            width=999,
+            color_key="unknown",
+            z_index=5,
+        )
+        assert moved is not None
+        assert moved.board_x == 12
+        assert moved.board_y == 24
+        assert moved.board_width == 260
+        assert moved.color_key == "cream"
+        assert moved.z_index == 5
     finally:
         upgraded.close()
 

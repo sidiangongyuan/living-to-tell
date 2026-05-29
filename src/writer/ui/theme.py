@@ -700,11 +700,30 @@ QLabel#EpigraphAttribution {{
 }}
 
 /* ------- Fragment writing notes ------- */
+QFrame#WritingNotesBoard {{
+    background: qlineargradient(
+        x1: 0, y1: 0, x2: 1, y2: 1,
+        stop: 0 {t.bg_card},
+        stop: 1 {t.bg_input}
+    );
+    border-left: 1px solid {t.border};
+}}
 QFrame#WritingNotesCard {{
     background: {t.bg_card};
     border: 1px solid {t.border};
     border-left: 4px solid {t.accent};
     border-radius: {t.radius_lg}px;
+}}
+QPushButton#WritingNotesCollapsedTab {{
+    background: {t.bg_card};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_sm}px;
+    color: {t.text_secondary};
+    padding: 10px 4px;
+}}
+QPushButton#WritingNotesCollapsedTab:hover {{
+    border-color: {t.accent};
+    color: {t.accent};
 }}
 QLabel#WritingNotesTitle {{
     color: {t.text_primary};
@@ -723,10 +742,55 @@ QScrollArea#WritingNotesRowsScroll {{
 QScrollArea#WritingNotesRowsScroll QWidget {{
     background: transparent;
 }}
+QScrollArea#WritingNotesBoardScroll {{
+    background: transparent;
+    border: none;
+}}
+QScrollArea#WritingNotesBoardScroll QWidget#WritingNotesCanvas {{
+    background: transparent;
+}}
+QWidget#WritingNotesCanvas {{
+    background: transparent;
+}}
 QLabel#WritingNoteState {{
     color: {t.text_muted};
     font-size: {t.fs_meta}px;
     font-weight: 600;
+}}
+QLabel#WritingNotePin {{
+    color: {t.accent};
+    font-size: {t.fs_meta}px;
+}}
+QFrame#WritingNoteSticky {{
+    border: 1px solid rgba(80, 64, 44, 46);
+    border-radius: {t.radius_md}px;
+}}
+QFrame#WritingNoteSticky[pinned="true"] {{
+    border-top: 3px solid {t.accent};
+}}
+QFrame#WritingNoteSticky[done="true"] {{
+    border-style: dashed;
+}}
+QFrame#WritingNoteSticky[color="cream"] {{
+    background: #fff7df;
+}}
+QFrame#WritingNoteSticky[color="amber"] {{
+    background: #ffe8a8;
+}}
+QFrame#WritingNoteSticky[color="mist"] {{
+    background: #e9f3dc;
+}}
+QFrame#WritingNoteSticky[color="blue"] {{
+    background: #dfedf8;
+}}
+QFrame#WritingNoteSticky[color="rose"] {{
+    background: #f7dfe4;
+}}
+QFrame#WritingNoteSticky[color="paper"] {{
+    background: #f4efe5;
+}}
+QFrame#WritingNoteSticky[done="true"] {{
+    background: {t.bg_done};
 }}
 QFrame#WritingNoteRow,
 QFrame#WritingNoteRowPinned,
@@ -746,6 +810,17 @@ QLabel#WritingNoteBody {{
     color: {t.text_primary};
     font-family: {t.font_serif};
     line-height: 150%;
+}}
+QPushButton#WritingNoteMenuButton {{
+    background: rgba(255, 255, 255, 80);
+    border: 1px solid rgba(80, 64, 44, 34);
+    border-radius: 11px;
+    color: {t.text_secondary};
+    padding: 0;
+}}
+QPushButton#WritingNoteMenuButton:hover {{
+    background: rgba(255, 255, 255, 140);
+    color: {t.accent};
 }}
 QPushButton#WritingNoteDoneToggle {{
     background: {t.bg_card};

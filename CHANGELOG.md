@@ -3,6 +3,22 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.30 — Sticky fragment note board
+
+- Replaced the rigid continuation-note list with a right-side sticky fragment
+  note board beside the editor.
+- Added note layout persistence: position, width, color, z-order, pinned state,
+  done state, and per-fragment collapsed / completed visibility.
+- Added note board actions for quick add, inline edit, pin, mark done / restore,
+  color / width changes, arrange notes, and sending active notes to AI.
+- Updated AI wording and context handling to use "fragment notes"; expand and
+  continue still include open notes by default, sorted by pinned state and board
+  position.
+- Hardened legacy database migration for the new note-board columns and added
+  regression coverage for old databases.
+- Re-tightened delete-key typewriter suppression so deleting text does not
+  restart a pending follow-scroll animation.
+
 ## 0.2.0-alpha.29 — Resizable settings dialog
 
 - Made the Settings dialog resizable and maximizable.

@@ -6,10 +6,17 @@ import uuid
 from typing import List, Optional
 
 from writer.domain.models.entry_writing_note import (
+    NOTE_BOARD_WIDTH_DEFAULT,
+    NOTE_COLOR_KEY_DEFAULT,
     NOTE_STATUS_DONE,
     NOTE_STATUS_OPEN,
+    NOTE_Z_INDEX_DEFAULT,
     EntryWritingNote,
 )
+
+NOTE_COLOR_KEYS = {"cream", "amber", "mist", "blue", "rose", "paper"}
+NOTE_WIDTH_MIN = 150
+NOTE_WIDTH_MAX = 260
 
 
 def _row_to_note(row: sqlite3.Row) -> EntryWritingNote:
@@ -20,6 +27,11 @@ def _row_to_note(row: sqlite3.Row) -> EntryWritingNote:
         status=row["status"],
         pinned=bool(row["pinned"]),
         sort_order=int(row["sort_order"] or 0),
+        board_x=_optional_int(row["board_x"]),
+        board_y=_optional_int(row["board_y"]),
+        board_width=_bounded_width(row["board_width"]),
+        color_key=_normalize_color_key(row["color_key"]),
+        z_index=_int_or_default(row["z_index"], NOTE_Z_INDEX_DEFAULT),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         completed_at=row["completed_at"],
@@ -75,6 +87,10 @@ class EntryWritingNoteRepository:
              ORDER BY
                 CASE status WHEN ? THEN 0 ELSE 1 END,
                 pinned DESC,
+                CASE WHEN board_y IS NULL THEN 1 ELSE 0 END,
+                board_y ASC,
+                CASE WHEN board_x IS NULL THEN 1 ELSE 0 END,
+                board_x ASC,
                 sort_order ASC,
                 updated_at DESC
             """,
@@ -139,6 +155,38 @@ class EntryWritingNoteRepository:
         )
         return self.get(note_id)
 
+    def update_layout(
+        self,
+        note_id: str,
+        *,
+        x: int,
+        y: int,
+        width: int,
+        color_key: str,
+        z_index: int,
+    ) -> Optional[EntryWritingNote]:
+        self._conn.execute(
+            """
+            UPDATE entry_writing_notes
+               SET board_x = ?,
+                   board_y = ?,
+                   board_width = ?,
+                   color_key = ?,
+                   z_index = ?,
+                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE id = ?
+            """,
+            (
+                max(0, int(x)),
+                max(0, int(y)),
+                _bounded_width(width),
+                _normalize_color_key(color_key),
+                max(0, int(z_index)),
+                note_id,
+            ),
+        )
+        return self.get(note_id)
+
     def delete(self, note_id: str) -> None:
         self._conn.execute(
             "DELETE FROM entry_writing_notes WHERE id = ?", (note_id,)
@@ -154,3 +202,29 @@ class EntryWritingNoteRepository:
             (entry_id,),
         ).fetchone()
         return int(row["next_order"] if row else 0)
+
+
+def _optional_int(value: object) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _int_or_default(value: object, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _bounded_width(value: object) -> int:
+    width = _int_or_default(value, NOTE_BOARD_WIDTH_DEFAULT)
+    return max(NOTE_WIDTH_MIN, min(NOTE_WIDTH_MAX, width))
+
+
+def _normalize_color_key(value: object) -> str:
+    key = str(value or "").strip().lower()
+    return key if key in NOTE_COLOR_KEYS else NOTE_COLOR_KEY_DEFAULT

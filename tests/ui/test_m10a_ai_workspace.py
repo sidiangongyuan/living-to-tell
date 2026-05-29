@@ -699,8 +699,9 @@ def test_ai_workspace_add_writing_note_returns_to_ai_and_enables_context(qtbot, 
     tools._manage_writing_notes_btn.click()  # noqa: SLF001
 
     assert window._stack.currentIndex() == MODE_FRAGMENTS  # noqa: SLF001
-    window._editor_panel._writing_note_input.setText("下一段让人物先回到凉面摊。")  # noqa: SLF001
-    window._editor_panel._writing_note_add_btn.click()  # noqa: SLF001
+    board = window._editor_panel._writing_notes_board  # noqa: SLF001
+    board._input.setText("下一段让人物先回到凉面摊。")  # noqa: SLF001
+    board._add_btn.click()  # noqa: SLF001
 
     qtbot.waitUntil(lambda: window._stack.currentIndex() == MODE_AI)  # noqa: SLF001
     assert tools._include_writing_notes_check.isChecked() is True  # noqa: SLF001

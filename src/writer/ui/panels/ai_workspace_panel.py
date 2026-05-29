@@ -1449,8 +1449,17 @@ class AIToolsTab(QWidget):
         if not self._scope.ref_id:
             return []
         try:
-            return self._container.entry_writing_note_repository.list_for_entry(
+            notes = self._container.entry_writing_note_repository.list_for_entry(
                 self._scope.ref_id
+            )
+            return sorted(
+                notes,
+                key=lambda note: (
+                    not note.pinned,
+                    int(note.board_y if note.board_y is not None else 999999),
+                    int(note.board_x if note.board_x is not None else 999999),
+                    int(note.sort_order or 0),
+                ),
             )
         except Exception:  # noqa: BLE001
             return []
