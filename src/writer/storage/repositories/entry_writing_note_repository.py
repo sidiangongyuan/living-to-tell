@@ -15,8 +15,8 @@ from writer.domain.models.entry_writing_note import (
 )
 
 NOTE_COLOR_KEYS = {"cream", "amber", "mist", "blue", "rose", "paper"}
-NOTE_WIDTH_MIN = 150
-NOTE_WIDTH_MAX = 260
+NOTE_WIDTH_MIN = 220
+NOTE_WIDTH_MAX = 340
 
 
 def _row_to_note(row: sqlite3.Row) -> EntryWritingNote:

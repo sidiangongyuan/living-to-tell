@@ -762,8 +762,8 @@ QPushButton#WritingNotePinButton:hover {{
     border-color: {t.accent};
 }}
 QFrame#WritingNoteSticky {{
-    border: 1px solid rgba(80, 64, 44, 46);
-    border-radius: {t.radius_md}px;
+    border: 1px solid rgba(80, 64, 44, 54);
+    border-radius: 10px;
 }}
 QFrame#WritingNoteSticky[pinned="true"] {{
     border-top: 3px solid {t.accent};
@@ -814,6 +814,27 @@ QLabel#WritingNoteBody {{
     font-family: {t.font_serif};
     line-height: 150%;
 }}
+QPlainTextEdit#WritingNoteBody {{
+    color: {t.text_primary};
+    font-family: {t.font_serif};
+    line-height: 155%;
+    background: transparent;
+    border: none;
+    padding: 2px 0;
+}}
+QPlainTextEdit#WritingNoteBody QScrollBar:vertical {{
+    width: 7px;
+    background: transparent;
+}}
+QPlainTextEdit#WritingNoteBody QScrollBar::handle:vertical {{
+    background: rgba(80, 64, 44, 70);
+    border-radius: 3px;
+    min-height: 20px;
+}}
+QPlainTextEdit#WritingNoteBody QScrollBar::add-line:vertical,
+QPlainTextEdit#WritingNoteBody QScrollBar::sub-line:vertical {{
+    height: 0;
+}}
 QPushButton#WritingNoteMenuButton {{
     background: rgba(255, 255, 255, 80);
     border: 1px solid rgba(80, 64, 44, 34);
@@ -859,6 +880,13 @@ QLabel#WritingNoteDoneSection {{
 }}
 QLineEdit#WritingNoteInput {{
     background: {t.bg_search};
+}}
+QPlainTextEdit#WritingNoteInput {{
+    background: rgba(255, 255, 255, 92);
+    border: 1px solid rgba(80, 64, 44, 36);
+    border-radius: {t.radius_sm}px;
+    color: {t.text_primary};
+    padding: 6px;
 }}
 
 /* ------- CheckBox ------- */

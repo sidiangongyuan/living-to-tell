@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QRect, Qt, Signal
 from PySide6.QtGui import QFont, QMouseEvent, QPalette
 from PySide6.QtWidgets import (
     QFrame,
@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenu,
+    QPlainTextEdit,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
@@ -27,9 +28,9 @@ from writer.ui.i18n import TR
 
 NOTE_COLOR_KEYS = ("cream", "amber", "mist", "blue", "rose", "paper")
 DEFAULT_NOTE_COLOR_KEY = "cream"
-DEFAULT_NOTE_WIDTH = 188
-MIN_NOTE_WIDTH = 150
-MAX_NOTE_WIDTH = 280
+DEFAULT_NOTE_WIDTH = 248
+MIN_NOTE_WIDTH = 220
+MAX_NOTE_WIDTH = 340
 BOARD_GRID = 8
 BOARD_PADDING = 12
 BOARD_COLUMN_GAP = 14
@@ -37,6 +38,8 @@ BOARD_ROW_GAP = 14
 BOARD_MIN_WIDTH = 260
 BOARD_MAX_WIDTH = 340
 COLLAPSED_WIDTH = 120
+NOTE_HEADER_HEIGHT = 28
+NOTE_ACTIONS_HEIGHT = 30
 
 
 class WritingNoteCard(QFrame):
@@ -62,8 +65,9 @@ class WritingNoteCard(QFrame):
         self.setProperty("color", _color_key(note))
         self.setProperty("pinned", note.pinned)
         self.setProperty("done", note.status == NOTE_STATUS_DONE)
-        self.setFixedWidth(_note_width(note))
-        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Maximum)
+        note_size = _note_width(note)
+        self.setFixedSize(note_size, note_size)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 10)
@@ -94,29 +98,32 @@ class WritingNoteCard(QFrame):
         top.addWidget(menu_btn)
         layout.addLayout(top)
 
-        self._body = QLabel(note.body)
+        self._body = QPlainTextEdit(note.body)
         self._body.setObjectName("WritingNoteBody")
-        self._body.setWordWrap(True)
-        self._body.setTextFormat(Qt.TextFormat.PlainText)
+        self._body.setReadOnly(True)
+        self._body.setFrameShape(QFrame.Shape.NoFrame)
+        self._body.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._body.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._body.setToolTip(note.body)
+        self._body.setPlainText(note.body)
         body_font = QFont()
         if display_font_family:
             body_font.setFamilies(_font_families(display_font_family))
-        body_font.setPointSizeF(11.2)
+        body_font.setPointSizeF(12.2)
         body_font.setStrikeOut(note.status == NOTE_STATUS_DONE)
         self._body.setFont(body_font)
         if note.status == NOTE_STATUS_DONE:
             self._body.setStyleSheet(
                 f"color: {self.palette().color(QPalette.ColorRole.PlaceholderText).name()};"
             )
-        layout.addWidget(self._body)
+        layout.addWidget(self._body, 1)
 
-        edit = QLineEdit(note.body)
-        edit.setObjectName("WritingNoteInput")
-        edit.setVisible(False)
-        edit.returnPressed.connect(lambda note_id=note.id: self._commit_edit(note_id))
-        layout.addWidget(edit)
-        self._edit_input = edit
+        self._edit_input = QPlainTextEdit(note.body)
+        self._edit_input.setObjectName("WritingNoteInput")
+        self._edit_input.setVisible(False)
+        self._edit_input.setFrameShape(QFrame.Shape.NoFrame)
+        self._edit_input.setMinimumHeight(90)
+        layout.addWidget(self._edit_input, 1)
 
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
@@ -138,6 +145,12 @@ class WritingNoteCard(QFrame):
         edit_btn.setObjectName("WritingNoteMiniButton")
         edit_btn.clicked.connect(self._start_edit)
         actions.addWidget(edit_btn)
+        save_btn = QPushButton(TR("editor.writing_notes.save"))
+        save_btn.setObjectName("WritingNoteMiniButton")
+        save_btn.setVisible(False)
+        save_btn.clicked.connect(lambda _checked=False, note_id=note.id: self._commit_edit(note_id))
+        actions.addWidget(save_btn)
+        self._save_btn = save_btn
         actions.addStretch(1)
         layout.addLayout(actions)
 
@@ -193,16 +206,18 @@ class WritingNoteCard(QFrame):
     def _start_edit(self) -> None:
         self._body.setVisible(False)
         self._edit_input.setVisible(True)
+        self._save_btn.setVisible(True)
         self._edit_input.setFocus()
         self._edit_input.selectAll()
 
     def _commit_edit(self, note_id: str) -> None:
-        text = self._edit_input.text().strip()
+        text = self._edit_input.toPlainText().strip()
         if not text:
             self._edit_input.setFocus()
             return
         self._body.setVisible(True)
         self._edit_input.setVisible(False)
+        self._save_btn.setVisible(False)
         if text != self.note.body:
             self.edit_requested.emit(note_id, text)
 
@@ -220,9 +235,9 @@ class WritingNoteCard(QFrame):
             )
         width_menu = menu.addMenu(TR("editor.writing_notes.width"))
         for label_key, width in (
-            ("editor.writing_notes.width_small", 160),
+            ("editor.writing_notes.width_small", MIN_NOTE_WIDTH),
             ("editor.writing_notes.width_medium", DEFAULT_NOTE_WIDTH),
-            ("editor.writing_notes.width_large", 248),
+            ("editor.writing_notes.width_large", 310),
         ):
             width_menu.addAction(
                 TR(label_key),
@@ -415,7 +430,7 @@ class WritingNotesBoard(QFrame):
         for note in visible:
             note_width = _note_width(note)
             x = max(bounds.left(), x - note_width)
-            if y + 138 > bounds.bottom():
+            if y + note_width > bounds.bottom():
                 y = bounds.top()
                 x = max(bounds.left(), x - note_width - BOARD_COLUMN_GAP)
             self.layout_changed.emit(
@@ -426,7 +441,7 @@ class WritingNotesBoard(QFrame):
                 _color_key(note),
                 _z_index(note),
             )
-            y += 138 + BOARD_ROW_GAP
+            y += note_width + BOARD_ROW_GAP
 
     def _on_add(self) -> None:
         text = self._input.text().strip()
@@ -565,7 +580,7 @@ def _note_position(note: EntryWritingNote, index: int, bounds: QRect) -> tuple[i
     return _bounded_point(
         QPoint(
             bounds.right() - note_width - column * (note_width + BOARD_COLUMN_GAP),
-            bounds.top() + row * 138,
+            bounds.top() + row * (note_width + BOARD_ROW_GAP),
         ),
         bounds,
         note_width,
@@ -575,5 +590,5 @@ def _note_position(note: EntryWritingNote, index: int, bounds: QRect) -> tuple[i
 def _bounded_point(point: QPoint, bounds: QRect, width: int) -> tuple[int, int]:
     return (
         min(max(point.x(), bounds.left()), max(bounds.left(), bounds.right() - width)),
-        min(max(point.y(), bounds.top()), max(bounds.top(), bounds.bottom() - 100)),
+        min(max(point.y(), bounds.top()), max(bounds.top(), bounds.bottom() - width)),
     )

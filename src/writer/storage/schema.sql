@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS entry_writing_notes (
     sort_order   INTEGER NOT NULL DEFAULT 0,
     board_x      INTEGER,
     board_y      INTEGER,
-    board_width  INTEGER NOT NULL DEFAULT 188,
+    board_width  INTEGER NOT NULL DEFAULT 248,
     color_key    TEXT NOT NULL DEFAULT 'cream',
     z_index      INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),

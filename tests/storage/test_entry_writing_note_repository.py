@@ -61,7 +61,7 @@ def test_create_get_update_and_delete(
     assert created.sort_order == 0
     assert created.board_x is None
     assert created.board_y is None
-    assert created.board_width == 188
+    assert created.board_width == 248
     assert created.color_key == "cream"
     assert created.z_index == 0
     assert created.created_at and created.updated_at
@@ -110,8 +110,8 @@ def test_list_for_entry_orders_open_pinned_then_sort_order(
 
     pinned_second = repo.set_pinned(second.id, True)
     done_fourth = repo.set_done(fourth.id, True)
-    repo.update_layout(third.id, x=8, y=80, width=188, color_key="cream", z_index=0)
-    repo.update_layout(second.id, x=8, y=16, width=188, color_key="cream", z_index=0)
+    repo.update_layout(third.id, x=8, y=80, width=248, color_key="cream", z_index=0)
+    repo.update_layout(second.id, x=8, y=16, width=248, color_key="cream", z_index=0)
 
     assert pinned_second is not None
     assert pinned_second.pinned is True
@@ -235,7 +235,7 @@ def test_initialize_schema_adds_entry_writing_notes_table_to_legacy_db(
 
         assert note.entry_id == "e1"
         assert note.body == "migrated note"
-        assert note.board_width == 188
+        assert note.board_width == 248
         assert note.color_key == "cream"
     finally:
         upgraded.close()
@@ -288,7 +288,7 @@ def test_initialize_schema_adds_writing_note_board_columns_to_existing_table(
         note = repo.get("n1")
         assert note is not None
         assert note.body == "keep layout"
-        assert note.board_width == 188
+        assert note.board_width == 248
         assert note.color_key == "cream"
         moved = repo.update_layout(
             "n1",
@@ -301,7 +301,7 @@ def test_initialize_schema_adds_writing_note_board_columns_to_existing_table(
         assert moved is not None
         assert moved.board_x == 12
         assert moved.board_y == 24
-        assert moved.board_width == 260
+        assert moved.board_width == 340
         assert moved.color_key == "cream"
         assert moved.z_index == 5
     finally:

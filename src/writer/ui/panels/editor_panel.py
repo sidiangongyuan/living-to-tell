@@ -455,6 +455,7 @@ class EditorPanel(QWidget):
         content_layout = QVBoxLayout(self._content_wrap)
         content_layout.setContentsMargins(12, 12, 12, 12)
         content_layout.setSpacing(10)
+        self._writing_notes_board.set_note_layer(self._content_wrap)
         content_layout.addWidget(self._title)
         content_layout.addWidget(self._tags)
         content_layout.addWidget(self._tag_chips_widget)
@@ -465,7 +466,6 @@ class EditorPanel(QWidget):
         editor_stack_layout.setContentsMargins(0, 0, 0, 0)
         editor_stack_layout.setSpacing(0)
         editor_stack_layout.addWidget(self._body)
-        self._writing_notes_board.set_note_layer(self._editor_stack)
         content_layout.addWidget(self._editor_stack, 1)
         content_layout.addWidget(self._page_controls)
         content_layout.addLayout(bottom_row)
@@ -602,16 +602,14 @@ class EditorPanel(QWidget):
         self._update_writing_notes_float_layer()
 
     def _update_writing_notes_float_layer(self) -> None:
-        if not hasattr(self, "_editor_stack"):
+        if not hasattr(self, "_content_wrap"):
             return
-        rect = self._editor_stack.rect()
-        board_width = self._writing_notes_board.width()
-        reserved = board_width + 18 if not self._writing_notes_board.is_collapsed() else 0
+        rect = self._content_wrap.rect()
         self._writing_notes_board.set_drag_bounds(
             QRect(
                 12,
                 12,
-                max(12, rect.width() - reserved - 24),
+                max(12, rect.width() - 24),
                 max(12, rect.height() - 24),
             )
         )

@@ -3,6 +3,16 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.32 — Larger readable sticky notes
+
+- Changed fragment notes to normal square sticky notes with a larger default
+  size, so short notes are readable without being squeezed.
+- Added internal scrolling inside each note body for long note text.
+- Expanded the drag bounds from the body editor to the full fragment workspace,
+  so notes can be placed near the title, tags, epigraph, or editor area.
+- Raised the stored note width defaults and validation range for existing and
+  newly created note layouts.
+
 ## 0.2.0-alpha.31 — Freer sticky-note interaction
 
 - Changed fragment notes from a constrained right-side card area into floating

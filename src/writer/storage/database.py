@@ -135,7 +135,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "board_width" not in note_cols:
         conn.execute(
             "ALTER TABLE entry_writing_notes "
-            "ADD COLUMN board_width INTEGER NOT NULL DEFAULT 188"
+            "ADD COLUMN board_width INTEGER NOT NULL DEFAULT 248"
         )
     if "color_key" not in note_cols:
         conn.execute(
