@@ -3,6 +3,17 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.36 — Adjustable shell layout
+
+- Added persistence for the outer shell splitter, so user-adjusted main area
+  and right context-pane widths are restored after restart.
+- Increased splitter handle width from a nearly invisible 1 px to an easier
+  7 px grab area.
+- Kept restored shell sizes guarded so the context pane cannot be restored to an
+  unusable width.
+- Added regression coverage for shell splitter drag persistence and handle
+  usability.
+
 ## 0.2.0-alpha.35 — Splitter layout guardrails
 
 - Added guardrails for restored splitter sizes so stale or extreme saved layout

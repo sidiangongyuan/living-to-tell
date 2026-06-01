@@ -76,6 +76,7 @@ from writer.ui.theme import ThemeMode, apply_theme
 from writer.ui.widgets import ContextPane, NavigationRail
 
 _SPLITTER_SIZES_KEY = "ui.splitter_sizes"
+_MAIN_SPLITTER_SIZES_KEY = "ui.main_splitter_sizes"
 _SIDEBAR_COLLAPSED_KEY = "ui.sidebar_collapsed"
 _DEFAULT_SIDEBAR_WIDTH = 280
 _MAX_SIDEBAR_WIDTH = 340
@@ -260,7 +261,7 @@ class MainWindow(QMainWindow):
         # ---- Outer shell splitter (rail | content_stack | context_pane) ----
         self._main_splitter = QSplitter(Qt.Orientation.Horizontal)
         self._main_splitter.setObjectName("WriterShellSplitter")
-        self._main_splitter.setHandleWidth(1)
+        self._main_splitter.setHandleWidth(7)
         self._main_splitter.setChildrenCollapsible(False)
 
         # Wrap the stack so it can take an object name for QSS.
@@ -285,7 +286,9 @@ class MainWindow(QMainWindow):
             900,
             ContextPane.DEFAULT_WIDTH,
         ])
+        self._restore_main_splitter_state()
         self._normalize_main_splitter_sizes()
+        self._main_splitter.splitterMoved.connect(self._on_main_splitter_moved)
 
         shell = QWidget()
         shell.setObjectName("WriterShell")
@@ -634,6 +637,29 @@ class MainWindow(QMainWindow):
         )
         self._update_shell_toggle_buttons()
 
+    def _restore_main_splitter_state(self) -> None:
+        sizes_raw = self._container.settings.get(_MAIN_SPLITTER_SIZES_KEY)
+        if not sizes_raw:
+            return
+        try:
+            sizes = json.loads(sizes_raw)
+        except (json.JSONDecodeError, TypeError):
+            return
+        if (
+            isinstance(sizes, list)
+            and len(sizes) == 3
+            and all(isinstance(size, int) for size in sizes)
+        ):
+            self._main_splitter.setSizes(self._normalized_main_splitter_sizes(sizes))
+
+    def _on_main_splitter_moved(self, _pos: int, _index: int) -> None:
+        self._normalize_main_splitter_sizes()
+        self._container.settings.set(
+            _MAIN_SPLITTER_SIZES_KEY,
+            json.dumps(self._main_splitter.sizes()),
+        )
+        self._editor_panel.refresh_writing_notes_layer()
+
     def _update_shell_toggle_buttons(self) -> None:
         if hasattr(self, "_sidebar_btn"):
             self._sidebar_btn.setChecked(not self._sidebar_collapsed)
@@ -678,14 +704,21 @@ class MainWindow(QMainWindow):
             return
         if not getattr(self, "_context_pane_visible", True) or not self._context_pane.isVisible():
             return
-        sizes = [max(0, int(size)) for size in self._main_splitter.sizes()]
+        self._main_splitter.setSizes(
+            self._normalized_main_splitter_sizes(self._main_splitter.sizes())
+        )
+
+    def _normalized_main_splitter_sizes(self, sizes: list[int]) -> list[int]:
         if len(sizes) != 3:
-            return
-        total = max(sum(sizes), self.width() or sum(sizes), 1)
+            sizes = [NavigationRail.RAIL_WIDTH, _MIN_MAIN_AREA_WIDTH, ContextPane.DEFAULT_WIDTH]
+        cleaned = [max(0, int(size)) for size in sizes]
+        total = max(sum(cleaned), self.width() or sum(cleaned), 1)
         rail = NavigationRail.RAIL_WIDTH
-        context = max(_MIN_CONTEXT_WIDTH, min(ContextPane.DEFAULT_WIDTH, sizes[2]))
-        main = max(_MIN_MAIN_AREA_WIDTH, total - rail - context)
-        self._main_splitter.setSizes([rail, main, context])
+        available = max(1, total - rail)
+        context_max = max(_MIN_CONTEXT_WIDTH, available - _MIN_MAIN_AREA_WIDTH)
+        context = max(_MIN_CONTEXT_WIDTH, min(context_max, cleaned[2] or ContextPane.DEFAULT_WIDTH))
+        main = max(1, available - context)
+        return [rail, main, context]
 
     def _on_toggle_language(self) -> None:
         from writer.app.locale import current_locale

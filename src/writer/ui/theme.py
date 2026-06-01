@@ -509,10 +509,13 @@ QSplitter::handle {{
     background: {t.bg_window};
 }}
 QSplitter::handle:horizontal {{
-    width: 1px;
+    width: 7px;
 }}
 QSplitter::handle:vertical {{
-    height: 1px;
+    height: 7px;
+}}
+QSplitter::handle:hover {{
+    background: {t.border};
 }}
 
 /* ------- Scroll bars ------- */

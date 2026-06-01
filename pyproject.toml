@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "writer"
-version = "0.2.0a35"
+version = "0.2.0a36"
 description = "Windows desktop personal writing tool with light AI rewrite assistance."
 readme = "README.md"
 requires-python = ">=3.12"

@@ -306,6 +306,37 @@ class TestShellLayout:
         assert sizes[2] >= ContextPane.DEFAULT_WIDTH or sizes[2] >= 220
         assert window._context_pane.width() >= 220  # noqa: SLF001
 
+    def test_main_splitter_drag_sizes_persist_and_restore(self, qtbot, container):
+        from writer.ui.main_window import MainWindow
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        window.resize(1500, 900)
+        window.show()
+        window._main_splitter.setSizes([80, 980, 360])  # noqa: SLF001
+        window._on_main_splitter_moved(0, 2)  # noqa: SLF001
+
+        saved = json.loads(container.settings.get("ui.main_splitter_sizes", "[]"))
+        assert len(saved) == 3
+        assert saved[2] >= 220
+
+        window2 = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window2)
+        window2.resize(1500, 900)
+        window2.show()
+
+        restored = window2._main_splitter.sizes()  # noqa: SLF001
+        assert restored[2] >= 220
+        assert restored[2] >= 300
+
+    def test_main_splitter_handle_is_easy_to_grab(self, qtbot, container):
+        from writer.ui.main_window import MainWindow
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        assert window._main_splitter.handleWidth() >= 7  # noqa: SLF001
+
     def test_manage_quotes_opens_reference_library_without_extra_filter(
         self, qtbot, container, monkeypatch
     ):
