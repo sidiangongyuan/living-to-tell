@@ -36,8 +36,9 @@ BOARD_PADDING = 12
 BOARD_COLUMN_GAP = 14
 BOARD_ROW_GAP = 14
 BOARD_MIN_WIDTH = 260
-BOARD_MAX_WIDTH = 340
-COLLAPSED_WIDTH = 120
+BOARD_MAX_WIDTH = 320
+COLLAPSED_WIDTH = 76
+COLLAPSED_HEIGHT = 42
 NOTE_HEADER_HEIGHT = 28
 NOTE_ACTIONS_HEIGHT = 30
 
@@ -289,6 +290,7 @@ class WritingNotesBoard(QFrame):
         self.setObjectName("WritingNotesBoard")
         self.setMinimumWidth(BOARD_MIN_WIDTH)
         self.setMaximumWidth(BOARD_MAX_WIDTH)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self._notes: list[EntryWritingNote] = []
         self._cards: dict[str, WritingNoteCard] = {}
         self._entry_id: Optional[str] = None
@@ -302,7 +304,7 @@ class WritingNotesBoard(QFrame):
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(8)
 
-        self._collapsed_button = QPushButton(TR("editor.writing_notes.expand"))
+        self._collapsed_button = QPushButton(TR("editor.writing_notes.tab"))
         self._collapsed_button.setObjectName("WritingNotesCollapsedTab")
         self._collapsed_button.clicked.connect(self.toggle_collapsed)
         root.addWidget(self._collapsed_button)
@@ -512,11 +514,13 @@ class WritingNotesBoard(QFrame):
 
     def _refresh_visibility(self) -> None:
         if self._collapsed:
-            self.setMinimumWidth(COLLAPSED_WIDTH)
-            self.setMaximumWidth(COLLAPSED_WIDTH)
+            self.setFixedSize(COLLAPSED_WIDTH, COLLAPSED_HEIGHT)
         else:
             self.setMinimumWidth(BOARD_MIN_WIDTH)
             self.setMaximumWidth(BOARD_MAX_WIDTH)
+            self.setMinimumHeight(0)
+            self.setMaximumHeight(16777215)
+            self.adjustSize()
         self._content.setVisible(not self._collapsed)
         self._collapsed_button.setVisible(self._collapsed)
         open_count = sum(1 for note in self._notes if note.status == NOTE_STATUS_OPEN)

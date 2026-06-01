@@ -455,7 +455,6 @@ class EditorPanel(QWidget):
         content_layout = QVBoxLayout(self._content_wrap)
         content_layout.setContentsMargins(12, 12, 12, 12)
         content_layout.setSpacing(10)
-        self._writing_notes_board.set_note_layer(self._content_wrap)
         content_layout.addWidget(self._title)
         content_layout.addWidget(self._tags)
         content_layout.addWidget(self._tag_chips_widget)
@@ -480,8 +479,10 @@ class EditorPanel(QWidget):
         editor_column_layout.addWidget(self._find_bar)
         editor_column_layout.addWidget(self._content_wrap, 1)
         layout.addWidget(editor_column, 1)
-        layout.addWidget(self._writing_notes_board, 0)
         layout.setAlignment(self._content_wrap, Qt.AlignmentFlag.AlignHCenter)
+        self._writing_notes_board.setParent(self)
+        self._writing_notes_board.set_note_layer(self)
+        self._writing_notes_board.raise_()
 
         self._loading = False
         self._find_bar.set_editor(self._body)
@@ -604,15 +605,25 @@ class EditorPanel(QWidget):
     def _update_writing_notes_float_layer(self) -> None:
         if not hasattr(self, "_content_wrap"):
             return
-        rect = self._content_wrap.rect()
-        self._writing_notes_board.set_drag_bounds(
-            QRect(
-                12,
-                12,
-                max(12, rect.width() - 24),
-                max(12, rect.height() - 24),
+        margin = 14
+        available_width = max(1, self.width())
+        available_height = max(1, self.height())
+        if self._writing_notes_board.is_collapsed():
+            board_width = min(76, max(1, available_width - margin * 2))
+            board_height = min(42, max(1, available_height - margin * 2))
+        else:
+            board_width = min(320, max(260, available_width // 4))
+            board_height = min(
+                max(210, self._writing_notes_board.sizeHint().height()),
+                max(210, available_height - margin * 2),
             )
+        self._writing_notes_board.setGeometry(
+            max(margin, available_width - board_width - margin),
+            margin,
+            board_width,
+            board_height,
         )
+        self._writing_notes_board.set_drag_bounds(self.rect().adjusted(12, 12, -12, -12))
         self._writing_notes_board.raise_()
 
     def set_entry(self, entry: Optional[Entry]) -> None:

@@ -706,7 +706,8 @@ QFrame#WritingNotesBoard {{
         stop: 0 {t.bg_card},
         stop: 1 {t.bg_input}
     );
-    border-left: 1px solid {t.border};
+    border: 1px solid {t.border};
+    border-radius: {t.radius_lg}px;
 }}
 QFrame#WritingNotesCard {{
     background: {t.bg_card};
@@ -719,9 +720,9 @@ QPushButton#WritingNotesCollapsedTab {{
     border: 1px solid {t.border};
     border-radius: 16px;
     color: {t.text_secondary};
-    padding: 7px 12px;
+    padding: 5px 10px;
     text-align: center;
-    min-width: 88px;
+    min-width: 52px;
 }}
 QPushButton#WritingNotesCollapsedTab:hover {{
     border-color: {t.accent};

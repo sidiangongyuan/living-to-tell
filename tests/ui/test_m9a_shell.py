@@ -187,6 +187,26 @@ class TestShellLayout:
         assert window._sidebar_collapsed is (not before_sidebar)  # noqa: SLF001
         assert window._sidebar_btn.isChecked() is (not window._sidebar_collapsed)  # noqa: SLF001
 
+    def test_context_pane_remains_visible_with_fragment_notes_on_wide_window(self, qtbot, container):
+        from writer.ui.main_window import MODE_FRAGMENTS, MainWindow
+
+        entry = container.entry_repository.create(title="wide", body="body")
+        container.entry_writing_note_repository.create(
+            entry_id=entry.id,
+            body="贴在页面上的灵感便签。",
+        )
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        window.resize(1500, 900)
+        window.show()
+        window._set_mode(MODE_FRAGMENTS)  # noqa: SLF001
+        window._load_entry(entry.id)  # noqa: SLF001
+        window._editor_panel.focus_writing_note_input()  # noqa: SLF001
+
+        assert window._context_pane.isVisible()  # noqa: SLF001
+        assert window._context_pane.width() >= 220  # noqa: SLF001
+        assert window._editor_panel._writing_notes_board.width() <= 320  # noqa: SLF001
+
     def test_focus_mode_hides_and_restores_shell_surfaces(self, qtbot, container):
         from writer.ui.main_window import MainWindow, MODE_FRAGMENTS
 

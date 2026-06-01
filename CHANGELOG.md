@@ -3,6 +3,18 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.33 — Floating note board layout fix
+
+- Changed the fragment note board control from a right-side layout column into
+  a compact floating control, so it no longer squeezes the editor or the
+  right-hand context pane.
+- Shortened the collapsed note entry to a small "Notes / 便签" pill instead of
+  the wider "Show notes / 展开便签" rail.
+- Moved sticky note cards onto the whole editor panel layer, expanding their
+  placement area beyond the body content wrapper.
+- Added regression coverage for wide-window context-pane visibility and the
+  floating note-board geometry.
+
 ## 0.2.0-alpha.32 — Larger readable sticky notes
 
 - Changed fragment notes to normal square sticky notes with a larger default
