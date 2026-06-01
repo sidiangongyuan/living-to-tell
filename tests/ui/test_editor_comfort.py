@@ -575,7 +575,7 @@ def test_main_window_writing_notes_can_float_across_main_workspace(qtbot, contai
 
     card = window._main_area.findChildren(WritingNoteCard)[0]  # noqa: SLF001
     assert card.parentWidget() is window._main_area  # noqa: SLF001
-    assert card.pos().x() < window._editor_panel.x()  # noqa: SLF001
+    assert card._drag_bounds == window._main_area.rect().adjusted(12, 12, -12, -12)  # noqa: SLF001
 
     window._set_mode(MODE_WORKS)  # noqa: SLF001
     assert card.isHidden()

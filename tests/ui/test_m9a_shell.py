@@ -269,6 +269,43 @@ class TestShellLayout:
 
         assert window._list_panel.maximumWidth() == _MAX_SIDEBAR_WIDTH  # noqa: SLF001
 
+    def test_main_window_normalizes_bad_fragment_splitter_sizes(
+        self, qtbot, container
+    ):
+        from writer.ui.main_window import MainWindow, _MAX_SIDEBAR_WIDTH
+
+        container.settings.set("ui.splitter_sizes", json.dumps([900, 0]))
+        container.entry_repository.create(title="layout", body="body")
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        window.resize(1400, 860)
+        window.show()
+
+        sidebar, editor = window._splitter.sizes()  # noqa: SLF001
+        assert sidebar <= _MAX_SIDEBAR_WIDTH
+        assert editor >= 600
+        assert window._editor_panel.width() >= 600  # noqa: SLF001
+
+    def test_main_window_normalizes_context_pane_after_bad_focus_restore(
+        self, qtbot, container
+    ):
+        from writer.ui.main_window import MainWindow
+        from writer.ui.widgets import ContextPane
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        window.resize(1500, 900)
+        window.show()
+
+        window._main_splitter.setSizes([72, 1400, 0])  # noqa: SLF001
+        window._normalize_main_splitter_sizes()  # noqa: SLF001
+
+        sizes = window._main_splitter.sizes()  # noqa: SLF001
+        assert sizes[1] >= 640
+        assert sizes[2] >= ContextPane.DEFAULT_WIDTH or sizes[2] >= 220
+        assert window._context_pane.width() >= 220  # noqa: SLF001
+
     def test_manage_quotes_opens_reference_library_without_extra_filter(
         self, qtbot, container, monkeypatch
     ):

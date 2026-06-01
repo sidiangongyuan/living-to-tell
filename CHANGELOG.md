@@ -3,6 +3,18 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.35 — Splitter layout guardrails
+
+- Added guardrails for restored splitter sizes so stale or extreme saved layout
+  values cannot collapse the right context pane or squeeze the fragment editor
+  into an unusable width after maximize / restore.
+- Normalized fragment-list and editor splitter sizes on restore, show, and
+  resize, while preserving the intentional collapsed-sidebar state.
+- Normalized the outer shell splitter so the context pane keeps a usable width
+  whenever it is visible.
+- Added regression coverage for bad persisted splitter sizes and bad focus-mode
+  restore sizes.
+
 ## 0.2.0-alpha.34 — Main-workspace sticky notes
 
 - Moved fragment sticky notes from the editor panel layer to the full main

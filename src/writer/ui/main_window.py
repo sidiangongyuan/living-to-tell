@@ -80,6 +80,8 @@ _SIDEBAR_COLLAPSED_KEY = "ui.sidebar_collapsed"
 _DEFAULT_SIDEBAR_WIDTH = 280
 _MAX_SIDEBAR_WIDTH = 340
 _DEFAULT_EDITOR_WIDTH = 1120
+_MIN_MAIN_AREA_WIDTH = 700
+_MIN_CONTEXT_WIDTH = 220
 
 
 # Mode-stack indices. Dates was added at index 0 in M-Dates, shifting
@@ -109,6 +111,7 @@ class MainWindow(QMainWindow):
         self._focus_mode_enabled = False
         self._focus_restore_state: Optional[dict[str, object]] = None
         self._reduced_motion = container.settings.reduced_motion_enabled()
+        self._context_pane_visible = True
 
         self.setWindowTitle("Writer")
         self.resize(1280, 780)
@@ -282,6 +285,7 @@ class MainWindow(QMainWindow):
             900,
             ContextPane.DEFAULT_WIDTH,
         ])
+        self._normalize_main_splitter_sizes()
 
         shell = QWidget()
         shell.setObjectName("WriterShell")
@@ -595,7 +599,7 @@ class MainWindow(QMainWindow):
                     and len(sizes) == 2
                     and all(isinstance(s, int) for s in sizes)
                 ):
-                    self._splitter.setSizes(sizes)
+                    self._splitter.setSizes(self._normalized_fragment_splitter_sizes(sizes))
                     return
             except (json.JSONDecodeError, TypeError):
                 pass
@@ -638,6 +642,51 @@ class MainWindow(QMainWindow):
             self._context_toggle_btn.setChecked(self._context_pane_visible)
             self._context_toggle_btn.setToolTip(TR("shell.toggle_context_pane"))
 
+    def _normalized_fragment_splitter_sizes(
+        self,
+        sizes: list[int],
+        *,
+        available_width: Optional[int] = None,
+    ) -> list[int]:
+        total = max(
+            1,
+            int(available_width or 0),
+            sum(max(0, int(size)) for size in sizes),
+        )
+        max_sidebar = max(0, min(_MAX_SIDEBAR_WIDTH, total - _MIN_MAIN_AREA_WIDTH))
+        sidebar = max(0, min(max_sidebar, int(sizes[0])))
+        if self._sidebar_collapsed:
+            sidebar = 0
+        editor = max(1, total - sidebar)
+        return [sidebar, editor]
+
+    def _normalize_fragment_splitter_sizes(self) -> None:
+        if not hasattr(self, "_splitter"):
+            return
+        width = self._splitter.width()
+        if width <= 0:
+            return
+        self._splitter.setSizes(
+            self._normalized_fragment_splitter_sizes(
+                self._splitter.sizes(),
+                available_width=width,
+            )
+        )
+
+    def _normalize_main_splitter_sizes(self) -> None:
+        if not hasattr(self, "_main_splitter"):
+            return
+        if not getattr(self, "_context_pane_visible", True) or not self._context_pane.isVisible():
+            return
+        sizes = [max(0, int(size)) for size in self._main_splitter.sizes()]
+        if len(sizes) != 3:
+            return
+        total = max(sum(sizes), self.width() or sum(sizes), 1)
+        rail = NavigationRail.RAIL_WIDTH
+        context = max(_MIN_CONTEXT_WIDTH, min(ContextPane.DEFAULT_WIDTH, sizes[2]))
+        main = max(_MIN_MAIN_AREA_WIDTH, total - rail - context)
+        self._main_splitter.setSizes([rail, main, context])
+
     def _on_toggle_language(self) -> None:
         from writer.app.locale import current_locale
 
@@ -652,6 +701,14 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
+        self._normalize_main_splitter_sizes()
+        self._normalize_fragment_splitter_sizes()
+        self._editor_panel.refresh_writing_notes_layer()
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._normalize_main_splitter_sizes()
+        self._normalize_fragment_splitter_sizes()
         self._editor_panel.refresh_writing_notes_layer()
 
     def _on_command_palette(self) -> None:
@@ -2129,10 +2186,11 @@ class MainWindow(QMainWindow):
             self._list_panel.setVisible(bool(restore.get("list_visible", True)))
             fragment_sizes = restore.get("fragment_splitter_sizes")
             if isinstance(fragment_sizes, list) and len(fragment_sizes) == 2:
-                self._splitter.setSizes(fragment_sizes)
+                self._splitter.setSizes(self._normalized_fragment_splitter_sizes(fragment_sizes))
             main_sizes = restore.get("main_splitter_sizes")
             if isinstance(main_sizes, list) and len(main_sizes) == 3:
                 self._main_splitter.setSizes(main_sizes)
+                self._normalize_main_splitter_sizes()
         finally:
             del blocker
         self._focus_mode_enabled = False
