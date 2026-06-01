@@ -267,6 +267,7 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
         main_layout.addWidget(self._stack)
+        self._editor_panel.set_writing_notes_layer(self._main_area)
 
         self._main_splitter.addWidget(self._rail)
         self._main_splitter.addWidget(self._main_area)
@@ -648,6 +649,10 @@ class MainWindow(QMainWindow):
             TR("settings.restart_required_title"),
             TR("settings.restart_required_msg"),
         )
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._editor_panel.refresh_writing_notes_layer()
 
     def _on_command_palette(self) -> None:
         dialog = CommandPaletteDialog(

@@ -356,6 +356,7 @@ class EditorPanel(QWidget):
         self._writing_notes_show_done_by_entry: dict[str, bool] = {}
         self._find_bar = EditorFindBar()
         self._page_controls = EditorPageControls()
+        self._writing_notes_layer: QWidget = self
 
         self._title = QLineEdit()
         self._title.setPlaceholderText(TR("editor.title_placeholder"))
@@ -481,7 +482,7 @@ class EditorPanel(QWidget):
         layout.addWidget(editor_column, 1)
         layout.setAlignment(self._content_wrap, Qt.AlignmentFlag.AlignHCenter)
         self._writing_notes_board.setParent(self)
-        self._writing_notes_board.set_note_layer(self)
+        self._writing_notes_board.set_note_layer(self._writing_notes_layer)
         self._writing_notes_board.raise_()
 
         self._loading = False
@@ -563,6 +564,20 @@ class EditorPanel(QWidget):
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
+        self._writing_notes_board.set_active(True)
+        self._update_writing_notes_float_layer()
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        self._writing_notes_board.set_active(False)
+        super().hideEvent(event)
+
+    def set_writing_notes_layer(self, layer: Optional[QWidget]) -> None:
+        self._writing_notes_layer = layer or self
+        self._writing_notes_board.setParent(self._writing_notes_layer)
+        self._writing_notes_board.set_note_layer(self._writing_notes_layer)
+        self._update_writing_notes_float_layer()
+
+    def refresh_writing_notes_layer(self) -> None:
         self._update_writing_notes_float_layer()
 
     def _target_content_width(self) -> int:
@@ -605,9 +620,15 @@ class EditorPanel(QWidget):
     def _update_writing_notes_float_layer(self) -> None:
         if not hasattr(self, "_content_wrap"):
             return
+        layer = self._writing_notes_layer or self
+        if self._writing_notes_board.parentWidget() is not layer:
+            self._writing_notes_board.setParent(layer)
+            self._writing_notes_board.set_note_layer(layer)
+        top_left = self.mapTo(layer, self.rect().topLeft()) if layer is not self else self.rect().topLeft()
+        editor_rect = QRect(top_left, self.size()).intersected(layer.rect())
         margin = 14
-        available_width = max(1, self.width())
-        available_height = max(1, self.height())
+        available_width = max(1, editor_rect.width())
+        available_height = max(1, editor_rect.height())
         if self._writing_notes_board.is_collapsed():
             board_width = min(76, max(1, available_width - margin * 2))
             board_height = min(42, max(1, available_height - margin * 2))
@@ -618,12 +639,12 @@ class EditorPanel(QWidget):
                 max(210, available_height - margin * 2),
             )
         self._writing_notes_board.setGeometry(
-            max(margin, available_width - board_width - margin),
-            margin,
+            editor_rect.left() + max(margin, available_width - board_width - margin),
+            editor_rect.top() + margin,
             board_width,
             board_height,
         )
-        self._writing_notes_board.set_drag_bounds(self.rect().adjusted(12, 12, -12, -12))
+        self._writing_notes_board.set_drag_bounds(layer.rect().adjusted(12, 12, -12, -12))
         self._writing_notes_board.raise_()
 
     def set_entry(self, entry: Optional[Entry]) -> None:

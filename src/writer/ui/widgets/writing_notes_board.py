@@ -296,6 +296,7 @@ class WritingNotesBoard(QFrame):
         self._entry_id: Optional[str] = None
         self._show_done = True
         self._collapsed = False
+        self._active = True
         self._display_font_family = ""
         self._note_layer = note_layer
         self._drag_bounds = QRect()
@@ -381,11 +382,16 @@ class WritingNotesBoard(QFrame):
 
     def set_entry_id(self, entry_id: Optional[str]) -> None:
         self._entry_id = entry_id
-        self.setVisible(entry_id is not None)
+        self.setVisible(entry_id is not None and self._active)
         if entry_id is None:
             self._input.clear()
             self._notes = []
             self._rebuild_cards()
+
+    def set_active(self, active: bool) -> None:
+        self._active = bool(active)
+        self.setVisible(bool(self._entry_id) and self._active)
+        self._sync_card_visibility()
 
     def set_drag_bounds(self, bounds: QRect) -> None:
         self._drag_bounds = bounds
@@ -496,7 +502,7 @@ class WritingNotesBoard(QFrame):
             card.move(card._bounded_position(card.pos()))  # noqa: SLF001
 
     def _sync_card_visibility(self) -> None:
-        visible = bool(self._entry_id) and not self._collapsed
+        visible = bool(self._entry_id) and self._active and not self._collapsed
         for card in self._cards.values():
             card.setVisible(visible)
             if visible:

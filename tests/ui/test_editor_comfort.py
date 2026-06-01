@@ -549,6 +549,38 @@ def test_editor_panel_writing_note_drag_bounds_cover_full_fragment_workspace(qtb
     assert card.parentWidget() is panel
 
 
+def test_main_window_writing_notes_can_float_across_main_workspace(qtbot, container):
+    from writer.ui.main_window import MODE_WORKS, MainWindow
+    from writer.ui.widgets.writing_notes_board import WritingNoteCard
+
+    entry = container.entry_repository.create(title="A", body="body")
+    note = container.entry_writing_note_repository.create(
+        entry_id=entry.id,
+        body="这张便签可以放到主工作区里。",
+    )
+    container.entry_writing_note_repository.update_layout(
+        note.id,
+        x=16,
+        y=16,
+        width=248,
+        color_key="cream",
+        z_index=0,
+    )
+    window = MainWindow(container, autosave_debounce_ms=20)
+    qtbot.addWidget(window)
+    window.resize(1320, 820)
+    window.show()
+    window._load_entry(entry.id)  # noqa: SLF001
+    window._editor_panel.focus_writing_note_input()  # noqa: SLF001
+
+    card = window._main_area.findChildren(WritingNoteCard)[0]  # noqa: SLF001
+    assert card.parentWidget() is window._main_area  # noqa: SLF001
+    assert card.pos().x() < window._editor_panel.x()  # noqa: SLF001
+
+    window._set_mode(MODE_WORKS)  # noqa: SLF001
+    assert card.isHidden()
+
+
 def test_main_window_writing_notes_do_not_leak_between_fragments(qtbot, container):
     from writer.ui.main_window import MainWindow
 

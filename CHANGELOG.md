@@ -3,6 +3,18 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.34 — Main-workspace sticky notes
+
+- Moved fragment sticky notes from the editor panel layer to the full main
+  workspace layer, so notes can be placed beyond the text panel instead of
+  being limited to the fragment editor rectangle.
+- Kept notes scoped to the active fragment: switching to another mode hides the
+  floating cards so they do not leak into Works, AI, or other pages.
+- Recomputed note controls and drag bounds on window resize, improving
+  maximize / restore behavior.
+- Added regression coverage for cross-workspace note placement and mode-switch
+  hiding.
+
 ## 0.2.0-alpha.33 — Floating note board layout fix
 
 - Changed the fragment note board control from a right-side layout column into
