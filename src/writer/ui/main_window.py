@@ -742,7 +742,21 @@ class MainWindow(QMainWindow):
         super().showEvent(event)
         self._normalize_main_splitter_sizes()
         self._normalize_fragment_splitter_sizes()
+        self._editor_panel.set_writing_notes_active(
+            self._stack.currentIndex() == MODE_FRAGMENTS and not self.isMinimized()
+        )
         self._editor_panel.refresh_writing_notes_layer()
+
+    def moveEvent(self, event) -> None:  # noqa: N802
+        super().moveEvent(event)
+        self._editor_panel.refresh_writing_notes_layer()
+
+    def changeEvent(self, event) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange:
+            self._editor_panel.set_writing_notes_active(
+                self._stack.currentIndex() == MODE_FRAGMENTS and not self.isMinimized()
+            )
 
     def _on_command_palette(self) -> None:
         dialog = CommandPaletteDialog(
@@ -1412,6 +1426,7 @@ class MainWindow(QMainWindow):
         if mode != MODE_FRAGMENTS:
             self._return_to_ai_after_writing_note_add_entry_id = None
         set_stack_index(self._stack, mode, reduced=self._reduced_motion)
+        self._editor_panel.set_writing_notes_active(mode == MODE_FRAGMENTS and not self.isMinimized())
         self._rail.set_active_mode(mode)
         # Persist the active mode so the next launch lands on the same view.
         try:

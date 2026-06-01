@@ -571,6 +571,11 @@ class EditorPanel(QWidget):
         self._writing_notes_board.set_active(False)
         super().hideEvent(event)
 
+    def set_writing_notes_active(self, active: bool) -> None:
+        self._writing_notes_board.set_active(active and self.isVisible())
+        if active:
+            self._update_writing_notes_float_layer()
+
     def set_writing_notes_layer(self, layer: Optional[QWidget]) -> None:
         self._writing_notes_layer = layer or self
         self._writing_notes_board.setParent(self._writing_notes_layer)
@@ -630,7 +635,7 @@ class EditorPanel(QWidget):
         available_width = max(1, editor_rect.width())
         available_height = max(1, editor_rect.height())
         if self._writing_notes_board.is_collapsed():
-            board_width = min(76, max(1, available_width - margin * 2))
+            board_width = min(104, max(1, available_width - margin * 2))
             board_height = min(42, max(1, available_height - margin * 2))
         else:
             board_width = min(320, max(260, available_width // 4))
@@ -645,6 +650,7 @@ class EditorPanel(QWidget):
             board_height,
         )
         self._writing_notes_board.set_drag_bounds(layer.rect().adjusted(12, 12, -12, -12))
+        self._writing_notes_board.sync_floating_windows()
         self._writing_notes_board.raise_()
 
     def set_entry(self, entry: Optional[Entry]) -> None:

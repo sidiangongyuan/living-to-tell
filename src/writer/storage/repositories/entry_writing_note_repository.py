@@ -177,8 +177,8 @@ class EntryWritingNoteRepository:
              WHERE id = ?
             """,
             (
-                max(0, int(x)),
-                max(0, int(y)),
+                int(x),
+                int(y),
                 _bounded_width(width),
                 _normalize_color_key(color_key),
                 max(0, int(z_index)),

@@ -95,6 +95,75 @@ def test_create_get_update_and_delete(
     assert repo.get(created.id) is None
 
 
+def test_update_layout_preserves_negative_board_coordinates(
+    repo: EntryWritingNoteRepository,
+    entries: EntryRepository,
+) -> None:
+    entry = entries.create(title="Fragment", body="Draft")
+    note = repo.create(entry_id=entry.id, body="offset note")
+
+    updated = repo.update_layout(
+        note.id,
+        x=-42,
+        y=-58,
+        width=248,
+        color_key="cream",
+        z_index=2,
+    )
+
+    assert updated is not None
+    assert updated.board_x == -42
+    assert updated.board_y == -58
+
+    loaded = repo.get(note.id)
+    assert loaded is not None
+    assert loaded.board_x == -42
+    assert loaded.board_y == -58
+
+    listed = repo.list_for_entry(entry.id)
+    assert [item.id for item in listed] == [note.id]
+    assert listed[0].board_x == -42
+    assert listed[0].board_y == -58
+
+
+def test_update_layout_keeps_width_color_and_z_index_constraints(
+    repo: EntryWritingNoteRepository,
+    entries: EntryRepository,
+) -> None:
+    entry = entries.create(title="Fragment", body="Draft")
+    note = repo.create(entry_id=entry.id, body="layout note")
+
+    updated = repo.update_layout(
+        note.id,
+        x=-12,
+        y=-24,
+        width=999,
+        color_key="unknown",
+        z_index=-5,
+    )
+
+    assert updated is not None
+    assert updated.board_x == -12
+    assert updated.board_y == -24
+    assert updated.board_width == 340
+    assert updated.color_key == "cream"
+    assert updated.z_index == 0
+
+    narrowed = repo.update_layout(
+        note.id,
+        x=5,
+        y=9,
+        width=100,
+        color_key="mist",
+        z_index=7,
+    )
+
+    assert narrowed is not None
+    assert narrowed.board_width == 220
+    assert narrowed.color_key == "mist"
+    assert narrowed.z_index == 7
+
+
 def test_list_for_entry_orders_open_pinned_then_sort_order(
     repo: EntryWritingNoteRepository,
     entries: EntryRepository,

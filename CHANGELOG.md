@@ -3,6 +3,22 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.37 — Floating fragment sticky notes
+
+- Changed fragment writing notes into independent Writer-owned tool windows, so
+  notes are no longer squeezed by the editor column or right context pane.
+- Stored sticky-note positions as offsets from the main window and allowed
+  negative coordinates, enabling notes to sit just outside the Writer window
+  while still following it when it moves.
+- Made the note entry a compact "Notes / 便签 · count" control and kept
+  collapsed/expanded state scoped to each fragment.
+- Reworked "Arrange notes" into a stable sticky-note wall: pinned notes stay in
+  place, active notes come first, completed notes come after them.
+- Hid note windows when switching away from Fragments or minimizing Writer, so
+  notes do not leak into Works, AI, or other pages.
+- Added regression coverage for negative offsets, mode switching, arrangement,
+  note actions, and context-pane preservation.
+
 ## 0.2.0-alpha.36 — Adjustable shell layout
 
 - Added persistence for the outer shell splitter, so user-adjusted main area

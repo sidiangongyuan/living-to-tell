@@ -721,11 +721,11 @@ QFrame#WritingNotesCard {{
 QPushButton#WritingNotesCollapsedTab {{
     background: {t.bg_card};
     border: 1px solid {t.border};
-    border-radius: 16px;
+    border-radius: 18px;
     color: {t.text_secondary};
     padding: 5px 10px;
     text-align: center;
-    min-width: 52px;
+    min-width: 78px;
 }}
 QPushButton#WritingNotesCollapsedTab:hover {{
     border-color: {t.accent};

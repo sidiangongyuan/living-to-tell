@@ -188,7 +188,6 @@ def test_editor_panel_writing_notes_board_emits_actions(qtbot):
     from writer.domain.models.entry_writing_note import EntryWritingNote
     from writer.ui.i18n import TR
     from writer.ui.panels.editor_panel import EditorPanel
-    from writer.ui.widgets.writing_notes_board import WritingNoteCard
 
     panel = EditorPanel()
     qtbot.addWidget(panel)
@@ -209,7 +208,7 @@ def test_editor_panel_writing_notes_board_emits_actions(qtbot):
     board = panel._writing_notes_board  # noqa: SLF001
     assert board.isHidden() is False
     assert "1" in board._count.text()  # noqa: SLF001
-    cards = panel.findChildren(WritingNoteCard)
+    cards = list(board._cards.values())  # noqa: SLF001
     assert len(cards) == 1
     assert cards[0].width() == cards[0].height()
     assert cards[0].width() >= 220
@@ -222,14 +221,14 @@ def test_editor_panel_writing_notes_board_emits_actions(qtbot):
         board._add_btn.click()  # noqa: SLF001
     assert add_signal.args == ["补一个下雨的细节"]
 
-    buttons = panel.findChildren(QPushButton)
+    buttons = cards[0].findChildren(QPushButton)
     edit_button = next(button for button in buttons if button.text() == TR("editor.writing_notes.edit"))
     done_button = next(button for button in buttons if button.objectName() == "WritingNoteDoneToggle")
 
     edit_button.click()
     edit_input = next(
         child
-        for child in panel.findChildren(QPlainTextEdit)
+        for child in cards[0].findChildren(QPlainTextEdit)
         if child.objectName() == "WritingNoteInput"
         and child.isVisible()
         and child.toPlainText() == "下一段让母亲先沉默。"
@@ -238,7 +237,7 @@ def test_editor_panel_writing_notes_board_emits_actions(qtbot):
     with qtbot.waitSignal(panel.writing_note_update_requested) as update_signal:
         next(
             button
-            for button in panel.findChildren(QPushButton)
+            for button in cards[0].findChildren(QPushButton)
             if button.text() == TR("editor.writing_notes.save") and button.isVisible()
         ).click()
     assert update_signal.args == ["note-1", "下一段让母亲先沉默，然后看雨。"]
@@ -261,7 +260,6 @@ def test_editor_panel_completed_writing_notes_can_be_restored(qtbot):
     )
     from writer.ui.i18n import TR
     from writer.ui.panels.editor_panel import EditorPanel
-    from writer.ui.widgets.writing_notes_board import WritingNoteCard
 
     panel = EditorPanel()
     qtbot.addWidget(panel)
@@ -290,7 +288,7 @@ def test_editor_panel_completed_writing_notes_can_be_restored(qtbot):
     assert board._done_toggle_btn.isVisible()  # noqa: SLF001
     visible_label_text = "\n".join(
         card.note.body
-        for card in panel.findChildren(WritingNoteCard)
+        for card in board._cards.values()  # noqa: SLF001
     )
     assert "已经处理过的提示" in visible_label_text
 
@@ -298,13 +296,14 @@ def test_editor_panel_completed_writing_notes_can_be_restored(qtbot):
 
     visible_label_text = "\n".join(
         card.note.body
-        for card in panel.findChildren(WritingNoteCard)
+        for card in board._cards.values()  # noqa: SLF001
     )
     assert "已经处理过的提示" not in visible_label_text
     board._done_toggle_btn.click()  # noqa: SLF001
     restore_button = next(
         button
-        for button in panel.findChildren(QPushButton)
+        for card in board._cards.values()  # noqa: SLF001
+        for button in card.findChildren(QPushButton)
         if button.objectName() == "WritingNoteDoneToggle" and button.text() == "↺"
     )
     with qtbot.waitSignal(panel.writing_note_done_requested) as restore_signal:
@@ -322,7 +321,6 @@ def test_editor_panel_newly_completed_note_stays_visible_in_completed_section(qt
     )
     from writer.ui.i18n import TR
     from writer.ui.panels.editor_panel import EditorPanel
-    from writer.ui.widgets.writing_notes_board import WritingNoteCard
 
     panel = EditorPanel()
     qtbot.addWidget(panel)
@@ -354,17 +352,19 @@ def test_editor_panel_newly_completed_note_stays_visible_in_completed_section(qt
     assert panel._writing_notes_show_done is True  # noqa: SLF001
     visible_text = "\n".join(
         label.text()
-        for label in panel.findChildren(QLabel)
+        for card in panel._writing_notes_board._cards.values()  # noqa: SLF001
+        for label in card.findChildren(QLabel)
     )
     assert TR("editor.writing_notes.state_done") in visible_text
     note_text = "\n".join(
         body.toPlainText()
-        for body in panel.findChildren(QPlainTextEdit, "WritingNoteBody")
+        for card in panel._writing_notes_board._cards.values()  # noqa: SLF001
+        for body in card.findChildren(QPlainTextEdit, "WritingNoteBody")
     )
     assert "还没处理的提示" in note_text
     done_cards = [
         card
-        for card in panel.findChildren(WritingNoteCard)
+        for card in panel._writing_notes_board._cards.values()  # noqa: SLF001
         if card.note.status == NOTE_STATUS_DONE
     ]
     assert done_cards
@@ -372,7 +372,8 @@ def test_editor_panel_newly_completed_note_stays_visible_in_completed_section(qt
     qtbot.waitUntil(
         lambda: any(
             button.isVisible()
-            for button in panel.findChildren(QPushButton)
+            for card in panel._writing_notes_board._cards.values()  # noqa: SLF001
+            for button in card.findChildren(QPushButton)
             if button.objectName() == "WritingNoteDoneToggle" and button.text() == "↺"
         )
     )
@@ -411,7 +412,6 @@ def test_editor_panel_many_writing_notes_float_on_editor_stack(qtbot):
     from writer.domain.models.entry import Entry
     from writer.domain.models.entry_writing_note import EntryWritingNote
     from writer.ui.panels.editor_panel import EditorPanel
-    from writer.ui.widgets.writing_notes_board import WritingNoteCard
 
     panel = EditorPanel()
     qtbot.addWidget(panel)
@@ -429,7 +429,7 @@ def test_editor_panel_many_writing_notes_float_on_editor_stack(qtbot):
     )
 
     board = panel._writing_notes_board  # noqa: SLF001
-    assert len(panel.findChildren(WritingNoteCard)) == 8
+    assert len(board._cards) == 8  # noqa: SLF001
     assert board.is_collapsed() is True  # noqa: SLF001
 
 
@@ -447,16 +447,15 @@ def test_editor_panel_writing_notes_control_is_floating_not_layout_column(qtbot)
 
     board = panel._writing_notes_board  # noqa: SLF001
     assert board.parentWidget() is panel
-    assert board.width() <= 80
-    assert board.x() > panel.width() - 110
-    assert panel._content_wrap.width() > panel.width() - 80  # noqa: SLF001
+    assert board.width() <= 112
+    assert board.x() > panel.width() - 140
+    assert panel._content_wrap.width() > panel.width() - 112  # noqa: SLF001
 
 
 def test_editor_panel_writing_note_board_layout_signal(qtbot):
     from writer.domain.models.entry import Entry
     from writer.domain.models.entry_writing_note import EntryWritingNote
     from writer.ui.panels.editor_panel import EditorPanel
-    from writer.ui.widgets.writing_notes_board import WritingNoteCard
 
     panel = EditorPanel()
     qtbot.addWidget(panel)
@@ -476,7 +475,7 @@ def test_editor_panel_writing_note_board_layout_signal(qtbot):
         ]
     )
 
-    card = panel.findChildren(WritingNoteCard)[0]
+    card = next(iter(panel._writing_notes_board._cards.values()))  # noqa: SLF001
     with qtbot.waitSignal(panel.writing_note_layout_requested) as signal:
         card.layout_changed.emit("note-1", 48, 64, 240, "mist", 2)
 
@@ -489,7 +488,6 @@ def test_editor_panel_pinned_writing_note_does_not_drag(qtbot):
     from writer.domain.models.entry import Entry
     from writer.domain.models.entry_writing_note import EntryWritingNote
     from writer.ui.panels.editor_panel import EditorPanel
-    from writer.ui.widgets.writing_notes_board import WritingNoteCard
 
     panel = EditorPanel()
     qtbot.addWidget(panel)
@@ -510,7 +508,7 @@ def test_editor_panel_pinned_writing_note_does_not_drag(qtbot):
         ]
     )
 
-    card = panel.findChildren(WritingNoteCard)[0]
+    card = next(iter(panel._writing_notes_board._cards.values()))  # noqa: SLF001
     original = card.pos()
     qtbot.mousePress(card, Qt.MouseButton.LeftButton, pos=QPoint(12, 12))
     qtbot.mouseMove(card, QPoint(110, 90))
@@ -519,11 +517,10 @@ def test_editor_panel_pinned_writing_note_does_not_drag(qtbot):
     assert card.pos() == original
 
 
-def test_editor_panel_writing_note_drag_bounds_cover_full_fragment_workspace(qtbot):
+def test_editor_panel_writing_note_uses_window_relative_position(qtbot):
     from writer.domain.models.entry import Entry
     from writer.domain.models.entry_writing_note import EntryWritingNote
     from writer.ui.panels.editor_panel import EditorPanel
-    from writer.ui.widgets.writing_notes_board import WritingNoteCard
 
     panel = EditorPanel()
     qtbot.addWidget(panel)
@@ -543,15 +540,15 @@ def test_editor_panel_writing_note_drag_bounds_cover_full_fragment_workspace(qtb
         ]
     )
 
-    card = panel.findChildren(WritingNoteCard)[0]
+    card = next(iter(panel._writing_notes_board._cards.values()))  # noqa: SLF001
 
-    assert card.pos().y() < panel._editor_stack.y()  # noqa: SLF001
+    assert card.relative_position().x() == 12
+    assert card.relative_position().y() == 12
     assert card.parentWidget() is panel
 
 
 def test_main_window_writing_notes_can_float_across_main_workspace(qtbot, container):
     from writer.ui.main_window import MODE_WORKS, MainWindow
-    from writer.ui.widgets.writing_notes_board import WritingNoteCard
 
     entry = container.entry_repository.create(title="A", body="body")
     note = container.entry_writing_note_repository.create(
@@ -573,12 +570,85 @@ def test_main_window_writing_notes_can_float_across_main_workspace(qtbot, contai
     window._load_entry(entry.id)  # noqa: SLF001
     window._editor_panel.focus_writing_note_input()  # noqa: SLF001
 
-    card = window._main_area.findChildren(WritingNoteCard)[0]  # noqa: SLF001
-    assert card.parentWidget() is window._main_area  # noqa: SLF001
-    assert card._drag_bounds == window._main_area.rect().adjusted(12, 12, -12, -12)  # noqa: SLF001
+    card = next(iter(window._editor_panel._writing_notes_board._cards.values()))  # noqa: SLF001
+    assert card.parentWidget() is window  # noqa: SLF001
+    assert card.relative_position() == card.pos() - window.frameGeometry().topLeft()
 
     window._set_mode(MODE_WORKS)  # noqa: SLF001
     assert card.isHidden()
+
+
+def test_main_window_writing_notes_preserve_negative_offsets(qtbot, container):
+    from writer.ui.main_window import MainWindow
+
+    entry = container.entry_repository.create(title="A", body="body")
+    note = container.entry_writing_note_repository.create(
+        entry_id=entry.id,
+        body="拖到窗口外侧的便签。",
+    )
+    container.entry_writing_note_repository.update_layout(
+        note.id,
+        x=-260,
+        y=96,
+        width=248,
+        color_key="mist",
+        z_index=1,
+    )
+    window = MainWindow(container, autosave_debounce_ms=20)
+    qtbot.addWidget(window)
+    window.resize(1220, 760)
+    window.show()
+    window._load_entry(entry.id)  # noqa: SLF001
+    window._editor_panel.focus_writing_note_input()  # noqa: SLF001
+
+    card = next(iter(window._editor_panel._writing_notes_board._cards.values()))  # noqa: SLF001
+
+    assert card.relative_position().x() == -260
+    assert card.relative_position().y() == 96
+
+
+def test_main_window_arrange_writing_notes_keeps_pinned_and_places_wall(qtbot, container):
+    from writer.domain.models.entry_writing_note import NOTE_STATUS_DONE
+    from writer.ui.main_window import MainWindow
+
+    entry = container.entry_repository.create(title="A", body="body")
+    pinned = container.entry_writing_note_repository.create(
+        entry_id=entry.id,
+        body="固定便签不动。",
+        pinned=True,
+    )
+    first = container.entry_writing_note_repository.create(entry_id=entry.id, body="第一张")
+    done = container.entry_writing_note_repository.create(entry_id=entry.id, body="完成的")
+    container.entry_writing_note_repository.set_done(done.id, True)
+    container.entry_writing_note_repository.update_layout(
+        pinned.id,
+        x=32,
+        y=44,
+        width=248,
+        color_key="cream",
+        z_index=0,
+    )
+    window = MainWindow(container, autosave_debounce_ms=20)
+    qtbot.addWidget(window)
+    window.resize(1240, 760)
+    window.show()
+    window._load_entry(entry.id)  # noqa: SLF001
+    window._editor_panel.focus_writing_note_input()  # noqa: SLF001
+
+    window._editor_panel._writing_notes_board.arrange_notes()  # noqa: SLF001
+
+    pinned_after = container.entry_writing_note_repository.get(pinned.id)
+    first_after = container.entry_writing_note_repository.get(first.id)
+    done_after = container.entry_writing_note_repository.get(done.id)
+
+    assert pinned_after is not None
+    assert pinned_after.board_x == 32
+    assert pinned_after.board_y == 44
+    assert first_after is not None
+    assert done_after is not None
+    assert first_after.board_y <= done_after.board_y
+    assert done_after.status == NOTE_STATUS_DONE
+    assert first_after.board_x is not None
 
 
 def test_main_window_writing_notes_do_not_leak_between_fragments(qtbot, container):
@@ -596,12 +666,12 @@ def test_main_window_writing_notes_do_not_leak_between_fragments(qtbot, containe
 
     window._load_entry(first.id)  # noqa: SLF001
     assert "1" in window._editor_panel._writing_notes_board._count.text()  # noqa: SLF001
+    assert len(window._editor_panel._writing_notes_board._cards) == 1  # noqa: SLF001
     window._load_entry(second.id)  # noqa: SLF001
     assert "0" in window._editor_panel._writing_notes_board._count.text()  # noqa: SLF001
-    from writer.ui.widgets.writing_notes_board import WritingNoteCard
 
     assert (
-        len(window._editor_panel.findChildren(WritingNoteCard))  # noqa: SLF001
+        len(window._editor_panel._writing_notes_board._cards)  # noqa: SLF001
         == 0
     )
 

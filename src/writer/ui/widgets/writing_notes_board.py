@@ -7,6 +7,7 @@ from typing import Optional
 from PySide6.QtCore import QPoint, QRect, Qt, Signal
 from PySide6.QtGui import QFont, QMouseEvent, QPalette
 from PySide6.QtWidgets import (
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -37,10 +38,11 @@ BOARD_COLUMN_GAP = 14
 BOARD_ROW_GAP = 14
 BOARD_MIN_WIDTH = 260
 BOARD_MAX_WIDTH = 320
-COLLAPSED_WIDTH = 76
+COLLAPSED_WIDTH = 104
 COLLAPSED_HEIGHT = 42
 NOTE_HEADER_HEIGHT = 28
 NOTE_ACTIONS_HEIGHT = 30
+NOTE_WALL_TOP_OFFSET = 88
 
 
 class WritingNoteCard(QFrame):
@@ -249,24 +251,119 @@ class WritingNoteCard(QFrame):
         menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
 
     def _set_color(self, color_key: str) -> None:
+        pos = self._current_layout_point()
         self.layout_changed.emit(
             self.note.id,
-            self.x(),
-            self.y(),
+            pos.x(),
+            pos.y(),
             self.width(),
             _normalize_color_key(color_key),
             max(_z_index(self.note), 0),
         )
 
     def _set_width(self, width: int) -> None:
+        pos = self._current_layout_point()
         self.layout_changed.emit(
             self.note.id,
-            self.x(),
-            self.y(),
+            pos.x(),
+            pos.y(),
             max(MIN_NOTE_WIDTH, min(MAX_NOTE_WIDTH, int(width))),
             _color_key(self.note),
             max(_z_index(self.note), 0),
         )
+
+    def _current_layout_point(self) -> QPoint:
+        return self.pos()
+
+
+class WritingNoteFloatingWindow(WritingNoteCard):
+    """A sticky note as a small tool window tied to the Writer main window."""
+
+    def __init__(
+        self,
+        note: EntryWritingNote,
+        *,
+        host_window: QWidget,
+        display_font_family: str = "",
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(note, display_font_family=display_font_family, parent=parent)
+        self._host_window: QWidget = host_window
+        self._relative_position = QPoint(0, 0)
+        self._apply_tool_flags()
+
+    def _apply_tool_flags(self) -> None:
+        self.setWindowFlags(
+            Qt.WindowType.Tool
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.NoDropShadowWindowHint
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+
+    def set_host_window(self, host_window: QWidget) -> None:
+        self._host_window = host_window
+        if self.parentWidget() is not host_window:
+            self.setParent(host_window)
+            self._apply_tool_flags()
+        self.sync_to_host()
+
+    def set_relative_position(self, x: int, y: int) -> None:
+        self._relative_position = QPoint(int(x), int(y))
+        self.sync_to_host()
+
+    def relative_position(self) -> QPoint:
+        return QPoint(self._relative_position)
+
+    def sync_to_host(self) -> None:
+        if self._host_window is None:
+            return
+        self.move(self._host_origin() + self._relative_position)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton and not self.note.pinned:
+            self._drag_start = event.globalPosition().toPoint()
+            self._drag_origin = self.pos()
+            self.raise_()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if self._drag_start is None or self._drag_origin is None:
+            super().mouseMoveEvent(event)
+            return
+        delta = event.globalPosition().toPoint() - self._drag_start
+        self.move(self._drag_origin + delta)
+        event.accept()
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if self._drag_start is not None:
+            self._drag_start = None
+            self._drag_origin = None
+            self._relative_position = self.pos() - self._host_origin()
+            self.layout_changed.emit(
+                self.note.id,
+                self._relative_position.x(),
+                self._relative_position.y(),
+                self.width(),
+                _color_key(self.note),
+                max(_z_index(self.note), 0),
+            )
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def _bounded_position(self, point: QPoint) -> QPoint:
+        return point
+
+    def _current_layout_point(self) -> QPoint:
+        return self.relative_position()
+
+    def _host_origin(self) -> QPoint:
+        host = self._host_window.window() if self._host_window is not None else None
+        if host is None:
+            return QPoint(0, 0)
+        return host.frameGeometry().topLeft()
 
 
 class WritingNotesBoard(QFrame):
@@ -292,13 +389,14 @@ class WritingNotesBoard(QFrame):
         self.setMaximumWidth(BOARD_MAX_WIDTH)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self._notes: list[EntryWritingNote] = []
-        self._cards: dict[str, WritingNoteCard] = {}
+        self._cards: dict[str, WritingNoteFloatingWindow] = {}
         self._entry_id: Optional[str] = None
         self._show_done = True
         self._collapsed = False
         self._active = True
         self._display_font_family = ""
         self._note_layer = note_layer
+        self._host_window: Optional[QWidget] = None
         self._drag_bounds = QRect()
 
         root = QVBoxLayout(self)
@@ -370,11 +468,14 @@ class WritingNotesBoard(QFrame):
 
     def set_note_layer(self, layer: QWidget) -> None:
         self._note_layer = layer
+        self._host_window = layer.window()
+        for card in self._cards.values():
+            card.set_host_window(self._host_window)
         self._sync_card_bounds()
 
     def set_display_font_family(self, family: str) -> None:
         self._display_font_family = family
-        self._rebuild_cards()
+        self._rebuild_cards(force=True)
 
     def set_notes(self, notes: list[EntryWritingNote]) -> None:
         self._notes = list(notes)
@@ -396,6 +497,10 @@ class WritingNotesBoard(QFrame):
     def set_drag_bounds(self, bounds: QRect) -> None:
         self._drag_bounds = bounds
         self._sync_card_bounds()
+
+    def sync_floating_windows(self) -> None:
+        for card in self._cards.values():
+            card.sync_to_host()
 
     def focus_input(self) -> None:
         self.set_collapsed(False, emit_signal=True)
@@ -431,16 +536,18 @@ class WritingNotesBoard(QFrame):
         self.set_show_done(not self._show_done, emit_signal=True)
 
     def arrange_notes(self) -> None:
-        bounds = self._effective_bounds()
-        visible = [note for note in self._visible_notes() if not note.pinned]
-        x = bounds.right()
-        y = bounds.top()
+        visible = sorted(
+            (note for note in self._visible_notes() if not note.pinned),
+            key=_arrange_sort_key,
+        )
+        if not visible:
+            return
+        x, y, direction, vertical_limit = self._wall_start(visible)
         for note in visible:
             note_width = _note_width(note)
-            x = max(bounds.left(), x - note_width)
-            if y + note_width > bounds.bottom():
-                y = bounds.top()
-                x = max(bounds.left(), x - note_width - BOARD_COLUMN_GAP)
+            if y + note_width > vertical_limit:
+                y = NOTE_WALL_TOP_OFFSET
+                x += direction * (note_width + BOARD_COLUMN_GAP)
             self.layout_changed.emit(
                 note.id,
                 x,
@@ -465,58 +572,143 @@ class WritingNotesBoard(QFrame):
             if note.status == NOTE_STATUS_OPEN or self._show_done
         ]
 
-    def _rebuild_cards(self) -> None:
-        for card in self._cards.values():
-            card.hide()
-            card.setParent(None)
-            card.deleteLater()
-        self._cards.clear()
-        parent = self._note_layer
+    def _rebuild_cards(self, *, force: bool = False) -> None:
+        parent = self._host_parent()
         if parent is None:
+            self._clear_cards()
             self._refresh_visibility()
             return
-        bounds = self._effective_bounds()
-        for index, note in enumerate(self._visible_notes()):
-            x, y = _note_position(note, index, bounds)
-            card = WritingNoteCard(
-                note,
-                display_font_family=self._display_font_family,
-                parent=parent,
-            )
-            card.set_drag_bounds(bounds)
-            card.move(x, y)
-            card.edit_requested.connect(self.edit_requested)
-            card.done_requested.connect(self.done_requested)
-            card.delete_requested.connect(self.delete_requested)
-            card.pin_requested.connect(self.pin_requested)
-            card.layout_changed.connect(self.layout_changed)
+        visible_notes = self._visible_notes()
+        visible_ids = {note.id for note in visible_notes}
+        for note_id in list(self._cards):
+            if note_id not in visible_ids or force:
+                self._remove_card(note_id)
+        for index, note in enumerate(visible_notes):
+            existing = self._cards.get(note.id)
+            if existing is not None and existing.note != note:
+                self._remove_card(note.id)
+                existing = None
+            if existing is None:
+                x, y = self._note_position(note, index, visible_notes)
+                card = WritingNoteFloatingWindow(
+                    note,
+                    host_window=parent,
+                    display_font_family=self._display_font_family,
+                    parent=parent,
+                )
+                card.set_relative_position(x, y)
+                card.edit_requested.connect(self.edit_requested)
+                card.done_requested.connect(self.done_requested)
+                card.delete_requested.connect(self.delete_requested)
+                card.pin_requested.connect(self.pin_requested)
+                card.layout_changed.connect(self.layout_changed)
+                self._cards[note.id] = card
+            else:
+                x, y = self._note_position(note, index, visible_notes)
+                existing.set_relative_position(x, y)
+                existing.set_host_window(parent)
+            card = self._cards[note.id]
+            card.set_drag_bounds(QRect())
             card.raise_()
-            self._cards[note.id] = card
         self._sync_card_visibility()
         self._refresh_visibility()
 
+    def _clear_cards(self) -> None:
+        for note_id in list(self._cards):
+            self._remove_card(note_id)
+
+    def _remove_card(self, note_id: str) -> None:
+        card = self._cards.pop(note_id, None)
+        if card is None:
+            return
+        card.hide()
+        card.deleteLater()
+
+    def _host_parent(self) -> Optional[QWidget]:
+        if self._host_window is not None:
+            return self._host_window.window()
+        if self._note_layer is not None:
+            return self._note_layer.window()
+        parent = self.window()
+        return parent if parent is not None else None
+
     def _sync_card_bounds(self) -> None:
-        bounds = self._effective_bounds()
         for card in self._cards.values():
-            card.set_drag_bounds(bounds)
-            card.move(card._bounded_position(card.pos()))  # noqa: SLF001
+            card.set_drag_bounds(QRect())
+            card.sync_to_host()
 
     def _sync_card_visibility(self) -> None:
         visible = bool(self._entry_id) and self._active and not self._collapsed
         for card in self._cards.values():
             card.setVisible(visible)
             if visible:
+                card.sync_to_host()
                 card.raise_()
         if visible:
             self.raise_()
 
     def _effective_bounds(self) -> QRect:
-        if self._drag_bounds.isValid() and not self._drag_bounds.isNull():
-            return self._drag_bounds
         parent = self._note_layer
-        if parent is None:
+        host = self._host_parent()
+        if parent is None or host is None:
+            if self._drag_bounds.isValid() and not self._drag_bounds.isNull():
+                return self._drag_bounds
             return QRect(BOARD_PADDING, BOARD_PADDING, 640, 420)
-        return parent.rect().adjusted(BOARD_PADDING, BOARD_PADDING, -BOARD_PADDING, -BOARD_PADDING)
+        top_left = parent.mapToGlobal(parent.rect().topLeft()) - host.frameGeometry().topLeft()
+        return QRect(top_left, parent.size()).adjusted(
+            BOARD_PADDING,
+            BOARD_PADDING,
+            -BOARD_PADDING,
+            -BOARD_PADDING,
+        )
+
+    def _wall_start(self, notes: list[EntryWritingNote]) -> tuple[int, int, int, int]:
+        host = self._host_parent()
+        widest = max((_note_width(note) for note in notes), default=DEFAULT_NOTE_WIDTH)
+        if host is None:
+            return BOARD_PADDING, NOTE_WALL_TOP_OFFSET, 1, 720
+        frame = host.frameGeometry()
+        screen = host.screen() or QApplication.primaryScreen()
+        available = screen.availableGeometry() if screen is not None else frame
+        right_space = available.right() - frame.right()
+        left_space = frame.left() - available.left()
+        if right_space >= widest + BOARD_COLUMN_GAP:
+            x = frame.width() + BOARD_COLUMN_GAP
+            direction = 1
+        elif left_space >= widest + BOARD_COLUMN_GAP:
+            x = -widest - BOARD_COLUMN_GAP
+            direction = -1
+        else:
+            bounds = self._effective_bounds()
+            x = max(BOARD_PADDING, min(bounds.left(), frame.width() - widest - BOARD_PADDING))
+            direction = 1
+        vertical_limit = max(
+            NOTE_WALL_TOP_OFFSET + widest,
+            min(available.bottom() - frame.top() - BOARD_PADDING, frame.height() - BOARD_PADDING),
+        )
+        return x, NOTE_WALL_TOP_OFFSET, direction, vertical_limit
+
+    def _note_position(
+        self,
+        note: EntryWritingNote,
+        index: int,
+        visible_notes: list[EntryWritingNote],
+    ) -> tuple[int, int]:
+        stored = _stored_note_position(note)
+        if stored is not None:
+            return stored
+        x, y, direction, vertical_limit = self._wall_start(visible_notes)
+        for previous in visible_notes[:index]:
+            previous_width = _note_width(previous)
+            if y + previous_width > vertical_limit:
+                y = NOTE_WALL_TOP_OFFSET
+                x += direction * (previous_width + BOARD_COLUMN_GAP)
+            y += previous_width + BOARD_ROW_GAP
+        width = _note_width(note)
+        if y + width > vertical_limit:
+            y = NOTE_WALL_TOP_OFFSET
+            x += direction * (width + BOARD_COLUMN_GAP)
+        return x, y
 
     def _refresh_visibility(self) -> None:
         if self._collapsed:
@@ -531,6 +723,11 @@ class WritingNotesBoard(QFrame):
         self._collapsed_button.setVisible(self._collapsed)
         open_count = sum(1 for note in self._notes if note.status == NOTE_STATUS_OPEN)
         done_count = sum(1 for note in self._notes if note.status == NOTE_STATUS_DONE)
+        self._collapsed_button.setText(
+            f"{TR('editor.writing_notes.tab')} · {open_count}"
+            if open_count
+            else TR("editor.writing_notes.tab")
+        )
         self._count.setText(TR("editor.writing_notes.count").format(count=open_count))
         self._done_toggle_btn.setVisible(done_count > 0)
         self._done_toggle_btn.setText(
@@ -575,14 +772,30 @@ def _z_index(note: EntryWritingNote) -> int:
     return int(getattr(note, "z_index", 0) or 0)
 
 
-def _note_position(note: EntryWritingNote, index: int, bounds: QRect) -> tuple[int, int]:
+def _arrange_sort_key(note: EntryWritingNote) -> tuple[int, int, str, str]:
+    return (
+        1 if note.status == NOTE_STATUS_DONE else 0,
+        int(getattr(note, "sort_order", 0) or 0),
+        str(getattr(note, "created_at", "") or ""),
+        note.id,
+    )
+
+
+def _stored_note_position(note: EntryWritingNote) -> Optional[tuple[int, int]]:
     x = getattr(note, "board_x", None)
     y = getattr(note, "board_y", None)
     if x is not None and y is not None:
         try:
-            return _bounded_point(QPoint(int(x), int(y)), bounds, _note_width(note))
+            return int(x), int(y)
         except (TypeError, ValueError):
-            pass
+            return None
+    return None
+
+
+def _note_position(note: EntryWritingNote, index: int, bounds: QRect) -> tuple[int, int]:
+    stored = _stored_note_position(note)
+    if stored is not None:
+        return stored
     note_width = _note_width(note)
     columns = max(1, max(note_width, bounds.width()) // (note_width + BOARD_COLUMN_GAP))
     column = index % columns
