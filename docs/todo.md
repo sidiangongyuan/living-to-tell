@@ -1,6 +1,6 @@
 # Public TODO List
 
-This list tracks product-facing work that would make Writer more reliable and easier to adopt. It is intentionally separate from private planning notes.
+This list tracks product-facing work that would make Writer more reliable and easier to adopt.
 
 ## Release quality
 
@@ -15,6 +15,7 @@ This list tracks product-facing work that would make Writer more reliable and ea
 - Add more editor layout presets for compact, balanced, and wide screens.
 - Improve keyboard-only navigation across Dates, Fragments, Works, Collections, and AI Workspace.
 - Add optional backup reminders for active daily writers.
+- Add more ways to turn AI chat ideas into fragment notes, fragments, and reference-library items.
 
 ## Data management
 
@@ -26,9 +27,10 @@ This list tracks product-facing work that would make Writer more reliable and ea
 ## AI workflow
 
 - Improve revision comparison for AI edits with clearer original-vs-result review.
-- Add task-specific parameter panels that remain isolated between AI tasks.
+- Add richer controls for long prompts, including visible request size and timeout guidance.
 - Improve quota, model availability, network, and proxy error messages.
 - Add provider-native token counting where available.
+- Expand clickable AI reports so issues can locate source text or become follow-up tasks.
 
 ## Packaging and platform
 

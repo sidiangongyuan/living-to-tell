@@ -23,6 +23,9 @@ from writer.services.ai.interfaces import (
 )
 from writer.services.ai.prompt_builder import PromptBuilder
 
+GEMINI_TIMEOUT_ENV = "WRITER_GEMINI_TIMEOUT_SECONDS"
+GEMINI_DEFAULT_TIMEOUT_SECONDS = 120
+
 
 class GeminiProvider(AiProvider):
     """Adapter around the native Gemini generateContent HTTP API."""
@@ -36,11 +39,13 @@ class GeminiProvider(AiProvider):
         *,
         gemini_auth: Optional[GeminiAuthResolver] = None,
         opener=None,
+        timeout_seconds: Optional[int] = None,
     ) -> None:
         self._config = config
         self._prompts = prompt_builder
         self._gemini_auth = gemini_auth
         self._opener = opener or request.urlopen
+        self._timeout_seconds = _resolve_timeout_seconds(timeout_seconds)
 
     def rewrite(self, request_obj: RewriteRequest) -> RewriteResponse:
         messages = self._prompts.build_messages(request_obj)
@@ -84,7 +89,7 @@ class GeminiProvider(AiProvider):
 
         req = request.Request(url, data=body, headers=headers, method="POST")
         try:
-            with self._opener(req, timeout=60) as resp:
+            with self._opener(req, timeout=self._timeout_seconds) as resp:
                 raw = resp.read().decode("utf-8")
         except error.HTTPError as exc:
             message = _extract_http_error(exc)
@@ -153,6 +158,18 @@ def _normalize_base_url(base_url: Optional[str]) -> str:
     if base.endswith("/v1") or base.endswith("/v1beta") or base.endswith("/v1beta1"):
         return base
     return base + "/v1beta"
+
+
+def _resolve_timeout_seconds(explicit: Optional[int]) -> int:
+    if explicit is not None:
+        return max(1, int(explicit))
+    raw = os.environ.get(GEMINI_TIMEOUT_ENV, "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    return GEMINI_DEFAULT_TIMEOUT_SECONDS
 
 
 def _split_messages(messages: List[dict]) -> tuple[str, List[dict]]:

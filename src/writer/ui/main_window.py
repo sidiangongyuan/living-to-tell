@@ -1641,6 +1641,7 @@ class MainWindow(QMainWindow):
             return
         if self._editor_panel.current_entry_id() == entry_id:
             self._editor_panel.set_entry(entry)
+            self._refresh_writing_notes_card(entry_id)
             self._autosave.remember_clean(
                 entry_id,
                 entry.title,

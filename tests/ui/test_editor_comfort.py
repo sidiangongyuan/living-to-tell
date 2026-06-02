@@ -755,6 +755,30 @@ def test_main_window_continue_with_writing_notes_opens_ai_continue(qtbot, contai
     assert tools._include_writing_notes_check.isChecked() is True  # noqa: SLF001
 
 
+def test_main_window_ai_fragment_changed_refreshes_writing_notes_board(qtbot, container):
+    from writer.ui.main_window import MainWindow
+
+    entry = container.entry_repository.create(title="雨夜", body="窗外下雨。")
+    window = MainWindow(container, autosave_debounce_ms=20)
+    qtbot.addWidget(window)
+    window._load_entry(entry.id)  # noqa: SLF001
+
+    assert "0" in window._editor_panel._writing_notes_board._count.text()  # noqa: SLF001
+
+    container.entry_writing_note_repository.create(
+        entry_id=entry.id,
+        body="把雨声写得更近一点。",
+    )
+    window._on_ai_fragment_changed(entry.id)  # noqa: SLF001
+
+    board = window._editor_panel._writing_notes_board  # noqa: SLF001
+    assert "1" in board._count.text()  # noqa: SLF001
+    assert any(
+        "把雨声写得更近一点" in card._body.toPlainText()  # noqa: SLF001
+        for card in board._cards.values()  # noqa: SLF001
+    )
+
+
 def test_editor_panel_focus_mode_adds_current_paragraph_selection(qtbot):
     from writer.ui.panels.editor_panel import EditorPanel
     from writer.domain.models.entry import Entry

@@ -2228,6 +2228,7 @@ class AIChatTab(QWidget):
     """Free-form conversation persisted per scope."""
 
     request_save_as_fragment = Signal(str)  # new fragment id
+    request_fragment_changed = Signal(str)
 
     def __init__(self, container: AppContainer, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -2294,7 +2295,12 @@ class AIChatTab(QWidget):
         send_row.addWidget(self._send_btn)
         self._save_fragment_btn = QPushButton(TR("ai.chat.save_as_fragment"))
         self._save_fragment_btn.clicked.connect(self._on_save_last_assistant_as_fragment)
+        self._save_fragment_btn.setToolTip(TR("ai.chat.save_as_fragment_hint"))
         send_row.addWidget(self._save_fragment_btn)
+        self._save_note_btn = QPushButton(TR("ai.chat.save_as_note"))
+        self._save_note_btn.clicked.connect(self._on_save_last_assistant_as_note)
+        self._save_note_btn.setToolTip(TR("ai.chat.save_as_note_hint"))
+        send_row.addWidget(self._save_note_btn)
         send_row.addStretch(1)
         self._status_label = QLabel("")
         send_row.addWidget(self._status_label)
@@ -2302,6 +2308,7 @@ class AIChatTab(QWidget):
 
         self._refresh_attachments_label()
         self._refresh_thread_info()
+        self._refresh_message_actions()
 
     # ---- public API ----
     def bind_scope(self, scope: AiScope) -> None:
@@ -2316,6 +2323,7 @@ class AIChatTab(QWidget):
         self._thread_id = thread.id
         self._render_history()
         self._refresh_thread_info()
+        self._refresh_message_actions()
 
     def seed_input(self, text: str) -> None:
         self._input.setPlainText(text)
@@ -2345,9 +2353,11 @@ class AIChatTab(QWidget):
         history = self._container.ai_thread_service.history(self._thread_id)
         if not history:
             self._messages_view.setPlaceholderText(TR("ai.chat.empty"))
+            self._refresh_message_actions()
             return
         for msg in history:
             self._append_message(msg.role, msg.content)
+        self._refresh_message_actions()
 
     def _append_message(self, role: str, content: str) -> None:
         if role == "user":
@@ -2394,6 +2404,30 @@ class AIChatTab(QWidget):
                 budget=DEFAULT_CHAT_CONTEXT_BUDGET_CHARS,
             )
         )
+        self._refresh_message_actions()
+
+    def _last_assistant_message(self):
+        if self._thread_id is None:
+            return None
+        history = self._container.ai_thread_service.history(self._thread_id)
+        return next((m for m in reversed(history) if m.role == "assistant"), None)
+
+    def _selected_conversation_text(self) -> str:
+        cursor = self._messages_view.textCursor()
+        if cursor.hasSelection():
+            return cursor.selectedText().replace("\u2029", "\n").strip()
+        return ""
+
+    def _refresh_message_actions(self) -> None:
+        has_assistant = self._last_assistant_message() is not None
+        self._save_fragment_btn.setEnabled(has_assistant)
+        can_save_note = (
+            has_assistant
+            and self._scope is not None
+            and self._scope.kind is AiThreadScope.FRAGMENT
+            and bool(self._scope.ref_id)
+        )
+        self._save_note_btn.setEnabled(can_save_note)
 
     def _on_add_attachment(self) -> None:
         from writer.ui.dialogs.fragment_picker_dialog import FragmentPickerDialog  # lazy
@@ -2459,6 +2493,7 @@ class AIChatTab(QWidget):
         )
         self._append_message("assistant", turn.assistant_message.content)
         self._refresh_thread_info()
+        self._refresh_message_actions()
 
     def _on_chat_failed(self, message: str) -> None:
         self._status_label.setText("")
@@ -2481,6 +2516,31 @@ class AIChatTab(QWidget):
         )
         if outcome.new_fragment_id:
             self.request_save_as_fragment.emit(outcome.new_fragment_id)
+
+    def _on_save_last_assistant_as_note(self) -> None:
+        if (
+            self._scope is None
+            or self._scope.kind is not AiThreadScope.FRAGMENT
+            or not self._scope.ref_id
+        ):
+            return
+        last_assistant = self._last_assistant_message()
+        if last_assistant is None:
+            return
+        body = self._selected_conversation_text() or last_assistant.content.strip()
+        if not body:
+            return
+        self._container.entry_writing_note_repository.create(
+            entry_id=self._scope.ref_id,
+            body=body,
+        )
+        self.request_fragment_changed.emit(self._scope.ref_id)
+        QMessageBox.information(
+            self,
+            TR("editor.writing_notes.title"),
+            TR("ai.chat.saved_as_note"),
+        )
+        self._refresh_message_actions()
 
 
 # ---------------------------------------------------------------------------
@@ -2528,6 +2588,9 @@ class AIWorkspacePanel(QWidget):
             self.request_fragment_changed.emit
         )
         self._chat_tab.request_save_as_fragment.connect(self.request_save_as_fragment.emit)
+        self._chat_tab.request_fragment_changed.connect(
+            self.request_fragment_changed.emit
+        )
 
         # Default global scope until bound.
         self.bind_scope(AiScope(AiThreadScope.GLOBAL, None, "", ""))

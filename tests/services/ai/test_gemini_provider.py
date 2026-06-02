@@ -86,7 +86,7 @@ def test_chat_uses_native_gemini_route_and_headers(tmp_path):
     assert response.output_tokens == 3
 
     req, timeout = opener.requests[0]
-    assert timeout == 60
+    assert timeout == 120
     assert req.full_url == (
         "https://example.test/gemini/v1beta/models/"
         "gemini-3.1-pro:generateContent"
@@ -99,6 +99,25 @@ def test_chat_uses_native_gemini_route_and_headers(tmp_path):
     assert body["contents"][0]["role"] == "user"
     assert body["contents"][0]["parts"][0]["text"] == "hi"
     assert body["contents"][1]["role"] == "model"
+
+
+def test_timeout_can_be_configured_by_environment(tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text("GEMINI_API_KEY=gm-test\n", encoding="utf-8")
+    opener = _RecordingOpener(
+        {"candidates": [{"content": {"parts": [{"text": "pong"}]}}]}
+    )
+    monkeypatch.setenv("WRITER_GEMINI_TIMEOUT_SECONDS", "9")
+    provider = GeminiProvider(
+        AiConfig(model="gemini-3.1-pro", api_key_source="gemini"),
+        PromptBuilder(),
+        gemini_auth=GeminiAuthResolver(path=env_file),
+        opener=opener,
+    )
+
+    provider.chat([{"role": "user", "content": "hi"}])
+
+    assert opener.requests[0][1] == 9
 
 
 def test_rewrite_strips_openai_suffix_from_base_url(tmp_path):

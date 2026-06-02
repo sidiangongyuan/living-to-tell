@@ -865,6 +865,91 @@ def test_chat_tab_rebinding_to_same_scope_returns_same_thread(qtbot, container):
     assert tab2._thread_id == first_id  # noqa: SLF001
 
 
+def test_chat_tab_can_save_last_assistant_reply_as_fragment_note(
+    qtbot, container, monkeypatch
+):
+    from writer.ui.panels.ai_workspace_panel import AIChatTab, AiScope
+    import writer.ui.panels.ai_workspace_panel as panel_mod
+
+    provider = _StubProvider("把雨声写得更近一点。")
+    _stub_container_provider(container, provider)
+    monkeypatch.setattr(panel_mod.QMessageBox, "information", lambda *a, **k: None)
+
+    entry = container.entry_repository.create(title="雨夜", body="窗外下雨。")
+    tab = AIChatTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(AiThreadScope.FRAGMENT, entry.id, entry.title or "", entry.body or "")
+    )
+    assert tab._save_note_btn.isEnabled() is False  # noqa: SLF001
+
+    assert tab._thread_id is not None  # noqa: SLF001
+    container.ai_thread_service.send(tab._thread_id, "怎么改？")  # noqa: SLF001
+    tab._render_history()  # noqa: SLF001
+
+    assert tab._save_note_btn.isEnabled() is True  # noqa: SLF001
+    with qtbot.waitSignal(tab.request_fragment_changed, timeout=500) as blocker:
+        tab._save_note_btn.click()  # noqa: SLF001
+
+    notes = container.entry_writing_note_repository.list_for_entry(entry.id)
+    assert len(notes) == 1
+    assert notes[0].body == "把雨声写得更近一点。"
+    assert blocker.args == [entry.id]
+
+
+def test_chat_tab_saves_selected_chat_text_as_fragment_note(
+    qtbot, container, monkeypatch
+):
+    from PySide6.QtGui import QTextCursor
+
+    from writer.ui.panels.ai_workspace_panel import AIChatTab, AiScope
+    import writer.ui.panels.ai_workspace_panel as panel_mod
+
+    provider = _StubProvider("第一句。\n第二句。\n第三句。")
+    _stub_container_provider(container, provider)
+    monkeypatch.setattr(panel_mod.QMessageBox, "information", lambda *a, **k: None)
+
+    entry = container.entry_repository.create(title="雨夜", body="窗外下雨。")
+    tab = AIChatTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(AiThreadScope.FRAGMENT, entry.id, entry.title or "", entry.body or "")
+    )
+    assert tab._thread_id is not None  # noqa: SLF001
+    container.ai_thread_service.send(tab._thread_id, "怎么改？")  # noqa: SLF001
+    tab._render_history()  # noqa: SLF001
+
+    document = tab._messages_view.document()  # noqa: SLF001
+    plain = tab._messages_view.toPlainText()  # noqa: SLF001
+    start = plain.index("第二句")
+    cursor = QTextCursor(document)
+    cursor.setPosition(start)
+    cursor.setPosition(start + len("第二句。"), QTextCursor.MoveMode.KeepAnchor)
+    tab._messages_view.setTextCursor(cursor)  # noqa: SLF001
+
+    tab._save_note_btn.click()  # noqa: SLF001
+
+    notes = container.entry_writing_note_repository.list_for_entry(entry.id)
+    assert [note.body for note in notes] == ["第二句。"]
+
+
+def test_chat_tab_note_action_is_fragment_only(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIChatTab, AiScope
+
+    provider = _StubProvider("global answer")
+    _stub_container_provider(container, provider)
+
+    tab = AIChatTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(AiScope(AiThreadScope.GLOBAL, None, "", ""))
+    assert tab._thread_id is not None  # noqa: SLF001
+    container.ai_thread_service.send(tab._thread_id, "hello")  # noqa: SLF001
+    tab._render_history()  # noqa: SLF001
+
+    assert tab._save_fragment_btn.isEnabled() is True  # noqa: SLF001
+    assert tab._save_note_btn.isEnabled() is False  # noqa: SLF001
+
+
 # ---------------------------------------------------------------------------
 # Safe write-back
 # ---------------------------------------------------------------------------

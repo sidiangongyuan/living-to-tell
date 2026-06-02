@@ -344,6 +344,26 @@ def test_timeout_can_be_configured_by_environment(monkeypatch):
     assert calls[0]["timeout"] == 7
 
 
+def test_default_timeout_allows_longer_writer_prompts(monkeypatch):
+    calls = []
+
+    def runner(cmd, **kwargs):
+        calls.append(kwargs)
+        return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+
+    monkeypatch.delenv(GEMINI_CLI_TIMEOUT_ENV, raising=False)
+    provider = GeminiCliProvider(
+        AiConfig(provider_name="gemini_cli"),
+        PromptBuilder(),
+        command="gemini.cmd",
+        runner=runner,
+    )
+
+    provider.chat([{"role": "user", "content": "ping"}])
+
+    assert calls[0]["timeout"] == 120
+
+
 def test_oauth_access_token_is_injected_when_refresh_available(monkeypatch):
     calls = []
 

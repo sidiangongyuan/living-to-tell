@@ -13,16 +13,12 @@ Writer is for writers who collect scenes, sentences, moods, notes, research, and
 
 > Status: **alpha, daily-usable, still moving fast**. The core writing flow, exports, version history, reference library, and AI workspace are working; the current focus is polish, writing feel, and better literary workflows.
 
-## ✦ Why Writer?
+## ✦ Product Overview
 
-| Principle | What it means |
-| --- | --- |
-| ✍️ Fragment first | Capture small pieces quickly, then tag, search, filter, and reuse them. |
-| 📖 Long-form ready | Turn fragments into works, sections, collections, and exportable manuscripts. |
-| 📚 Literary library | Browse saved passages by book-like shelves, read inside a source, and keep style specimens, character notes, setting details, and research material in one place. |
-| 🤖 AI with boundaries | Polish, expand, continue, summarize, outline, diagnose structure, and ask the library without silent write-back. |
-| 🔒 Local by default | Your SQLite database stays on your machine; API keys and OAuth tokens are read at request time. |
-| 🪄 Built for feel | Typography controls, focus mode, typewriter scrolling, smoother transitions, and a quieter editor surface. |
+Writer combines a fragment library, a manuscript workspace, a literary reference
+library, and an AI workspace in one local desktop app. It is designed for
+drafting scenes, collecting notes, assembling long-form works, and reviewing AI
+suggestions before they touch the manuscript.
 
 ## ✅ What Works Today
 
@@ -33,7 +29,7 @@ Writer is for writers who collect scenes, sentences, moods, notes, research, and
 | 🗂️ Reference library | Book-shelf browsing, source pages, literary quote cards, tag summaries, duplicate hints, and switchable stats views |
 | 🤖 AI workspace | Polish, style-aware polish, expand, continue, summarize, outline, title ideas, structure diagnosis, consistency checks, library Q&A |
 | 💬 Scoped chat | Fragment / work / collection / global chat scopes, persisted threads, context budget trimming |
-| 🔐 Safety | Compare before accepting, snapshots before write-back, no stored raw AI keys |
+| 🔐 Safety | Compare before accepting, checkpoints, snapshots before write-back, no stored raw AI keys |
 | 🪟 Distribution | Windows portable zip, local PyInstaller build script, GitHub Actions build path |
 
 ## 🧭 Product TODO
@@ -50,13 +46,16 @@ Writer is for writers who collect scenes, sentences, moods, notes, research, and
 - [x] Editor typography, focus mode, smoother motion, and typewriter comfort
 - [x] Sticky fragment notes for next-session ideas, scene reminders, and AI reference context
 - [x] Visual note board: pin, edit, mark done, change note colour / width, and arrange notes beside the page
+- [x] Save selected AI chat text or the latest reply back into the current fragment as reusable notes
 - [x] Fragment-note default-collapse setting for calmer fragment switching
-- [x] UI design refresh: semantic theme surfaces, clearer toolbar controls, calmer scrollbars, and no-wheel form controls
+- [x] UI polish: clearer toolbar controls, calmer scrollbars, and no-wheel form controls
+- [x] Longer default Gemini API and Gemini CLI / OAuth timeout for large writing prompts
 - [ ] Public screenshot gallery and short demo videos
 - [ ] Step-by-step video tutorials for common writing workflows
 - [ ] Better onboarding for first-time writers
 - [ ] Richer reference classification and saved custom library views
 - [ ] Clickable AI reports that can locate or apply suggested edits
+- [ ] More AI chat actions for turning conversation ideas into fragments, notes, and reference material
 - [ ] Beta release hygiene: signed builds, migration checks, and clearer release notes
 
 ## 🎬 Demos And Tutorials
@@ -67,8 +66,8 @@ Public screenshots, short walkthrough videos, and workflow demos are on the road
 
 The recommended public distribution format is a **Windows portable zip**.
 
-- Latest alpha: [Writer-0.2.0-alpha.38-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.38/Writer-0.2.0-alpha.38-portable.zip)
-- Release page: [v0.2.0-alpha.38](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.38)
+- Latest alpha: [Writer-0.2.0-alpha.39-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.39/Writer-0.2.0-alpha.39-portable.zip)
+- Release page: [v0.2.0-alpha.39](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.39)
 - If you are testing the latest branch, use the **Build Windows Portable** GitHub Action artifact.
 - To build locally, run the packaging command in [Build from source](#build-from-source).
 
@@ -126,7 +125,7 @@ Open **Settings** in the app and choose an AI provider:
 
 - **GPT / OpenAI**: use `env:OPENAI_API_KEY` or another OpenAI-compatible endpoint.
 - **Gemini**: use `env:GEMINI_API_KEY` or a local `~/.gemini/.env` file.
-- **Gemini CLI / OAuth**: reuse an existing Gemini CLI OAuth login; Writer refreshes a short-lived access token at request time and calls Gemini Code Assist directly.
+- **Gemini CLI / OAuth**: reuse an existing Gemini CLI OAuth login.
 
 Gemini CLI / OAuth supports common text-generation presets such as:
 
@@ -138,6 +137,10 @@ Gemini CLI / OAuth supports common text-generation presets such as:
 - `gemini-2.5-flash-lite`
 
 The model field remains editable, so compatible future text models can be tried without a code change. Media, embedding, Live API, robotics, and other specialized Gemini models usually need different request shapes and are not exposed as Writer presets.
+
+For large prompts, Gemini API and Gemini CLI / OAuth wait up to 120 seconds by
+default. Advanced users can override this with
+`WRITER_GEMINI_TIMEOUT_SECONDS` or `WRITER_GEMINI_CLI_TIMEOUT_SECONDS`.
 
 ## 🔒 Privacy And Security
 
@@ -159,8 +162,6 @@ See [SECURITY.md](SECURITY.md) for reporting and contributor rules.
 - [CHANGELOG.md](CHANGELOG.md) - product-facing release history
 - [docs/roadmap.md](docs/roadmap.md) - alpha-to-beta roadmap
 - [docs/todo.md](docs/todo.md) - public TODO list
-- [docs/ui-design-refresh.md](docs/ui-design-refresh.md) - UI polish direction and manual acceptance checklist
-- [docs/ai-revision-workflow.md](docs/ai-revision-workflow.md) - planned AI compare / revision workflow
 - [docs/screenshots/README.md](docs/screenshots/README.md) - demo media preparation notes
 
 ## 🤝 Contributing

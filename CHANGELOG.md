@@ -1,7 +1,18 @@
 # Changelog
 
-Product-facing changes only. Internal planning notes, agent prompts, and local
-experiment logs are intentionally not kept in the public repository.
+Product-facing changes only.
+
+## 0.2.0-alpha.39 — Long AI prompts and chat-to-note capture
+
+- Increased default Gemini API and Gemini CLI / OAuth request timeouts to 120
+  seconds to reduce premature failures on large writing prompts.
+- Kept timeout overrides available via environment variables for advanced
+  users.
+- Added a fragment-chat action that saves selected conversation text, or the
+  latest assistant reply, as a current-fragment writing note.
+- Refreshed README and TODO wording so public docs focus on product features,
+  source usage, downloads, and user-facing roadmap items.
+- Added regression coverage for Gemini timeouts and AI chat-to-note capture.
 
 ## 0.2.0-alpha.38 — Chinese text clipping and note panel fixes
 
