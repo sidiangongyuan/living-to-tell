@@ -217,7 +217,7 @@ class MainWindow(QMainWindow):
             self._on_include_fragment
         )
         self._context_pane.fragment_writing_notes_button.clicked.connect(
-            self._on_focus_writing_notes
+            self._on_toggle_writing_notes_from_context
         )
         self._context_pane.fragment_checkpoint_button.clicked.connect(
             self._on_save_checkpoint
@@ -272,6 +272,7 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(0)
         main_layout.addWidget(self._stack)
         self._editor_panel.set_writing_notes_layer(self._main_area)
+        self._editor_panel.set_writing_notes_anchor(self._context_pane)
 
         self._main_splitter.addWidget(self._rail)
         self._main_splitter.addWidget(self._main_area)
@@ -976,6 +977,21 @@ class MainWindow(QMainWindow):
         count = self._container.entry_writing_note_repository.count_open_for_entry(entry_id)
         return TR("context.writing_notes_count").format(count=count)
 
+    def _writing_note_action_text(self, entry_id: str) -> str:
+        count = self._container.entry_writing_note_repository.count_open_for_entry(entry_id)
+        return TR("context.action_writing_notes_open").format(count=count)
+
+    def _on_toggle_writing_notes_from_context(self) -> None:
+        entry_id = self._editor_panel.current_entry_id()
+        if entry_id is None:
+            return
+        self._return_to_ai_after_writing_note_add_entry_id = None
+        if self._stack.currentIndex() != MODE_FRAGMENTS:
+            self._set_mode(MODE_FRAGMENTS)
+            self._editor_panel.focus_writing_note_input()
+            return
+        self._editor_panel.toggle_writing_notes_panel()
+
     def _on_focus_writing_notes(self) -> None:
         entry_id = self._editor_panel.current_entry_id()
         if entry_id is None:
@@ -1679,6 +1695,7 @@ class MainWindow(QMainWindow):
                     if entry.archived_at
                     else TR("context.no_value")
                 ),
+                writing_notes_action=self._writing_note_action_text(entry.id),
             )
             return
         if scope.kind is AiThreadScope.WORK:
@@ -2333,6 +2350,7 @@ class MainWindow(QMainWindow):
             created=entry.created_at or TR("context.no_value"),
             updated=entry.updated_at or TR("context.no_value"),
             status=status,
+            writing_notes_action=self._writing_note_action_text(entry_id),
         )
 
     def _on_work_selected_for_context(self, work_id: str) -> None:

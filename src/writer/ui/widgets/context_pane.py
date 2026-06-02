@@ -204,12 +204,23 @@ class ContextPane(QWidget):
         created: str,
         updated: str,
         status: str,
+        writing_notes_action: str = "",
     ) -> None:
         self._title.setText(title)
         self._frag_words.set_value(words)
         self._frag_chars.set_value(chars)
         self._frag_tags.set_value(tags)
         self._frag_writing_notes.set_value(writing_notes)
+        if writing_notes_action:
+            self._frag_writing_notes_btn.setText(writing_notes_action)
+            self._frag_writing_notes_btn.ensurePolished()
+            self._frag_writing_notes_btn.setMinimumHeight(
+                max(
+                    self._frag_writing_notes_btn.sizeHint().height(),
+                    self._frag_writing_notes_btn.fontMetrics().height() + 16,
+                    36,
+                )
+            )
         self._frag_created.set_value(created)
         self._frag_updated.set_value(updated)
         self._frag_status.set_value(status)

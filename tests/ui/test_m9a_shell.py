@@ -205,7 +205,8 @@ class TestShellLayout:
 
         assert window._context_pane.isVisible()  # noqa: SLF001
         assert window._context_pane.width() >= 220  # noqa: SLF001
-        assert window._editor_panel._writing_notes_board.width() <= 320  # noqa: SLF001
+        assert window._editor_panel._writing_notes_board.width() <= 360  # noqa: SLF001
+        assert "1" in window._context_pane.fragment_writing_notes_button.text()  # noqa: SLF001
 
     def test_focus_mode_hides_and_restores_shell_surfaces(self, qtbot, container):
         from writer.ui.main_window import MainWindow, MODE_FRAGMENTS

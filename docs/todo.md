@@ -15,7 +15,7 @@ This list tracks product-facing work that would make Writer more reliable and ea
 - Add more editor layout presets for compact, balanced, and wide screens.
 - Improve keyboard-only navigation across Dates, Fragments, Works, Collections, and AI Workspace.
 - Add optional backup reminders for active daily writers.
-- Add more ways to turn AI chat ideas into fragment notes, fragments, and reference-library items.
+- Add more ways to turn AI chat ideas into fragments and reference-library items.
 
 ## Data management
 
@@ -28,6 +28,7 @@ This list tracks product-facing work that would make Writer more reliable and ea
 
 - Improve revision comparison for AI edits with clearer original-vs-result review.
 - Add richer controls for long prompts, including visible request size and timeout guidance.
+- Add more per-context actions after the unified AI context menu, such as saved context sets and quick re-use.
 - Improve quota, model availability, network, and proxy error messages.
 - Add provider-native token counting where available.
 - Expand clickable AI reports so issues can locate source text or become follow-up tasks.

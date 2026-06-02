@@ -427,14 +427,13 @@ def test_editor_panel_writing_notes_expand_resizes_without_splitter_drag(qtbot):
 
     board = panel._writing_notes_board  # noqa: SLF001
     assert board.is_collapsed() is True
-    collapsed_width = board.width()
+    assert board.isHidden()
     assert all(card.isHidden() for card in board._cards.values())  # noqa: SLF001
 
     board.toggle_collapsed()
-    qtbot.waitUntil(lambda: board.width() >= 260 and board.height() >= 180)
+    qtbot.waitUntil(lambda: board.isVisible() and board.width() >= 320 and board.height() >= 180)
 
     assert board.is_collapsed() is False
-    assert board.width() > collapsed_width
     assert all(not card.isHidden() for card in board._cards.values())  # noqa: SLF001
 
 
@@ -504,8 +503,7 @@ def test_editor_panel_writing_notes_control_is_floating_not_layout_column(qtbot)
 
     board = panel._writing_notes_board  # noqa: SLF001
     assert board.parentWidget() is panel
-    assert board.width() <= 112
-    assert board.x() > panel.width() - 140
+    assert board.isHidden()
     assert panel._content_wrap.width() > panel.width() - 112  # noqa: SLF001
 
 

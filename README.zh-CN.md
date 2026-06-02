@@ -44,6 +44,8 @@ Writer 把片段库、长文组织、文脉标本库和 AI 工作区放在一个
 - [x] 编辑器字体、专注模式、轻量动效和打字机手感
 - [x] 片段便签：记录灵感、场景提醒、未完成伏笔，并可作为 AI 参考
 - [x] 可视化便签板：固定、编辑、划为完成、改颜色 / 宽度，并在正文旁整理摆放
+- [x] 右侧信息栏片段便签入口，便签收起后不再占用正文页面空间
+- [x] AI 统一“添加上下文”菜单，可添加片段、文脉标本和当前片段便签
 - [x] AI 对话中的选中文字或最近回复可保存为当前片段便签，方便把讨论结果沉淀回写作桌面
 - [x] 片段便签默认收起设置，切换片段时更安静
 - [x] UI 质感优化：更清晰的工具栏、安静滚动条和防滚轮误改控件
@@ -64,8 +66,8 @@ Writer 把片段库、长文组织、文脉标本库和 AI 工作区放在一个
 
 推荐的公开分发方式是 **Windows 便携 zip**。
 
-- 最新 alpha：[Writer-0.2.0-alpha.39-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.39/Writer-0.2.0-alpha.39-portable.zip)
-- 发布页：[v0.2.0-alpha.39](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.39)
+- 最新 alpha：[Writer-0.2.0-alpha.40-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.40/Writer-0.2.0-alpha.40-portable.zip)
+- 发布页：[v0.2.0-alpha.40](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.40)
 - 如果想试最新分支，可以使用 **Build Windows Portable** GitHub Action 生成的 artifact。
 - 如果要本地自己打包，见 [从源码构建](#从源码构建)。
 

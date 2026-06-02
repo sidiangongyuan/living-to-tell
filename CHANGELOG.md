@@ -2,6 +2,21 @@
 
 Product-facing changes only.
 
+## 0.2.0-alpha.40 — Fragment note entry and AI context menu
+
+- Moved the fragment-note launcher into the right context pane, so closed
+  notes no longer leave a small control floating on the writing page.
+- Changed closed fragment notes to hide the note panel and all sticky-note
+  windows until the right-pane entry is opened again.
+- Anchored the fragment-note panel to the right context pane, avoiding splitter
+  squeeze and delayed geometry refreshes.
+- Added a unified AI "Add context" menu in both Tools and Chat for adding
+  fragments, literary specimens, and current-fragment notes.
+- Represented current-fragment notes as one removable AI context attachment,
+  while Continue and Expand still include open notes by default.
+- Added regression coverage for right-pane note opening, note-panel visibility,
+  AI tool context rows, and chat note attachments.
+
 ## 0.2.0-alpha.39 — Long AI prompts and chat-to-note capture
 
 - Increased default Gemini API and Gemini CLI / OAuth request timeouts to 120

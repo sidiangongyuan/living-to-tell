@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QLayout,
     QMessageBox,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
@@ -357,6 +358,71 @@ def _display_provider_name(provider: str) -> str:
     return provider or ""
 
 
+def _tr_fallback(key: str, fallback: str) -> str:
+    text = TR(key)
+    return fallback if text == key else text
+
+
+def _sort_writing_notes(notes: list) -> list:
+    return sorted(
+        notes,
+        key=lambda note: (
+            not note.pinned,
+            int(note.board_y if note.board_y is not None else 999999),
+            int(note.board_x if note.board_x is not None else 999999),
+            int(note.sort_order or 0),
+        ),
+    )
+
+
+def _writing_note_attachment(
+    scope: Optional[AiScope],
+    notes: list,
+) -> Optional[AiContextAttachment]:
+    if (
+        scope is None
+        or scope.kind is not AiThreadScope.FRAGMENT
+        or not scope.ref_id
+        or not notes
+    ):
+        return None
+    lines = [
+        f"{index}. {note.body.strip()}"
+        for index, note in enumerate(notes, start=1)
+    ]
+    return AiContextAttachment(
+        kind="writing_note",
+        ref_id=scope.ref_id,
+        name=_tr_fallback(
+            "ai.attachments.writing_notes_bundle_name",
+            "Fragment notes · {count}",
+        ).format(count=len(notes)),
+        body="\n\n".join(lines),
+    )
+
+
+def _attachment_kind_label(kind: str) -> str:
+    if kind == "fragment":
+        return _tr_fallback("ai.attachments.kind_fragment", "Fragment")
+    if kind == "style_specimen":
+        return _tr_fallback("ai.attachments.kind_specimen", "Specimen")
+    if kind == "writing_note":
+        return _tr_fallback("ai.attachments.kind_writing_note", "Fragment notes")
+    return kind.replace("_", " ").title()
+
+
+def _attachment_row_text(attachment: AiContextAttachment) -> str:
+    kind_label = _attachment_kind_label(attachment.kind)
+    if attachment.kind == "writing_note":
+        label = attachment.name or kind_label
+    else:
+        label = f"{kind_label}: {attachment.name}"
+    chars = _tr_fallback("ai.attachments.chars", "{count} chars").format(
+        count=attachment.size_chars
+    )
+    return f"{label}  ({chars})"
+
+
 class _FlowLayout(QLayout):
     """Wrap preset buttons to the next row instead of squeezing text."""
 
@@ -451,6 +517,7 @@ class AIToolsTab(QWidget):
         self._container = container
         self._scope: Optional[AiScope] = None
         self._attachments: List[AiContextAttachment] = []
+        self._attachment_rows: list[tuple[str, int, AiContextAttachment]] = []
         self._last_response: Optional[AiTaskResponse] = None
         self._last_request: Optional[AiTaskRequest] = None
         self._worker: Optional[AiTaskWorker] = None
@@ -673,42 +740,14 @@ class AIToolsTab(QWidget):
         # Attachments
         self._include_writing_notes_check = QCheckBox()
         self._include_writing_notes_check.setObjectName("AIWritingNotesCheck")
+        self._include_writing_notes_check.setVisible(False)
         self._include_writing_notes_check.toggled.connect(
             self._on_include_writing_notes_toggled
         )
         self._writing_notes_status_label = QLabel("")
         self._writing_notes_status_label.setObjectName("AIWritingNotesStatus")
         self._writing_notes_status_label.setWordWrap(True)
-        self._include_writing_notes_hint = QLabel(TR("ai.attachments.writing_notes_hint"))
-        self._include_writing_notes_hint.setObjectName("AIAttachTotal")
-        self._include_writing_notes_hint.setWordWrap(True)
-        writing_notes_box = QFrame()
-        writing_notes_box.setObjectName("AIWritingNotesBox")
-        writing_notes_layout = QVBoxLayout(writing_notes_box)
-        writing_notes_layout.setContentsMargins(10, 8, 10, 8)
-        writing_notes_layout.setSpacing(6)
-        writing_notes_layout.addWidget(self._include_writing_notes_check)
-        writing_notes_layout.addWidget(self._writing_notes_status_label)
-        writing_notes_layout.addWidget(self._include_writing_notes_hint)
-        self._writing_notes_preview = QPlainTextEdit()
-        self._writing_notes_preview.setObjectName("AIWritingNotesPreview")
-        self._writing_notes_preview.setReadOnly(True)
-        _set_relaxed_vertical_sizing(
-            self._writing_notes_preview,
-            minimum=84,
-            maximum=180,
-        )
-        writing_notes_layout.addWidget(self._writing_notes_preview)
-        self._manage_writing_notes_btn = QPushButton(
-            TR("ai.attachments.manage_writing_notes_add")
-        )
-        self._manage_writing_notes_btn.setObjectName("GhostButton")
-        self._manage_writing_notes_btn.clicked.connect(
-            self.request_focus_writing_notes.emit
-        )
-        writing_notes_layout.addWidget(self._manage_writing_notes_btn)
-        self._writing_notes_box = writing_notes_box
-        right_layout.addWidget(self._writing_notes_box)
+        right_layout.addWidget(self._writing_notes_status_label)
 
         attach_label = QLabel(TR("ai.attachments.title"))
         attach_label.setObjectName("AIAttachLabel")
@@ -727,12 +766,11 @@ class AIToolsTab(QWidget):
         self._attach_list.setVisible(False)
         right_layout.addWidget(self._attach_list)
         attach_btn_row = QHBoxLayout()
-        self._add_fragment_btn = QPushButton(TR("ai.attachments.add_fragment"))
-        self._add_fragment_btn.clicked.connect(self._on_add_fragment_attachment)
-        attach_btn_row.addWidget(self._add_fragment_btn)
-        self._add_specimen_btn = QPushButton(TR("ai.attachments.add_specimen"))
-        self._add_specimen_btn.clicked.connect(self._on_add_specimen_attachment)
-        attach_btn_row.addWidget(self._add_specimen_btn)
+        self._add_context_btn = QPushButton(
+            _tr_fallback("ai.attachments.add_context", "Add context")
+        )
+        self._add_context_btn.clicked.connect(self._show_add_context_menu)
+        attach_btn_row.addWidget(self._add_context_btn)
         self._remove_attach_btn = QPushButton(TR("ai.attachments.remove"))
         self._remove_attach_btn.clicked.connect(self._on_remove_attachment)
         self._remove_attach_btn.setEnabled(False)
@@ -747,6 +785,7 @@ class AIToolsTab(QWidget):
                 self._attach_list.currentItem() is not None
             )
         )
+        self._manage_writing_notes_btn = self._add_context_btn
 
         # Run button + status
         run_row = QHBoxLayout()
@@ -929,13 +968,29 @@ class AIToolsTab(QWidget):
                 self._target_combo.setCurrentIndex(idx)
 
     def set_include_writing_notes(self, enabled: bool) -> None:
-        self._include_writing_notes_check.setChecked(bool(enabled))
-        self._refresh_attachments_view()
+        self._set_include_writing_notes_enabled(bool(enabled))
 
     # ---- internal ----
     def _on_include_writing_notes_toggled(self, _checked: bool) -> None:
         self._refresh_writing_notes_guidance()
         self._refresh_attachments_view()
+
+    def _include_writing_notes_enabled(self) -> bool:
+        return self._include_writing_notes_check.isChecked()
+
+    def _set_include_writing_notes_enabled(
+        self,
+        enabled: bool,
+        *,
+        refresh: bool = True,
+    ) -> None:
+        checked = bool(enabled) and self._writing_note_count() > 0
+        blocked = self._include_writing_notes_check.blockSignals(True)
+        self._include_writing_notes_check.setChecked(checked)
+        self._include_writing_notes_check.blockSignals(blocked)
+        if refresh:
+            self._refresh_writing_notes_guidance()
+            self._refresh_attachments_view()
 
     def _update_scope_label(self) -> None:
         if self._scope is None or self._scope.is_global:
@@ -1009,7 +1064,7 @@ class AIToolsTab(QWidget):
             "preserve_voice": self._preserve_voice_check.isChecked(),
             "must_keep": self._must_keep_edit.text(),
             "forbid": self._forbid_edit.text(),
-            "include_writing_notes": self._include_writing_notes_check.isChecked(),
+            "include_writing_notes": self._include_writing_notes_enabled(),
         }
 
     def _apply_task_params(self, task: AiTaskType) -> None:
@@ -1038,19 +1093,21 @@ class AIToolsTab(QWidget):
         self._preserve_voice_check.setChecked(params.get("preserve_voice", True))
         self._must_keep_edit.setText(params.get("must_keep", ""))
         self._forbid_edit.setText(params.get("forbid", ""))
-        self._include_writing_notes_check.setChecked(
+        self._set_include_writing_notes_enabled(
             params.get(
                 "include_writing_notes",
                 self._writing_notes_default_enabled(task),
-            )
+            ),
+            refresh=False,
         )
 
     def _writing_notes_default_enabled(self, task: AiTaskType) -> bool:
         return task in _WRITING_NOTE_DEFAULT_TASKS
 
     def _apply_writing_notes_default_for_task(self, task: AiTaskType) -> None:
-        self._include_writing_notes_check.setChecked(
-            self._writing_notes_default_enabled(task)
+        self._set_include_writing_notes_enabled(
+            self._writing_notes_default_enabled(task),
+            refresh=False,
         )
 
     def _refresh_task_params(self) -> None:
@@ -1452,37 +1509,22 @@ class AIToolsTab(QWidget):
             notes = self._container.entry_writing_note_repository.list_for_entry(
                 self._scope.ref_id
             )
-            return sorted(
-                notes,
-                key=lambda note: (
-                    not note.pinned,
-                    int(note.board_y if note.board_y is not None else 999999),
-                    int(note.board_x if note.board_x is not None else 999999),
-                    int(note.sort_order or 0),
-                ),
-            )
+            return _sort_writing_notes(notes)
         except Exception:  # noqa: BLE001
             return []
 
     def _writing_note_attachments(self) -> list[AiContextAttachment]:
         if not self._include_writing_notes_check.isChecked():
             return []
-        notes = self._open_writing_notes()
-        attachments: list[AiContextAttachment] = []
-        for index, note in enumerate(notes, start=1):
-            attachments.append(
-                AiContextAttachment(
-                    kind="writing_note",
-                    ref_id=note.id,
-                    name=TR("ai.attachments.writing_note_name").format(index=index),
-                    body=TR("ai.attachments.writing_note_body").format(body=note.body),
-                )
-            )
-        return attachments
+        attachment = _writing_note_attachment(self._scope, self._open_writing_notes())
+        return [attachment] if attachment is not None else []
 
     def _refresh_writing_notes_guidance(self, count: Optional[int] = None) -> None:
         if count is None:
             count = self._writing_note_count()
+        if self._scope is None or self._scope.kind is not AiThreadScope.FRAGMENT:
+            self._writing_notes_status_label.setText("")
+            return
         task = self._current_task_type()
         task_label = TR(_TASK_LABEL_KEY.get(task, "ai.task.continue"))
         if count <= 0:
@@ -1503,52 +1545,30 @@ class AIToolsTab(QWidget):
     def _refresh_writing_notes_option(self) -> None:
         notes = self._open_writing_notes()
         count = len(notes)
-        visible = bool(
-            self._scope is not None
-            and self._scope.kind is AiThreadScope.FRAGMENT
-        )
-        self._writing_notes_box.setVisible(visible)
         self._include_writing_notes_check.setText(
             TR("ai.attachments.include_writing_notes").format(count=count)
         )
         self._include_writing_notes_check.setEnabled(count > 0)
         if count <= 0:
             self._include_writing_notes_check.setChecked(False)
-            self._writing_notes_preview.setPlainText(
-                TR("ai.attachments.writing_notes_empty")
-            )
-            self._manage_writing_notes_btn.setText(
-                TR("ai.attachments.manage_writing_notes_add")
-            )
-        else:
-            preview_lines = []
-            for index, note in enumerate(notes[:4], start=1):
-                clean = " ".join(note.body.split())
-                if len(clean) > 70:
-                    clean = clean[:67] + "..."
-                preview_lines.append(f"{index}. {clean}")
-            if len(notes) > 4:
-                preview_lines.append(f"... +{len(notes) - 4}")
-            self._writing_notes_preview.setPlainText(
-                TR("ai.attachments.writing_notes_preview").format(
-                    notes="\n".join(preview_lines)
-                )
-            )
-            self._manage_writing_notes_btn.setText(
-                TR("ai.attachments.manage_writing_notes_edit")
-            )
         self._refresh_writing_notes_guidance(count)
-        self._writing_notes_preview.setVisible(visible)
-        self._manage_writing_notes_btn.setVisible(visible)
         self._refresh_attachments_view()
 
     def _refresh_attachments_view(self) -> None:
         self._attach_list.clear()
-        for att in self._attachments:
-            label = f"{att.name}  ({att.size_chars} chars)"
-            item = QListWidgetItem(label)
+        self._attachment_rows = [
+            ("manual", index, attachment)
+            for index, attachment in enumerate(self._attachments)
+        ]
+        self._attachment_rows.extend(
+            ("writing_note", -1, attachment)
+            for attachment in self._writing_note_attachments()
+        )
+        for row_index, (_source, _manual_index, att) in enumerate(self._attachment_rows):
+            item = QListWidgetItem(_attachment_row_text(att))
+            item.setData(Qt.ItemDataRole.UserRole, row_index)
             self._attach_list.addItem(item)
-        has_any = bool(self._attachments)
+        has_any = bool(self._attachment_rows)
         self._attach_list.setVisible(has_any)
         self._attach_empty_label.setVisible(not has_any)
         # total
@@ -1562,6 +1582,35 @@ class AIToolsTab(QWidget):
         else:
             self._attach_total_label.setToolTip("")
         self._remove_attach_btn.setEnabled(self._attach_list.currentItem() is not None)
+
+    def _show_add_context_menu(self) -> None:
+        menu = QMenu(self)
+        menu.addAction(
+            TR("ai.attachments.add_fragment"),
+            self._on_add_fragment_attachment,
+        )
+        menu.addAction(
+            _tr_fallback("ai.attachments.add_specimen", "Add specimen…"),
+            self._on_add_specimen_attachment,
+        )
+        notes_action = menu.addAction(
+            _tr_fallback("ai.attachments.add_writing_notes", "Add current fragment notes")
+        )
+        notes_action.triggered.connect(self._on_add_writing_notes_attachment)
+        notes_action.setEnabled(
+            self._writing_note_count() > 0
+            and not self._include_writing_notes_enabled()
+        )
+        menu.exec(
+            self._add_context_btn.mapToGlobal(
+                self._add_context_btn.rect().bottomLeft()
+            )
+        )
+
+    def _on_add_writing_notes_attachment(self) -> None:
+        if self._writing_note_count() <= 0:
+            return
+        self._set_include_writing_notes_enabled(True)
 
     def _estimated_context_chars(self) -> int:
         total = sum(a.size_chars for a in self._attachments)
@@ -1686,9 +1735,15 @@ class AIToolsTab(QWidget):
 
     def _on_remove_attachment(self) -> None:
         row = self._attach_list.currentRow()
-        if 0 <= row < len(self._attachments):
-            del self._attachments[row]
-            self._refresh_attachments_view()
+        if not (0 <= row < len(self._attachment_rows)):
+            return
+        source, manual_index, _attachment = self._attachment_rows[row]
+        if source == "writing_note":
+            self._set_include_writing_notes_enabled(False)
+            return
+        if 0 <= manual_index < len(self._attachments):
+            del self._attachments[manual_index]
+        self._refresh_attachments_view()
 
     # ---- run ----
     def _build_request(self) -> Optional[AiTaskRequest]:
@@ -2265,9 +2320,12 @@ class AIChatTab(QWidget):
         layout.addWidget(self._attach_label)
 
         attach_row = QHBoxLayout()
-        self._add_frag_btn = QPushButton(TR("ai.attachments.add_fragment"))
-        self._add_frag_btn.clicked.connect(self._on_add_attachment)
-        attach_row.addWidget(self._add_frag_btn)
+        self._add_context_btn = QPushButton(
+            _tr_fallback("ai.attachments.add_context", "Add context")
+        )
+        self._add_context_btn.clicked.connect(self._show_add_context_menu)
+        attach_row.addWidget(self._add_context_btn)
+        self._add_frag_btn = self._add_context_btn
         self._clear_attach_btn = QPushButton(TR("ai.attachments.remove"))
         self._clear_attach_btn.clicked.connect(self._on_clear_attachments)
         attach_row.addWidget(self._clear_attach_btn)
@@ -2381,7 +2439,7 @@ class AIChatTab(QWidget):
             self._attach_label.setText("")
             self._refresh_thread_info()
             return
-        names = [a.name for a in self._attachments]
+        names = [_attachment_row_text(a) for a in self._attachments]
         self._attach_label.setText(TR("ai.chat.attachment_added").format(name=", ".join(names)))
         self._refresh_thread_info()
 
@@ -2429,6 +2487,45 @@ class AIChatTab(QWidget):
         )
         self._save_note_btn.setEnabled(can_save_note)
 
+    def _open_writing_notes(self):
+        if self._scope is None or self._scope.kind is not AiThreadScope.FRAGMENT:
+            return []
+        if not self._scope.ref_id:
+            return []
+        try:
+            return _sort_writing_notes(
+                self._container.entry_writing_note_repository.list_for_entry(
+                    self._scope.ref_id
+                )
+            )
+        except Exception:  # noqa: BLE001
+            return []
+
+    def _show_add_context_menu(self) -> None:
+        menu = QMenu(self)
+        menu.addAction(TR("ai.attachments.add_fragment"), self._on_add_attachment)
+        menu.addAction(
+            _tr_fallback("ai.attachments.add_specimen", "Add specimen…"),
+            self._on_add_specimen_attachment,
+        )
+        notes_action = menu.addAction(
+            _tr_fallback("ai.attachments.add_writing_notes", "Add current fragment notes")
+        )
+        notes_action.triggered.connect(self._on_add_writing_notes_attachment)
+        note_ref_id = self._scope.ref_id if self._scope is not None else ""
+        notes_action.setEnabled(
+            bool(self._open_writing_notes())
+            and not self._has_attachment(kind="writing_note", ref_id=note_ref_id)
+        )
+        menu.exec(
+            self._add_context_btn.mapToGlobal(
+                self._add_context_btn.rect().bottomLeft()
+            )
+        )
+
+    def _has_attachment(self, *, kind: str, ref_id: str) -> bool:
+        return any(att.kind == kind and att.ref_id == ref_id for att in self._attachments)
+
     def _on_add_attachment(self) -> None:
         from writer.ui.dialogs.fragment_picker_dialog import FragmentPickerDialog  # lazy
 
@@ -2438,6 +2535,8 @@ class AIChatTab(QWidget):
         entry = dlg.selected_entry
         if entry is None:
             return
+        if self._has_attachment(kind="fragment", ref_id=entry.id):
+            return
         self._attachments.append(
             AiContextAttachment(
                 kind="fragment",
@@ -2446,6 +2545,62 @@ class AIChatTab(QWidget):
                 body=entry.body or "",
             )
         )
+        self._refresh_attachments_label()
+
+    def _on_add_specimen_attachment(self) -> None:
+        from writer.ui.dialogs.specimen_picker_dialog import SpecimenPickerDialog  # lazy
+
+        preselected_ids = [
+            att.ref_id
+            for att in self._attachments
+            if att.kind == "style_specimen" and att.ref_id
+        ]
+        dlg = SpecimenPickerDialog(
+            self._container.reference_repository,
+            recommended_text=self._scope.body if self._scope else "",
+            preselected_ids=preselected_ids,
+            settings=self._container.settings,
+            parent=self,
+        )
+        if dlg.exec() != dlg.DialogCode.Accepted:
+            return
+        preserved = [att for att in self._attachments if att.kind != "style_specimen"]
+        selected: list[AiContextAttachment] = []
+        for passage in dlg.selected_passages:
+            from writer.ui.panels.reference_library_panel import _usage_kind_label
+
+            note_part = f"\n备注：{passage.personal_note}" if passage.personal_note else ""
+            tags_part = f"\n标签：{passage.tags}" if passage.tags.strip() else ""
+            body = (
+                f"{passage.content}\n\n"
+                f"作品名：{passage.source_title or TR('search.untitled')}"
+                + (f"\n作者：{passage.source_author}" if passage.source_author else "")
+                + f"\n用途：{_usage_kind_label(passage.usage_kind)}"
+                + f"\n类型：{passage.kind}"
+                + tags_part
+                + note_part
+            )
+            selected.append(
+                AiContextAttachment(
+                    kind="style_specimen",
+                    ref_id=passage.id,
+                    name=passage.display_label(),
+                    body=body,
+                )
+            )
+        self._attachments = preserved + selected
+        self._refresh_attachments_label()
+
+    def _on_add_writing_notes_attachment(self) -> None:
+        attachment = _writing_note_attachment(self._scope, self._open_writing_notes())
+        if attachment is None:
+            return
+        self._attachments = [
+            att
+            for att in self._attachments
+            if not (att.kind == "writing_note" and att.ref_id == attachment.ref_id)
+        ]
+        self._attachments.append(attachment)
         self._refresh_attachments_label()
 
     def _on_clear_attachments(self) -> None:

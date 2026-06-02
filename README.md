@@ -46,6 +46,8 @@ suggestions before they touch the manuscript.
 - [x] Editor typography, focus mode, smoother motion, and typewriter comfort
 - [x] Sticky fragment notes for next-session ideas, scene reminders, and AI reference context
 - [x] Visual note board: pin, edit, mark done, change note colour / width, and arrange notes beside the page
+- [x] Right-pane fragment note launcher that keeps the writing page free of note controls when notes are closed
+- [x] Unified AI "Add context" menu for fragments, literary specimens, and current fragment notes
 - [x] Save selected AI chat text or the latest reply back into the current fragment as reusable notes
 - [x] Fragment-note default-collapse setting for calmer fragment switching
 - [x] UI polish: clearer toolbar controls, calmer scrollbars, and no-wheel form controls
@@ -66,8 +68,8 @@ Public screenshots, short walkthrough videos, and workflow demos are on the road
 
 The recommended public distribution format is a **Windows portable zip**.
 
-- Latest alpha: [Writer-0.2.0-alpha.39-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.39/Writer-0.2.0-alpha.39-portable.zip)
-- Release page: [v0.2.0-alpha.39](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.39)
+- Latest alpha: [Writer-0.2.0-alpha.40-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.40/Writer-0.2.0-alpha.40-portable.zip)
+- Release page: [v0.2.0-alpha.40](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.40)
 - If you are testing the latest branch, use the **Build Windows Portable** GitHub Action artifact.
 - To build locally, run the packaging command in [Build from source](#build-from-source).
 

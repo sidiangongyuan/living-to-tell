@@ -523,7 +523,7 @@ def test_fragment_writing_notes_are_default_context_for_continue_and_expand(qtbo
     from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
 
     entry = container.entry_repository.create(title="绵绵", body="原文。")
-    note = container.entry_writing_note_repository.create(
+    container.entry_writing_note_repository.create(
         entry_id=entry.id,
         body="下一段让人物先回到凉面摊。",
     )
@@ -550,7 +550,8 @@ def test_fragment_writing_notes_are_default_context_for_continue_and_expand(qtbo
         att for att in continue_request.attachments if att.kind == "writing_note"
     ]
     assert len(note_attachments) == 1
-    assert note_attachments[0].ref_id == note.id
+    assert note_attachments[0].ref_id == entry.id
+    assert note_attachments[0].name.endswith("1")
     assert "凉面摊" in note_attachments[0].body
 
     tab._task_list.setCurrentRow(_row_for_task(tab, AiTaskType.EXPAND))  # noqa: SLF001
@@ -563,7 +564,7 @@ def test_fragment_writing_notes_are_default_context_for_continue_and_expand(qtbo
     ).format(task=TR("ai.task.expand"))
 
 
-def test_fragment_writing_notes_preview_and_manage_action(qtbot, container):
+def test_fragment_writing_notes_are_shown_as_removable_context(qtbot, container):
     from writer.ui.i18n import TR
     from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
 
@@ -583,15 +584,18 @@ def test_fragment_writing_notes_preview_and_manage_action(qtbot, container):
         )
     )
 
-    assert "凉面摊" in tab._writing_notes_preview.toPlainText()  # noqa: SLF001
-    assert tab._manage_writing_notes_btn.text() == TR(  # noqa: SLF001
-        "ai.attachments.manage_writing_notes_edit"
-    )
     assert tab._writing_notes_status_label.text() == TR(  # noqa: SLF001
         "ai.attachments.writing_notes_status_optional_off"
     ).format(task=TR("ai.task.polish"))
-    with qtbot.waitSignal(tab.request_focus_writing_notes):
-        tab._manage_writing_notes_btn.click()  # noqa: SLF001
+
+    tab._on_add_writing_notes_attachment()  # noqa: SLF001
+
+    assert tab._include_writing_notes_check.isChecked() is True  # noqa: SLF001
+    assert tab._attach_list.count() == 1  # noqa: SLF001
+    assert "片段便签" in tab._attach_list.item(0).text() or "Fragment notes" in tab._attach_list.item(0).text()  # noqa: SLF001
+    tab._attach_list.setCurrentRow(0)  # noqa: SLF001
+    tab._on_remove_attachment()  # noqa: SLF001
+    assert tab._include_writing_notes_check.isChecked() is False  # noqa: SLF001
 
 
 def test_fragment_writing_notes_are_opt_in_for_analysis_tasks(qtbot, container):
@@ -678,34 +682,29 @@ def test_fragment_writing_notes_empty_state_explains_add_and_return(qtbot, conta
     )
 
     assert tab._include_writing_notes_check.isEnabled() is False  # noqa: SLF001
-    assert tab._manage_writing_notes_btn.text() == TR(  # noqa: SLF001
-        "ai.attachments.manage_writing_notes_add"
-    )
+    assert tab._manage_writing_notes_btn.text() == TR("ai.attachments.add_context")  # noqa: SLF001
     assert tab._writing_notes_status_label.text() == TR(  # noqa: SLF001
         "ai.attachments.writing_notes_status_empty"
     ).format(task=TR("ai.task.polish"))
 
 
-def test_ai_workspace_add_writing_note_returns_to_ai_and_enables_context(qtbot, container):
-    from writer.ui.main_window import MODE_AI, MODE_FRAGMENTS, MainWindow
+def test_ai_workspace_context_pane_button_opens_fragment_notes(qtbot, container):
+    from writer.ui.main_window import MODE_FRAGMENTS, MainWindow
 
     entry = container.entry_repository.create(title="绵绵", body="原文。")
     window = MainWindow(container, autosave_debounce_ms=20)
     qtbot.addWidget(window)
+    window.show()
+    window._set_mode(MODE_FRAGMENTS)  # noqa: SLF001
     window._load_entry(entry.id)  # noqa: SLF001
-    window._set_mode(MODE_AI)  # noqa: SLF001
-    tools = window._ai_workspace_panel.tools_tab  # noqa: SLF001
 
-    tools._manage_writing_notes_btn.click()  # noqa: SLF001
-
-    assert window._stack.currentIndex() == MODE_FRAGMENTS  # noqa: SLF001
     board = window._editor_panel._writing_notes_board  # noqa: SLF001
-    board._input.setText("下一段让人物先回到凉面摊。")  # noqa: SLF001
-    board._add_btn.click()  # noqa: SLF001
+    assert board.isHidden()
 
-    qtbot.waitUntil(lambda: window._stack.currentIndex() == MODE_AI)  # noqa: SLF001
-    assert tools._include_writing_notes_check.isChecked() is True  # noqa: SLF001
-    assert "凉面摊" in tools._writing_notes_preview.toPlainText()  # noqa: SLF001
+    window._context_pane.fragment_writing_notes_button.click()  # noqa: SLF001
+
+    assert board.isVisible()
+    assert board.is_collapsed() is False
 
 
 def test_add_specimen_attachment_replaces_only_style_specimens(qtbot, container, monkeypatch):
@@ -948,6 +947,36 @@ def test_chat_tab_note_action_is_fragment_only(qtbot, container):
 
     assert tab._save_fragment_btn.isEnabled() is True  # noqa: SLF001
     assert tab._save_note_btn.isEnabled() is False  # noqa: SLF001
+
+
+def test_chat_tab_can_add_current_fragment_notes_context(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIChatTab, AiScope
+
+    entry = container.entry_repository.create(title="绵绵", body="原文。")
+    container.entry_writing_note_repository.create(
+        entry_id=entry.id,
+        body="下一段让人物先回到凉面摊。",
+        pinned=True,
+    )
+    container.entry_writing_note_repository.create(
+        entry_id=entry.id,
+        body="再听见风。",
+    )
+    tab = AIChatTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(AiThreadScope.FRAGMENT, entry.id, entry.title or "", entry.body or "")
+    )
+
+    tab._on_add_writing_notes_attachment()  # noqa: SLF001
+
+    assert len(tab._attachments) == 1  # noqa: SLF001
+    attachment = tab._attachments[0]  # noqa: SLF001
+    assert attachment.kind == "writing_note"
+    assert attachment.ref_id == entry.id
+    assert "凉面摊" in attachment.body
+    assert "再听见风" in attachment.body
+    assert "片段便签" in tab._attach_label.text() or "Fragment notes" in tab._attach_label.text()  # noqa: SLF001
 
 
 # ---------------------------------------------------------------------------

@@ -36,10 +36,8 @@ BOARD_GRID = 8
 BOARD_PADDING = 12
 BOARD_COLUMN_GAP = 14
 BOARD_ROW_GAP = 14
-BOARD_MIN_WIDTH = 260
-BOARD_MAX_WIDTH = 320
-COLLAPSED_WIDTH = 104
-COLLAPSED_HEIGHT = 42
+BOARD_MIN_WIDTH = 320
+BOARD_MAX_WIDTH = 360
 NOTE_HEADER_HEIGHT = 28
 NOTE_ACTIONS_HEIGHT = 30
 NOTE_WALL_TOP_OFFSET = 88
@@ -484,7 +482,7 @@ class WritingNotesBoard(QFrame):
 
     def set_entry_id(self, entry_id: Optional[str]) -> None:
         self._entry_id = entry_id
-        self.setVisible(entry_id is not None and self._active)
+        self._refresh_visibility()
         if entry_id is None:
             self._input.clear()
             self._notes = []
@@ -492,7 +490,7 @@ class WritingNotesBoard(QFrame):
 
     def set_active(self, active: bool) -> None:
         self._active = bool(active)
-        self.setVisible(bool(self._entry_id) and self._active)
+        self._refresh_visibility()
         self._sync_card_visibility()
 
     def set_drag_bounds(self, bounds: QRect) -> None:
@@ -519,6 +517,9 @@ class WritingNotesBoard(QFrame):
 
     def is_collapsed(self) -> bool:
         return self._collapsed
+
+    def panel_is_open(self) -> bool:
+        return bool(self._entry_id) and self._active and not self._collapsed
 
     def toggle_collapsed(self) -> None:
         self.set_collapsed(not self._collapsed, emit_signal=True)
@@ -723,16 +724,10 @@ class WritingNotesBoard(QFrame):
         )
         self._collapsed_button.ensurePolished()
         self._content.setVisible(not self._collapsed)
-        self._collapsed_button.setVisible(self._collapsed)
-        if self._collapsed:
-            width = max(
-                COLLAPSED_WIDTH,
-                self._collapsed_button.sizeHint().width()
-                + self.layout().contentsMargins().left()
-                + self.layout().contentsMargins().right(),
-            )
-            self.setFixedSize(width, COLLAPSED_HEIGHT)
-        else:
+        self._collapsed_button.setVisible(False)
+        should_show = bool(self._entry_id) and self._active and not self._collapsed
+        self.setVisible(should_show)
+        if not self._collapsed:
             self.setMinimumSize(BOARD_MIN_WIDTH, 0)
             self.setMaximumSize(BOARD_MAX_WIDTH, 16777215)
             self.setMinimumWidth(BOARD_MIN_WIDTH)

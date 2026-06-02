@@ -357,6 +357,7 @@ class EditorPanel(QWidget):
         self._find_bar = EditorFindBar()
         self._page_controls = EditorPageControls()
         self._writing_notes_layer: QWidget = self
+        self._writing_notes_anchor: Optional[QWidget] = None
 
         self._title = QLineEdit()
         self._title.setPlaceholderText(TR("editor.title_placeholder"))
@@ -585,6 +586,10 @@ class EditorPanel(QWidget):
         self._writing_notes_board.set_note_layer(self._writing_notes_layer)
         self._update_writing_notes_float_layer()
 
+    def set_writing_notes_anchor(self, anchor: Optional[QWidget]) -> None:
+        self._writing_notes_anchor = anchor
+        self._update_writing_notes_float_layer()
+
     def refresh_writing_notes_layer(self) -> None:
         self._update_writing_notes_float_layer()
 
@@ -632,23 +637,37 @@ class EditorPanel(QWidget):
         if self._writing_notes_board.parentWidget() is not layer:
             self._writing_notes_board.setParent(layer)
             self._writing_notes_board.set_note_layer(layer)
-        top_left = self.mapTo(layer, self.rect().topLeft()) if layer is not self else self.rect().topLeft()
-        editor_rect = QRect(top_left, self.size()).intersected(layer.rect())
-        margin = 14
-        available_width = max(1, editor_rect.width())
-        available_height = max(1, editor_rect.height())
-        if self._writing_notes_board.is_collapsed():
-            board_width = min(104, max(1, available_width - margin * 2))
-            board_height = min(42, max(1, available_height - margin * 2))
+        anchor = self._writing_notes_anchor
+        if anchor is not None and anchor.isVisible():
+            top_left = layer.mapFromGlobal(anchor.mapToGlobal(anchor.rect().topLeft()))
+            anchor_rect = QRect(top_left, anchor.size())
         else:
-            board_width = min(320, max(260, available_width // 4))
-            board_height = min(
-                max(210, self._writing_notes_board.sizeHint().height()),
-                max(210, available_height - margin * 2),
+            top_left = (
+                layer.mapFromGlobal(self.mapToGlobal(self.rect().topLeft()))
+                if layer is not self
+                else self.rect().topLeft()
             )
+            anchor_rect = QRect(top_left, self.size()).intersected(layer.rect())
+        margin = 14
+        layer_rect = layer.rect()
+        available_width = max(1, layer_rect.width())
+        available_height = max(1, layer_rect.height())
+        board_width = min(360, max(320, available_width - margin * 2))
+        board_height = min(
+            max(260, self._writing_notes_board.sizeHint().height()),
+            max(260, available_height - margin * 2),
+        )
+        if anchor is not None and anchor.isVisible():
+            x = anchor_rect.left() - board_width - 12
+            if x < margin:
+                x = max(margin, min(anchor_rect.right() - board_width, available_width - board_width - margin))
+            y = max(margin, min(anchor_rect.top() + margin, available_height - board_height - margin))
+        else:
+            x = layer_rect.left() + max(margin, available_width - board_width - margin)
+            y = layer_rect.top() + margin
         self._writing_notes_board.setGeometry(
-            editor_rect.left() + max(margin, available_width - board_width - margin),
-            editor_rect.top() + margin,
+            x,
+            y,
             board_width,
             board_height,
         )
@@ -751,10 +770,36 @@ class EditorPanel(QWidget):
     def focus_writing_note_input(self) -> None:
         if self._entry_id is None:
             return
+        self.show_writing_notes_panel(focus_input=True)
+
+    def show_writing_notes_panel(self, *, focus_input: bool = False) -> None:
+        if self._entry_id is None:
+            return
         self._writing_notes_collapsed = False
         self._remember_writing_notes_view_state()
         self._sync_writing_notes_board_state()
-        self._writing_notes_board.focus_input()
+        self._update_writing_notes_float_layer()
+        if focus_input:
+            self._writing_notes_board.focus_input()
+
+    def hide_writing_notes_panel(self) -> None:
+        if self._entry_id is None:
+            return
+        self._writing_notes_collapsed = True
+        self._remember_writing_notes_view_state()
+        self._sync_writing_notes_board_state()
+        self._update_writing_notes_float_layer()
+
+    def toggle_writing_notes_panel(self) -> None:
+        if self._entry_id is None:
+            return
+        if self.is_writing_notes_panel_open():
+            self.hide_writing_notes_panel()
+        else:
+            self.show_writing_notes_panel(focus_input=True)
+
+    def is_writing_notes_panel_open(self) -> bool:
+        return self._writing_notes_board.panel_is_open()
 
     def _toggle_writing_notes_card(self) -> None:
         self._writing_notes_collapsed = not self._writing_notes_collapsed
