@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import QPoint, QRect, Qt, Signal
+from PySide6.QtCore import QPoint, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QMouseEvent, QPalette
 from PySide6.QtWidgets import (
     QApplication,
@@ -376,6 +376,7 @@ class WritingNotesBoard(QFrame):
     continue_requested = Signal()
     collapsed_changed = Signal(bool)
     show_done_changed = Signal(bool)
+    geometry_refresh_requested = Signal()
 
     def __init__(
         self,
@@ -512,6 +513,7 @@ class WritingNotesBoard(QFrame):
         self._collapsed = collapsed
         self._refresh_visibility()
         self._sync_card_visibility()
+        self._request_geometry_refresh()
         if changed and emit_signal:
             self.collapsed_changed.emit(self._collapsed)
 
@@ -526,6 +528,7 @@ class WritingNotesBoard(QFrame):
         changed = self._show_done != show_done
         self._show_done = show_done
         self._rebuild_cards()
+        self._request_geometry_refresh()
         if changed and emit_signal:
             self.show_done_changed.emit(self._show_done)
 
@@ -711,16 +714,6 @@ class WritingNotesBoard(QFrame):
         return x, y
 
     def _refresh_visibility(self) -> None:
-        if self._collapsed:
-            self.setFixedSize(COLLAPSED_WIDTH, COLLAPSED_HEIGHT)
-        else:
-            self.setMinimumWidth(BOARD_MIN_WIDTH)
-            self.setMaximumWidth(BOARD_MAX_WIDTH)
-            self.setMinimumHeight(0)
-            self.setMaximumHeight(16777215)
-            self.adjustSize()
-        self._content.setVisible(not self._collapsed)
-        self._collapsed_button.setVisible(self._collapsed)
         open_count = sum(1 for note in self._notes if note.status == NOTE_STATUS_OPEN)
         done_count = sum(1 for note in self._notes if note.status == NOTE_STATUS_DONE)
         self._collapsed_button.setText(
@@ -728,6 +721,25 @@ class WritingNotesBoard(QFrame):
             if open_count
             else TR("editor.writing_notes.tab")
         )
+        self._collapsed_button.ensurePolished()
+        self._content.setVisible(not self._collapsed)
+        self._collapsed_button.setVisible(self._collapsed)
+        if self._collapsed:
+            width = max(
+                COLLAPSED_WIDTH,
+                self._collapsed_button.sizeHint().width()
+                + self.layout().contentsMargins().left()
+                + self.layout().contentsMargins().right(),
+            )
+            self.setFixedSize(width, COLLAPSED_HEIGHT)
+        else:
+            self.setMinimumSize(BOARD_MIN_WIDTH, 0)
+            self.setMaximumSize(BOARD_MAX_WIDTH, 16777215)
+            self.setMinimumWidth(BOARD_MIN_WIDTH)
+            self.setMaximumWidth(BOARD_MAX_WIDTH)
+            self.setMinimumHeight(0)
+            self.setMaximumHeight(16777215)
+            self.adjustSize()
         self._count.setText(TR("editor.writing_notes.count").format(count=open_count))
         self._done_toggle_btn.setVisible(done_count > 0)
         self._done_toggle_btn.setText(
@@ -737,6 +749,11 @@ class WritingNotesBoard(QFrame):
         )
         self._continue_btn.setVisible(open_count > 0)
         self._empty.setVisible(open_count == 0 and done_count == 0)
+
+    def _request_geometry_refresh(self) -> None:
+        self.updateGeometry()
+        self.geometry_refresh_requested.emit()
+        QTimer.singleShot(0, self.geometry_refresh_requested.emit)
 
 
 def _state_text(note: EntryWritingNote) -> str:

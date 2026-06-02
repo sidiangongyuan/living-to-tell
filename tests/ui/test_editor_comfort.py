@@ -408,6 +408,63 @@ def test_editor_panel_writing_notes_collapse_is_remembered_per_fragment(qtbot, c
     assert panel._writing_notes_board.is_collapsed() is True  # noqa: SLF001
 
 
+def test_editor_panel_writing_notes_expand_resizes_without_splitter_drag(qtbot):
+    from writer.domain.models.entry import Entry
+    from writer.domain.models.entry_writing_note import EntryWritingNote
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.resize(1180, 740)
+    panel.show()
+    panel.set_entry(Entry(id="entry-1", title="t", body="body"))
+    panel.set_writing_notes(
+        [
+            EntryWritingNote(id="note-1", entry_id="entry-1", body="第一张便签"),
+            EntryWritingNote(id="note-2", entry_id="entry-1", body="第二张便签"),
+        ]
+    )
+
+    board = panel._writing_notes_board  # noqa: SLF001
+    assert board.is_collapsed() is True
+    collapsed_width = board.width()
+    assert all(card.isHidden() for card in board._cards.values())  # noqa: SLF001
+
+    board.toggle_collapsed()
+    qtbot.waitUntil(lambda: board.width() >= 260 and board.height() >= 180)
+
+    assert board.is_collapsed() is False
+    assert board.width() > collapsed_width
+    assert all(not card.isHidden() for card in board._cards.values())  # noqa: SLF001
+
+
+def test_editor_panel_writing_notes_collapse_hides_note_windows(qtbot):
+    from writer.domain.models.entry import Entry
+    from writer.domain.models.entry_writing_note import EntryWritingNote
+    from writer.ui.panels.editor_panel import EditorPanel
+
+    panel = EditorPanel()
+    qtbot.addWidget(panel)
+    panel.resize(1180, 740)
+    panel.show()
+    panel.set_entry(Entry(id="entry-1", title="t", body="body"))
+    panel.focus_writing_note_input()
+    panel.set_writing_notes(
+        [
+            EntryWritingNote(id="note-1", entry_id="entry-1", body="展开时显示"),
+        ]
+    )
+
+    board = panel._writing_notes_board  # noqa: SLF001
+    assert board.is_collapsed() is False
+    assert all(not card.isHidden() for card in board._cards.values())  # noqa: SLF001
+
+    board.toggle_collapsed()
+
+    assert board.is_collapsed() is True
+    assert all(card.isHidden() for card in board._cards.values())  # noqa: SLF001
+
+
 def test_editor_panel_many_writing_notes_float_on_editor_stack(qtbot):
     from writer.domain.models.entry import Entry
     from writer.domain.models.entry_writing_note import EntryWritingNote

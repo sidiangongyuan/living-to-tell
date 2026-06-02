@@ -3,6 +3,19 @@
 Product-facing changes only. Internal planning notes, agent prompts, and local
 experiment logs are intentionally not kept in the public repository.
 
+## 0.2.0-alpha.38 — Chinese text clipping and note panel fixes
+
+- Fixed reference-library stats expansion so Chinese labels and cards are no
+  longer compressed into unreadable thin rows.
+- Added scroll-safe stats pages and minimum text-height safeguards for overview,
+  usage/type bars, tag chips, duplicate-risk cards, and recent-item cards.
+- Fixed fragment-note panel expansion so it resizes immediately without needing
+  a splitter drag or window resize to refresh the overlay geometry.
+- Changed collapsed fragment notes to hide all sticky-note windows, leaving only
+  the compact note entry visible until the panel is expanded again.
+- Increased regression coverage for Chinese stats readability and fragment-note
+  expand/collapse visibility.
+
 ## 0.2.0-alpha.37 — Floating fragment sticky notes
 
 - Changed fragment writing notes into independent Writer-owned tool windows, so

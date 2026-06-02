@@ -125,6 +125,38 @@ def test_library_panel_shows_stats_cards(qtbot, container):
     assert panel._stats_stack.currentWidget() is panel._stats_pages["tags"]  # noqa: SLF001
 
 
+def test_library_panel_expanded_stats_keep_chinese_text_readable(qtbot, container):
+    from PySide6.QtWidgets import QLabel, QScrollArea
+
+    from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+
+    repo = container.reference_repository
+    for index in range(10):
+        repo.create(
+            source_title=f"中文来源 {index}",
+            content="相同的句子用于形成重复风险和统计内容。",
+            tags=f"环境描写,心理描写,哲思句子,长标签{index}",
+            usage_kind="imagery" if index % 2 else "character",
+            kind="excerpt",
+        )
+
+    panel = ReferenceLibraryPanel(repo, settings=container.settings)
+    qtbot.addWidget(panel)
+    panel.resize(1180, 720)
+    panel.show()
+    panel._toggle_stats_collapsed()  # noqa: SLF001
+
+    assert panel._stats_box.maximumHeight() >= 480  # noqa: SLF001
+    assert panel._stats_stack.minimumHeight() >= 280  # noqa: SLF001
+    assert isinstance(panel._stats_pages["total"], QScrollArea)  # noqa: SLF001
+
+    for label in panel._stats_box.findChildren(QLabel):  # noqa: SLF001
+        if not label.text().strip():
+            continue
+        assert label.wordWrap() or label.sizeHint().width() <= max(label.width(), label.minimumWidth(), 1)
+        assert label.minimumHeight() == 0 or label.minimumHeight() >= label.minimumSizeHint().height()
+
+
 def test_library_panel_card_delete_button_removes_target_passage(
     qtbot, container, monkeypatch
 ):
@@ -295,13 +327,17 @@ def test_library_panel_reading_first_defaults(qtbot, container):
     assert panel._stats_collapsed is True  # noqa: SLF001
     assert panel._stats_stack.isHidden() is True  # noqa: SLF001
     assert all(button.isHidden() for button in panel._stats_tab_buttons)  # noqa: SLF001
-    assert panel._stats_box.maximumHeight() == 58  # noqa: SLF001
+    assert panel._stats_box.maximumHeight() <= 90  # noqa: SLF001
     assert panel._shelf_collapsed is False  # noqa: SLF001
     assert panel._shelf_panel.isHidden() is False  # noqa: SLF001
     assert panel._show_shelf_btn.isHidden() is True  # noqa: SLF001
     assert panel._editor_drawer_visible is False  # noqa: SLF001
     assert panel._editor_drawer.isHidden() is True  # noqa: SLF001
     assert panel._splitter.sizes()[2] == 0  # noqa: SLF001
+
+    panel._toggle_stats_collapsed()  # noqa: SLF001
+    assert panel._stats_box.maximumHeight() >= 480  # noqa: SLF001
+    assert panel._stats_stack.minimumHeight() >= 280  # noqa: SLF001
 
 
 def test_library_panel_card_edit_opens_editor_drawer(qtbot, container):

@@ -393,6 +393,9 @@ class EditorPanel(QWidget):
         self._writing_notes_board.show_done_changed.connect(
             self._on_writing_notes_board_show_done_changed
         )
+        self._writing_notes_board.geometry_refresh_requested.connect(
+            self._update_writing_notes_float_layer
+        )
 
         self._body = _WriterBodyEdit()
         self._body.setPlaceholderText(TR("editor.body_placeholder"))

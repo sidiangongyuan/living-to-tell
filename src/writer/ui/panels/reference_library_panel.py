@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QVBoxLayout,
@@ -150,6 +151,13 @@ def _apply_conservative_size_hint(
         if widget.hasHeightForWidth():
             height_candidates.append(widget.heightForWidth(width_hint))
     item.setSizeHint(QSize(0, max(height for height in height_candidates if height > 0)))
+
+
+def _protect_text_height(widget: QWidget, *, padding: int = 4) -> None:
+    widget.ensurePolished()
+    hint = max(widget.minimumSizeHint().height(), widget.sizeHint().height())
+    if hint > 0:
+        widget.setMinimumHeight(hint + padding)
 
 
 def _clear_layout(layout) -> None:
@@ -591,7 +599,12 @@ class ReferenceLibraryPanel(QWidget):
         self._stats_tab_group = QButtonGroup(self)
         self._stats_tab_group.setExclusive(True)
         self._stats_stack = QStackedWidget()
-        self._stats_stack.setMaximumHeight(240)
+        self._stats_stack.setObjectName("RefStatsStack")
+        self._stats_stack.setMinimumHeight(280)
+        self._stats_stack.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
         self._stats_pages: dict[str, QWidget] = {}
         self._stats_tab_buttons: list[QPushButton] = []
         stats_tabs_row.addWidget(self._stats_toggle_btn)
@@ -618,7 +631,7 @@ class ReferenceLibraryPanel(QWidget):
         stats_tabs_row.addStretch(1)
         stats_tabs_row.addWidget(self._stats_scope_label)
         stats_layout.addLayout(stats_tabs_row)
-        stats_layout.addWidget(self._stats_stack)
+        stats_layout.addWidget(self._stats_stack, 1)
 
         root = QVBoxLayout(self)
         root.setSpacing(10)
@@ -643,7 +656,18 @@ class ReferenceLibraryPanel(QWidget):
         self.refresh()
 
     def _create_stat_page(self, key: str) -> QWidget:
+        scroll = QScrollArea()
+        scroll.setObjectName("RefStatPageScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
+
         page = QWidget()
+        page.setObjectName("RefStatPage")
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
@@ -651,6 +675,7 @@ class ReferenceLibraryPanel(QWidget):
         summary = QLabel(TR("reflib.stats_empty"))
         summary.setObjectName("RefStatValue")
         summary.setWordWrap(True)
+        _protect_text_height(summary)
         layout.addWidget(summary)
         self._stat_labels[key] = summary
 
@@ -660,7 +685,8 @@ class ReferenceLibraryPanel(QWidget):
         body_layout.setSpacing(8)
         layout.addWidget(body, 1)
         self._stat_body_layouts[key] = body_layout
-        return page
+        scroll.setWidget(page)
+        return scroll
 
     def _initial_group_mode(self) -> str:
         if self._settings is not None:
@@ -714,9 +740,11 @@ class ReferenceLibraryPanel(QWidget):
         persist: bool = True,
     ) -> None:
         if self._stats_collapsed:
-            self._stats_box.setMaximumHeight(58)
+            self._stats_box.setMinimumHeight(0)
+            self._stats_box.setMaximumHeight(90)
         else:
-            self._stats_box.setMaximumHeight(320)
+            self._stats_box.setMinimumHeight(340)
+            self._stats_box.setMaximumHeight(480)
         self._stats_stack.setVisible(not self._stats_collapsed)
         self._stats_scope_label.setVisible(not self._stats_collapsed)
         for button in self._stats_tab_buttons:
@@ -1214,6 +1242,8 @@ class ReferenceLibraryPanel(QWidget):
                 tags=len(stats.top_tags),
             )
         )
+        _protect_text_height(self._stats_scope_label)
+        _protect_text_height(self._stats_summary_label)
 
         self._stat_labels["total"].setText(
             TR("reflib.stats_total_value").format(
@@ -1222,10 +1252,12 @@ class ReferenceLibraryPanel(QWidget):
                 recent=stats.recent_7d,
             )
         )
+        _protect_text_height(self._stat_labels["total"])
         self._rebuild_overview_page(stats)
 
         usage = _compact_counter(stats.by_usage_kind, _usage_kind_label)
         self._stat_labels["usage"].setText(usage or TR("reflib.stats_empty"))
+        _protect_text_height(self._stat_labels["usage"])
         self._rebuild_counter_page(
             "usage",
             stats.by_usage_kind,
@@ -1235,6 +1267,7 @@ class ReferenceLibraryPanel(QWidget):
 
         kinds = _compact_counter(stats.by_kind, _kind_label)
         self._stat_labels["type"].setText(kinds or TR("reflib.stats_empty"))
+        _protect_text_height(self._stat_labels["type"])
         self._rebuild_counter_page(
             "type",
             stats.by_kind,
@@ -1244,6 +1277,7 @@ class ReferenceLibraryPanel(QWidget):
 
         tags_text = " · ".join(f"{tag}×{count}" for tag, count in stats.top_tags)
         self._stat_labels["tags"].setText(tags_text or TR("reflib.stats_empty"))
+        _protect_text_height(self._stat_labels["tags"])
         self._rebuild_tags_page(stats)
 
         self._stat_labels["duplicates"].setText(
@@ -1251,10 +1285,12 @@ class ReferenceLibraryPanel(QWidget):
                 count=stats.duplicate_risk_count
             )
         )
+        _protect_text_height(self._stat_labels["duplicates"])
         self._rebuild_duplicates_page(stats)
 
         recent_text = TR("reflib.stats_recent_value").format(count=len(stats.recent_items))
         self._stat_labels["recent"].setText(recent_text if scope_items else TR("reflib.stats_empty"))
+        _protect_text_height(self._stat_labels["recent"])
         self._rebuild_recent_page(stats)
 
     def _stats_scope_text(self, stats: _ScopeStats) -> str:
@@ -1354,7 +1390,8 @@ class ReferenceLibraryPanel(QWidget):
             row_layout.setSpacing(8)
             label = QLabel(label_fn(key))
             label.setObjectName("RefBarLabel")
-            label.setMinimumWidth(110)
+            label.setWordWrap(True)
+            label.setMinimumWidth(96)
             bar = QProgressBar()
             bar.setObjectName("RefStatBar")
             bar.setRange(0, total)
@@ -1362,6 +1399,17 @@ class ReferenceLibraryPanel(QWidget):
             bar.setTextVisible(False)
             value = QLabel(TR("reflib.counter_value").format(count=count))
             value.setObjectName("RefBarValue")
+            value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            _protect_text_height(label, padding=8)
+            _protect_text_height(value, padding=8)
+            row.setMinimumHeight(
+                max(
+                    34,
+                    label.minimumHeight(),
+                    value.minimumHeight(),
+                    bar.sizeHint().height() + 8,
+                )
+            )
             row_layout.addWidget(label)
             row_layout.addWidget(bar, 1)
             row_layout.addWidget(value)
@@ -1381,6 +1429,8 @@ class ReferenceLibraryPanel(QWidget):
         for index, (tag, count) in enumerate(stats.top_tags):
             chip = QLabel(f"#{tag} × {count}")
             chip.setObjectName("RefTagCloudChip")
+            chip.setWordWrap(True)
+            _protect_text_height(chip, padding=8)
             cloud.addWidget(chip, index // 3, index % 3)
         body.addLayout(cloud)
         body.addStretch(1)
@@ -1412,9 +1462,11 @@ class ReferenceLibraryPanel(QWidget):
             )
             title.setObjectName("RefStatMetricLabel")
             title.setWordWrap(True)
+            _protect_text_height(title, padding=6)
             quote = QLabel(compact_text(passages[0].content, limit=180))
             quote.setObjectName("ReferenceQuoteText")
             quote.setWordWrap(True)
+            _protect_text_height(quote, padding=8)
             meta = QLabel(
                 " · ".join(
                     passage.display_label()
@@ -1423,6 +1475,7 @@ class ReferenceLibraryPanel(QWidget):
             )
             meta.setObjectName("ReferenceCardMeta")
             meta.setWordWrap(True)
+            _protect_text_height(meta, padding=6)
             layout.addWidget(title)
             layout.addWidget(quote)
             layout.addWidget(meta)
@@ -1436,6 +1489,9 @@ class ReferenceLibraryPanel(QWidget):
                 locate_button.setObjectName("GhostButton")
                 locate_button.setAutoDefault(False)
                 locate_button.setToolTip(passage.display_label())
+                locate_button.setMinimumHeight(
+                    max(locate_button.minimumSizeHint().height(), 32)
+                )
                 locate_button.clicked.connect(
                     lambda _checked=False, passage_id=passage.id: self._select_passage_by_id(
                         passage_id
@@ -1446,6 +1502,9 @@ class ReferenceLibraryPanel(QWidget):
                 delete_button = QPushButton(TR("rlp.delete_btn"))
                 delete_button.setObjectName("DangerButton")
                 delete_button.setAutoDefault(False)
+                delete_button.setMinimumHeight(
+                    max(delete_button.minimumSizeHint().height(), 32)
+                )
                 delete_button.clicked.connect(
                     lambda _checked=False, passage_id=passage.id: self._request_delete_passage(
                         passage_id
@@ -1471,6 +1530,8 @@ class ReferenceLibraryPanel(QWidget):
             layout.setSpacing(4)
             title = QLabel(source_group_title(passage.source_title))
             title.setObjectName("ReferenceCardTitle")
+            title.setWordWrap(True)
+            _protect_text_height(title, padding=6)
             meta = QLabel(
                 TR("reflib.stats_recent_item_meta").format(
                     date=(passage.updated_at or passage.created_at or "")[:10]
@@ -1480,9 +1541,12 @@ class ReferenceLibraryPanel(QWidget):
                 )
             )
             meta.setObjectName("ReferenceCardMeta")
+            meta.setWordWrap(True)
+            _protect_text_height(meta, padding=6)
             quote = QLabel(compact_text(passage.content, limit=160))
             quote.setObjectName("ReferenceQuoteText")
             quote.setWordWrap(True)
+            _protect_text_height(quote, padding=8)
             layout.addWidget(title)
             layout.addWidget(meta)
             layout.addWidget(quote)
@@ -1497,9 +1561,11 @@ class ReferenceLibraryPanel(QWidget):
         layout.setSpacing(2)
         value = QLabel(value_text)
         value.setObjectName("RefStatMetricValue")
+        _protect_text_height(value, padding=6)
         label = QLabel(label_text)
         label.setObjectName("RefStatMetricLabel")
         label.setWordWrap(True)
+        _protect_text_height(label, padding=6)
         layout.addWidget(value)
         layout.addWidget(label)
         return card
@@ -1508,12 +1574,14 @@ class ReferenceLibraryPanel(QWidget):
         label = QLabel(text)
         label.setObjectName("RefStatTitle")
         label.setWordWrap(True)
+        _protect_text_height(label, padding=6)
         return label
 
     def _empty_stat_label(self, text: str) -> QLabel:
         label = QLabel(text)
         label.setObjectName("RefStatValue")
         label.setWordWrap(True)
+        _protect_text_height(label, padding=6)
         return label
 
     def _load_passage(self, passage: Optional[ReferencePassage]) -> None:
