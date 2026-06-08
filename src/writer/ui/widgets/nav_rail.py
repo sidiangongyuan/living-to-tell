@@ -43,8 +43,8 @@ class NavigationRail(QWidget):
     """Vertical rail with mode buttons + bottom utility buttons.
 
     Emits ``mode_changed(int)`` when one of the registered mode buttons is
-    activated. Mode index convention (M-Dates):
-      0=Dates, 1=Fragments, 2=Works, 3=Collections, 4=AI.
+    activated. Mode index convention after the article-model refactor:
+      0=Dates, 1=Articles, 2=Collections, 3=AI.
     """
 
     mode_changed = Signal(int)
@@ -59,7 +59,6 @@ class NavigationRail(QWidget):
         *,
         brand_text: str,
         fragments_label: str,
-        works_label: str,
         collections_label: str,
         search_label: str,
         theme_label: str,
@@ -77,7 +76,6 @@ class NavigationRail(QWidget):
 
         self._dates_btn = RailButton("📅", dates_label)
         self._frag_btn = RailButton("✎", fragments_label)
-        self._works_btn = RailButton("📚", works_label)
         self._coll_btn = RailButton("⊞", collections_label)
         self._ai_btn = RailButton("✦", ai_label)
         self._search_btn = RailButton("⌕", search_label, checkable=False)
@@ -90,7 +88,6 @@ class NavigationRail(QWidget):
             (
                 self._dates_btn,
                 self._frag_btn,
-                self._works_btn,
                 self._coll_btn,
                 self._ai_btn,
             )
@@ -108,7 +105,6 @@ class NavigationRail(QWidget):
         layout.addWidget(self._brand)
         layout.addWidget(self._dates_btn)
         layout.addWidget(self._frag_btn)
-        layout.addWidget(self._works_btn)
         layout.addWidget(self._coll_btn)
         layout.addWidget(self._ai_btn)
         layout.addSpacing(12)
@@ -135,10 +131,6 @@ class NavigationRail(QWidget):
     @property
     def dates_button(self) -> QPushButton:
         return self._dates_btn
-
-    @property
-    def works_button(self) -> QPushButton:
-        return self._works_btn
 
     @property
     def collections_button(self) -> QPushButton:

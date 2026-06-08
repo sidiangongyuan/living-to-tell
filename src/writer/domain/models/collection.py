@@ -1,4 +1,4 @@
-"""Collection — an ordered table of contents over multiple Works (M8)."""
+"""Collection — an ordered table of contents over multiple articles."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,10 +16,15 @@ class Collection:
 
 @dataclass
 class CollectionItem:
-    """A work's position inside a collection."""
+    """An article's position inside a collection."""
 
     id: str
     collection_id: str
-    work_id: str
+    entry_id: str
     sort_order: int = 0
     created_at: Optional[str] = None
+
+    @property
+    def work_id(self) -> str:
+        """Legacy alias for old tests/import paths."""
+        return self.entry_id

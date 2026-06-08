@@ -113,6 +113,22 @@ class TestTR:
         content = TR("about.content")
         assert "{version}" in content
 
+    def test_ai_article_labels_use_article_wording(self):
+        from writer.ui.i18n import TR
+
+        assert TR("ai.scope_fragment") == "Article: {name}"
+        assert TR("ai.target.fragment") == "Article"
+        assert TR("ai.attachments.kind_fragment") == "Article"
+
+    def test_ai_article_labels_use_article_wording_in_zh(self):
+        from writer.app.locale import set_locale
+        from writer.ui.i18n import TR
+
+        set_locale("zh_CN")
+        assert TR("ai.scope_fragment") == "文章：{name}"
+        assert TR("ai.target.fragment") == "文章"
+        assert TR("ai.attachments.kind_fragment") == "文章"
+
 
 # ---------------------------------------------------------------------------
 # Settings language persistence

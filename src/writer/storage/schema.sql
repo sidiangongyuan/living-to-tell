@@ -284,6 +284,22 @@ CREATE TABLE IF NOT EXISTS collection_items (
 CREATE INDEX IF NOT EXISTS idx_collection_items_collection_order
     ON collection_items (collection_id, sort_order);
 
+-- Article-based collections. The legacy collection_items table above is
+-- intentionally kept for old data, but product code uses this table.
+CREATE TABLE IF NOT EXISTS collection_entries (
+    id            TEXT PRIMARY KEY,
+    collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    entry_id      TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+    sort_order    INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE(collection_id, entry_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_collection_entries_collection_order
+    ON collection_entries (collection_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_collection_entries_entry
+    ON collection_entries (entry_id);
+
 CREATE TABLE IF NOT EXISTS work_fragment_refs (
     id            TEXT PRIMARY KEY,
     work_id       TEXT NOT NULL REFERENCES works(id) ON DELETE CASCADE,

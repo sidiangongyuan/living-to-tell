@@ -267,7 +267,7 @@ def test_word_count_helper_edge_cases():
 # ---------------------------------------------------------------------------
 # Global search
 # ---------------------------------------------------------------------------
-def test_search_all_returns_fragments_and_works(conn, repos, work_service):
+def test_search_all_returns_article_hits_only(conn, repos, work_service):
     repos["entries"].create(title="Alpha entry", body="dragons appear here")
     work = repos["works"].create(title="Dragon Tales", summary="big book")
     repos["sections"].create(work.id, content="Once upon a dragon time")
@@ -275,26 +275,14 @@ def test_search_all_returns_fragments_and_works(conn, repos, work_service):
     svc = SearchService(conn)
     hits = svc.search_all("dragon")
     kinds = {h.kind for h in hits}
-    assert kinds == {"fragment", "work"}
-
-    work_hit = next(h for h in hits if h.kind == "work")
-    assert work_hit.id == work.id
-    assert work_hit.section_id is not None  # locator filled in
-
-
-def test_search_works_only(conn, repos):
-    repos["works"].create(title="Salamander chronicles")
-    svc = SearchService(conn)
-    works = svc.search_works("salamander")
-    assert len(works) == 1
-    assert "Salamander" in works[0].title
+    assert kinds == {"fragment"}
+    assert all(hit.id != work.id for hit in hits)
 
 
 def test_search_returns_empty_for_no_query(conn):
     svc = SearchService(conn)
     assert svc.search("") == []
     assert svc.search_all("   ") == []
-    assert svc.search_works("!!!") == []
 
 
 # ---------------------------------------------------------------------------

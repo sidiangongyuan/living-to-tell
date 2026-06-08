@@ -13,9 +13,9 @@ This list tracks product-facing work that would make Writer more reliable and ea
 
 - Add a clearer focus-mode entry and exit hint.
 - Add more editor layout presets for compact, balanced, and wide screens.
-- Improve keyboard-only navigation across Dates, Fragments, Works, Collections, and AI Workspace.
+- Improve keyboard-only navigation across Dates, Articles, Collections, and AI Workspace.
 - Add optional backup reminders for active daily writers.
-- Add more ways to turn AI chat ideas into fragments and reference-library items.
+- Add more ways to turn AI chat ideas into articles, notes, and reference-library items.
 
 ## Data management
 

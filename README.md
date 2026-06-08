@@ -7,35 +7,35 @@
 ![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB.svg)
 ![Windows](https://img.shields.io/badge/Windows-portable-0078D4.svg)
 
-**A calm, local-first writing studio for fragments, long-form drafts, literary references, and bounded AI assistance.**
+**A calm, local-first writing studio for articles, anthologies, literary references, and bounded AI assistance.**
 
-Writer is for writers who collect scenes, sentences, moods, notes, research, and half-formed ideas before they know what the final work will become. It keeps the desk quiet: your drafts stay local, your fragments can grow into structured works, and AI only enters when you deliberately invite it.
+Writer is for writers who turn scenes, sentences, moods, notes, research, and half-formed ideas into complete articles. It keeps the desk quiet: your drafts stay local, articles can be arranged into collections, and AI only enters when you deliberately invite it.
 
 > Status: **alpha, daily-usable, still moving fast**. The core writing flow, exports, version history, reference library, and AI workspace are working; the current focus is polish, writing feel, and better literary workflows.
 
 ## ✦ Product Overview
 
-Writer combines a fragment library, a manuscript workspace, a literary reference
+Writer combines an article library, article collections, a literary reference
 library, and an AI workspace in one local desktop app. It is designed for
-drafting scenes, collecting notes, assembling long-form works, and reviewing AI
+drafting essays or stories, collecting notes, arranging anthologies, and reviewing AI
 suggestions before they touch the manuscript.
 
 ## ✅ What Works Today
 
 | Area | Highlights |
 | --- | --- |
-| ✍️ Writing | Fragment editor, autosave, tags, sticky fragment notes, full-text search, version history, focus mode, typography controls |
-| 📚 Works | Works, ordered sections, collections, TXT / Markdown / DOCX export |
+| ✍️ Writing | Article editor, autosave, tags, sticky article notes, full-text search, version history, focus mode, typography controls |
+| 📚 Collections | Add articles, browse in reading order, preview, reorder, TXT / Markdown / DOCX export |
 | 🗂️ Reference library | Book-shelf browsing, source pages, literary quote cards, tag summaries, duplicate hints, and switchable stats views |
 | 🤖 AI workspace | Polish, style-aware polish, expand, continue, summarize, outline, title ideas, structure diagnosis, consistency checks, library Q&A |
-| 💬 Scoped chat | Fragment / work / collection / global chat scopes, persisted threads, context budget trimming |
+| 💬 Scoped chat | Article / collection / global chat scopes, persisted threads, context budget trimming |
 | 🔐 Safety | Compare before accepting, checkpoints, snapshots before write-back, no stored raw AI keys |
 | 🪟 Distribution | Windows portable zip, local PyInstaller build script, GitHub Actions build path |
 
 ## 🧭 Product TODO
 
-- [x] Fragment-first writing desk
-- [x] Works, sections, collections, and export
+- [x] Article-first writing desk
+- [x] Article collections, reading preview, ordering, and export
 - [x] Version history and safe write-back snapshots
 - [x] Visible checkpoint controls and version cleanup for recoverable writing sessions
 - [x] GPT / OpenAI-compatible providers
@@ -47,7 +47,7 @@ suggestions before they touch the manuscript.
 - [x] Sticky fragment notes for next-session ideas, scene reminders, and AI reference context
 - [x] Visual note board: pin, edit, mark done, change note colour / width, and arrange notes beside the page
 - [x] Right-pane fragment note launcher that keeps the writing page free of note controls when notes are closed
-- [x] Unified AI "Add context" menu for fragments, literary specimens, and current fragment notes
+- [x] Unified AI "Add context" menu for articles, literary specimens, and current article notes
 - [x] Save selected AI chat text or the latest reply back into the current fragment as reusable notes
 - [x] Fragment-note default-collapse setting for calmer fragment switching
 - [x] UI polish: clearer toolbar controls, calmer scrollbars, and no-wheel form controls
@@ -57,19 +57,19 @@ suggestions before they touch the manuscript.
 - [ ] Better onboarding for first-time writers
 - [ ] Richer reference classification and saved custom library views
 - [ ] Clickable AI reports that can locate or apply suggested edits
-- [ ] More AI chat actions for turning conversation ideas into fragments, notes, and reference material
+- [ ] More AI chat actions for turning conversation ideas into articles, notes, and reference material
 - [ ] Beta release hygiene: signed builds, migration checks, and clearer release notes
 
 ## 🎬 Demos And Tutorials
 
-Public screenshots, short walkthrough videos, and workflow demos are on the roadmap. They will show a clean demo project rather than private writing, so new users can quickly understand Writer's fragment-to-work, reference library, and AI-assisted revision flow.
+Public screenshots, short walkthrough videos, and workflow demos are on the roadmap. They will show a clean demo project rather than private writing, so new users can quickly understand Writer's article, collection, reference-library, and AI-assisted revision flow.
 
 ## ⬇️ Download
 
 The recommended public distribution format is a **Windows portable zip**.
 
-- Latest alpha: [Writer-0.2.0-alpha.40-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.40/Writer-0.2.0-alpha.40-portable.zip)
-- Release page: [v0.2.0-alpha.40](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.40)
+- Latest alpha: [Writer-0.2.0-alpha.41-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.41/Writer-0.2.0-alpha.41-portable.zip)
+- Release page: [v0.2.0-alpha.41](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.41)
 - If you are testing the latest branch, use the **Build Windows Portable** GitHub Action artifact.
 - To build locally, run the packaging command in [Build from source](#build-from-source).
 

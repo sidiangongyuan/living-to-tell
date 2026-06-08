@@ -87,8 +87,7 @@ def test_navigation_rail_dates_button_is_first(qtbot):
     rail = NavigationRail(
         brand_text="W",
         dates_label="Dates",
-        fragments_label="Fragments",
-        works_label="Works",
+        fragments_label="Articles",
         collections_label="Collections",
         ai_label="AI",
         search_label="Search",

@@ -603,7 +603,7 @@ def test_editor_panel_writing_note_uses_window_relative_position(qtbot):
 
 
 def test_main_window_writing_notes_can_float_across_main_workspace(qtbot, container):
-    from writer.ui.main_window import MODE_WORKS, MainWindow
+    from writer.ui.main_window import MODE_COLLECTIONS, MainWindow
 
     entry = container.entry_repository.create(title="A", body="body")
     note = container.entry_writing_note_repository.create(
@@ -629,7 +629,7 @@ def test_main_window_writing_notes_can_float_across_main_workspace(qtbot, contai
     assert card.parentWidget() is window  # noqa: SLF001
     assert card.relative_position() == card.pos() - window.frameGeometry().topLeft()
 
-    window._set_mode(MODE_WORKS)  # noqa: SLF001
+    window._set_mode(MODE_COLLECTIONS)  # noqa: SLF001
     assert card.isHidden()
 
 

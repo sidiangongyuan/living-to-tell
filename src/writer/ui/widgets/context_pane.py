@@ -108,7 +108,6 @@ class ContextPane(QWidget):
         self._frag_actions_row = QVBoxLayout()
         self._frag_actions_row.setSpacing(6)
         self._frag_polish_btn = _make_action_button(action_labels["polish"])
-        self._frag_include_btn = _make_action_button(action_labels["include"])
         self._frag_writing_notes_btn = _make_action_button(action_labels["writing_notes"])
         self._frag_checkpoint_btn = _make_action_button(action_labels["checkpoint"])
         self._frag_versions_btn = _make_action_button(action_labels["versions"])
@@ -118,38 +117,10 @@ class ContextPane(QWidget):
         self._frag_actions_row.addWidget(self._frag_writing_notes_btn)
         self._frag_actions_row.addWidget(self._frag_checkpoint_btn)
         self._frag_actions_row.addWidget(self._frag_versions_btn)
-        self._frag_actions_row.addWidget(self._frag_include_btn)
         self._frag_actions_row.addWidget(self._frag_export_btn)
         self._frag_actions_row.addWidget(self._frag_save_specimen_btn)
         frag_layout.addLayout(self._frag_actions_row)
         frag_layout.addStretch(1)
-
-        # Work context
-        self._work_widget = QWidget()
-        work_layout = QVBoxLayout(self._work_widget)
-        work_layout.setContentsMargins(0, 0, 0, 0)
-        work_layout.setSpacing(12)
-        self._work_summary = _MetaRow(meta_labels["summary"])
-        self._work_status = _MetaRow(meta_labels["status"])
-        self._work_words = _MetaRow(meta_labels["words"])
-        self._work_target = _MetaRow(meta_labels["target"])
-        self._work_updated = _MetaRow(meta_labels["updated"])
-        for row in (
-            self._work_summary,
-            self._work_status,
-            self._work_words,
-            self._work_target,
-            self._work_updated,
-        ):
-            work_layout.addWidget(row)
-        self._work_actions_row = QVBoxLayout()
-        self._work_actions_row.setSpacing(6)
-        self._work_versions_btn = _make_action_button(action_labels["versions"])
-        self._work_export_btn = _make_action_button(action_labels["export_work"])
-        self._work_actions_row.addWidget(self._work_versions_btn)
-        self._work_actions_row.addWidget(self._work_export_btn)
-        work_layout.addLayout(self._work_actions_row)
-        work_layout.addStretch(1)
 
         # Collection context
         self._coll_widget = QWidget()
@@ -169,8 +140,7 @@ class ContextPane(QWidget):
 
         self._stack.addWidget(self._empty)        # 0
         self._stack.addWidget(self._frag_widget)   # 1
-        self._stack.addWidget(self._work_widget)   # 2
-        self._stack.addWidget(self._coll_widget)   # 3
+        self._stack.addWidget(self._coll_widget)   # 2
         self._reduced_motion = False
 
         layout = QVBoxLayout(self)
@@ -226,24 +196,6 @@ class ContextPane(QWidget):
         self._frag_status.set_value(status)
         set_stack_index(self._stack, 1, reduced=self._reduced_motion)
 
-    def show_work(
-        self,
-        *,
-        title: str,
-        summary: str,
-        status: str,
-        words: str,
-        target: str,
-        updated: str,
-    ) -> None:
-        self._title.setText(title)
-        self._work_summary.set_value(summary)
-        self._work_status.set_value(status)
-        self._work_words.set_value(words)
-        self._work_target.set_value(target)
-        self._work_updated.set_value(updated)
-        set_stack_index(self._stack, 2, reduced=self._reduced_motion)
-
     def show_collection(
         self,
         *,
@@ -254,7 +206,7 @@ class ContextPane(QWidget):
         self._title.setText(title)
         self._coll_count.set_value(work_count)
         self._coll_words.set_value(words)
-        set_stack_index(self._stack, 3, reduced=self._reduced_motion)
+        set_stack_index(self._stack, 2, reduced=self._reduced_motion)
 
     # ------------------------------------------------------------------
     # Action button accessors so MainWindow can wire callbacks.
@@ -262,10 +214,6 @@ class ContextPane(QWidget):
     @property
     def fragment_polish_button(self) -> QPushButton:
         return self._frag_polish_btn
-
-    @property
-    def fragment_include_button(self) -> QPushButton:
-        return self._frag_include_btn
 
     @property
     def fragment_writing_notes_button(self) -> QPushButton:
@@ -286,14 +234,6 @@ class ContextPane(QWidget):
     @property
     def fragment_save_specimen_button(self) -> QPushButton:
         return self._frag_save_specimen_btn
-
-    @property
-    def work_versions_button(self) -> QPushButton:
-        return self._work_versions_btn
-
-    @property
-    def work_export_button(self) -> QPushButton:
-        return self._work_export_btn
 
     @property
     def collection_export_button(self) -> QPushButton:

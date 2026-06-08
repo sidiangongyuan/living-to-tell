@@ -2,6 +2,22 @@
 
 Product-facing changes only.
 
+## 0.2.0-alpha.41 — Articles and article collections
+
+- Reframed the main writing unit as Articles in the product UI and docs,
+  replacing the old visible Work / section middle layer.
+- Removed the Works rail entry and visible work-section AI write-back paths.
+- Changed Collections to contain ordered articles directly, with a
+  reading-first article list, preview pane, notes, ordering, removal, and
+  TXT / Markdown / DOCX export.
+- Added safe legacy import for older Work data: on first launch, users can
+  copy old work sections into articles and article collections while keeping
+  the original tables untouched.
+- Changed global search to focus on articles, avoiding results that point to
+  now-hidden legacy Works.
+- Updated README, TODO, user guides, and release metadata for the article /
+  collection model.
+
 ## 0.2.0-alpha.40 — Fragment note entry and AI context menu
 
 - Moved the fragment-note launcher into the right context pane, so closed

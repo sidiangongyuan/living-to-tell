@@ -139,24 +139,24 @@ def test_include_fragment_dialog_creates_new_section_when_chosen(qtbot, containe
 # ---------------------------------------------------------------------------
 # GlobalSearchDialog
 # ---------------------------------------------------------------------------
-def test_global_search_dialog_returns_mixed_hits(qtbot, container):
-    container.entry_repository.create(title="Findable fragment", body="abc")
-    work = container.work_repository.create(title="Findable work")
-    container.work_section_repository.create(work.id, content="some prose")
+def test_global_search_dialog_returns_article_hits(qtbot, container):
+    container.entry_repository.create(title="Findable article", body="abc")
+    container.work_repository.create(title="Findable legacy work")
 
     dlg = GlobalSearchDialog(container)
     qtbot.addWidget(dlg)
     dlg._search.setText("findable")
     # Refresh is wired to textChanged; trigger it explicitly to be safe.
     dlg._refresh()
-    assert dlg._results.count() >= 2
+    assert dlg._results.count() == 1
+    assert "Article" in dlg._results.item(0).text()
 
 
 # ---------------------------------------------------------------------------
 # CollectionsPanel
 # ---------------------------------------------------------------------------
-def test_collections_panel_create_and_add_work(qtbot, container):
-    work = container.work_repository.create(title="W")
+def test_collections_panel_create_and_add_article(qtbot, container):
+    entry = container.entry_repository.create(title="A", body="Body")
 
     panel = CollectionsPanel(container)
     qtbot.addWidget(panel)
@@ -166,12 +166,11 @@ def test_collections_panel_create_and_add_work(qtbot, container):
     panel.refresh_collections()
     assert panel._collections.count() == 1
 
-    container.collection_repository.add_work(coll.id, work.id)
-    # M9A: collections list no longer auto-selects row 0; pick the
-    # collection explicitly before refreshing the works subpanel.
+    container.collection_repository.add_entry(coll.id, entry.id)
     panel._collections.setCurrentRow(0)
-    panel._refresh_works()
-    assert panel._works.count() == 1
+    panel._refresh_articles()
+    assert len(panel._entry_cards) == 1
+    assert panel._entry_cards[0].entry_id == entry.id
 
 
 def test_work_picker_dialog_filters(qtbot, container):

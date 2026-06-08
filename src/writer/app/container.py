@@ -22,7 +22,8 @@ from writer.services.ai.task_prompt_builder import TaskPromptBuilder
 from writer.services.ai.task_service import AiTaskService
 from writer.services.ai.task_types import AiContextAttachment
 from writer.services.ai.thread_service import AiThreadService
-from writer.services.export import MarkdownExporter, TextExporter
+from writer.services.export import CollectionExportService, MarkdownExporter, TextExporter
+from writer.services.legacy_work_import import LegacyWorkImportService
 from writer.services.export.work_exporter import WorkExportService
 from writer.services.search_service import SearchService
 from writer.services.version_history_service import VersionHistoryService
@@ -78,6 +79,8 @@ class AppContainer:
     work_version_repository: WorkVersionRepository
     work_service: WorkService
     work_export_service: WorkExportService
+    collection_export_service: CollectionExportService
+    legacy_work_import_service: LegacyWorkImportService
     # M10A: AI workspace
     ai_thread_repository: AiThreadRepository
     ai_card_repository: AiCardRepository
@@ -145,6 +148,13 @@ def build_container(db_path: Optional[Path] = None) -> AppContainer:
     work_export_service = WorkExportService(
         work_repo, section_repo, collection_repo
     )
+    collection_export_service = CollectionExportService(collection_repo)
+    legacy_work_import_service = LegacyWorkImportService(
+        conn,
+        settings_repo,
+        entry_repo,
+        collection_repo,
+    )
 
     # ---- M10A: AI workspace -----------------------------------------
     ai_thread_repo = AiThreadRepository(conn)
@@ -211,6 +221,8 @@ def build_container(db_path: Optional[Path] = None) -> AppContainer:
         work_version_repository=work_version_repo,
         work_service=work_service,
         work_export_service=work_export_service,
+        collection_export_service=collection_export_service,
+        legacy_work_import_service=legacy_work_import_service,
         ai_thread_repository=ai_thread_repo,
         ai_card_repository=ai_card_repo,
         ai_task_service=ai_task_service,

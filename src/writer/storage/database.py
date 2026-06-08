@@ -365,6 +365,18 @@ def _ensure_post_migration_indexes(conn: sqlite3.Connection) -> None:
             )
         """
     )
+    collection_entries = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'collection_entries'"
+    ).fetchone()
+    if collection_entries is not None:
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_collection_entries_collection_order "
+            "ON collection_entries (collection_id, sort_order)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_collection_entries_entry "
+            "ON collection_entries (entry_id)"
+        )
 
 
 def open_and_initialize(db_path: Optional[Path] = None) -> sqlite3.Connection:

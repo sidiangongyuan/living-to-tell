@@ -77,33 +77,32 @@ def test_main_window_has_four_rail_modes_including_ai(qtbot, container):
     window = MainWindow(container, autosave_debounce_ms=50)
     qtbot.addWidget(window)
 
-    # M-Dates added a new mode at the front, so the stack now has five.
-    assert window._stack.count() == 5  # noqa: SLF001
+    assert window._stack.count() == 4  # noqa: SLF001
     rail = window._rail  # noqa: SLF001
     assert rail.ai_button is not None
     assert rail.ai_button.isCheckable()
 
 
 def test_set_mode_three_binds_ai_workspace_to_global_when_nothing_selected(qtbot, container):
-    from writer.ui.main_window import MainWindow
+    from writer.ui.main_window import MainWindow, MODE_AI
 
     window = MainWindow(container, autosave_debounce_ms=50)
     qtbot.addWidget(window)
-    window._set_mode(4)  # noqa: SLF001
-    assert window._stack.currentIndex() == 4  # noqa: SLF001
+    window._set_mode(MODE_AI)  # noqa: SLF001
+    assert window._stack.currentIndex() == MODE_AI  # noqa: SLF001
     panel = window._ai_workspace_panel  # noqa: SLF001
     # Tabs widget should have exactly two tabs.
     assert panel.tabs.count() == 2
 
 
 def test_set_mode_three_binds_ai_workspace_to_open_fragment(qtbot, container):
-    from writer.ui.main_window import MainWindow
+    from writer.ui.main_window import MainWindow, MODE_AI
 
     entry = container.entry_repository.create(title="Hello", body="A short fragment.")
     window = MainWindow(container, autosave_debounce_ms=50)
     qtbot.addWidget(window)
     window._editor_panel.set_entry(entry)  # noqa: SLF001
-    window._set_mode(4)  # noqa: SLF001
+    window._set_mode(MODE_AI)  # noqa: SLF001
 
     panel = window._ai_workspace_panel  # noqa: SLF001
     scope = panel._scope  # noqa: SLF001
@@ -114,7 +113,7 @@ def test_set_mode_three_binds_ai_workspace_to_open_fragment(qtbot, container):
 
 
 def test_main_window_locates_ai_excerpt_in_fragment_editor(qtbot, container):
-    from writer.ui.main_window import MainWindow
+    from writer.ui.main_window import MainWindow, MODE_AI
 
     entry = container.entry_repository.create(
         title="Hello",
@@ -125,34 +124,13 @@ def test_main_window_locates_ai_excerpt_in_fragment_editor(qtbot, container):
     window.show()
     qtbot.waitExposed(window)
     window._editor_panel.set_entry(entry)  # noqa: SLF001
-    window._set_mode(4)  # noqa: SLF001
+    window._set_mode(MODE_AI)  # noqa: SLF001
 
     window._on_locate_ai_excerpt("关键摘录")  # noqa: SLF001
 
     assert window._stack.currentIndex() == 1  # noqa: SLF001
     assert window._editor_panel._find_bar.isVisible() is True  # noqa: SLF001
     assert window._editor_panel.selected_body_text() == "关键摘录"  # noqa: SLF001
-
-
-def test_main_window_locates_ai_excerpt_in_work_editor(qtbot, container):
-    from writer.ui.main_window import MainWindow
-
-    work = container.work_repository.create(title="Work")
-    section = container.work_section_repository.create(work.id, content="前文\nExcerpt Line\n后文")
-    window = MainWindow(container, autosave_debounce_ms=50)
-    qtbot.addWidget(window)
-    window.show()
-    qtbot.waitExposed(window)
-    window._works_panel.select_work_section(work.id, section.id)  # noqa: SLF001
-    window._last_mode_before_ai = 2  # noqa: SLF001
-    window._set_mode(4)  # noqa: SLF001
-
-    window._on_locate_ai_excerpt("Excerpt Line")  # noqa: SLF001
-
-    assert window._stack.currentIndex() == 2  # noqa: SLF001
-    assert window._works_panel._editor._find_bar.isVisible() is True  # noqa: SLF001
-    assert window._works_panel._editor._editor.textCursor().selectedText() == "Excerpt Line"  # noqa: SLF001
-
 
 # ---------------------------------------------------------------------------
 # Tools tab
@@ -592,7 +570,7 @@ def test_fragment_writing_notes_are_shown_as_removable_context(qtbot, container)
 
     assert tab._include_writing_notes_check.isChecked() is True  # noqa: SLF001
     assert tab._attach_list.count() == 1  # noqa: SLF001
-    assert "片段便签" in tab._attach_list.item(0).text() or "Fragment notes" in tab._attach_list.item(0).text()  # noqa: SLF001
+    assert "文章便签" in tab._attach_list.item(0).text() or "Article notes" in tab._attach_list.item(0).text()  # noqa: SLF001
     tab._attach_list.setCurrentRow(0)  # noqa: SLF001
     tab._on_remove_attachment()  # noqa: SLF001
     assert tab._include_writing_notes_check.isChecked() is False  # noqa: SLF001
@@ -976,7 +954,7 @@ def test_chat_tab_can_add_current_fragment_notes_context(qtbot, container):
     assert attachment.ref_id == entry.id
     assert "凉面摊" in attachment.body
     assert "再听见风" in attachment.body
-    assert "片段便签" in tab._attach_label.text() or "Fragment notes" in tab._attach_label.text()  # noqa: SLF001
+    assert "文章便签" in tab._attach_label.text() or "Article notes" in tab._attach_label.text()  # noqa: SLF001
 
 
 # ---------------------------------------------------------------------------
@@ -1350,73 +1328,31 @@ def test_selection_preview_card_shows_bound_selection_and_emits_locate(qtbot, co
     assert blocker.args[0].selection_text == "world"
 
 
-def test_work_section_selection_apply_only_rewrites_selected_range(qtbot, container):
-    from PySide6.QtGui import QTextCursor
+def test_visible_targets_hide_work_and_work_section(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
 
-    from writer.ui.main_window import MainWindow, MODE_AI, MODE_WORKS
-
-    work = container.work_repository.create(title="W", summary="")
-    section = container.work_section_repository.create(
-        work_id=work.id,
-        content="alpha beta gamma",
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(
+            kind=AiThreadScope.FRAGMENT,
+            ref_id="frag-1",
+            name="Article",
+            body="body text",
+        )
     )
-    provider = _StubProvider("BETA!")
-    _stub_container_provider(container, provider)
 
-    window = MainWindow(container, autosave_debounce_ms=50)
-    qtbot.addWidget(window)
-    window._set_mode(MODE_WORKS)  # noqa: SLF001
-    window._works_panel.select_work_section(work.id, section.id)  # noqa: SLF001
-    editor = window._works_panel._editor._editor  # noqa: SLF001
-    cursor = editor.textCursor()
-    cursor.setPosition(6)
-    cursor.setPosition(10, QTextCursor.MoveMode.KeepAnchor)
-    editor.setTextCursor(cursor)
+    visible_targets = [
+        tab._target_combo.itemData(i)  # noqa: SLF001
+        for i in range(tab._target_combo.count())  # noqa: SLF001
+    ]
 
-    window._set_mode(MODE_AI)  # noqa: SLF001
-    tab = window._ai_workspace_panel.tools_tab  # noqa: SLF001
-    request = tab._build_request()  # noqa: SLF001
-    assert request is not None
-    assert request.target_kind == AiTargetKind.SELECTION
-    assert request.text == "beta"
-
-    repl_idx = tab._output_combo.findData(AiOutputAction.REPLACE_SELECTION)  # noqa: SLF001
-    assert repl_idx >= 0
-    tab._output_combo.setCurrentIndex(repl_idx)  # noqa: SLF001
-    response = container.ai_task_service.generate(request)
-    tab._last_request = request  # noqa: SLF001
-    tab._last_response = response  # noqa: SLF001
-    tab._result_view.setPlainText(response.content)  # noqa: SLF001
-
-    import writer.ui.panels.ai_workspace_panel as panel_mod
-
-    _accept_ai_apply_dialogs(panel_mod)
-    tab._on_apply()  # noqa: SLF001
-
-    fresh = container.work_section_repository.get(section.id)
-    assert fresh.content == "alpha BETA! gamma"
-
-
-def test_main_window_binds_section_scope_when_section_focused(qtbot, container):
-    """Bug #3: when a work section is focused, AI binding must surface a
-    writable section sub-scope (section_id + work_id + section body)."""
-    from writer.ui.main_window import MainWindow
-
-    work = container.work_repository.create(title="My Work", summary="")
-    section = container.work_section_repository.create(work_id=work.id, content="section body text")
-
-    window = MainWindow(container, autosave_debounce_ms=50)
-    qtbot.addWidget(window)
-    window._set_mode(2)  # works mode  # noqa: SLF001
-    window._works_panel.select_work_section(work.id, section.id)  # noqa: SLF001
-    window._set_mode(4)  # noqa: SLF001
-
-    scope = window._ai_workspace_panel._scope  # noqa: SLF001
-    assert scope is not None
-    assert scope.kind is AiThreadScope.WORK
-    assert scope.work_id == work.id
-    assert scope.section_id == section.id
-    assert "section body text" in scope.body
+    assert AiTargetKind.FRAGMENT in visible_targets
+    assert AiTargetKind.SELECTION in visible_targets
+    assert AiTargetKind.PASTE in visible_targets
+    assert AiTargetKind.COLLECTION in visible_targets
+    assert AiTargetKind.WORK not in visible_targets
+    assert AiTargetKind.WORK_SECTION not in visible_targets
 
 
 def test_main_window_keeps_fragment_selection_when_reentering_ai(qtbot, container):
@@ -1449,75 +1385,73 @@ def test_main_window_keeps_fragment_selection_when_reentering_ai(qtbot, containe
     assert request.text == "beta"
 
 
-def test_main_window_section_scope_replace_section_path_reachable(qtbot, container):
-    """Bug #3 end-to-end: REPLACE_SECTION must be selectable and the apply
-    must route through apply_to_section (not silently fail)."""
-    from writer.ui.main_window import MainWindow
+def test_collection_scope_is_read_only_in_visible_ai_outputs(qtbot, container):
+    from writer.ui.panels.ai_workspace_panel import AIToolsTab, AiScope
 
-    work = container.work_repository.create(title="W", summary="")
-    section = container.work_section_repository.create(work_id=work.id, content="orig section")
-    provider = _StubProvider("NEW SECTION TEXT")
-    _stub_container_provider(container, provider)
+    tab = AIToolsTab(container)
+    qtbot.addWidget(tab)
+    tab.bind_scope(
+        AiScope(
+            kind=AiThreadScope.COLLECTION,
+            ref_id="coll-1",
+            name="Collection A",
+            body="collected body",
+        )
+    )
 
-    window = MainWindow(container, autosave_debounce_ms=50)
-    qtbot.addWidget(window)
-    window._set_mode(2)  # noqa: SLF001
-    window._works_panel.select_work_section(work.id, section.id)  # noqa: SLF001
-    window._set_mode(4)  # noqa: SLF001
+    output_values = [
+        tab._output_combo.itemData(i)  # noqa: SLF001
+        for i in range(tab._output_combo.count())  # noqa: SLF001
+    ]
 
-    tab = window._ai_workspace_panel.tools_tab  # noqa: SLF001
-    sec_idx = tab._target_combo.findData(AiTargetKind.WORK_SECTION)  # noqa: SLF001
-    assert sec_idx >= 0
-    tab._target_combo.setCurrentIndex(sec_idx)  # noqa: SLF001
-    repl_idx = tab._output_combo.findData(AiOutputAction.REPLACE_SECTION)  # noqa: SLF001
-    assert repl_idx >= 0, "REPLACE_SECTION must be a valid output for WORK_SECTION target"
-    tab._output_combo.setCurrentIndex(repl_idx)  # noqa: SLF001
-
-    request = tab._build_request()  # noqa: SLF001
-    assert request is not None
-    assert request.target_kind == AiTargetKind.WORK_SECTION
-    assert request.target_ref_id == section.id
-
-    response = container.ai_task_service.generate(request)
-    tab._last_request = request  # noqa: SLF001
-    tab._last_response = response  # noqa: SLF001
-    tab._result_view.setPlainText(response.content)  # noqa: SLF001
-
-    import writer.ui.panels.ai_workspace_panel as panel_mod
-
-    _accept_ai_apply_dialogs(panel_mod)
-    tab._on_apply()  # noqa: SLF001
-
-    fresh = container.work_section_repository.get(section.id)
-    assert fresh.content == "NEW SECTION TEXT"
+    assert AiOutputAction.PREVIEW_ONLY in output_values
+    assert AiOutputAction.REPORT in output_values
+    assert AiOutputAction.REPLACE_FRAGMENT not in output_values
+    assert AiOutputAction.REPLACE_SELECTION not in output_values
+    assert AiOutputAction.REPLACE_SECTION not in output_values
+    assert AiOutputAction.SAVE_AS_FRAGMENT not in output_values
 
 
-def test_main_window_prefers_work_section_over_stale_fragment_when_entering_ai(qtbot, container):
-    """AI scope should follow the surface the user came from.
+def test_main_window_binds_collection_scope_when_collection_selected(qtbot, container):
+    from writer.ui.main_window import MainWindow, MODE_AI, MODE_COLLECTIONS
 
-    If a fragment is still loaded in the hidden fragments editor, it must
-    not steal AI binding when the user is currently in Works mode and has
-    a section focused there.
-    """
-    from writer.ui.main_window import MainWindow
-
-    entry = container.entry_repository.create(title="Frag", body="fragment body")
-    work = container.work_repository.create(title="Work", summary="")
-    section = container.work_section_repository.create(work_id=work.id, content="section body")
+    entry = container.entry_repository.create(title="Article 1", body="first body")
+    collection = container.collection_repository.create(name="Collection A")
+    container.collection_repository.add_entry(collection.id, entry.id)
 
     window = MainWindow(container, autosave_debounce_ms=50)
     qtbot.addWidget(window)
-    window._editor_panel.set_entry(entry)  # noqa: SLF001
-    window._set_mode(2)  # noqa: SLF001
-    window._works_panel.select_work_section(work.id, section.id)  # noqa: SLF001
-    window._set_mode(4)  # noqa: SLF001
+    window._set_mode(MODE_COLLECTIONS)  # noqa: SLF001
+    window._collections_panel.refresh_collections()  # noqa: SLF001
+    window._collections_panel._collections.setCurrentRow(0)  # noqa: SLF001
+    window._set_mode(MODE_AI)  # noqa: SLF001
 
     scope = window._ai_workspace_panel._scope  # noqa: SLF001
     assert scope is not None
-    assert scope.kind is AiThreadScope.WORK
-    assert scope.work_id == work.id
-    assert scope.section_id == section.id
-    assert "section body" in scope.body
+    assert scope.kind is AiThreadScope.COLLECTION
+    assert scope.ref_id == collection.id
+    assert "Article 1" in scope.body
+
+
+def test_main_window_prefers_collection_scope_when_entering_ai_from_collections(qtbot, container):
+    from writer.ui.main_window import MainWindow, MODE_AI, MODE_COLLECTIONS
+
+    entry = container.entry_repository.create(title="Other", body="other body")
+    collection = container.collection_repository.create(name="Collection")
+    container.collection_repository.add_entry(collection.id, entry.id)
+
+    window = MainWindow(container, autosave_debounce_ms=50)
+    qtbot.addWidget(window)
+    window._set_mode(MODE_COLLECTIONS)  # noqa: SLF001
+    window._collections_panel.refresh_collections()  # noqa: SLF001
+    window._collections_panel._collections.setCurrentRow(0)  # noqa: SLF001
+    window._set_mode(MODE_AI)  # noqa: SLF001
+
+    scope = window._ai_workspace_panel._scope  # noqa: SLF001
+    assert scope is not None
+    assert scope.kind is AiThreadScope.COLLECTION
+    assert scope.ref_id == collection.id
+    assert "Other" in scope.body
 
 
 def test_structured_library_qa_renders_answer_not_raw_json(qtbot, container):

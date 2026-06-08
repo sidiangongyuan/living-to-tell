@@ -112,7 +112,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         # ── M9A: shell / navigation rail ─────────────────────────────────────
         "shell.brand": "Writer",
         "rail.dates": "Dates",
-        "rail.fragments": "Fragments",
+        "rail.fragments": "Articles",
         "rail.works": "Works",
         "rail.collections": "Collections",
         "rail.search": "Search",
@@ -128,7 +128,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "theme.dark": "Dark",
         "theme.system": "Follow system",
         # ── M9A: column titles ───────────────────────────────────────────────
-        "column.fragments": "Fragments",
+        "column.fragments": "Articles",
         "column.works": "Works",
         "column.collections": "Collections",
         # ── M9A: context pane ────────────────────────────────────────────────
@@ -147,12 +147,12 @@ _CATALOG: dict[str, dict[str, str]] = {
         ),
         "context.empty_title_collection": "Pick a collection to inspect.",
         "context.empty_desc_collection": (
-            "Select a collection on the left to see its work count, total words, "
+            "Select a collection on the left to see its article count, total words, "
             "and export actions here."
         ),
         "context.empty_title_ai": "AI is using global context.",
         "context.empty_desc_ai": (
-            "Open AI from a fragment, work, or collection to bind that object "
+            "Open AI from an article or collection to bind that object "
             "here. If nothing is selected, AI stays in global mode."
         ),
         "context.label_words": "Words",
@@ -164,7 +164,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "context.label_status": "Status",
         "context.label_summary": "Summary",
         "context.label_target": "Target",
-        "context.label_work_count": "Works in collection",
+        "context.label_work_count": "Articles in collection",
         "context.action_polish": "AI Polish…",
         "context.action_include": "Include in work…",
         "context.action_writing_notes": "Add fragment note…",
@@ -181,11 +181,10 @@ _CATALOG: dict[str, dict[str, str]] = {
         # ── M9A: empty states (welcome + per mode) ───────────────────────────
         "empty.welcome_title": "Start with a single line.",
         "empty.welcome_desc": (
-            "Write a fragment, then assemble fragments into a work, then "
-            "arrange works into a collection. Writer keeps all three in one "
-            "workspace."
+            "Write an article, keep private notes beside it, then arrange "
+            "articles into exportable collections."
         ),
-        "empty.welcome_primary": "New fragment",
+        "empty.welcome_primary": "New article",
         "empty.welcome_secondary": "New work",
         "empty.fragments_title": "This is where raw material lives.",
         "empty.fragments_desc": (
@@ -217,15 +216,15 @@ _CATALOG: dict[str, dict[str, str]] = {
         "empty.work_unselected_secondary": "Show recent works",
         "empty.collections_title": "Collections haven't started yet.",
         "empty.collections_desc": (
-            "A collection is for ordering works and exporting them as a "
+            "A collection is for ordering articles and exporting them as a "
             "set — short story collections, essay anthologies, themed bundles."
         ),
         "empty.collections_primary": "New collection",
-        "empty.collections_secondary": "Go organise a work first",
+        "empty.collections_secondary": "Go write an article first",
         "empty.collection_unselected_title": "Pick a collection first.",
         "empty.collection_unselected_desc": (
-            "Then you can reorder works inside it and prepare a single "
-            "consolidated export."
+            "Then you can reorder articles inside it, preview the text, "
+            "and prepare a single consolidated export."
         ),
         "empty.collection_unselected_primary": "New collection",
         "empty.collection_unselected_secondary": "View existing collections",
@@ -664,17 +663,40 @@ _CATALOG: dict[str, dict[str, str]] = {
         "work_versions.restore": "Restore selected",
         "work_versions.restore_confirm": "Replace current work with this version? A pre-restore snapshot will be saved automatically.",
         "collections.label": "Collections",
-        "collections.works_label": "Works in collection",
+        "collections.works_label": "Articles in collection",
         "collections.new": "New",
         "collections.rename": "Rename",
         "collections.delete": "Delete",
-        "collections.delete_confirm": "Delete this collection? Works inside will not be deleted.",
+        "collections.delete_confirm": "Delete this collection? Articles inside will not be deleted.",
         "collections.new_name_prompt": "Collection name:",
         "collections.untitled": "(untitled collection)",
         "collections.add_work": "Add work…",
         "collections.remove_work": "Remove",
+        "collections.add_article": "Add article…",
+        "collections.remove_article": "Remove",
+        "collections.pick_first": "Pick a collection",
+        "collections.preview_title": "Article preview",
+        "collections.preview_empty": "No article selected.",
+        "collections.description_label": "Collection note",
+        "collections.description_placeholder": "A short note or preface for this collection…",
+        "collections.article_preview_label": "Selected article",
+        "collections.article_words": "{count} words",
+        "collections.search_articles": "Search articles…",
         "collections.export": "Export…",
         "collections.export_done": "Exported to {path}",
+        "article_picker.title": "Choose an article",
+        "article_picker.search_placeholder": "Search by title, body, or tag…",
+        "legacy_import.title": "Import legacy works?",
+        "legacy_import.message": (
+            "Writer now uses Articles as the main writing unit. Legacy Works "
+            "can be copied into articles and article collections. Old tables "
+            "will be kept untouched. Import now?"
+        ),
+        "legacy_import.failed_title": "Legacy import failed",
+        "legacy_import.done_title": "Legacy works imported",
+        "legacy_import.done_message": (
+            "Created {entries} articles and {collections} collections from legacy works."
+        ),
         "include.title": "Include fragment into work",
         "include.work": "Work",
         "include.section": "Section",
@@ -685,13 +707,13 @@ _CATALOG: dict[str, dict[str, str]] = {
         "include.position_new_section": "Will be appended as a new section.",
         "include.confirm": "Insert",
         "include.new_section": "(append as new section)",
-        "include.no_works": "No works yet — create one in the Works tab first.",
+        "include.no_works": "No legacy works are available.",
         "include.empty_text": "Text cannot be empty.",
         "include.success_msg": "Fragment included. Curation status set to 'included'.",
         "search.title": "Global search",
-        "search.placeholder": "Search fragments and works…",
+        "search.placeholder": "Search articles…",
         "search.open": "Open",
-        "search.kind_fragment": "Fragment",
+        "search.kind_fragment": "Article",
         "search.kind_work": "Work",
         "search.untitled": "(untitled)",
         "work_picker.title": "Choose a work",
@@ -703,10 +725,10 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.tab_tools": "Tools",
         "ai.tab_chat": "Chat",
         "ai.scope_global": "Global",
-        "ai.scope_fragment": "Fragment: {name}",
+        "ai.scope_fragment": "Article: {name}",
         "ai.scope_work": "Work: {name}",
         "ai.scope_collection": "Collection: {name}",
-        "ai.scope_none": "Pick a fragment, work, or collection on the left to bind a thread.",
+        "ai.scope_none": "Pick an article or collection on the left to bind a thread.",
         "ai.selection.title": "Current selection",
         "ai.selection.source": "{name} · {chars} chars",
         "ai.selection.copy": "Copy",
@@ -730,7 +752,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         # target / output
         "ai.target.label": "Target",
         "ai.target.selection": "Selection",
-        "ai.target.fragment": "Fragment",
+        "ai.target.fragment": "Article",
         "ai.target.section": "Work section",
         "ai.target.work": "Work",
         "ai.target.collection": "Collection",
@@ -738,9 +760,9 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.output.label": "Output destination",
         "ai.output.preview_only": "Preview only",
         "ai.output.replace_selection": "Replace selection",
-        "ai.output.replace_fragment": "Replace fragment",
+        "ai.output.replace_fragment": "Replace article",
         "ai.output.replace_section": "Replace section (snapshots first)",
-        "ai.output.save_as_fragment": "Save as new fragment",
+        "ai.output.save_as_fragment": "Save as new article",
         "ai.output.report": "Report only",
         # params
         "ai.params.basic": "Parameters",
@@ -817,55 +839,55 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.params.forbid": "Forbidden terms (comma-separated)",
         # attachments
         "ai.attachments.title": "Context attachments",
-        "ai.attachments.empty": "Only the current target is sent. Attach extra fragments, works, or cards if needed.",
+        "ai.attachments.empty": "Only the current target is sent. Attach extra articles or cards if needed.",
         "ai.attachments.add_context": "Add context",
-        "ai.attachments.add_fragment": "Add fragment…",
+        "ai.attachments.add_fragment": "Add article…",
         "ai.attachments.add_card": "Add card…",
-        "ai.attachments.add_writing_notes": "Add current fragment notes",
-        "ai.attachments.kind_fragment": "Fragment",
+        "ai.attachments.add_writing_notes": "Add current article notes",
+        "ai.attachments.kind_fragment": "Article",
         "ai.attachments.kind_specimen": "Specimen",
-        "ai.attachments.kind_writing_note": "Fragment notes",
-        "ai.attachments.writing_notes_bundle_name": "Fragment notes · {count}",
+        "ai.attachments.kind_writing_note": "Article notes",
+        "ai.attachments.writing_notes_bundle_name": "Article notes · {count}",
         "ai.attachments.chars": "{count} chars",
         "ai.attachments.remove": "Remove",
-        "ai.attachments.current_target": "The current fragment is already the target. Attachments are only for extra reference.",
-        "ai.attachments.already_added": "This fragment is already attached.",
+        "ai.attachments.current_target": "The current article is already the target. Attachments are only for extra reference.",
+        "ai.attachments.already_added": "This article is already attached.",
         "ai.attachments.total": "Estimated context: {chars} chars",
         "ai.attachments.heavy_warning": "Context is large; cost and latency may be high.",
-        "ai.attachments.include_writing_notes": "Include fragment notes ({count})",
+        "ai.attachments.include_writing_notes": "Include article notes ({count})",
         "ai.attachments.writing_notes_hint": (
-            "These notes stay out of the fragment body and are sent only as private "
+            "These notes stay out of the article body and are sent only as private "
             "reference for the AI."
         ),
         "ai.attachments.writing_notes_status_default_on": (
-            'Task "{task}" includes fragment notes by default. You can turn them off '
+            'Task "{task}" includes article notes by default. You can turn them off '
             "for this run."
         ),
         "ai.attachments.writing_notes_status_default_off": (
-            'Task "{task}" would usually include fragment notes by default, but you '
+            'Task "{task}" would usually include article notes by default, but you '
             "have turned them off for this run."
         ),
         "ai.attachments.writing_notes_status_manual_on": (
-            'Task "{task}" does not include fragment notes by default. You have '
+            'Task "{task}" does not include article notes by default. You have '
             "turned them on for this run."
         ),
         "ai.attachments.writing_notes_status_optional_off": (
-            'Task "{task}" does not include fragment notes by default. Turn them on '
+            'Task "{task}" does not include article notes by default. Turn them on '
             "if you want the AI to use them as reference."
         ),
         "ai.attachments.writing_notes_status_empty": (
-            'Task "{task}" has no fragment notes to use yet. Add one in the fragment '
+            'Task "{task}" has no article notes to use yet. Add one in the article '
             "and you will return here automatically."
         ),
         "ai.attachments.writing_notes_empty": (
-            "No fragment notes yet. Add one in the fragment and it will appear "
+            "No article notes yet. Add one in the article and it will appear "
             "here as AI reference."
         ),
-        "ai.attachments.writing_notes_preview": "Fragment notes preview:\n{notes}",
-        "ai.attachments.manage_writing_notes_add": "Add note in fragment and return",
-        "ai.attachments.manage_writing_notes_edit": "Open fragment notes to add / edit",
-        "ai.attachments.writing_note_name": "Fragment note {index}",
-        "ai.attachments.writing_note_body": "Private fragment note:\n{body}",
+        "ai.attachments.writing_notes_preview": "Article notes preview:\n{notes}",
+        "ai.attachments.manage_writing_notes_add": "Add note in article and return",
+        "ai.attachments.manage_writing_notes_edit": "Open article notes to add / edit",
+        "ai.attachments.writing_note_name": "Article note {index}",
+        "ai.attachments.writing_note_body": "Private article note:\n{body}",
         # task descriptions
         "ai.task_desc.polish": "Does: improve wording, rhythm, clarity, and style. Does not: add new facts or plot. Output: full polished text.",
         "ai.task_desc.expand": "Does: add detail inside the existing premise. Does not: continue into later plot. Output: full expanded text.",
@@ -894,7 +916,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.results.rerun": "Run again",
         "ai.results.apply": "Apply",
         "ai.results.apply_replace_selection": "Replace Selection",
-        "ai.results.apply_replace_fragment": "Replace Fragment",
+        "ai.results.apply_replace_fragment": "Replace Article",
         "ai.results.apply_replace_section": "Replace Section",
         "ai.compare.source_label": "Original",
         "ai.compare.result_label": "AI Result",
@@ -902,7 +924,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.results.apply_disabled_no_result": "Run a task first.",
         "ai.results.apply_disabled_preview": (
             "Apply becomes available only when Output destination is set to "
-            "replace the selection, fragment, or section."
+            "replace the selection or article."
         ),
         "ai.status.running_provider": "Running {provider}…",
         "ai.results.save_fragment": "Save as fragment",
@@ -923,11 +945,11 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.chat.input_placeholder": "Ask the assistant about this {scope}…",
         "ai.chat.send": "Send",
         "ai.chat.send_to_tools": "Convert to tool task",
-        "ai.chat.save_as_fragment": "Save as fragment",
-        "ai.chat.save_as_fragment_hint": "Save the latest assistant reply as a new fragment.",
+        "ai.chat.save_as_fragment": "Save as article",
+        "ai.chat.save_as_fragment_hint": "Save the latest assistant reply as a new article.",
         "ai.chat.save_as_note": "Save as note",
-        "ai.chat.save_as_note_hint": "Fragment chat only. Save selected chat text, or the latest assistant reply, as a fragment note.",
-        "ai.chat.saved_as_note": "Saved as a fragment note.",
+        "ai.chat.save_as_note_hint": "Article chat only. Save selected chat text, or the latest assistant reply, as an article note.",
+        "ai.chat.saved_as_note": "Saved as an article note.",
         "ai.chat.empty": "No messages yet. Start a conversation about this object.",
         "ai.chat.role_user": "You",
         "ai.chat.role_assistant": "Assistant",
@@ -949,17 +971,17 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.cards.body": "Description",
         # dialogs
         "ai.dlg.no_target": "No target",
-        "ai.dlg.no_target_msg": "This task needs a target object. Pick a fragment, work, or section first, or paste text.",
+        "ai.dlg.no_target_msg": "This task needs a target object. Pick an article or collection first, or paste text.",
         "ai.dlg.run_failed": "AI request failed",
         "ai.dlg.applied": "Applied to {target}.",
-        "ai.dlg.saved_as_fragment": "Saved as a new fragment.",
+        "ai.dlg.saved_as_fragment": "Saved as a new article.",
         "ai.dlg.snapshot_taken": "Snapshot saved before write.",
         "ai.dlg.cannot_apply": "This output destination is not available for the current target.",
         "ai.dlg.cannot_apply_title": "Cannot apply",
-        "ai.dlg.target_missing": "The target fragment no longer exists.",
+        "ai.dlg.target_missing": "The target article no longer exists.",
         "ai.dlg.target_changed": (
-            "The target fragment changed after this AI result was generated. "
-            "Return to the fragment or rerun the task before writing back."
+            "The target article changed after this AI result was generated. "
+            "Return to the article or rerun the task before writing back."
         ),
         "ai.confirm_apply.title": "Confirm AI write-back",
         "ai.confirm_apply.unknown_target": "current target",
@@ -970,8 +992,8 @@ _CATALOG: dict[str, dict[str, str]] = {
             "A version-history snapshot will be saved first."
         ),
         "ai.confirm_apply.fragment": (
-            "Replace the entire fragment {target}?\n\n"
-            "Current fragment: {source_chars} chars\n"
+            "Replace the entire article {target}?\n\n"
+            "Current article: {source_chars} chars\n"
             "AI result: {output_chars} chars\n\n"
             "A version-history snapshot will be saved first."
         ),
@@ -1217,7 +1239,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         # ── M9A：壳层 / 导航栏 ───────────────────────────────────────────────
         "shell.brand": "Writer",
         "rail.dates": "日期",
-        "rail.fragments": "片段",
+        "rail.fragments": "文章",
         "rail.works": "作品",
         "rail.collections": "作品集",
         "rail.search": "搜索",
@@ -1233,7 +1255,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "theme.dark": "深色",
         "theme.system": "跟随系统",
         # ── M9A：列标题 ──────────────────────────────────────────────────────
-        "column.fragments": "片段",
+        "column.fragments": "文章",
         "column.works": "作品",
         "column.collections": "作品集",
         # ── M9A：上下文栏 ────────────────────────────────────────────────────
@@ -1245,9 +1267,9 @@ _CATALOG: dict[str, dict[str, str]] = {
         "context.empty_title_work": "先选一个作品。",
         "context.empty_desc_work": "在左侧选中作品后，这里会显示摘要、字数、目标字数和导出操作。",
         "context.empty_title_collection": "先选一个作品集。",
-        "context.empty_desc_collection": "在左侧选中作品集后，这里会显示作品数量、总字数和导出操作。",
+        "context.empty_desc_collection": "在左侧选中作品集后，这里会显示文章数量、总字数和导出操作。",
         "context.empty_title_ai": "AI 当前是全局上下文。",
-        "context.empty_desc_ai": "从片段、作品或作品集进入 AI 时，这里会显示绑定对象；如果当前没有选中对象，AI 会保持全局模式。",
+        "context.empty_desc_ai": "从文章或作品集进入 AI 时，这里会显示绑定对象；如果当前没有选中对象，AI 会保持全局模式。",
         "context.label_words": "字数",
         "context.label_chars": "字符数",
         "context.label_tags": "标签",
@@ -1257,7 +1279,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "context.label_status": "状态",
         "context.label_summary": "摘要",
         "context.label_target": "目标字数",
-        "context.label_work_count": "作品数量",
+        "context.label_work_count": "文章数量",
         "context.action_polish": "AI 润色…",
         "context.action_include": "收入作品…",
         "context.action_writing_notes": "添加片段便签…",
@@ -1273,11 +1295,11 @@ _CATALOG: dict[str, dict[str, str]] = {
         "context.writing_notes_count": "{count} 条未完成",
         # ── M9A：空状态 ──────────────────────────────────────────────────────
         "empty.welcome_title": "从一句话开始。",
-        "empty.welcome_desc": "先写片段，再整理成作品，最后编成作品集。Writer 把这三步放在同一个工作台里。",
-        "empty.welcome_primary": "新建片段",
+        "empty.welcome_desc": "先写文章，把灵感便签留在旁边，再把文章编排成可以导出的作品集。",
+        "empty.welcome_primary": "新建文章",
         "empty.welcome_secondary": "新建作品",
         "empty.fragments_title": "这里先放素材。",
-        "empty.fragments_desc": "灵感、句子、段落、场景，都可以先记成片段。以后再慢慢整理成作品。",
+        "empty.fragments_desc": "灵感、句子、段落、场景，都可以先写成文章草稿。以后再慢慢打磨和编入作品集。",
         "empty.fragments_primary": "新建片段",
         "empty.fragments_secondary": "打开全局搜索",
         "empty.fragments_search_title": "没找到相关片段。",
@@ -1293,11 +1315,11 @@ _CATALOG: dict[str, dict[str, str]] = {
         "empty.work_unselected_primary": "新建作品",
         "empty.work_unselected_secondary": "显示最近作品",
         "empty.collections_title": "作品集还没开始。",
-        "empty.collections_desc": "作品集用来编排顺序、准备导出，适合小说集、散文集和专题合集。",
+        "empty.collections_desc": "作品集用来编排文章顺序、阅读预览和准备导出，适合小说集、散文集和专题合集。",
         "empty.collections_primary": "新建作品集",
-        "empty.collections_secondary": "先去整理作品",
+        "empty.collections_secondary": "先去写一篇文章",
         "empty.collection_unselected_title": "先选一个作品集。",
-        "empty.collection_unselected_desc": "然后你可以调整作品顺序，准备整组导出。",
+        "empty.collection_unselected_desc": "然后你可以调整文章顺序、预览正文，并准备整组导出。",
         "empty.collection_unselected_primary": "新建作品集",
         "empty.collection_unselected_secondary": "查看已有作品集",
         # ── Dialogs / message boxes ───────────────────────────────────────────
@@ -1683,17 +1705,37 @@ _CATALOG: dict[str, dict[str, str]] = {
         "work_versions.restore": "恢复所选版本",
         "work_versions.restore_confirm": "用此版本替换当前作品？将自动保存一份恢复前的快照。",
         "collections.label": "作品集",
-        "collections.works_label": "集中作品",
+        "collections.works_label": "集中文章",
         "collections.new": "新建",
         "collections.rename": "重命名",
         "collections.delete": "删除",
-        "collections.delete_confirm": "删除此作品集？其中的作品不会被删除。",
+        "collections.delete_confirm": "删除此作品集？其中的文章不会被删除。",
         "collections.new_name_prompt": "作品集名称：",
         "collections.untitled": "（未命名作品集）",
         "collections.add_work": "添加作品…",
         "collections.remove_work": "移除",
+        "collections.add_article": "添加文章…",
+        "collections.remove_article": "移除",
+        "collections.pick_first": "先选择一个作品集",
+        "collections.preview_title": "文章预览",
+        "collections.preview_empty": "尚未选择文章。",
+        "collections.description_label": "作品集说明",
+        "collections.description_placeholder": "给这个作品集写一段简短说明或前言…",
+        "collections.article_preview_label": "选中文章",
+        "collections.article_words": "{count} 字",
+        "collections.search_articles": "搜索文章…",
         "collections.export": "导出…",
         "collections.export_done": "已导出到 {path}",
+        "article_picker.title": "选择文章",
+        "article_picker.search_placeholder": "按标题、正文或标签搜索…",
+        "legacy_import.title": "导入旧作品？",
+        "legacy_import.message": (
+            "Writer 现在以「文章」作为主写作单位。旧「作品」可以复制成文章和文章作品集；"
+            "旧数据表会保留不动。现在导入吗？"
+        ),
+        "legacy_import.failed_title": "旧作品导入失败",
+        "legacy_import.done_title": "旧作品已导入",
+        "legacy_import.done_message": "已从旧作品创建 {entries} 篇文章和 {collections} 个作品集。",
         "include.title": "将片段纳入作品",
         "include.work": "目标作品",
         "include.section": "目标节块",
@@ -1708,9 +1750,9 @@ _CATALOG: dict[str, dict[str, str]] = {
         "include.empty_text": "文本不能为空。",
         "include.success_msg": "片段已纳入作品；整理状态自动改为「已纳入」。",
         "search.title": "全局搜索",
-        "search.placeholder": "搜索片段和作品…",
+        "search.placeholder": "搜索文章…",
         "search.open": "打开",
-        "search.kind_fragment": "片段",
+        "search.kind_fragment": "文章",
         "search.kind_work": "作品",
         "search.untitled": "（未命名）",
         "work_picker.title": "选择作品",
@@ -1722,10 +1764,10 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.tab_tools": "工具",
         "ai.tab_chat": "对话",
         "ai.scope_global": "全局",
-        "ai.scope_fragment": "片段：{name}",
+        "ai.scope_fragment": "文章：{name}",
         "ai.scope_work": "作品：{name}",
         "ai.scope_collection": "集合：{name}",
-        "ai.scope_none": "请在左侧选择一个片段 / 作品 / 集合来绑定对话。",
+        "ai.scope_none": "请在左侧选择一篇文章或一个集合来绑定对话。",
         "ai.selection.title": "当前选区",
         "ai.selection.source": "{name} · {chars} 字符",
         "ai.selection.copy": "复制",
@@ -1749,7 +1791,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         # target / output
         "ai.target.label": "目标对象",
         "ai.target.selection": "选区",
-        "ai.target.fragment": "片段",
+        "ai.target.fragment": "文章",
         "ai.target.section": "作品节块",
         "ai.target.work": "作品",
         "ai.target.collection": "集合",
@@ -1757,9 +1799,9 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.output.label": "结果落地",
         "ai.output.preview_only": "仅预览",
         "ai.output.replace_selection": "替换选区",
-        "ai.output.replace_fragment": "替换当前片段",
+        "ai.output.replace_fragment": "替换当前文章",
         "ai.output.replace_section": "替换作品节块（先做快照）",
-        "ai.output.save_as_fragment": "保存为新片段",
+        "ai.output.save_as_fragment": "保存为新文章",
         "ai.output.report": "仅报告",
         # params
         "ai.params.basic": "参数",
@@ -1833,34 +1875,34 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.params.forbid": "禁用词（逗号分隔）",
         # attachments
         "ai.attachments.title": "上下文附件",
-        "ai.attachments.empty": "默认只发送当前目标。需要时再附加片段 / 作品 / 卡片。",
+        "ai.attachments.empty": "默认只发送当前目标。需要时再附加文章或卡片。",
         "ai.attachments.add_context": "添加上下文",
-        "ai.attachments.add_fragment": "添加片段…",
+        "ai.attachments.add_fragment": "添加文章…",
         "ai.attachments.add_card": "添加卡片…",
-        "ai.attachments.add_writing_notes": "添加当前片段便签",
-        "ai.attachments.kind_fragment": "片段",
+        "ai.attachments.add_writing_notes": "添加当前文章便签",
+        "ai.attachments.kind_fragment": "文章",
         "ai.attachments.kind_specimen": "文脉标本",
-        "ai.attachments.kind_writing_note": "片段便签",
-        "ai.attachments.writing_notes_bundle_name": "片段便签 · {count}",
+        "ai.attachments.kind_writing_note": "文章便签",
+        "ai.attachments.writing_notes_bundle_name": "文章便签 · {count}",
         "ai.attachments.chars": "{count} 字符",
         "ai.attachments.remove": "移除",
-        "ai.attachments.current_target": "当前片段已经是目标正文，附件只用于额外参考。",
-        "ai.attachments.already_added": "这个片段已经在附件里了。",
+        "ai.attachments.current_target": "当前文章已经是目标正文，附件只用于额外参考。",
+        "ai.attachments.already_added": "这篇文章已经在附件里了。",
         "ai.attachments.total": "估算上下文：{chars} 字符",
         "ai.attachments.heavy_warning": "上下文较大，开销与延迟可能较高。",
-        "ai.attachments.include_writing_notes": "带入片段便签（{count}）",
+        "ai.attachments.include_writing_notes": "带入文章便签（{count}）",
         "ai.attachments.writing_notes_hint": "这些便签只作为 AI 参考发送，不会写入正文，也不会改动原文。",
-        "ai.attachments.writing_notes_status_default_on": "当前任务“{task}”默认带入片段便签；你可以按需关闭。",
-        "ai.attachments.writing_notes_status_default_off": "当前任务“{task}”通常会默认带入片段便签；你已关闭，本次不会发送。",
-        "ai.attachments.writing_notes_status_manual_on": "当前任务“{task}”默认不带入片段便签；你已手动开启，本次会把下面这些便签作为参考。",
-        "ai.attachments.writing_notes_status_optional_off": "当前任务“{task}”默认不带入片段便签；需要时可以手动开启。",
-        "ai.attachments.writing_notes_status_empty": "当前任务“{task}”还没有可带入的片段便签。先去片段添加一条，保存后会自动回到 AI。",
-        "ai.attachments.writing_notes_empty": "当前片段还没有片段便签。添加后会在这里预览，并作为 AI 的参考材料。",
-        "ai.attachments.writing_notes_preview": "片段便签预览：\n{notes}",
-        "ai.attachments.manage_writing_notes_add": "去片段添加便签并返回 AI",
-        "ai.attachments.manage_writing_notes_edit": "回片段添加 / 编辑便签",
-        "ai.attachments.writing_note_name": "片段便签 {index}",
-        "ai.attachments.writing_note_body": "片段便签，仅供参考：\n{body}",
+        "ai.attachments.writing_notes_status_default_on": "当前任务“{task}”默认带入文章便签；你可以按需关闭。",
+        "ai.attachments.writing_notes_status_default_off": "当前任务“{task}”通常会默认带入文章便签；你已关闭，本次不会发送。",
+        "ai.attachments.writing_notes_status_manual_on": "当前任务“{task}”默认不带入文章便签；你已手动开启，本次会把下面这些便签作为参考。",
+        "ai.attachments.writing_notes_status_optional_off": "当前任务“{task}”默认不带入文章便签；需要时可以手动开启。",
+        "ai.attachments.writing_notes_status_empty": "当前任务“{task}”还没有可带入的文章便签。先去文章添加一条，保存后会自动回到 AI。",
+        "ai.attachments.writing_notes_empty": "当前文章还没有文章便签。添加后会在这里预览，并作为 AI 的参考材料。",
+        "ai.attachments.writing_notes_preview": "文章便签预览：\n{notes}",
+        "ai.attachments.manage_writing_notes_add": "去文章添加便签并返回 AI",
+        "ai.attachments.manage_writing_notes_edit": "回文章添加 / 编辑便签",
+        "ai.attachments.writing_note_name": "文章便签 {index}",
+        "ai.attachments.writing_note_body": "文章便签，仅供参考：\n{body}",
         # task descriptions
         "ai.task_desc.polish": "会做：改善措辞、节奏、清晰度和风格。不会：新增事实或剧情。输出：完整润色正文。",
         "ai.task_desc.expand": "会做：在已有前提内补充细节。不会：写后续剧情。输出：完整扩写正文。",
@@ -1889,15 +1931,15 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.results.rerun": "再来一版",
         "ai.results.apply": "应用",
         "ai.results.apply_replace_selection": "替换选区",
-        "ai.results.apply_replace_fragment": "替换片段",
+        "ai.results.apply_replace_fragment": "替换文章",
         "ai.results.apply_replace_section": "替换节块",
         "ai.compare.source_label": "原文",
         "ai.compare.result_label": "AI 结果",
         "ai.results.apply_ready": "把当前结果写回到所选落地位置。",
         "ai.results.apply_disabled_no_result": "请先运行一次任务。",
-        "ai.results.apply_disabled_preview": "只有把“结果落地”改成替换选区、替换当前片段或替换作品节块时，才可以应用。",
+        "ai.results.apply_disabled_preview": "只有把“结果落地”改成替换选区或替换当前文章时，才可以应用。",
         "ai.status.running_provider": "正在调用 {provider}…",
-        "ai.results.save_fragment": "存为片段",
+        "ai.results.save_fragment": "存为文章",
         "ai.results.send_to_chat": "发到对话",
         "ai.results.locate_excerpt": "定位摘录",
         "ai.results.locate_excerpt_missing": "当前条目没有可定位的摘录。",
@@ -1912,11 +1954,11 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.chat.input_placeholder": "就当前 {scope} 向助手提问…",
         "ai.chat.send": "发送",
         "ai.chat.send_to_tools": "转为工具任务",
-        "ai.chat.save_as_fragment": "存为片段",
-        "ai.chat.save_as_fragment_hint": "把最近一条助手回复保存为新片段。",
+        "ai.chat.save_as_fragment": "存为文章",
+        "ai.chat.save_as_fragment_hint": "把最近一条助手回复保存为新文章。",
         "ai.chat.save_as_note": "存为便签",
-        "ai.chat.save_as_note_hint": "仅片段对话可用。优先保存你在对话中选中的文字；未选中时保存最近一条助手回复。",
-        "ai.chat.saved_as_note": "已保存为片段便签。",
+        "ai.chat.save_as_note_hint": "仅文章对话可用。优先保存你在对话中选中的文字；未选中时保存最近一条助手回复。",
+        "ai.chat.saved_as_note": "已保存为文章便签。",
         "ai.chat.empty": "暂无消息。开始与助手讨论当前对象吧。",
         "ai.chat.role_user": "你",
         "ai.chat.role_assistant": "助手",
@@ -1938,15 +1980,15 @@ _CATALOG: dict[str, dict[str, str]] = {
         "ai.cards.body": "描述",
         # dialogs
         "ai.dlg.no_target": "缺少目标",
-        "ai.dlg.no_target_msg": "该任务需要一个目标对象，请先选中一个片段 / 作品 / 节块，或粘贴文本。",
+        "ai.dlg.no_target_msg": "该任务需要一个目标对象，请先选中一篇文章或一个集合，或粘贴文本。",
         "ai.dlg.run_failed": "AI 请求失败",
         "ai.dlg.applied": "已应用到 {target}。",
-        "ai.dlg.saved_as_fragment": "已保存为新片段。",
+        "ai.dlg.saved_as_fragment": "已保存为新文章。",
         "ai.dlg.snapshot_taken": "已在写入前生成快照。",
         "ai.dlg.cannot_apply": "当前目标不支持该结果落地方式。",
         "ai.dlg.cannot_apply_title": "无法写回",
-        "ai.dlg.target_missing": "目标片段已经不存在。",
-        "ai.dlg.target_changed": "目标片段在本次 AI 结果生成后发生了变化。请先回到片段确认，或重新运行任务后再写回。",
+        "ai.dlg.target_missing": "目标文章已经不存在。",
+        "ai.dlg.target_changed": "目标文章在本次 AI 结果生成后发生了变化。请先回到文章确认，或重新运行任务后再写回。",
         "ai.confirm_apply.title": "确认 AI 写回",
         "ai.confirm_apply.unknown_target": "当前目标",
         "ai.confirm_apply.selection": (
@@ -1956,8 +1998,8 @@ _CATALOG: dict[str, dict[str, str]] = {
             "写入前会先保存版本历史快照。"
         ),
         "ai.confirm_apply.fragment": (
-            "确认替换整个片段《{target}》？\n\n"
-            "当前片段：{source_chars} 字\n"
+            "确认替换整篇文章《{target}》？\n\n"
+            "当前文章：{source_chars} 字\n"
             "AI 结果：{output_chars} 字\n\n"
             "写入前会先保存版本历史快照。"
         ),

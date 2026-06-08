@@ -65,7 +65,6 @@ from writer.ui.ai_workers import AiTaskWorker, AiChatWorker
 from writer.ui.i18n import TR
 from writer.ui.services.ai_apply import (
     apply_to_fragment,
-    apply_to_section,
     save_as_new_fragment,
 )
 from writer.ui.widgets.controls import NoWheelComboBox, NoWheelSpinBox
@@ -202,7 +201,6 @@ _OUTPUT_LABEL_KEY: dict[AiOutputAction, str] = {
     AiOutputAction.PREVIEW_ONLY: "ai.output.preview_only",
     AiOutputAction.REPLACE_SELECTION: "ai.output.replace_selection",
     AiOutputAction.REPLACE_FRAGMENT: "ai.output.replace_fragment",
-    AiOutputAction.REPLACE_SECTION: "ai.output.replace_section",
     AiOutputAction.SAVE_AS_FRAGMENT: "ai.output.save_as_fragment",
     AiOutputAction.REPORT: "ai.output.report",
 }
@@ -308,7 +306,6 @@ def _allowed_outputs(scope: AiScope) -> List[AiOutputAction]:
     if scope.kind is AiThreadScope.WORK:
         return [
             AiOutputAction.PREVIEW_ONLY,
-            AiOutputAction.SAVE_AS_FRAGMENT,
             AiOutputAction.REPORT,
         ]
     if scope.kind is AiThreadScope.COLLECTION:
@@ -395,7 +392,7 @@ def _writing_note_attachment(
         ref_id=scope.ref_id,
         name=_tr_fallback(
             "ai.attachments.writing_notes_bundle_name",
-            "Fragment notes · {count}",
+            "Article notes · {count}",
         ).format(count=len(notes)),
         body="\n\n".join(lines),
     )
@@ -403,11 +400,11 @@ def _writing_note_attachment(
 
 def _attachment_kind_label(kind: str) -> str:
     if kind == "fragment":
-        return _tr_fallback("ai.attachments.kind_fragment", "Fragment")
+        return _tr_fallback("ai.attachments.kind_fragment", "Article")
     if kind == "style_specimen":
         return _tr_fallback("ai.attachments.kind_specimen", "Specimen")
     if kind == "writing_note":
-        return _tr_fallback("ai.attachments.kind_writing_note", "Fragment notes")
+        return _tr_fallback("ai.attachments.kind_writing_note", "Article notes")
     return kind.replace("_", " ").title()
 
 
@@ -613,8 +610,6 @@ class AIToolsTab(QWidget):
         for kind, key in (
             (AiTargetKind.SELECTION, "ai.target.selection"),
             (AiTargetKind.FRAGMENT, "ai.target.fragment"),
-            (AiTargetKind.WORK_SECTION, "ai.target.section"),
-            (AiTargetKind.WORK, "ai.target.work"),
             (AiTargetKind.COLLECTION, "ai.target.collection"),
             (AiTargetKind.PASTE, "ai.target.paste"),
         ):
@@ -927,9 +922,7 @@ class AIToolsTab(QWidget):
                 else AiTargetKind.FRAGMENT
             ),
             AiThreadScope.WORK: (
-                AiTargetKind.SELECTION
-                if scope.has_selection and bool(scope.selection_text.strip())
-                else AiTargetKind.WORK
+                AiTargetKind.PASTE
             ),
             AiThreadScope.COLLECTION: AiTargetKind.COLLECTION,
             AiThreadScope.GLOBAL: AiTargetKind.PASTE,
@@ -1331,21 +1324,18 @@ class AIToolsTab(QWidget):
         # scope-allowed and additionally restrict by target kind.
         allowed = set(_allowed_outputs(scope))
         if target == AiTargetKind.SELECTION:
-            # Fragment and focused work-section selections can be replaced
-            # safely; other selection-like targets degrade to preview/save-as.
-            if scope.kind is AiThreadScope.FRAGMENT or (
-                scope.kind is AiThreadScope.WORK and scope.has_section
-            ):
+            # Only article selections are writable from the visible UI.
+            if scope.kind is AiThreadScope.FRAGMENT:
                 allowed.add(AiOutputAction.REPLACE_SELECTION)
             allowed &= {
                 AiOutputAction.PREVIEW_ONLY,
                 AiOutputAction.REPLACE_SELECTION,
                 AiOutputAction.SAVE_AS_FRAGMENT,
             }
-        elif target == AiTargetKind.WORK_SECTION:
-            allowed.add(AiOutputAction.REPLACE_SECTION)
         elif target == AiTargetKind.PASTE:
             allowed = {AiOutputAction.PREVIEW_ONLY, AiOutputAction.SAVE_AS_FRAGMENT}
+        elif target == AiTargetKind.COLLECTION:
+            allowed = {AiOutputAction.PREVIEW_ONLY, AiOutputAction.REPORT}
 
         # Always allow REPORT for diagnostic/QA tasks.
         cur_task = self._current_task_type()
@@ -1364,7 +1354,6 @@ class AIToolsTab(QWidget):
             AiOutputAction.PREVIEW_ONLY,
             AiOutputAction.REPLACE_SELECTION,
             AiOutputAction.REPLACE_FRAGMENT,
-            AiOutputAction.REPLACE_SECTION,
             AiOutputAction.SAVE_AS_FRAGMENT,
             AiOutputAction.REPORT,
         ]
@@ -1386,13 +1375,11 @@ class AIToolsTab(QWidget):
         can_apply = has_result and out in {
             AiOutputAction.REPLACE_FRAGMENT,
             AiOutputAction.REPLACE_SELECTION,
-            AiOutputAction.REPLACE_SECTION,
         }
         # Specific button text based on the destructive action.
         _action_text: dict[AiOutputAction, str] = {
             AiOutputAction.REPLACE_SELECTION: TR("ai.results.apply_replace_selection"),
             AiOutputAction.REPLACE_FRAGMENT: TR("ai.results.apply_replace_fragment"),
-            AiOutputAction.REPLACE_SECTION: TR("ai.results.apply_replace_section"),
         }
         self._apply_btn.setText(_action_text.get(out, TR("ai.results.apply")))
         self._apply_btn.setEnabled(can_apply)
@@ -1594,7 +1581,7 @@ class AIToolsTab(QWidget):
             self._on_add_specimen_attachment,
         )
         notes_action = menu.addAction(
-            _tr_fallback("ai.attachments.add_writing_notes", "Add current fragment notes")
+            _tr_fallback("ai.attachments.add_writing_notes", "Add current article notes")
         )
         notes_action.triggered.connect(self._on_add_writing_notes_attachment)
         notes_action.setEnabled(
@@ -1621,8 +1608,6 @@ class AIToolsTab(QWidget):
             total += len(self._paste_edit.toPlainText())
         elif scope is not None and target == AiTargetKind.SELECTION:
             total += len(scope.selection_text if scope.has_selection else "")
-        elif scope is not None and target == AiTargetKind.WORK_SECTION:
-            total += len(scope.body if scope.has_section else "")
         elif scope is not None:
             total += len(scope.body)
         return total
@@ -1767,10 +1752,6 @@ class AIToolsTab(QWidget):
                 text = self._scope.selection_text
             else:
                 text = self._paste_edit.toPlainText()
-        elif target == AiTargetKind.WORK_SECTION:
-            # Section body has been packed into scope.body by main_window
-            # whenever a section is focused.
-            text = self._scope.body if self._scope.has_section else ""
         else:
             text = self._scope.body
 
@@ -1793,9 +1774,7 @@ class AIToolsTab(QWidget):
         forbid = [t.strip() for t in self._forbid_edit.text().split(",") if t.strip()]
         extra = self._extra_edit.toPlainText().strip() or None
 
-        if target == AiTargetKind.WORK_SECTION:
-            target_ref = self._scope.section_id or self._scope.ref_id
-        elif target in {
+        if target in {
             AiTargetKind.FRAGMENT,
             AiTargetKind.WORK,
             AiTargetKind.COLLECTION,
@@ -2096,27 +2075,6 @@ class AIToolsTab(QWidget):
                     provider_name=self._last_response.provider or "openai",
                     model=self._last_response.model or "",
                 )
-            elif (
-                out == AiOutputAction.REPLACE_SELECTION
-                and self._scope.has_section
-                and self._scope.has_selection
-            ):
-                outcome = apply_to_section(
-                    self._container,
-                    work_id=self._scope.work_id,
-                    section_id=self._scope.section_id,
-                    generated_text=text,
-                    original_section_body=self._scope.body,
-                    selection_start=self._scope.selection_start,
-                    selection_end=self._scope.selection_end,
-                )
-            elif out == AiOutputAction.REPLACE_SECTION and self._scope.has_section:
-                outcome = apply_to_section(
-                    self._container,
-                    work_id=self._scope.work_id,
-                    section_id=self._scope.section_id,
-                    generated_text=text,
-                )
             else:
                 QMessageBox.warning(self, TR("ai.dlg.run_failed"), TR("ai.dlg.cannot_apply"))
                 return
@@ -2134,7 +2092,6 @@ class AIToolsTab(QWidget):
         if out not in {
             AiOutputAction.REPLACE_FRAGMENT,
             AiOutputAction.REPLACE_SELECTION,
-            AiOutputAction.REPLACE_SECTION,
         }:
             return True
         scope = self._scope
@@ -2147,7 +2104,6 @@ class AIToolsTab(QWidget):
         key = {
             AiOutputAction.REPLACE_SELECTION: "ai.confirm_apply.selection",
             AiOutputAction.REPLACE_FRAGMENT: "ai.confirm_apply.fragment",
-            AiOutputAction.REPLACE_SECTION: "ai.confirm_apply.section",
         }[out]
         msg = TR(key).format(
             target=target_name or TR("ai.confirm_apply.unknown_target"),

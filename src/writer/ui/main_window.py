@@ -5,7 +5,7 @@ Redesigned for M9A as a four-column shell:
     [navigation rail] [list column] [main work area] [context pane]
 
 The rail stays narrow and always visible, so the user can switch between
-Fragments / Works / Collections without hunting for tabs. The right-side
+Articles / Collections without hunting for tabs. The right-side
 context pane is collapsible and its visibility is persisted, alongside
 the splitter sizes that already existed before M9A.
 
@@ -57,7 +57,6 @@ from writer.storage.repositories.entry_repository import (
 from writer.ui.dialogs.assign_fragment_dialog import AssignFragmentDialog
 from writer.ui.dialogs.command_palette_dialog import CommandPaletteDialog
 from writer.ui.dialogs.global_search_dialog import GlobalSearchDialog
-from writer.ui.dialogs.include_fragment_dialog import IncludeFragmentDialog
 from writer.ui.dialogs.projects_dialog import ProjectsDialog
 from writer.ui.dialogs.reference_library_dialog import ReferenceLibraryDialog
 from writer.ui.dialogs.reference_picker_dialog import ReferencePickerDialog
@@ -69,7 +68,6 @@ from writer.ui.motion import set_stack_index
 from writer.ui.panels.collections_panel import CollectionsPanel
 from writer.ui.panels.editor_panel import EditorPanel, _count_words
 from writer.ui.panels.fragment_list_panel import FragmentListPanel
-from writer.ui.panels.works_panel import WorksPanel
 from writer.ui.panels.ai_workspace_panel import AIWorkspacePanel, AiScope
 from writer.ui.rewrite_worker import RewriteWorker
 from writer.ui.theme import ThemeMode, apply_theme
@@ -90,10 +88,12 @@ _MIN_CONTEXT_WIDTH = 220
 # integer indices have been migrated to these names.
 MODE_DATES = 0
 MODE_FRAGMENTS = 1
-MODE_WORKS = 2
-MODE_COLLECTIONS = 3
-MODE_AI = 4
-_MODE_COUNT = 5
+MODE_COLLECTIONS = 2
+MODE_AI = 3
+_MODE_COUNT = 4
+_LEGACY_MODE_WORKS = 2
+_LEGACY_MODE_COLLECTIONS = 3
+_LEGACY_MODE_AI = 4
 
 
 class MainWindow(QMainWindow):
@@ -146,8 +146,6 @@ class MainWindow(QMainWindow):
             TR("empty.welcome_desc"),
             primary_label=TR("empty.welcome_primary"),
             primary_callback=self._on_new_fragment,
-            secondary_label=TR("empty.welcome_secondary"),
-            secondary_callback=self._on_welcome_new_work,
         )
         welcome_wrap = QWidget()
         welcome_wrap.setObjectName("WriterWorkspaceOverlay")
@@ -163,7 +161,6 @@ class MainWindow(QMainWindow):
         self._fragments_widget = self._fragments_stack
 
         # ---- Other modes ----
-        self._works_panel = WorksPanel(container)
         self._collections_panel = CollectionsPanel(container)
         self._ai_workspace_panel = AIWorkspacePanel(container)
 
@@ -173,10 +170,9 @@ class MainWindow(QMainWindow):
 
         self._stack = QStackedWidget()
         self._stack.addWidget(self._dates_panel)            # 0 — Dates
-        self._stack.addWidget(self._fragments_widget)       # 1 — Fragments
-        self._stack.addWidget(self._works_panel)            # 2 — Works
-        self._stack.addWidget(self._collections_panel)      # 3 — Collections
-        self._stack.addWidget(self._ai_workspace_panel)     # 4 — AI workspace
+        self._stack.addWidget(self._fragments_widget)       # 1 — Articles
+        self._stack.addWidget(self._collections_panel)      # 2 — Collections
+        self._stack.addWidget(self._ai_workspace_panel)     # 3 — AI workspace
         self._last_mode_before_ai = MODE_FRAGMENTS
         self._return_to_ai_after_writing_note_add_entry_id: Optional[str] = None
 
@@ -198,13 +194,11 @@ class MainWindow(QMainWindow):
             },
             action_labels={
                 "polish": TR("context.action_polish"),
-                "include": TR("context.action_include"),
                 "writing_notes": TR("context.action_writing_notes"),
                 "checkpoint": TR("context.action_checkpoint"),
                 "save_specimen": TR("context.action_save_specimen"),
                 "versions": TR("context.action_versions"),
                 "export_fragment": TR("context.action_export_fragment"),
-                "export_work": TR("context.action_export_work"),
                 "export_collection": TR("context.action_export_collection"),
             },
         )
@@ -212,9 +206,6 @@ class MainWindow(QMainWindow):
         # Wire context-pane action buttons to existing handlers.
         self._context_pane.fragment_polish_button.clicked.connect(
             self._on_open_ai_polish_from_context
-        )
-        self._context_pane.fragment_include_button.clicked.connect(
-            self._on_include_fragment
         )
         self._context_pane.fragment_writing_notes_button.clicked.connect(
             self._on_toggle_writing_notes_from_context
@@ -231,12 +222,6 @@ class MainWindow(QMainWindow):
         self._context_pane.fragment_save_specimen_button.clicked.connect(
             self._on_save_style_specimen
         )
-        self._context_pane.work_versions_button.clicked.connect(
-            self._on_open_work_versions_from_context
-        )
-        self._context_pane.work_export_button.clicked.connect(
-            self._on_export_current_work_from_context
-        )
         self._context_pane.collection_export_button.clicked.connect(
             self._on_export_current_collection_from_context
         )
@@ -246,7 +231,6 @@ class MainWindow(QMainWindow):
             brand_text=TR("shell.brand"),
             dates_label=TR("rail.dates"),
             fragments_label=TR("rail.fragments"),
-            works_label=TR("rail.works"),
             collections_label=TR("rail.collections"),
             search_label=TR("rail.search"),
             theme_label=TR("rail.theme"),
@@ -337,18 +321,11 @@ class MainWindow(QMainWindow):
         self._editor_panel.writing_notes_continue_requested.connect(
             self._on_continue_with_writing_notes
         )
-        self._works_panel.work_selected.connect(self._on_work_selected_for_context)
         self._collections_panel.collection_selected.connect(
             self._on_collection_selected_for_context
         )
         # M9A: empty-state CTAs that need cross-panel routing.
         self._list_panel.global_search_requested.connect(self._on_global_search)
-        self._works_panel.include_fragment_requested.connect(
-            self._on_include_fragment_from_empty_state
-        )
-        self._collections_panel.switch_to_works_requested.connect(
-            lambda: self._set_mode(MODE_WORKS)
-        )
         self._autosave.saved.connect(self._on_autosaved)
         self._autosave.dirty.connect(self._on_autosave_dirty)
         self._autosave.saving.connect(self._on_autosave_saving)
@@ -386,19 +363,94 @@ class MainWindow(QMainWindow):
         self._apply_editor_preferences()
         self._install_focus_mode_key_filters()
         self._update_focus_mode_ui()
+        self._maybe_offer_legacy_work_import()
         self._initial_load()
 
         # Restore the persisted active mode (default Dates so users land on
         # today's writing view; falling back gracefully if the stored
         # index pre-dates the M-Dates shift and is out of range).
-        try:
-            persisted_mode = int(
-                self._container.settings.get(KEY_ACTIVE_MODE, str(MODE_DATES))
-                or MODE_DATES
-            )
-        except (TypeError, ValueError):
-            persisted_mode = MODE_DATES
+        persisted_mode = self._mode_from_setting(
+            self._container.settings.get(KEY_ACTIVE_MODE, "dates")
+        )
         self._set_mode(max(0, min(_MODE_COUNT - 1, persisted_mode)))
+
+    @staticmethod
+    def _mode_from_setting(raw: object) -> int:
+        """Map persisted mode names and legacy ids onto the current stack.
+
+        Older settings used 0=Dates, 1=Fragments, 2=Works, 3=Collections,
+        4=AI. Works has no product-level entry now, so it falls back to
+        Articles. New settings use names to avoid the old/new ``2``
+        ambiguity.
+        """
+        mode_names = {
+            "dates": MODE_DATES,
+            "fragments": MODE_FRAGMENTS,
+            "articles": MODE_FRAGMENTS,
+            "collections": MODE_COLLECTIONS,
+            "ai": MODE_AI,
+        }
+        text = str(raw or "").strip().lower()
+        if text in mode_names:
+            return mode_names[text]
+        try:
+            mode = int(text)
+        except (TypeError, ValueError):
+            return MODE_DATES
+        if mode == _LEGACY_MODE_WORKS:
+            return MODE_FRAGMENTS
+        if mode == _LEGACY_MODE_COLLECTIONS:
+            return MODE_COLLECTIONS
+        if mode == _LEGACY_MODE_AI:
+            return MODE_AI
+        return mode
+
+    @staticmethod
+    def _mode_setting_name(mode: int) -> str:
+        return {
+            MODE_DATES: "dates",
+            MODE_FRAGMENTS: "articles",
+            MODE_COLLECTIONS: "collections",
+            MODE_AI: "ai",
+        }.get(mode, "dates")
+
+    def _maybe_offer_legacy_work_import(self) -> None:
+        service = getattr(self._container, "legacy_work_import_service", None)
+        if service is None:
+            return
+        try:
+            needs_import = service.needs_import()
+        except Exception:  # noqa: BLE001
+            return
+        if not needs_import:
+            return
+        answer = QMessageBox.question(
+            self,
+            TR("legacy_import.title"),
+            TR("legacy_import.message"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            service.mark_skipped()
+            return
+        try:
+            summary = service.import_once()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(
+                self,
+                TR("legacy_import.failed_title"),
+                str(exc),
+            )
+            return
+        QMessageBox.information(
+            self,
+            TR("legacy_import.done_title"),
+            TR("legacy_import.done_message").format(
+                entries=summary.entries_created,
+                collections=summary.collections_created,
+            ),
+        )
 
     # --------------------------------------------------------------
     def _build_menu_bar(self) -> None:
@@ -453,9 +505,6 @@ class MainWindow(QMainWindow):
         )
         export_menu.addAction(export_project_txt)
         file_menu.addSeparator()
-        include_action = QAction(TR("menu.include_fragment"), self)
-        include_action.triggered.connect(self._on_include_fragment)
-        file_menu.addAction(include_action)
         global_search_action = QAction(TR("menu.global_search"), self)
         global_search_action.triggered.connect(self._on_global_search)
         file_menu.addAction(global_search_action)
@@ -580,13 +629,6 @@ class MainWindow(QMainWindow):
         gsearch_action.triggered.connect(self._on_global_search)
         self.addAction(gsearch_action)
         self._extra_palette_actions.append(gsearch_action)
-
-        # M8 include-fragment shortcut (Ctrl+Shift+I).
-        include_action = QAction(TR("cmd.include_fragment"), self)
-        include_action.setShortcut(QKeySequence("Ctrl+Shift+I"))
-        include_action.triggered.connect(self._on_include_fragment)
-        self.addAction(include_action)
-        self._extra_palette_actions.append(include_action)
 
     # --------------------------------------------------------------
     def _restore_splitter_state(self) -> None:
@@ -836,41 +878,6 @@ class MainWindow(QMainWindow):
             self._show_fragments_welcome()
         else:
             self._show_fragments_workspace()
-
-    def _on_welcome_new_work(self) -> None:
-        """Welcome card secondary CTA: jump to Works mode and create one."""
-        self._set_mode(MODE_WORKS)
-        self._works_panel._on_new_work()  # noqa: SLF001 — reuse existing handler
-
-    def _on_include_fragment_from_empty_state(self) -> None:
-        """Works empty-state secondary CTA: drive the full include-fragment
-        loop to completion, even when the user has no work yet.
-
-        Closure rules:
-          * No current fragment → clear informational dialog (the user
-            must open or create a fragment first).
-          * Has a current fragment but no works at all → auto-create a
-            work, select it, then open the include dialog so the
-            fragment can land in the freshly created work.
-          * Has a current fragment and existing works → just open the
-            include dialog (it already lists the works).
-        """
-        if self._editor_panel.current_entry_id() is None:
-            QMessageBox.information(
-                self,
-                TR("dlg.no_fragment_to_include_title"),
-                TR("dlg.no_fragment_to_include_msg"),
-            )
-            return
-        # If no works exist yet, bootstrap one so the include dialog has a
-        # legitimate target. We reuse WorksPanel._on_new_work which already
-        # creates + refreshes + selects the new work.
-        if self._container.work_repository.count() == 0:
-            self._works_panel._on_new_work()  # noqa: SLF001
-        # Switch back to fragments mode so the user can see the fragment
-        # they are about to include, then run the existing include flow.
-        self._set_mode(MODE_FRAGMENTS)
-        self._on_include_fragment()
 
     def _refresh_tag_filter(self) -> None:
         tags = self._container.entry_repository.list_all_tags()
@@ -1431,7 +1438,7 @@ class MainWindow(QMainWindow):
         self._refresh_tag_filter()
 
     # --------------------------------------------------------------
-    # M8 Works / Collections / Search / Include
+    # Article collections / Search
     # --------------------------------------------------------------
     def _set_mode(self, mode: int) -> None:
         if self._focus_mode_enabled and mode != MODE_FRAGMENTS:
@@ -1446,16 +1453,13 @@ class MainWindow(QMainWindow):
         self._rail.set_active_mode(mode)
         # Persist the active mode so the next launch lands on the same view.
         try:
-            self._container.settings.set(KEY_ACTIVE_MODE, str(mode))
+            self._container.settings.set(KEY_ACTIVE_MODE, self._mode_setting_name(mode))
         except Exception:  # noqa: BLE001 — settings issues must not crash UI
             pass
         if mode == MODE_DATES:
             self._dates_panel.refresh()
         elif mode == MODE_FRAGMENTS:
             self._refresh_fragment_context()
-        elif mode == MODE_WORKS:
-            self._works_panel.refresh(preserve_selection=True)
-            self._refresh_work_context_from_panel()
         elif mode == MODE_COLLECTIONS:
             self._collections_panel.refresh_collections()
             self._refresh_collection_context_from_panel()
@@ -1466,8 +1470,8 @@ class MainWindow(QMainWindow):
     def _bind_ai_workspace_scope(self) -> None:
         """Hand the AI workspace whichever object is most relevant.
 
-        Preference: currently-edited fragment > currently-selected work
-        > currently-selected collection > GLOBAL.
+        Preference: currently-edited article > currently-selected collection
+        > GLOBAL.
         """
         def _bind_fragment_scope() -> bool:
             entry_id = self._editor_panel.current_entry_id()
@@ -1494,66 +1498,6 @@ class MainWindow(QMainWindow):
             )
             return True
 
-        def _bind_work_scope() -> bool:
-            try:
-                work_id = self._works_panel._current_work_id()  # noqa: SLF001
-            except Exception:  # noqa: BLE001
-                work_id = None
-            if not work_id:
-                return False
-            work = self._container.work_repository.get(work_id)
-            if work is None:
-                return False
-            section_id: Optional[str] = None
-            section_body = ""
-            sel_range: Optional[tuple[int, int]] = None
-            sel_text = ""
-            try:
-                editor = self._works_panel._editor  # noqa: SLF001
-                editor.flush_pending()
-                section_id = editor.current_section_id()
-                if section_id is not None:
-                    section_body = editor.current_section_content()
-                    sel_range = editor.selection_range()
-                    sel_text = editor.selected_section_text()
-            except Exception:  # noqa: BLE001
-                section_id = None
-                sel_range = None
-                sel_text = ""
-            if section_id is not None:
-                section_obj = self._container.work_section_repository.get(section_id)
-                section_label = (
-                    (section_obj.content or "").strip().splitlines()[0][:40]
-                    if section_obj and section_obj.content.strip()
-                    else f"section {section_id[:8]}"
-                )
-                self._ai_workspace_panel.bind_scope(
-                    AiScope(
-                        kind=AiThreadScope.WORK,
-                        ref_id=work.id,
-                        name=f"{work.title or '(untitled work)'} / {section_label}",
-                        body=section_body,
-                        work_id=work.id,
-                        section_id=section_id,
-                        selection_start=sel_range[0] if sel_range else None,
-                        selection_end=sel_range[1] if sel_range else None,
-                        selection_text=sel_text,
-                    )
-                )
-                return True
-            sections = self._container.work_section_repository.list_for_work(work_id)
-            body = "\n\n".join((s.content or "") for s in sections)
-            self._ai_workspace_panel.bind_scope(
-                AiScope(
-                    kind=AiThreadScope.WORK,
-                    ref_id=work.id,
-                    name=work.title or "(untitled work)",
-                    body=body,
-                    work_id=work.id,
-                )
-            )
-            return True
-
         def _bind_collection_scope() -> bool:
             try:
                 coll_id = self._collections_panel._current_collection_id()  # noqa: SLF001
@@ -1568,19 +1512,18 @@ class MainWindow(QMainWindow):
                 AiScope(
                     kind=AiThreadScope.COLLECTION,
                     ref_id=coll.id,
-                    name=coll.title or "(untitled collection)",
-                    body=coll.summary or "",
+                    name=coll.name or "(untitled collection)",
+                    body=self._collection_scope_body(coll.id),
                 )
             )
             return True
 
         source_mode = self._last_mode_before_ai
         binders = {
-            MODE_DATES: (_bind_fragment_scope, _bind_work_scope, _bind_collection_scope),
-            MODE_FRAGMENTS: (_bind_fragment_scope, _bind_work_scope, _bind_collection_scope),
-            MODE_WORKS: (_bind_work_scope, _bind_fragment_scope, _bind_collection_scope),
-            MODE_COLLECTIONS: (_bind_collection_scope, _bind_fragment_scope, _bind_work_scope),
-        }.get(source_mode, (_bind_fragment_scope, _bind_work_scope, _bind_collection_scope))
+            MODE_DATES: (_bind_fragment_scope, _bind_collection_scope),
+            MODE_FRAGMENTS: (_bind_fragment_scope, _bind_collection_scope),
+            MODE_COLLECTIONS: (_bind_collection_scope, _bind_fragment_scope),
+        }.get(source_mode, (_bind_fragment_scope, _bind_collection_scope))
         for binder in binders:
             if binder():
                 return
@@ -1588,6 +1531,25 @@ class MainWindow(QMainWindow):
         self._ai_workspace_panel.bind_scope(
             AiScope(kind=AiThreadScope.GLOBAL, ref_id=None, name="", body="")
         )
+
+    def _collection_scope_body(self, collection_id: str) -> str:
+        """Build read-only collection context from ordered articles."""
+        entries = self._collection_entries(collection_id)
+        parts: list[str] = []
+        for index, entry in enumerate(entries, start=1):
+            title = (entry.title or TR("list.empty_fragment")).strip()
+            body = (entry.body or "").strip()
+            if body:
+                parts.append(f"{index}. {title}\n\n{body}")
+            else:
+                parts.append(f"{index}. {title}")
+        return "\n\n---\n\n".join(parts)
+
+    def _collection_entries(self, collection_id: str) -> list:
+        try:
+            return list(self._container.collection_repository.list_entries(collection_id))
+        except AttributeError:
+            return []
 
     def _on_open_ai_polish_from_context(self) -> None:
         """Route the context-pane 'AI Polish' button to AI workspace.
@@ -1623,11 +1585,6 @@ class MainWindow(QMainWindow):
             self._refresh_list(select_id=scope.ref_id)
             self._load_entry(scope.ref_id)
             found = self._editor_panel.activate_excerpt_find(excerpt)
-        elif scope.kind is AiThreadScope.WORK and scope.work_id:
-            self._set_mode(MODE_WORKS)
-            section_id = scope.section_id
-            self._works_panel.select_work_section(scope.work_id, section_id)
-            found = self._works_panel._editor.activate_excerpt_find(excerpt)  # noqa: SLF001
         if not found:
             self.statusBar().showMessage(TR("ai.results.locate_excerpt_not_found"), 2500)
 
@@ -1640,13 +1597,6 @@ class MainWindow(QMainWindow):
             self._refresh_list(select_id=scope.ref_id)
             self._load_entry(scope.ref_id)
             self._editor_panel.select_body_range(
-                scope.selection_start or 0,
-                scope.selection_end or 0,
-            )
-        elif scope.kind is AiThreadScope.WORK and scope.work_id and scope.section_id:
-            self._set_mode(MODE_WORKS)
-            self._works_panel.select_work_section(scope.work_id, scope.section_id)
-            self._works_panel._editor.select_current_section_range(  # noqa: SLF001
                 scope.selection_start or 0,
                 scope.selection_end or 0,
             )
@@ -1698,38 +1648,16 @@ class MainWindow(QMainWindow):
                 writing_notes_action=self._writing_note_action_text(entry.id),
             )
             return
-        if scope.kind is AiThreadScope.WORK:
-            work_id = scope.work_id or scope.ref_id
-            work = self._container.work_repository.get(work_id)
-            if work is None:
-                self._show_mode_empty_context(MODE_AI)
-                return
-            self._context_pane.show_work(
-                title=work.title or TR("works.untitled"),
-                summary=work.summary or TR("context.no_value"),
-                status=TR(f"work.status.{work.status}"),
-                words=str(self._container.work_service.compute_word_count(work_id)),
-                target=(
-                    str(work.target_word_count)
-                    if work.target_word_count
-                    else TR("context.no_target")
-                ),
-                updated=work.updated_at or TR("context.no_value"),
-            )
-            return
         if scope.kind is AiThreadScope.COLLECTION:
             coll = self._container.collection_repository.get(scope.ref_id)
             if coll is None:
                 self._show_mode_empty_context(MODE_AI)
                 return
-            works = self._container.collection_repository.list_works(scope.ref_id)
-            total_words = sum(
-                self._container.work_service.compute_word_count(work.id)
-                for work in works
-            )
+            entries = self._collection_entries(scope.ref_id)
+            total_words = sum(_count_words(entry.body or "") for entry in entries)
             self._context_pane.show_collection(
                 title=coll.name or TR("collections.untitled"),
-                work_count=str(len(works)),
+                work_count=str(len(entries)),
                 words=str(total_words),
             )
             return
@@ -1738,7 +1666,6 @@ class MainWindow(QMainWindow):
     def _show_mode_empty_context(self, mode: Optional[int] = None) -> None:
         actual_mode = self._stack.currentIndex() if mode is None else mode
         title_key, desc_key = {
-            MODE_WORKS: ("context.empty_title_work", "context.empty_desc_work"),
             MODE_COLLECTIONS: (
                 "context.empty_title_collection",
                 "context.empty_desc_collection",
@@ -1755,35 +1682,6 @@ class MainWindow(QMainWindow):
         if hit.kind == "fragment":
             self._set_mode(MODE_FRAGMENTS)
             self._refresh_list(select_id=hit.id)
-        elif hit.kind == "work":
-            self._set_mode(MODE_WORKS)
-            self._works_panel.select_work_section(hit.id, hit.section_id)
-
-    def _on_include_fragment(self) -> None:
-        entry_id = self._editor_panel.current_entry_id()
-        if entry_id is None:
-            return
-        self._autosave.flush()
-        entry = self._container.entry_repository.get(entry_id)
-        if entry is None:
-            return
-        # Default the dialog's text to the current selection (if any).
-        # Falling through to the full body happens inside the dialog.
-        selected = self._editor_panel.selected_body_text()
-        dlg = IncludeFragmentDialog(
-            self._container,
-            entry,
-            default_text=selected or None,
-            parent=self,
-        )
-        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.included_outcome is not None:
-            QMessageBox.information(
-                self,
-                TR("include.title"),
-                TR("include.success_msg"),
-            )
-            # Refresh fragment list so the curation badge updates.
-            self._refresh_list(select_id=entry_id)
 
     def _on_save_style_specimen(self) -> None:
         entry_id = self._editor_panel.current_entry_id()
@@ -2149,25 +2047,13 @@ class MainWindow(QMainWindow):
         self._editor_panel.set_writing_notes_collapsed_by_default(
             self._container.settings.writing_notes_card_collapsed_by_default()
         )
-        try:
-            self._works_panel._editor.apply_display_settings(settings)  # noqa: SLF001
-        except Exception:  # noqa: BLE001
-            pass
         self._editor_panel.set_reduced_motion(self._reduced_motion)
         self._editor_panel.set_focus_mode_enabled(self._focus_mode_enabled)
-        try:
-            self._works_panel._editor._editor.set_reduced_motion(self._reduced_motion)  # noqa: SLF001
-        except Exception:  # noqa: BLE001
-            pass
 
     def _apply_motion_preferences(self) -> None:
         self._reduced_motion = self._container.settings.reduced_motion_enabled()
         self._context_pane.set_reduced_motion(self._reduced_motion)
         self._editor_panel.set_reduced_motion(self._reduced_motion)
-        try:
-            self._works_panel._editor._editor.set_reduced_motion(self._reduced_motion)  # noqa: SLF001
-        except Exception:  # noqa: BLE001
-            pass
 
     def _install_focus_mode_key_filters(self) -> None:
         for widget in (
@@ -2184,11 +2070,6 @@ class MainWindow(QMainWindow):
         try:
             self._editor_panel._body.setObjectName("FragmentBody")
             self._editor_panel._title.setObjectName("EditorTitle")
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            self._works_panel._editor._editor.setObjectName("WorkBody")
-            self._works_panel._editor._title.setObjectName("EditorTitle")
         except Exception:  # noqa: BLE001
             pass
 
@@ -2353,38 +2234,6 @@ class MainWindow(QMainWindow):
             writing_notes_action=self._writing_note_action_text(entry_id),
         )
 
-    def _on_work_selected_for_context(self, work_id: str) -> None:
-        self._refresh_work_context(work_id)
-
-    def _refresh_work_context_from_panel(self) -> None:
-        wid = self._works_panel._current_work_id()
-        if wid:
-            self._refresh_work_context(wid)
-        else:
-            self._show_mode_empty_context(MODE_WORKS)
-
-    def _refresh_work_context(self, work_id: str) -> None:
-        if self._stack.currentIndex() != MODE_WORKS:
-            return
-        work = self._container.work_repository.get(work_id)
-        if work is None:
-            self._show_mode_empty_context(MODE_WORKS)
-            return
-        words = self._container.work_service.compute_word_count(work_id)
-        target = (
-            str(work.target_word_count)
-            if work.target_word_count
-            else TR("context.no_target")
-        )
-        self._context_pane.show_work(
-            title=work.title or TR("works.untitled"),
-            summary=work.summary or TR("context.no_value"),
-            status=TR(f"work.status.{work.status}"),
-            words=str(words),
-            target=target,
-            updated=work.updated_at or TR("context.no_value"),
-        )
-
     def _on_collection_selected_for_context(self, collection_id: str) -> None:
         self._refresh_collection_context(collection_id)
 
@@ -2402,27 +2251,15 @@ class MainWindow(QMainWindow):
         if coll is None:
             self._show_mode_empty_context(MODE_COLLECTIONS)
             return
-        works = self._container.collection_repository.list_works(collection_id)
-        total_words = sum(
-            self._container.work_service.compute_word_count(w.id) for w in works
-        )
+        entries = self._collection_entries(collection_id)
+        total_words = sum(_count_words(entry.body or "") for entry in entries)
         self._context_pane.show_collection(
             title=coll.name or TR("collections.untitled"),
-            work_count=str(len(works)),
+            work_count=str(len(entries)),
             words=str(total_words),
         )
 
     # ------- Context-pane action shortcuts -------
-    def _on_open_work_versions_from_context(self) -> None:
-        wid = self._works_panel._current_work_id()
-        if not wid:
-            return
-        self._works_panel._editor._on_open_versions()
-
-    def _on_export_current_work_from_context(self) -> None:
-        if self._works_panel._current_work_id():
-            self._works_panel._on_export_work()
-
     def _on_export_current_fragment_from_context(self) -> None:
         if self._editor_panel.current_entry_id():
             self._on_export("fragment", "markdown")

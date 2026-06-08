@@ -122,11 +122,13 @@ class TestShellLayout:
         window = MainWindow(container, autosave_debounce_ms=50)
         qtbot.addWidget(window)
 
-        window._set_mode(2)  # noqa: SLF001 — works mode
-        assert window._stack.currentIndex() == 2  # noqa: SLF001
+        from writer.ui.main_window import MODE_AI, MODE_COLLECTIONS
 
-        window._set_mode(3)  # noqa: SLF001 — collections mode
-        assert window._stack.currentIndex() == 3  # noqa: SLF001
+        window._set_mode(MODE_COLLECTIONS)  # noqa: SLF001
+        assert window._stack.currentIndex() == MODE_COLLECTIONS  # noqa: SLF001
+
+        window._set_mode(MODE_AI)  # noqa: SLF001
+        assert window._stack.currentIndex() == MODE_AI  # noqa: SLF001
 
     def test_active_mode_persists(self, qtbot, container):
         from writer.app.settings import KEY_ACTIVE_MODE
@@ -134,13 +136,26 @@ class TestShellLayout:
 
         window = MainWindow(container, autosave_debounce_ms=50)
         qtbot.addWidget(window)
-        window._set_mode(2)  # noqa: SLF001
-        assert container.settings.get(KEY_ACTIVE_MODE) == "2"
+        from writer.ui.main_window import MODE_COLLECTIONS
 
-        # New window should restore mode 2 (works).
+        window._set_mode(MODE_COLLECTIONS)  # noqa: SLF001
+        assert container.settings.get(KEY_ACTIVE_MODE) == "collections"
+
+        # New window should restore the collections mode.
         window2 = MainWindow(container, autosave_debounce_ms=50)
         qtbot.addWidget(window2)
-        assert window2._stack.currentIndex() == 2  # noqa: SLF001
+        assert window2._stack.currentIndex() == MODE_COLLECTIONS  # noqa: SLF001
+
+    def test_legacy_works_mode_setting_restores_to_articles(self, qtbot, container):
+        from writer.app.settings import KEY_ACTIVE_MODE
+        from writer.ui.main_window import MODE_FRAGMENTS, MainWindow
+
+        container.settings.set(KEY_ACTIVE_MODE, "2")
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+
+        assert window._stack.currentIndex() == MODE_FRAGMENTS  # noqa: SLF001
 
     def test_context_pane_visibility_persists(self, qtbot, container):
         from writer.app.settings import KEY_CONTEXT_PANE_VISIBLE
@@ -402,13 +417,6 @@ class TestEmptyStates:
             == TR("empty.fragments_search_primary")
         )
 
-    def test_works_panel_shows_empty_card_when_no_works(self, qtbot, container):
-        from writer.ui.panels.works_panel import WorksPanel
-
-        panel = WorksPanel(container)
-        qtbot.addWidget(panel)
-        assert panel._list_stack.currentIndex() == 1  # noqa: SLF001
-
     def test_collections_panel_shows_empty_card_when_no_collections(
         self, qtbot, container
     ):
@@ -458,22 +466,9 @@ class TestContextPane:
         assert isinstance(pane._frag_actions_row, QVBoxLayout)  # noqa: SLF001
         for button in (
             pane.fragment_polish_button,
-            pane.fragment_include_button,
             pane.fragment_save_specimen_button,
         ):
             assert button.minimumHeight() >= max(button.fontMetrics().height() + 16, 36)
-
-    def test_context_pane_shows_work_in_works_mode(self, qtbot, container):
-        from writer.ui.main_window import MainWindow, MODE_WORKS
-
-        work = container.work_repository.create(title="W", summary="sum")
-        window = MainWindow(container, autosave_debounce_ms=50)
-        qtbot.addWidget(window)
-
-        window._set_mode(MODE_WORKS)  # noqa: SLF001
-        window._refresh_work_context(work.id)  # noqa: SLF001
-
-        assert window._context_pane._stack.currentIndex() == 2  # noqa: SLF001
 
     def test_context_pane_shows_collection_in_collections_mode(self, qtbot, container):
         from writer.ui.main_window import MainWindow, MODE_COLLECTIONS
@@ -485,21 +480,7 @@ class TestContextPane:
         window._set_mode(MODE_COLLECTIONS)  # noqa: SLF001
         window._refresh_collection_context(collection.id)  # noqa: SLF001
 
-        assert window._context_pane._stack.currentIndex() == 3  # noqa: SLF001
-
-    def test_context_pane_shows_work_specific_empty_copy_without_selection(
-        self, qtbot, container
-    ):
-        from writer.ui.i18n import TR
-        from writer.ui.main_window import MainWindow, MODE_WORKS
-
-        window = MainWindow(container, autosave_debounce_ms=50)
-        qtbot.addWidget(window)
-
-        window._set_mode(MODE_WORKS)  # noqa: SLF001
-
-        assert window._context_pane._stack.currentIndex() == 0  # noqa: SLF001
-        assert window._context_pane._empty._title.text() == TR("context.empty_title_work")  # noqa: SLF001
+        assert window._context_pane._stack.currentIndex() == 2  # noqa: SLF001
 
     def test_context_pane_shows_collection_specific_empty_copy_without_selection(
         self, qtbot, container
@@ -559,23 +540,14 @@ class TestEmptyStateCTAs:
         with qtbot.waitSignal(panel.global_search_requested, timeout=500):
             panel._empty_card.secondary_button.click()  # noqa: SLF001
 
-    def test_works_empty_secondary_emits_include_fragment(self, qtbot, container):
-        from writer.ui.panels.works_panel import WorksPanel
-
-        panel = WorksPanel(container)
-        qtbot.addWidget(panel)
-        with qtbot.waitSignal(panel.include_fragment_requested, timeout=500):
-            panel._empty_card.secondary_button.click()  # noqa: SLF001
-
-    def test_collections_empty_secondary_emits_switch_to_works(
+    def test_collections_empty_state_has_no_legacy_switch_to_works(
         self, qtbot, container
     ):
         from writer.ui.panels.collections_panel import CollectionsPanel
 
         panel = CollectionsPanel(container)
         qtbot.addWidget(panel)
-        with qtbot.waitSignal(panel.switch_to_works_requested, timeout=500):
-            panel._collections_empty.secondary_button.click()  # noqa: SLF001
+        assert panel._collections_empty.secondary_button is None  # noqa: SLF001
 
 
 class TestWelcomeAndUnselectedReachability:
@@ -605,22 +577,6 @@ class TestWelcomeAndUnselectedReachability:
         assert container.entry_repository.count() == 1
         assert window._editor_panel.current_entry_id() is not None  # noqa: SLF001
 
-    def test_works_panel_unselected_card_visible_when_no_selection(
-        self, qtbot, container
-    ):
-        from writer.ui.panels.works_panel import WorksPanel
-
-        container.work_repository.create(title="Pre-existing")
-        panel = WorksPanel(container)
-        qtbot.addWidget(panel)
-
-        # No work auto-selected; right side shows the unselected card.
-        assert panel._list.currentRow() == -1  # noqa: SLF001
-        assert panel._right_stack.currentIndex() == 1  # noqa: SLF001
-
-        panel._list.setCurrentRow(0)  # noqa: SLF001
-        assert panel._right_stack.currentIndex() == 0  # noqa: SLF001
-
     def test_collections_panel_unselected_card_visible_when_no_selection(
         self, qtbot, container
     ):
@@ -636,31 +592,6 @@ class TestWelcomeAndUnselectedReachability:
 
         panel._collections.setCurrentRow(0)  # noqa: SLF001
         assert panel._right_stack.currentIndex() == 0  # noqa: SLF001
-
-    def test_include_fragment_from_works_empty_warns_when_no_current(
-        self, qtbot, container, monkeypatch
-    ):
-        """If the user clicks 'Include current fragment' while there is no
-        current fragment loaded, MainWindow shows an informational dialog
-        rather than silently doing nothing."""
-        from PySide6.QtWidgets import QMessageBox
-
-        from writer.ui.main_window import MainWindow
-
-        window = MainWindow(container, autosave_debounce_ms=50)
-        qtbot.addWidget(window)
-
-        called = {"count": 0}
-
-        def fake_info(*args, **kwargs):
-            called["count"] += 1
-            return QMessageBox.StandardButton.Ok
-
-        monkeypatch.setattr(QMessageBox, "information", fake_info)
-
-        window._on_include_fragment_from_empty_state()  # noqa: SLF001
-        assert called["count"] == 1
-
 
 class TestThemeConsolidation:
     """No hardcoded grey colors; all status / meta / dialog-note / no-results
@@ -705,8 +636,7 @@ class TestThemeConsolidation:
 
 # ---------------------------------------------------------------------------
 # M9A blocker-fix follow-up:
-#   1) welcome state must trigger ONLY when the entry repo is truly empty
-#   2) Works empty-state secondary CTA must form a real closure
+#   welcome state must trigger ONLY when the entry repo is truly empty.
 # ---------------------------------------------------------------------------
 
 
@@ -780,105 +710,3 @@ class TestWelcomeTriggerCondition:
 
         assert repo.count() == 0
         assert window._fragments_stack.currentIndex() == 1  # noqa: SLF001
-
-
-class TestWorksEmptyCTAClosure:
-    """The Works-empty secondary CTA must drive the include flow to a real
-    completion path, not stop at "no works yet"."""
-
-    def test_no_current_fragment_shows_info_dialog(
-        self, qtbot, container, monkeypatch
-    ):
-        from PySide6.QtWidgets import QMessageBox
-
-        from writer.ui.main_window import MainWindow
-
-        window = MainWindow(container, autosave_debounce_ms=50)
-        qtbot.addWidget(window)
-        assert window._editor_panel.current_entry_id() is None  # noqa: SLF001
-
-        called = {"info": 0}
-
-        def fake_info(*a, **k):
-            called["info"] += 1
-            return QMessageBox.StandardButton.Ok
-
-        monkeypatch.setattr(QMessageBox, "information", fake_info)
-
-        # No work should be created in the no-current-fragment branch.
-        window._on_include_fragment_from_empty_state()  # noqa: SLF001
-        assert called["info"] == 1
-        assert container.work_repository.count() == 0
-
-    def test_with_current_fragment_but_no_work_auto_creates_and_opens_dialog(
-        self, qtbot, container, monkeypatch
-    ):
-        """User has a fragment, no works exist. CTA must:
-          * auto-create a work,
-          * then open the IncludeFragmentDialog with that work as a target.
-        """
-        from PySide6.QtWidgets import QDialog
-
-        from writer.ui import main_window as mw_module
-        from writer.ui.main_window import MainWindow
-
-        repo = container.entry_repository
-        entry = repo.create(title="frag", body="payload")
-
-        window = MainWindow(container, autosave_debounce_ms=50)
-        qtbot.addWidget(window)
-        window._load_entry(entry.id)  # noqa: SLF001
-        assert container.work_repository.count() == 0
-
-        # Capture dialog construction; auto-reject so the dialog does not
-        # actually run a modal loop.
-        constructed = {"count": 0, "work_count_at_open": None}
-
-        class _StubDialog:
-            def __init__(self, container_arg, entry_arg, default_text=None, parent=None):
-                constructed["count"] += 1
-                constructed["work_count_at_open"] = (
-                    container_arg.work_repository.count()
-                )
-                self.included_outcome = None
-
-            def exec(self):
-                return QDialog.DialogCode.Rejected
-
-        monkeypatch.setattr(mw_module, "IncludeFragmentDialog", _StubDialog)
-
-        window._on_include_fragment_from_empty_state()  # noqa: SLF001
-
-        # A work was bootstrapped before the include dialog opened.
-        assert container.work_repository.count() == 1
-        assert constructed["count"] == 1
-        assert constructed["work_count_at_open"] == 1
-
-    def test_with_existing_work_does_not_create_extra_one(
-        self, qtbot, container, monkeypatch
-    ):
-        from PySide6.QtWidgets import QDialog
-
-        from writer.ui import main_window as mw_module
-        from writer.ui.main_window import MainWindow
-
-        container.work_repository.create(title="Pre-existing")
-        entry = container.entry_repository.create(title="frag", body="body")
-
-        window = MainWindow(container, autosave_debounce_ms=50)
-        qtbot.addWidget(window)
-        window._load_entry(entry.id)  # noqa: SLF001
-
-        class _StubDialog:
-            def __init__(self, *a, **k):
-                self.included_outcome = None
-
-            def exec(self):
-                return QDialog.DialogCode.Rejected
-
-        monkeypatch.setattr(mw_module, "IncludeFragmentDialog", _StubDialog)
-
-        before = container.work_repository.count()
-        window._on_include_fragment_from_empty_state()  # noqa: SLF001
-        after = container.work_repository.count()
-        assert after == before  # no extra auto-creation
