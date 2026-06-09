@@ -84,11 +84,24 @@ class Tokens:
     archived_bg: str
     archived_fg: str
 
+    # Sticky writing-note surfaces (one per colour key; per-mode values so
+    # dark gets deep muted tints instead of bright pastels that would make
+    # the near-white note text unreadable).
+    note_cream: str
+    note_amber: str
+    note_mist: str
+    note_blue: str
+    note_rose: str
+    note_paper: str
+    note_border: str        # sticky outline (replaces hardcoded rgba)
+    note_pin_bg: str        # pin / menu button background
+    note_pin_border: str
+
     # Geometry (shared between modes)
-    radius_sm: int = 8
-    radius_md: int = 10
-    radius_lg: int = 14
-    radius_xl: int = 18
+    radius_sm: int = 7      # small controls: buttons, inputs, menu items, chips
+    radius_md: int = 10     # medium: tabs, stat cards, small boxes
+    radius_lg: int = 14     # large surfaces: editor, big cards, panels
+    radius_xl: int = 16
     space_xs: int = 4
     space_sm: int = 8
     space_md: int = 12
@@ -143,6 +156,15 @@ LIGHT_TOKENS = Tokens(
     danger_hover="#E0352B",
     archived_bg="#FFF0DB",
     archived_fg="#9A6B1F",
+    note_cream="#FBF7E8",
+    note_amber="#FBEFD0",
+    note_mist="#EAF1E2",
+    note_blue="#E4EEF6",
+    note_rose="#F6E6EA",
+    note_paper="#F2F0EB",
+    note_border="#D8D4C4",
+    note_pin_bg="#FFFFFF",
+    note_pin_border="#D1D1D6",
 )
 
 
@@ -173,6 +195,15 @@ DARK_TOKENS = Tokens(
     danger_hover="#FF6961",
     archived_bg="#3B2B1D",
     archived_fg="#E2B37A",
+    note_cream="#3A3722",
+    note_amber="#3D3526",
+    note_mist="#27301F",
+    note_blue="#22303D",
+    note_rose="#3A2730",
+    note_paper="#2E2C28",
+    note_border="#48484A",
+    note_pin_bg="#3A3A3C",
+    note_pin_border="#48484A",
 )
 
 
@@ -314,7 +345,7 @@ QPushButton#RailButton {{
     background: transparent;
     color: {t.text_secondary};
     border: none;
-    border-radius: {t.radius_md}px;
+    border-radius: {t.radius_sm}px;
     padding: 8px 4px;
     font-size: {t.fs_meta}px;
     font-weight: 500;
@@ -379,7 +410,7 @@ QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox {{
     background: {t.bg_input};
     color: {t.text_primary};
     border: 1px solid {t.border};
-    border-radius: {t.radius_md}px;
+    border-radius: {t.radius_sm}px;
     padding: 6px 10px;
     selection-background-color: {t.accent};
     selection-color: {t.text_on_accent};
@@ -404,7 +435,7 @@ QPushButton {{
     background: {t.bg_input};
     color: {t.text_primary};
     border: 1px solid {t.border};
-    border-radius: {t.radius_md}px;
+    border-radius: {t.radius_sm}px;
     padding: 7px 14px;
     font-size: {t.fs_button}px;
     font-weight: 500;
@@ -599,7 +630,7 @@ QFrame#EditorFindBar {{
 QLineEdit#EditorFindInput {{
     background: {t.bg_search};
     border: 1px solid {t.border};
-    border-radius: {t.radius_md}px;
+    border-radius: {t.radius_sm}px;
     padding: 7px 12px;
 }}
 QLabel#EditorFindCount {{
@@ -624,7 +655,7 @@ QPushButton#EditorPageButton {{
     background: {t.bg_card};
     color: {t.text_secondary};
     border: 1px solid {t.border};
-    border-radius: {t.radius_md}px;
+    border-radius: {t.radius_sm}px;
     padding: 4px 10px;
 }}
 QPushButton#EditorPageButton:hover {{
@@ -755,19 +786,19 @@ QLabel#WritingNoteState {{
     font-weight: 600;
 }}
 QPushButton#WritingNotePinButton {{
-    background: rgba(255, 255, 255, 70);
-    border: 1px solid rgba(80, 64, 44, 30);
+    background: {t.note_pin_bg};
+    border: 1px solid {t.note_pin_border};
     border-radius: 11px;
     color: {t.accent};
     font-size: {t.fs_meta}px;
     padding: 0;
 }}
 QPushButton#WritingNotePinButton:hover {{
-    background: rgba(255, 255, 255, 145);
+    background: {t.note_pin_bg};
     border-color: {t.accent};
 }}
 QFrame#WritingNoteSticky {{
-    border: 1px solid rgba(80, 64, 44, 54);
+    border: 1px solid {t.note_border};
     border-radius: 10px;
 }}
 QFrame#WritingNoteSticky[pinned="true"] {{
@@ -780,22 +811,22 @@ QFrame#WritingNoteSticky[done="true"] {{
     border-style: dashed;
 }}
 QFrame#WritingNoteSticky[color="cream"] {{
-    background: #fff7df;
+    background: {t.note_cream};
 }}
 QFrame#WritingNoteSticky[color="amber"] {{
-    background: #ffe8a8;
+    background: {t.note_amber};
 }}
 QFrame#WritingNoteSticky[color="mist"] {{
-    background: #e9f3dc;
+    background: {t.note_mist};
 }}
 QFrame#WritingNoteSticky[color="blue"] {{
-    background: #dfedf8;
+    background: {t.note_blue};
 }}
 QFrame#WritingNoteSticky[color="rose"] {{
-    background: #f7dfe4;
+    background: {t.note_rose};
 }}
 QFrame#WritingNoteSticky[color="paper"] {{
-    background: #f4efe5;
+    background: {t.note_paper};
 }}
 QFrame#WritingNoteSticky[done="true"] {{
     background: {t.bg_done};
@@ -832,7 +863,7 @@ QPlainTextEdit#WritingNoteBody QScrollBar:vertical {{
     background: transparent;
 }}
 QPlainTextEdit#WritingNoteBody QScrollBar::handle:vertical {{
-    background: rgba(80, 64, 44, 70);
+    background: {t.note_border};
     border-radius: 3px;
     min-height: 20px;
 }}
@@ -841,15 +872,16 @@ QPlainTextEdit#WritingNoteBody QScrollBar::sub-line:vertical {{
     height: 0;
 }}
 QPushButton#WritingNoteMenuButton {{
-    background: rgba(255, 255, 255, 80);
-    border: 1px solid rgba(80, 64, 44, 34);
+    background: {t.note_pin_bg};
+    border: 1px solid {t.note_pin_border};
     border-radius: 11px;
     color: {t.text_secondary};
     padding: 0;
 }}
 QPushButton#WritingNoteMenuButton:hover {{
-    background: rgba(255, 255, 255, 140);
+    background: {t.note_pin_bg};
     color: {t.accent};
+    border-color: {t.accent};
 }}
 QPushButton#WritingNoteDoneToggle {{
     background: {t.bg_card};
@@ -887,8 +919,8 @@ QLineEdit#WritingNoteInput {{
     background: {t.bg_search};
 }}
 QPlainTextEdit#WritingNoteInput {{
-    background: rgba(255, 255, 255, 92);
-    border: 1px solid rgba(80, 64, 44, 36);
+    background: {t.bg_input};
+    border: 1px solid {t.note_border};
     border-radius: {t.radius_sm}px;
     color: {t.text_primary};
     padding: 6px;
