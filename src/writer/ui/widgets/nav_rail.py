@@ -1,17 +1,25 @@
-"""Left navigation rail (M9A).
+"""Left navigation rail (M9A; icon system refreshed for the Apple-style UI).
 
 Vertical column with one button per top-level mode plus settings/theme
-controls at the bottom. Buttons render as icon-glyph + label so unfamiliar
-users still understand them at a glance.
+controls at the bottom. Each button renders as a line icon above a short
+text label so unfamiliar users still understand them at a glance.
+
+Icons use **Segoe Fluent Icons** (the Win11 system icon font) when present,
+falling back to **Segoe MDL2 Assets** (Win10) and finally to plain Unicode
+glyphs, so the rail never renders as tofu boxes on a machine missing the
+icon font. The icon lives in its own ``QLabel`` (with the icon font applied
+directly in Python, so the global ``*`` font-family rule can't override it),
+which lets the selected/hover states recolour the glyph through pure QSS
+descendant selectors (``#RailButton:checked QLabel#RailIcon``).
 """
 from __future__ import annotations
 
-from typing import Callable, List, Optional
+from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import (
     QButtonGroup,
-    QHBoxLayout,
     QLabel,
     QPushButton,
     QVBoxLayout,
@@ -19,24 +27,123 @@ from PySide6.QtWidgets import (
 )
 
 
+# ---------------------------------------------------------------------------
+# Icon font resolution + glyph maps
+# ---------------------------------------------------------------------------
+_FLUENT = "Segoe Fluent Icons"
+_MDL2 = "Segoe MDL2 Assets"
+
+# Segoe Fluent Icons / MDL2 share most code points for these basic glyphs, so
+# one map serves both. Keys are stable role names used below.
+_ICON_GLYPHS = {
+    "dates": "",      # Calendar
+    "fragments": "",  # Edit (pencil)
+    "collections": "",  # Library
+    "ai": "",         # Lightbulb / idea (Sparkle E945)
+    "search": "",     # Search
+    "theme": "",      # Brightness
+    "settings": "",   # Settings (gear)
+}
+
+# Plain-Unicode fallback when no Segoe icon font is installed. These are the
+# original glyphs the rail shipped with, kept readable on any font.
+_FALLBACK_GLYPHS = {
+    "dates": "\U0001F4C5",  # 📅
+    "fragments": "✎",   # ✎
+    "collections": "⊞",  # ⊞
+    "ai": "✦",          # ✦
+    "search": "⌕",      # ⌕
+    "theme": "◑",       # ◑
+    "settings": "⚙",    # ⚙
+}
+
+_resolved_icon_family: Optional[str] = None
+_resolved_icon_checked = False
+
+
+def _icon_font_family() -> Optional[str]:
+    """Return the best available Segoe icon-font family, or None.
+
+    Cached after first lookup. ``None`` means neither Fluent nor MDL2 is
+    installed and the caller should use the plain-Unicode fallback glyphs.
+    """
+    global _resolved_icon_family, _resolved_icon_checked
+    if _resolved_icon_checked:
+        return _resolved_icon_family
+    _resolved_icon_checked = True
+    try:
+        families = set(QFontDatabase.families())
+    except Exception:  # noqa: BLE001 — font DB must never break the rail
+        families = set()
+    if _FLUENT in families:
+        _resolved_icon_family = _FLUENT
+    elif _MDL2 in families:
+        _resolved_icon_family = _MDL2
+    else:
+        _resolved_icon_family = None
+    return _resolved_icon_family
+
+
+def _glyph_for(role: str) -> str:
+    if _icon_font_family() is not None:
+        return _ICON_GLYPHS.get(role, _FALLBACK_GLYPHS.get(role, "?"))
+    return _FALLBACK_GLYPHS.get(role, "?")
+
+
 class RailButton(QPushButton):
-    """A vertical-stacked icon+label rail button."""
+    """A vertical icon+label rail button.
+
+    Subclasses ``QPushButton`` so it can still join the mode ``QButtonGroup``
+    and be exposed through the same property accessors as before. The button
+    carries no text itself; an icon ``QLabel`` and a text ``QLabel`` are laid
+    out inside it. The icon label gets the icon font applied directly so the
+    global ``*`` font-family stylesheet rule cannot replace it with the UI
+    font (which would render Fluent code points as tofu).
+    """
+
+    ICON_POINT_SIZE = 18
 
     def __init__(
         self,
-        glyph: str,
+        role: str,
         label: str,
         *,
         checkable: bool = True,
         parent: Optional[QWidget] = None,
     ) -> None:
-        # Use a two-line text so we get glyph on top, label underneath.
-        super().__init__(f"{glyph}\n{label}", parent)
+        super().__init__(parent)
         self.setObjectName("RailButton")
         self.setCheckable(checkable)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMinimumHeight(56)
         self.setToolTip(label)
+
+        self._icon = QLabel(_glyph_for(role))
+        self._icon.setObjectName("RailIcon")
+        self._icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._icon.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        icon_font = QFont()
+        family = _icon_font_family()
+        if family is not None:
+            icon_font.setFamily(family)
+        icon_font.setPointSize(self.ICON_POINT_SIZE)
+        self._icon.setFont(icon_font)
+
+        self._label = QLabel(label)
+        self._label.setObjectName("RailLabel")
+        self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 6, 0, 6)
+        layout.setSpacing(2)
+        layout.addWidget(self._icon)
+        layout.addWidget(self._label)
+
+    def setText(self, text: str) -> None:  # noqa: N802 — keep label in sync
+        """Keep the visible text label in sync if callers set text."""
+        self._label.setText(text)
+        self.setToolTip(text)
 
 
 class NavigationRail(QWidget):
@@ -74,13 +181,13 @@ class NavigationRail(QWidget):
         self._brand = QLabel(brand_text)
         self._brand.setObjectName("RailBrand")
 
-        self._dates_btn = RailButton("📅", dates_label)
-        self._frag_btn = RailButton("✎", fragments_label)
-        self._coll_btn = RailButton("⊞", collections_label)
-        self._ai_btn = RailButton("✦", ai_label)
-        self._search_btn = RailButton("⌕", search_label, checkable=False)
-        self._theme_btn = RailButton("◑", theme_label, checkable=False)
-        self._settings_btn = RailButton("⚙", settings_label, checkable=False)
+        self._dates_btn = RailButton("dates", dates_label)
+        self._frag_btn = RailButton("fragments", fragments_label)
+        self._coll_btn = RailButton("collections", collections_label)
+        self._ai_btn = RailButton("ai", ai_label)
+        self._search_btn = RailButton("search", search_label, checkable=False)
+        self._theme_btn = RailButton("theme", theme_label, checkable=False)
+        self._settings_btn = RailButton("settings", settings_label, checkable=False)
 
         self._mode_group = QButtonGroup(self)
         self._mode_group.setExclusive(True)

@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QTimer
-from PySide6.QtWidgets import QGraphicsOpacityEffect, QStackedWidget, QWidget
+from PySide6.QtCore import (
+    QEasingCurve,
+    QPropertyAnimation,
+    QTimer,
+    QVariantAnimation,
+)
+from PySide6.QtWidgets import (
+    QGraphicsOpacityEffect,
+    QSplitter,
+    QStackedWidget,
+    QWidget,
+)
 
 
 FADE_MS = 140
 SCROLL_MS = 150
+PANE_SLIDE_MS = 180
 _SHORT_SCROLL_MS = 16
 
 
@@ -131,4 +142,77 @@ def smooth_scrollbar_to(
             setattr(scrollbar, "_writer_scroll_animation", None)
 
     animation.finished.connect(_finish)
+    animation.start()
+
+
+PANE_SLIDE_MS = 170
+
+
+def slide_splitter_sizes(
+    splitter: QSplitter,
+    target_sizes: list[int],
+    *,
+    duration_ms: int = PANE_SLIDE_MS,
+    reduced: bool = False,
+) -> None:
+    """Animate a ``QSplitter`` from its current sizes to ``target_sizes``.
+
+    ``QSplitter.setSizes`` is not a Qt property, so we drive a
+    ``QVariantAnimation`` over a 0..1 progress value and recompute the
+    interpolated sizes each frame. Programmatic ``setSizes`` does not emit
+    ``splitterMoved``, so this never pollutes the persisted splitter state —
+    the caller is responsible for saving the final sizes if needed.
+
+    Falls back to an immediate ``setSizes`` when motion is reduced, the
+    duration is non-positive, or the shape doesn't match.
+    """
+    start_sizes = list(splitter.sizes())
+    target = [max(0, int(s)) for s in target_sizes]
+    if (
+        reduced
+        or duration_ms <= 0
+        or len(start_sizes) != len(target)
+        or start_sizes == target
+    ):
+        splitter.setSizes(target)
+        return
+
+    old = getattr(splitter, "_writer_pane_animation", None)
+    if old is not None:
+        try:
+            old.stop()
+        except RuntimeError:
+            pass
+
+    animation = QVariantAnimation(splitter)
+    animation.setDuration(duration_ms)
+    animation.setStartValue(0.0)
+    animation.setEndValue(1.0)
+    animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def _on_value(progress) -> None:
+        try:
+            frac = float(progress)
+        except (TypeError, ValueError):
+            frac = 1.0
+        interpolated = [
+            int(round(s + (t - s) * frac))
+            for s, t in zip(start_sizes, target)
+        ]
+        try:
+            splitter.setSizes(interpolated)
+        except RuntimeError:
+            pass
+
+    def _finish() -> None:
+        try:
+            splitter.setSizes(target)
+        except RuntimeError:
+            pass
+        if getattr(splitter, "_writer_pane_animation", None) is animation:
+            setattr(splitter, "_writer_pane_animation", None)
+
+    animation.valueChanged.connect(_on_value)
+    animation.finished.connect(_finish)
+    setattr(splitter, "_writer_pane_animation", animation)
     animation.start()

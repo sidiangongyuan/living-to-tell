@@ -343,20 +343,37 @@ QWidget#WriterRail {{
 }}
 QPushButton#RailButton {{
     background: transparent;
-    color: {t.text_secondary};
     border: none;
     border-radius: {t.radius_sm}px;
-    padding: 8px 4px;
-    font-size: {t.fs_meta}px;
-    font-weight: 500;
-    text-align: center;
+    padding: 6px 2px;
 }}
 QPushButton#RailButton:hover {{
     background: {t.hover_bg};
-    color: {t.text_primary};
 }}
 QPushButton#RailButton:checked {{
     background: {t.selected_bg};
+}}
+/* Icon + label are separate QLabels inside the button so the glyph can
+   keep its icon font (set in Python) while the selected/hover states
+   recolour both through these descendant selectors. */
+QLabel#RailIcon {{
+    color: {t.text_secondary};
+    background: transparent;
+}}
+QLabel#RailLabel {{
+    color: {t.text_secondary};
+    background: transparent;
+    font-size: {t.fs_meta}px;
+    font-weight: 500;
+}}
+QPushButton#RailButton:hover QLabel#RailIcon,
+QPushButton#RailButton:hover QLabel#RailLabel {{
+    color: {t.text_primary};
+}}
+QPushButton#RailButton:checked QLabel#RailIcon {{
+    color: {t.accent};
+}}
+QPushButton#RailButton:checked QLabel#RailLabel {{
     color: {t.accent};
     font-weight: 600;
 }}
@@ -485,6 +502,24 @@ QPushButton#GhostButton {{
 QPushButton#GhostButton:hover {{
     background: {t.hover_bg};
     color: {t.text_primary};
+}}
+QPushButton#LinkButton {{
+    background: transparent;
+    border: 1px solid transparent;
+    color: {t.accent};
+    font-weight: 600;
+    padding: 6px 8px;
+}}
+QPushButton#LinkButton:hover {{
+    color: {t.accent_hover};
+    background: {t.hover_bg};
+}}
+QPushButton#LinkButton:pressed {{
+    color: {t.accent_pressed};
+}}
+QPushButton#LinkButton:disabled {{
+    color: {t.text_muted};
+    background: transparent;
 }}
 
 /* ------- Lists ------- */
