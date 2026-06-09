@@ -2,6 +2,19 @@
 
 Product-facing changes only.
 
+## 0.2.0-alpha.42 — Collection arrangement and context pane polish
+
+- Made article collections easier to fill: collection pages now support
+  multi-select article adding, clearer empty states, and better article cards.
+- Added article-side collection membership in the right context pane, including
+  an action to add the current article to one or more collections.
+- Added drag-and-drop ordering for articles inside a collection, while keeping
+  the existing move buttons for precise fallback control.
+- Changed the right context pane into a toolbar-controlled collapsible pane, so
+  it can be hidden cleanly without dragging the splitter.
+- Added regression coverage for multi-add, collection membership, drag reorder,
+  and right-pane collapse persistence.
+
 ## 0.2.0-alpha.41 — Articles and article collections
 
 - Reframed the main writing unit as Articles in the product UI and docs,

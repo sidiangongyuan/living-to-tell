@@ -16,6 +16,7 @@ This list tracks product-facing work that would make Writer more reliable and ea
 - Improve keyboard-only navigation across Dates, Articles, Collections, and AI Workspace.
 - Add optional backup reminders for active daily writers.
 - Add more ways to turn AI chat ideas into articles, notes, and reference-library items.
+- Add richer collection publishing options such as cover notes, section dividers, and saved export presets.
 
 ## Data management
 

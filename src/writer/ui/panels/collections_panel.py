@@ -3,10 +3,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -18,7 +19,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QPlainTextEdit,
-    QScrollArea,
     QSizePolicy,
     QSplitter,
     QStackedWidget,
@@ -29,9 +29,7 @@ from PySide6.QtWidgets import (
 from writer.app.container import AppContainer
 from writer.domain.enums import EntryType
 from writer.domain.models.entry import Entry
-from writer.ui.dialogs.collection_entry_picker_dialog import (
-    CollectionEntryPickerDialog,
-)
+from writer.ui.dialogs.collection_entry_picker_dialog import CollectionEntryPickerDialog
 from writer.ui.i18n import TR
 from writer.ui.widgets.editor_find import PaperPlainTextEdit
 from writer.ui.widgets.empty_state import EmptyStateCard
@@ -118,16 +116,20 @@ class _CollectionArticleCard(QFrame):
             f"#{sort_order + 1}",
             TR("collections.article_words").format(count=_entry_word_count(entry.body)),
             _display_entry_type(entry.entry_type),
-            entry.curation_status or "unsorted",
+            entry.curation_status or "",
         ]
         meta = QLabel(" · ".join(part for part in meta_parts if part))
         meta.setObjectName("SpecimenPreviewMeta")
         meta.setWordWrap(True)
 
         tags_text = ", ".join(entry.tags) if entry.tags else TR("context.no_value")
-        tags = QLabel(f"{TR('rlp.tags_label')}: {tags_text}")
+        tags = QLabel(tags_text)
         tags.setObjectName("SpecimenPreviewNote")
         tags.setWordWrap(True)
+
+        drag_hint = QLabel(TR("collections.article_drop_hint"))
+        drag_hint.setObjectName("MetaLabel")
+        drag_hint.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
         self._up_btn = QPushButton("↑")
         self._up_btn.setObjectName("GhostButton")
@@ -154,6 +156,7 @@ class _CollectionArticleCard(QFrame):
         layout.addWidget(excerpt)
         layout.addWidget(meta)
         layout.addWidget(tags)
+        layout.addWidget(drag_hint)
         layout.addLayout(btns)
 
     def set_selected(self, selected: bool) -> None:
@@ -167,6 +170,31 @@ class _CollectionArticleCard(QFrame):
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.entry_id)
         super().mousePressEvent(event)
+
+
+class _CollectionArticlesList(QListWidget):
+    reordered = Signal(list)
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("CollectionArticlesList")
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setSpacing(10)
+
+    def dropEvent(self, event) -> None:  # noqa: N802
+        super().dropEvent(event)
+        ordered_ids: list[str] = []
+        for row in range(self.count()):
+            entry_id = self.item(row).data(Qt.ItemDataRole.UserRole)
+            if entry_id:
+                ordered_ids.append(entry_id)
+        self.reordered.emit(ordered_ids)
 
 
 class CollectionsPanel(QWidget):
@@ -184,6 +212,7 @@ class CollectionsPanel(QWidget):
         self._description_save_timer.timeout.connect(self._flush_collection_metadata)
         self._suppress_description_flush = False
         self._suppress_title_flush = False
+        self._suppress_article_reorder = False
 
         self._collections = QListWidget()
         self._collections.itemSelectionChanged.connect(self._on_collection_changed)
@@ -234,6 +263,7 @@ class CollectionsPanel(QWidget):
         left_layout.addWidget(self._collections_stack, 1)
 
         self._add_article_btn = QPushButton(TR("collections.add_article"))
+        self._add_article_btn.setObjectName("PrimaryButton")
         self._add_article_btn.clicked.connect(self._on_add_article)
         self._remove_article_btn = QPushButton(TR("collections.remove_article"))
         self._remove_article_btn.clicked.connect(self._on_remove_article)
@@ -255,21 +285,25 @@ class CollectionsPanel(QWidget):
         self._article_search.setPlaceholderText(TR("collections.search_articles"))
         self._article_search.textChanged.connect(self._refresh_articles)
 
-        self._articles_scroll = QScrollArea()
-        self._articles_scroll.setWidgetResizable(True)
-        self._articles_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._articles_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._articles_scroll.setObjectName("CollectionArticlesScroll")
+        self._articles_list = _CollectionArticlesList()
+        self._articles_list.itemSelectionChanged.connect(self._on_article_item_selection_changed)
+        self._articles_list.reordered.connect(self._on_articles_reordered)
 
-        self._articles_host = QWidget()
-        self._articles_layout = QVBoxLayout(self._articles_host)
-        self._articles_layout.setContentsMargins(0, 0, 0, 0)
-        self._articles_layout.setSpacing(10)
-        self._articles_scroll.setWidget(self._articles_host)
+        self._articles_empty = EmptyStateCard(
+            TR("collections.add_article_empty_title"),
+            TR("collections.add_article_empty_desc"),
+            primary_label=TR("collections.add_article_empty_primary"),
+            primary_callback=self._on_add_article,
+        )
+        empty_wrap = QWidget()
+        ewl = QVBoxLayout(empty_wrap)
+        ewl.setContentsMargins(16, 16, 16, 16)
+        ewl.addWidget(self._articles_empty)
+        ewl.addStretch(1)
 
-        self._articles_empty = QLabel(TR("collections.preview_empty"))
-        self._articles_empty.setObjectName("SpecimenPreviewMeta")
-        self._articles_empty.setWordWrap(True)
+        self._articles_stack = QStackedWidget()
+        self._articles_stack.addWidget(self._articles_list)
+        self._articles_stack.addWidget(empty_wrap)
 
         middle = QWidget()
         middle.setObjectName("CollectionArticlesColumn")
@@ -279,7 +313,7 @@ class CollectionsPanel(QWidget):
         middle_layout.addWidget(middle_header)
         middle_layout.addLayout(article_btns)
         middle_layout.addWidget(self._article_search)
-        middle_layout.addWidget(self._articles_scroll, 1)
+        middle_layout.addWidget(self._articles_stack, 1)
 
         preview_header = QLabel(TR("collections.preview_title"))
         preview_header.setObjectName("ColumnTitle")
@@ -435,9 +469,7 @@ class CollectionsPanel(QWidget):
         self._suppress_title_flush = True
         self._suppress_description_flush = True
         try:
-            self._collection_title_edit.setText(
-                collection.name if collection else ""
-            )
+            self._collection_title_edit.setText(collection.name if collection else "")
             self._collection_title_edit.setEnabled(collection is not None)
             self._collection_description.setPlainText(
                 collection.description if collection else ""
@@ -536,22 +568,21 @@ class CollectionsPanel(QWidget):
         )
 
     def _refresh_articles(self) -> None:
-        while self._articles_layout.count():
-            item = self._articles_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+        self._articles_list.blockSignals(True)
+        self._articles_list.clear()
+        self._articles_list.blockSignals(False)
         self._entry_cards.clear()
         self._entry_bundles.clear()
 
         collection_id = self._current_collection_id()
         if collection_id is None:
-            self._articles_empty.setText(TR("collections.pick_first"))
-            self._articles_layout.addWidget(self._articles_empty)
-            self._articles_layout.addStretch(1)
+            self._articles_stack.setCurrentIndex(1)
+            self._articles_empty.set_text(TR("collections.pick_first"), "")
+            self._add_article_btn.setEnabled(False)
             self._render_preview(None)
             self._remove_article_btn.setEnabled(False)
             return
+        self._add_article_btn.setEnabled(True)
 
         query = self._article_search.text().strip().lower()
         bundles = self._collection_entry_bundles(collection_id)
@@ -571,31 +602,51 @@ class CollectionsPanel(QWidget):
             visible.append(bundle)
 
         if not visible:
-            self._articles_empty.setText(TR("collections.preview_empty"))
-            self._articles_layout.addWidget(self._articles_empty)
-            self._articles_layout.addStretch(1)
+            if bundles:
+                self._articles_empty.set_text(
+                    TR("collections.no_search_results_title"),
+                    TR("collections.no_search_results_desc"),
+                )
+            else:
+                self._articles_empty.set_text(
+                    TR("collections.add_article_empty_title"),
+                    TR("collections.add_article_empty_desc"),
+                )
+            self._articles_stack.setCurrentIndex(1)
             self._selected_entry_id = None
             self._render_preview(None)
             self._remove_article_btn.setEnabled(False)
             return
 
+        self._articles_stack.setCurrentIndex(0)
         valid_ids = {bundle.entry.id for bundle in visible}
         if self._selected_entry_id not in valid_ids:
             self._selected_entry_id = visible[0].entry.id
 
-        for bundle in visible:
-            card = _CollectionArticleCard(
-                bundle.entry,
-                sort_order=bundle.sort_order,
-            )
-            card.clicked.connect(self._select_entry)
-            card.move_up_requested.connect(lambda entry_id, delta=-1: self._move_entry(entry_id, delta))
-            card.move_down_requested.connect(lambda entry_id, delta=1: self._move_entry(entry_id, delta))
-            card.remove_requested.connect(self._remove_entry_by_id)
-            card.set_selected(bundle.entry.id == self._selected_entry_id)
-            self._entry_cards.append(card)
-            self._articles_layout.addWidget(card)
-        self._articles_layout.addStretch(1)
+        self._suppress_article_reorder = True
+        try:
+            for bundle in visible:
+                item = QListWidgetItem()
+                item.setData(Qt.ItemDataRole.UserRole, bundle.entry.id)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsDragEnabled)
+                card = _CollectionArticleCard(bundle.entry, sort_order=bundle.sort_order)
+                card.clicked.connect(self._select_entry)
+                card.move_up_requested.connect(
+                    lambda entry_id, delta=-1: self._move_entry(entry_id, delta)
+                )
+                card.move_down_requested.connect(
+                    lambda entry_id, delta=1: self._move_entry(entry_id, delta)
+                )
+                card.remove_requested.connect(self._remove_entry_by_id)
+                card.set_selected(bundle.entry.id == self._selected_entry_id)
+                self._entry_cards.append(card)
+                item.setSizeHint(card.sizeHint())
+                self._articles_list.addItem(item)
+                self._articles_list.setItemWidget(item, card)
+                if bundle.entry.id == self._selected_entry_id:
+                    self._articles_list.setCurrentItem(item)
+        finally:
+            self._suppress_article_reorder = False
 
         self._remove_article_btn.setEnabled(self._selected_entry_id is not None)
         self._render_preview(self._selected_entry())
@@ -608,10 +659,22 @@ class CollectionsPanel(QWidget):
                 return bundle.entry
         return self._container.entry_repository.get(self._selected_entry_id)
 
+    def _on_article_item_selection_changed(self) -> None:
+        if self._suppress_article_reorder:
+            return
+        item = self._articles_list.currentItem()
+        entry_id = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        if entry_id:
+            self._select_entry(entry_id)
+
     def _select_entry(self, entry_id: str) -> None:
         self._selected_entry_id = entry_id
-        for card in self._entry_cards:
-            card.set_selected(card.entry_id == entry_id)
+        for row, card in enumerate(self._entry_cards):
+            selected = card.entry_id == entry_id
+            card.set_selected(selected)
+            item = self._articles_list.item(row)
+            if selected and item is not None and self._articles_list.currentItem() is not item:
+                self._articles_list.setCurrentItem(item)
         self._remove_article_btn.setEnabled(True)
         self._render_preview(self._selected_entry())
 
@@ -627,16 +690,14 @@ class CollectionsPanel(QWidget):
         self._preview_meta.setText(
             " · ".join(
                 [
-                    TR("collections.article_words").format(
-                        count=_entry_word_count(entry.body)
-                    ),
+                    TR("collections.article_words").format(count=_entry_word_count(entry.body)),
                     _display_entry_type(entry.entry_type),
-                    entry.curation_status or "unsorted",
+                    entry.curation_status or "",
                 ]
-            )
+            ).strip(" ·")
         )
         tags_text = ", ".join(entry.tags) if entry.tags else TR("context.no_value")
-        self._preview_tags.setText(f"{TR('rlp.tags_label')}: {tags_text}")
+        self._preview_tags.setText(tags_text)
         self._preview_body.setPlainText(entry.body or "")
         cursor = self._preview_body.textCursor()
         cursor.movePosition(cursor.MoveOperation.Start)
@@ -701,19 +762,24 @@ class CollectionsPanel(QWidget):
             self._existing_collection_entry_ids(collection_id),
             self,
         )
-        if dialog.exec() != dialog.DialogCode.Accepted or not dialog.selected_entry_id:
+        if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.selected_entry_ids:
             return
+        first_added: Optional[str] = None
         try:
-            self._call_collection_mutation(
-                ("add_entry", "add_article", "append_entry", "link_entry"),
-                collection_id,
-                dialog.selected_entry_id,
-            )
+            for entry_id in dialog.selected_entry_ids:
+                result = self._call_collection_mutation(
+                    ("add_entry", "add_article", "append_entry", "link_entry"),
+                    collection_id,
+                    entry_id,
+                )
+                if first_added is None and result is not None:
+                    first_added = entry_id
         except AttributeError as exc:
             QMessageBox.information(self, TR("collections.add_article"), str(exc))
             return
-        self._selected_entry_id = dialog.selected_entry_id
+        self._selected_entry_id = first_added or dialog.selected_entry_id
         self._refresh_articles()
+        self.collection_selected.emit(collection_id)
 
     def _existing_collection_entry_ids(self, collection_id: str) -> set[str]:
         return {bundle.entry.id for bundle in self._collection_entry_bundles(collection_id)}
@@ -740,6 +806,7 @@ class CollectionsPanel(QWidget):
         if self._selected_entry_id == entry_id:
             self._selected_entry_id = None
         self._refresh_articles()
+        self.collection_selected.emit(collection_id)
 
     def _move_entry(self, entry_id: str, delta: int) -> None:
         collection_id = self._current_collection_id()
@@ -754,6 +821,27 @@ class CollectionsPanel(QWidget):
         if new_index == index:
             return
         ordered_ids.insert(new_index, ordered_ids.pop(index))
+        self._persist_reordered_entries(collection_id, ordered_ids, selected_entry_id=entry_id)
+
+    def _on_articles_reordered(self, ordered_ids: list[str]) -> None:
+        if self._suppress_article_reorder:
+            return
+        collection_id = self._current_collection_id()
+        if collection_id is None or not ordered_ids:
+            return
+        self._persist_reordered_entries(
+            collection_id,
+            ordered_ids,
+            selected_entry_id=self._selected_entry_id,
+        )
+
+    def _persist_reordered_entries(
+        self,
+        collection_id: str,
+        ordered_ids: list[str],
+        *,
+        selected_entry_id: Optional[str],
+    ) -> None:
         try:
             self._call_collection_mutation(
                 ("reorder_entries", "reorder_articles", "reorder_items"),
@@ -763,8 +851,9 @@ class CollectionsPanel(QWidget):
         except AttributeError as exc:
             QMessageBox.information(self, TR("collections.works_label"), str(exc))
             return
-        self._selected_entry_id = entry_id
+        self._selected_entry_id = selected_entry_id
         self._refresh_articles()
+        self.collection_selected.emit(collection_id)
 
     # ------------------------------------------------------------------
     def _on_export_collection(self) -> None:

@@ -91,6 +91,7 @@ class ContextPane(QWidget):
         self._frag_words = _MetaRow(meta_labels["words"])
         self._frag_chars = _MetaRow(meta_labels["chars"])
         self._frag_tags = _MetaRow(meta_labels["tags"])
+        self._frag_collections = _MetaRow(meta_labels["collections"])
         self._frag_writing_notes = _MetaRow(meta_labels["writing_notes"])
         self._frag_created = _MetaRow(meta_labels["created"])
         self._frag_updated = _MetaRow(meta_labels["updated"])
@@ -99,6 +100,7 @@ class ContextPane(QWidget):
             self._frag_words,
             self._frag_chars,
             self._frag_tags,
+            self._frag_collections,
             self._frag_writing_notes,
             self._frag_status,
             self._frag_created,
@@ -108,12 +110,16 @@ class ContextPane(QWidget):
         self._frag_actions_row = QVBoxLayout()
         self._frag_actions_row.setSpacing(6)
         self._frag_polish_btn = _make_action_button(action_labels["polish"])
+        self._frag_add_to_collection_btn = _make_action_button(
+            action_labels["add_to_collection"]
+        )
         self._frag_writing_notes_btn = _make_action_button(action_labels["writing_notes"])
         self._frag_checkpoint_btn = _make_action_button(action_labels["checkpoint"])
         self._frag_versions_btn = _make_action_button(action_labels["versions"])
         self._frag_export_btn = _make_action_button(action_labels["export_fragment"])
         self._frag_save_specimen_btn = _make_action_button(action_labels["save_specimen"])
         self._frag_actions_row.addWidget(self._frag_polish_btn)
+        self._frag_actions_row.addWidget(self._frag_add_to_collection_btn)
         self._frag_actions_row.addWidget(self._frag_writing_notes_btn)
         self._frag_actions_row.addWidget(self._frag_checkpoint_btn)
         self._frag_actions_row.addWidget(self._frag_versions_btn)
@@ -174,12 +180,14 @@ class ContextPane(QWidget):
         created: str,
         updated: str,
         status: str,
+        collections: str = "",
         writing_notes_action: str = "",
     ) -> None:
         self._title.setText(title)
         self._frag_words.set_value(words)
         self._frag_chars.set_value(chars)
         self._frag_tags.set_value(tags)
+        self._frag_collections.set_value(collections or "—")
         self._frag_writing_notes.set_value(writing_notes)
         if writing_notes_action:
             self._frag_writing_notes_btn.setText(writing_notes_action)
@@ -214,6 +222,10 @@ class ContextPane(QWidget):
     @property
     def fragment_polish_button(self) -> QPushButton:
         return self._frag_polish_btn
+
+    @property
+    def fragment_add_to_collection_button(self) -> QPushButton:
+        return self._frag_add_to_collection_btn
 
     @property
     def fragment_writing_notes_button(self) -> QPushButton:

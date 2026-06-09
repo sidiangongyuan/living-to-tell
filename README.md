@@ -25,7 +25,7 @@ suggestions before they touch the manuscript.
 | Area | Highlights |
 | --- | --- |
 | ✍️ Writing | Article editor, autosave, tags, sticky article notes, full-text search, version history, focus mode, typography controls |
-| 📚 Collections | Add articles, browse in reading order, preview, reorder, TXT / Markdown / DOCX export |
+| 📚 Collections | Multi-add articles, browse in reading order, drag-reorder, preview, TXT / Markdown / DOCX export |
 | 🗂️ Reference library | Book-shelf browsing, source pages, literary quote cards, tag summaries, duplicate hints, and switchable stats views |
 | 🤖 AI workspace | Polish, style-aware polish, expand, continue, summarize, outline, title ideas, structure diagnosis, consistency checks, library Q&A |
 | 💬 Scoped chat | Article / collection / global chat scopes, persisted threads, context budget trimming |
@@ -36,6 +36,7 @@ suggestions before they touch the manuscript.
 
 - [x] Article-first writing desk
 - [x] Article collections, reading preview, ordering, and export
+- [x] Reading-order collection workflow with multi-add, drag reordering, and article-side collection membership
 - [x] Version history and safe write-back snapshots
 - [x] Visible checkpoint controls and version cleanup for recoverable writing sessions
 - [x] GPT / OpenAI-compatible providers
@@ -51,6 +52,7 @@ suggestions before they touch the manuscript.
 - [x] Save selected AI chat text or the latest reply back into the current fragment as reusable notes
 - [x] Fragment-note default-collapse setting for calmer fragment switching
 - [x] UI polish: clearer toolbar controls, calmer scrollbars, and no-wheel form controls
+- [x] Collapsible right context pane controlled from the top toolbar
 - [x] Longer default Gemini API and Gemini CLI / OAuth timeout for large writing prompts
 - [ ] Public screenshot gallery and short demo videos
 - [ ] Step-by-step video tutorials for common writing workflows
@@ -68,8 +70,8 @@ Public screenshots, short walkthrough videos, and workflow demos are on the road
 
 The recommended public distribution format is a **Windows portable zip**.
 
-- Latest alpha: [Writer-0.2.0-alpha.41-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.41/Writer-0.2.0-alpha.41-portable.zip)
-- Release page: [v0.2.0-alpha.41](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.41)
+- Latest alpha: [Writer-0.2.0-alpha.42-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.42/Writer-0.2.0-alpha.42-portable.zip)
+- Release page: [v0.2.0-alpha.42](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.42)
 - If you are testing the latest branch, use the **Build Windows Portable** GitHub Action artifact.
 - To build locally, run the packaging command in [Build from source](#build-from-source).
 

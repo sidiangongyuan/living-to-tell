@@ -173,6 +173,91 @@ def test_collections_panel_create_and_add_article(qtbot, container):
     assert panel._entry_cards[0].entry_id == entry.id
 
 
+def test_collection_entry_picker_keeps_multi_selection_across_search(qtbot, container):
+    from PySide6.QtCore import Qt
+
+    from writer.ui.dialogs.collection_entry_picker_dialog import (
+        CollectionEntryPickerDialog,
+    )
+
+    first = container.entry_repository.create(title="Alpha", body="one")
+    second = container.entry_repository.create(title="Beta", body="two")
+    excluded = container.entry_repository.create(title="Gamma", body="three")
+
+    dlg = CollectionEntryPickerDialog(container, {excluded.id})
+    qtbot.addWidget(dlg)
+
+    assert dlg._list.count() == 2  # noqa: SLF001
+    for row in range(dlg._list.count()):  # noqa: SLF001
+        item = dlg._list.item(row)  # noqa: SLF001
+        if item.data(Qt.ItemDataRole.UserRole) == second.id:
+            item.setCheckState(Qt.CheckState.Checked)
+            break
+    assert dlg.selected_entry_ids == [second.id]
+
+    dlg._search.setText("alpha")  # noqa: SLF001
+    dlg._list.item(0).setCheckState(Qt.CheckState.Checked)  # noqa: SLF001
+    assert set(dlg.selected_entry_ids) == {first.id, second.id}
+
+    dlg._search.clear()  # noqa: SLF001
+    assert set(dlg.selected_entry_ids) == {first.id, second.id}
+
+
+def test_collections_panel_multi_adds_selected_articles(qtbot, container, monkeypatch):
+    from PySide6.QtWidgets import QDialog
+
+    from writer.ui.panels import collections_panel as cp_module
+
+    first = container.entry_repository.create(title="First", body="one")
+    second = container.entry_repository.create(title="Second", body="two")
+    collection = container.collection_repository.create(name="Book")
+
+    class _Picker:
+        selected_entry_ids = [first.id, second.id]
+        selected_entry_id = first.id
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def exec(self):
+            return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(cp_module, "CollectionEntryPickerDialog", _Picker)
+
+    panel = CollectionsPanel(container)
+    qtbot.addWidget(panel)
+    panel.refresh_collections()
+    panel._collections.setCurrentRow(0)  # noqa: SLF001
+
+    panel._on_add_article()  # noqa: SLF001
+
+    assert [entry.id for entry in container.collection_repository.list_entries(collection.id)] == [
+        first.id,
+        second.id,
+    ]
+    assert panel._selected_entry_id == first.id  # noqa: SLF001
+    assert panel._articles_stack.currentIndex() == 0  # noqa: SLF001
+
+
+def test_collections_panel_reorder_articles_persists(qtbot, container):
+    first = container.entry_repository.create(title="First", body="one")
+    second = container.entry_repository.create(title="Second", body="two")
+    collection = container.collection_repository.create(name="Book")
+    container.collection_repository.add_entry(collection.id, first.id)
+    container.collection_repository.add_entry(collection.id, second.id)
+
+    panel = CollectionsPanel(container)
+    qtbot.addWidget(panel)
+    panel.refresh_collections()
+    panel._collections.setCurrentRow(0)  # noqa: SLF001
+    panel._on_articles_reordered([second.id, first.id])  # noqa: SLF001
+
+    assert [entry.id for entry in container.collection_repository.list_entries(collection.id)] == [
+        second.id,
+        first.id,
+    ]
+
+
 def test_work_picker_dialog_filters(qtbot, container):
     container.work_repository.create(title="Alpha")
     container.work_repository.create(title="Beta")

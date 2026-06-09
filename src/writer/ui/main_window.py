@@ -57,6 +57,7 @@ from writer.storage.repositories.entry_repository import (
 from writer.ui.dialogs.assign_fragment_dialog import AssignFragmentDialog
 from writer.ui.dialogs.command_palette_dialog import CommandPaletteDialog
 from writer.ui.dialogs.global_search_dialog import GlobalSearchDialog
+from writer.ui.dialogs.entry_collection_picker_dialog import EntryCollectionPickerDialog
 from writer.ui.dialogs.projects_dialog import ProjectsDialog
 from writer.ui.dialogs.reference_library_dialog import ReferenceLibraryDialog
 from writer.ui.dialogs.reference_picker_dialog import ReferencePickerDialog
@@ -113,6 +114,7 @@ class MainWindow(QMainWindow):
         self._focus_restore_state: Optional[dict[str, object]] = None
         self._reduced_motion = container.settings.reduced_motion_enabled()
         self._context_pane_visible = True
+        self._last_context_pane_width = ContextPane.DEFAULT_WIDTH
 
         self.setWindowTitle("Writer")
         self.resize(1280, 780)
@@ -184,6 +186,7 @@ class MainWindow(QMainWindow):
                 "words": TR("context.label_words"),
                 "chars": TR("context.label_chars"),
                 "tags": TR("context.label_tags"),
+                "collections": TR("context.label_collections"),
                 "writing_notes": TR("context.label_writing_notes"),
                 "created": TR("context.label_created"),
                 "updated": TR("context.label_updated"),
@@ -194,6 +197,7 @@ class MainWindow(QMainWindow):
             },
             action_labels={
                 "polish": TR("context.action_polish"),
+                "add_to_collection": TR("context.action_add_to_collection"),
                 "writing_notes": TR("context.action_writing_notes"),
                 "checkpoint": TR("context.action_checkpoint"),
                 "save_specimen": TR("context.action_save_specimen"),
@@ -206,6 +210,9 @@ class MainWindow(QMainWindow):
         # Wire context-pane action buttons to existing handlers.
         self._context_pane.fragment_polish_button.clicked.connect(
             self._on_open_ai_polish_from_context
+        )
+        self._context_pane.fragment_add_to_collection_button.clicked.connect(
+            self._on_add_current_article_to_collections
         )
         self._context_pane.fragment_writing_notes_button.clicked.connect(
             self._on_toggle_writing_notes_from_context
@@ -271,8 +278,12 @@ class MainWindow(QMainWindow):
             900,
             ContextPane.DEFAULT_WIDTH,
         ])
+        # Restore context-pane visibility.
+        self._context_pane_visible = (
+            self._container.settings.get(KEY_CONTEXT_PANE_VISIBLE, "true") != "false"
+        )
         self._restore_main_splitter_state()
-        self._normalize_main_splitter_sizes()
+        self._apply_context_pane_visibility(save=False)
         self._main_splitter.splitterMoved.connect(self._on_main_splitter_moved)
 
         shell = QWidget()
@@ -282,13 +293,6 @@ class MainWindow(QMainWindow):
         shell_layout.setSpacing(0)
         shell_layout.addWidget(self._main_splitter)
         self.setCentralWidget(shell)
-
-        # Restore context-pane visibility.
-        self._context_pane_visible = (
-            self._container.settings.get(KEY_CONTEXT_PANE_VISIBLE, "true") != "false"
-        )
-        if not self._context_pane_visible:
-            self._context_pane.setVisible(False)
 
         self._autosave = AutosaveService(
             container.entry_repository,
@@ -693,10 +697,16 @@ class MainWindow(QMainWindow):
             and len(sizes) == 3
             and all(isinstance(size, int) for size in sizes)
         ):
+            if sizes[2] > 0:
+                self._last_context_pane_width = max(_MIN_CONTEXT_WIDTH, sizes[2])
             self._main_splitter.setSizes(self._normalized_main_splitter_sizes(sizes))
 
     def _on_main_splitter_moved(self, _pos: int, _index: int) -> None:
         self._normalize_main_splitter_sizes()
+        if self._context_pane_visible:
+            sizes = self._main_splitter.sizes()
+            if len(sizes) >= 3 and sizes[2] > 0:
+                self._last_context_pane_width = max(_MIN_CONTEXT_WIDTH, sizes[2])
         self._container.settings.set(
             _MAIN_SPLITTER_SIZES_KEY,
             json.dumps(self._main_splitter.sizes()),
@@ -745,8 +755,6 @@ class MainWindow(QMainWindow):
     def _normalize_main_splitter_sizes(self) -> None:
         if not hasattr(self, "_main_splitter"):
             return
-        if not getattr(self, "_context_pane_visible", True) or not self._context_pane.isVisible():
-            return
         self._main_splitter.setSizes(
             self._normalized_main_splitter_sizes(self._main_splitter.sizes())
         )
@@ -758,8 +766,14 @@ class MainWindow(QMainWindow):
         total = max(sum(cleaned), self.width() or sum(cleaned), 1)
         rail = NavigationRail.RAIL_WIDTH
         available = max(1, total - rail)
+        if not getattr(self, "_context_pane_visible", True):
+            return [rail, available, 0]
         context_max = max(_MIN_CONTEXT_WIDTH, available - _MIN_MAIN_AREA_WIDTH)
-        context = max(_MIN_CONTEXT_WIDTH, min(context_max, cleaned[2] or ContextPane.DEFAULT_WIDTH))
+        preferred_context = max(
+            cleaned[2],
+            self._last_context_pane_width or ContextPane.DEFAULT_WIDTH,
+        )
+        context = max(_MIN_CONTEXT_WIDTH, min(context_max, preferred_context))
         main = max(1, available - context)
         return [rail, main, context]
 
@@ -987,6 +1001,30 @@ class MainWindow(QMainWindow):
     def _writing_note_action_text(self, entry_id: str) -> str:
         count = self._container.entry_writing_note_repository.count_open_for_entry(entry_id)
         return TR("context.action_writing_notes_open").format(count=count)
+
+    def _entry_collections_text(self, entry_id: str) -> str:
+        try:
+            collections = self._container.collection_repository.list_collections_containing_entry(
+                entry_id
+            )
+        except AttributeError:
+            collections = []
+        if not collections:
+            return TR("context.no_value")
+        names = [
+            collection.name or TR("collections.untitled")
+            for collection in collections[:3]
+        ]
+        suffix = ""
+        if len(collections) > len(names):
+            suffix = TR("context.collections_more").format(
+                count=len(collections) - len(names)
+            )
+        return TR("context.collections_summary").format(
+            count=len(collections),
+            names=", ".join(names),
+            more=suffix,
+        )
 
     def _on_toggle_writing_notes_from_context(self) -> None:
         entry_id = self._editor_panel.current_entry_id()
@@ -1645,6 +1683,7 @@ class MainWindow(QMainWindow):
                     if entry.archived_at
                     else TR("context.no_value")
                 ),
+                collections=self._entry_collections_text(entry.id),
                 writing_notes_action=self._writing_note_action_text(entry.id),
             )
             return
@@ -2075,15 +2114,38 @@ class MainWindow(QMainWindow):
 
     def _toggle_context_pane(self) -> None:
         self._context_pane_visible = not self._context_pane_visible
+        self._apply_context_pane_visibility(save=True)
+
+    def _apply_context_pane_visibility(self, *, save: bool) -> None:
+        if not hasattr(self, "_main_splitter"):
+            return
         self._context_pane.setVisible(self._context_pane_visible)
-        self._update_shell_toggle_buttons()
-        try:
-            self._container.settings.set(
-                KEY_CONTEXT_PANE_VISIBLE,
-                "true" if self._context_pane_visible else "false",
+        if self._context_pane_visible:
+            context_width = max(
+                _MIN_CONTEXT_WIDTH,
+                self._last_context_pane_width or ContextPane.DEFAULT_WIDTH,
             )
-        except Exception:  # noqa: BLE001
-            pass
+            self._main_splitter.setSizes(
+                self._normalized_main_splitter_sizes(
+                    [NavigationRail.RAIL_WIDTH, max(1, self._main_splitter.width()), context_width]
+                )
+            )
+        else:
+            total = max(1, self._main_splitter.width())
+            self._main_splitter.setSizes([NavigationRail.RAIL_WIDTH, max(1, total), 0])
+        self._update_shell_toggle_buttons()
+        if save:
+            try:
+                self._container.settings.set(
+                    KEY_CONTEXT_PANE_VISIBLE,
+                    "true" if self._context_pane_visible else "false",
+                )
+                self._container.settings.set(
+                    _MAIN_SPLITTER_SIZES_KEY,
+                    json.dumps(self._main_splitter.sizes()),
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
     def _toggle_focus_mode(self) -> None:
         if self._focus_mode_enabled:
@@ -2101,7 +2163,7 @@ class MainWindow(QMainWindow):
 
         self._focus_restore_state = {
             "rail_visible": self._rail.isVisible(),
-            "context_visible": self._context_pane.isVisible(),
+            "context_visible": self._context_pane_visible,
             "toolbar_visible": self._top_toolbar.isVisible(),
             "list_visible": self._list_panel.isVisible(),
             "main_splitter_sizes": list(self._main_splitter.sizes()),
@@ -2128,7 +2190,7 @@ class MainWindow(QMainWindow):
         blocker = QSignalBlocker(self._splitter)
         try:
             self._rail.setVisible(bool(restore.get("rail_visible", True)))
-            self._context_pane.setVisible(bool(restore.get("context_visible", True)))
+            self._context_pane_visible = bool(restore.get("context_visible", True))
             self._top_toolbar.setVisible(bool(restore.get("toolbar_visible", True)))
             self._list_panel.setVisible(bool(restore.get("list_visible", True)))
             fragment_sizes = restore.get("fragment_splitter_sizes")
@@ -2137,7 +2199,7 @@ class MainWindow(QMainWindow):
             main_sizes = restore.get("main_splitter_sizes")
             if isinstance(main_sizes, list) and len(main_sizes) == 3:
                 self._main_splitter.setSizes(main_sizes)
-                self._normalize_main_splitter_sizes()
+            self._apply_context_pane_visibility(save=False)
         finally:
             del blocker
         self._focus_mode_enabled = False
@@ -2231,6 +2293,7 @@ class MainWindow(QMainWindow):
             created=entry.created_at or TR("context.no_value"),
             updated=entry.updated_at or TR("context.no_value"),
             status=status,
+            collections=self._entry_collections_text(entry_id),
             writing_notes_action=self._writing_note_action_text(entry_id),
         )
 
@@ -2263,6 +2326,55 @@ class MainWindow(QMainWindow):
     def _on_export_current_fragment_from_context(self) -> None:
         if self._editor_panel.current_entry_id():
             self._on_export("fragment", "markdown")
+
+    def _on_add_current_article_to_collections(self) -> None:
+        entry_id = self._editor_panel.current_entry_id()
+        if self._stack.currentIndex() == MODE_AI:
+            scope = self._ai_workspace_panel.scope
+            if scope is not None and scope.kind is AiThreadScope.FRAGMENT and scope.ref_id:
+                entry_id = scope.ref_id
+        if not entry_id:
+            return
+        try:
+            existing = {
+                collection.id
+                for collection in self._container.collection_repository.list_collections_containing_entry(
+                    entry_id
+                )
+            }
+        except AttributeError:
+            existing = set()
+        dialog = EntryCollectionPickerDialog(
+            self._container,
+            entry_id=entry_id,
+            excluded_collection_ids=existing,
+            parent=self,
+        )
+        if (
+            dialog.exec() != QDialog.DialogCode.Accepted
+            or not dialog.selected_collection_ids
+        ):
+            return
+        try:
+            for collection_id in dialog.selected_collection_ids:
+                self._container.collection_repository.add_entry(collection_id, entry_id)
+        except AttributeError as exc:
+            QMessageBox.information(
+                self,
+                TR("context.action_add_to_collection"),
+                str(exc),
+            )
+            return
+        self._refresh_fragment_context()
+        if self._stack.currentIndex() == MODE_AI:
+            self._refresh_ai_context_from_panel()
+        self._collections_panel.refresh_collections()
+        self.statusBar().showMessage(
+            TR("context.added_to_collections").format(
+                count=len(dialog.selected_collection_ids)
+            ),
+            2500,
+        )
 
     def _on_export_current_collection_from_context(self) -> None:
         if self._collections_panel._current_collection_id():

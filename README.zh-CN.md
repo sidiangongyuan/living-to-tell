@@ -23,7 +23,7 @@ Writer 把文章库、作品集、文脉标本库和 AI 工作区放在一个本
 | 模块 | 功能 |
 | --- | --- |
 | ✍️ 写作 | 文章编辑、自动保存、标签、片段便签、全文搜索、版本历史、专注模式、字体设置 |
-| 📚 作品集 | 多篇文章收录、阅读预览、拖拽排序、TXT / Markdown / DOCX 导出 |
+| 📚 作品集 | 多选加入文章、阅读预览、拖拽排序、TXT / Markdown / DOCX 导出 |
 | 🗂️ 文脉标本库 | 书架浏览、书籍内页、精句卡片、标签速览、查重提示、可切换统计视图 |
 | 🤖 AI 工作区 | 润色、按风格润色、扩写、续写、摘要、提纲、标题、结构诊断、一致性检查、资料库问答 |
 | 💬 上下文对话 | 按文章 / 作品集 / 全局隔离对话，本地持久保存，并做上下文预算裁剪 |
@@ -34,6 +34,7 @@ Writer 把文章库、作品集、文脉标本库和 AI 工作区放在一个本
 
 - [x] 文章优先的写作桌面
 - [x] 文章作品集、阅读预览、排序和导出
+- [x] 阅读编排式作品集：多选加入文章、拖拽排序、文章页显示所属作品集
 - [x] 版本历史与写回前快照
 - [x] 可见的 checkpoint 入口与版本清理能力，便于大改前后回溯
 - [x] GPT / OpenAI 兼容接口
@@ -49,6 +50,7 @@ Writer 把文章库、作品集、文脉标本库和 AI 工作区放在一个本
 - [x] AI 对话中的选中文字或最近回复可保存为当前片段便签，方便把讨论结果沉淀回写作桌面
 - [x] 片段便签默认收起设置，切换片段时更安静
 - [x] UI 质感优化：更清晰的工具栏、安静滚动条和防滚轮误改控件
+- [x] 右侧信息栏可通过顶部工具栏收起，不再依赖拖动 splitter
 - [x] Gemini API 与 Gemini CLI / OAuth 默认等待时间加长，降低长文本请求过早超时的概率
 - [ ] 补齐公开截图、短视频演示和功能预览
 - [ ] 常见写作流程的视频教程
@@ -66,8 +68,8 @@ Writer 把文章库、作品集、文脉标本库和 AI 工作区放在一个本
 
 推荐的公开分发方式是 **Windows 便携 zip**。
 
-- 最新 alpha：[Writer-0.2.0-alpha.41-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.41/Writer-0.2.0-alpha.41-portable.zip)
-- 发布页：[v0.2.0-alpha.41](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.41)
+- 最新 alpha：[Writer-0.2.0-alpha.42-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.42/Writer-0.2.0-alpha.42-portable.zip)
+- 发布页：[v0.2.0-alpha.42](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.42)
 - 如果想试最新分支，可以使用 **Build Windows Portable** GitHub Action 生成的 artifact。
 - 如果要本地自己打包，见 [从源码构建](#从源码构建)。
 

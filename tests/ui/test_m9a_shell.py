@@ -163,14 +163,24 @@ class TestShellLayout:
 
         window = MainWindow(container, autosave_debounce_ms=50)
         qtbot.addWidget(window)
-        # Default state is visible; toggling once should hide.
+        window.resize(1500, 900)
+        window.show()
+        # Default state is visible; toggling once should collapse.
         window._toggle_context_pane()  # noqa: SLF001
         assert container.settings.get(KEY_CONTEXT_PANE_VISIBLE) == "false"
+        assert window._main_splitter.sizes()[2] == 0  # noqa: SLF001
 
         window2 = MainWindow(container, autosave_debounce_ms=50)
         qtbot.addWidget(window2)
-        # Persisted hidden flag should be honoured at construction.
+        window2.resize(1500, 900)
+        window2.show()
+        # Persisted collapsed flag should be honoured at construction.
         assert window2._context_pane_visible is False  # noqa: SLF001
+        assert window2._main_splitter.sizes()[2] == 0  # noqa: SLF001
+
+        window2._toggle_context_pane()  # noqa: SLF001
+        assert window2._context_pane_visible is True  # noqa: SLF001
+        assert window2._main_splitter.sizes()[2] >= 220  # noqa: SLF001
 
     def test_window_still_has_toolbar_for_backcompat(self, qtbot, container):
         from PySide6.QtWidgets import QToolBar
@@ -445,12 +455,53 @@ class TestContextPane:
         from writer.ui.main_window import MainWindow, MODE_FRAGMENTS
 
         entry = container.entry_repository.create(title="t", body="hello world")
+        collection = container.collection_repository.create(name="Notebook")
+        container.collection_repository.add_entry(collection.id, entry.id)
         window = MainWindow(container, autosave_debounce_ms=50)
         qtbot.addWidget(window)
 
         window._set_mode(MODE_FRAGMENTS)  # noqa: SLF001
         window._load_entry(entry.id)  # noqa: SLF001
         assert window._context_pane._stack.currentIndex() == 1  # noqa: SLF001
+        assert "Notebook" in window._context_pane._frag_collections._value.text()  # noqa: SLF001
+
+    def test_context_pane_adds_current_article_to_collections(
+        self, qtbot, container, monkeypatch
+    ):
+        from PySide6.QtWidgets import QDialog
+
+        from writer.ui import main_window as mw_module
+        from writer.ui.main_window import MainWindow, MODE_FRAGMENTS
+
+        entry = container.entry_repository.create(title="t", body="hello world")
+        first = container.collection_repository.create(name="One")
+        second = container.collection_repository.create(name="Two")
+
+        class _Picker:
+            selected_collection_ids = [first.id, second.id]
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def exec(self):
+                return QDialog.DialogCode.Accepted
+
+        monkeypatch.setattr(mw_module, "EntryCollectionPickerDialog", _Picker)
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        window._set_mode(MODE_FRAGMENTS)  # noqa: SLF001
+        window._load_entry(entry.id)  # noqa: SLF001
+
+        window._on_add_current_article_to_collections()  # noqa: SLF001
+
+        assert {
+            collection.id
+            for collection in container.collection_repository.list_collections_containing_entry(
+                entry.id
+            )
+        } == {first.id, second.id}
+        assert "One" in window._context_pane._frag_collections._value.text()  # noqa: SLF001
 
     def test_context_pane_action_buttons_are_vertical_and_readable(
         self, qtbot, container
