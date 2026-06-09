@@ -291,12 +291,15 @@ class _WriterBodyEdit(PaperPlainTextEdit):
         return event.key() in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete)
 
     def _refresh_focus_paragraph(self) -> None:
+        from writer.ui.theme import current_tokens
+
+        t = current_tokens()
         selections: list[QTextEdit.ExtraSelection] = list(self._find_selections)
         if self._focus_paragraph_enabled:
             current_block = self.textCursor().block()
 
             muted_format = QTextCharFormat()
-            muted_format.setForeground(QColor(120, 128, 140))
+            muted_format.setForeground(QColor(t.text_muted))
             block = self.document().firstBlock()
             while block.isValid():
                 if block != current_block and block.text().strip():
@@ -308,7 +311,9 @@ class _WriterBodyEdit(PaperPlainTextEdit):
                 block = block.next()
 
             current_format = QTextCharFormat()
-            current_format.setBackground(QColor(30, 143, 149, 22))
+            current_bg = QColor(t.accent)
+            current_bg.setAlpha(22)
+            current_format.setBackground(current_bg)
             current_selection = QTextEdit.ExtraSelection()
             current_selection.cursor = QTextCursor(current_block)
             current_selection.cursor.clearSelection()

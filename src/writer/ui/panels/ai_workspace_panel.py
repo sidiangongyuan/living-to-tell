@@ -2374,12 +2374,15 @@ class AIChatTab(QWidget):
         self._refresh_message_actions()
 
     def _append_message(self, role: str, content: str) -> None:
+        from writer.ui.theme import current_tokens
+
+        t = current_tokens()
         if role == "user":
             label = TR("ai.chat.role_user")
-            color = "#2b6cb0"
+            color = t.accent
         else:
             label = TR("ai.chat.role_assistant")
-            color = "#2f855a"
+            color = t.text_secondary
         html = (
             f'<div style="margin: 4px 0;"><b style="color:{color};">{label}:</b><br>'
             f'<span style="white-space: pre-wrap;">{self._escape(content)}</span></div>'

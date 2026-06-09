@@ -24,11 +24,29 @@ from writer.ui.motion import cancel_scrollbar_animation, smooth_scrollbar_to
 
 EditorWidget = QPlainTextEdit | QTextEdit
 
-_MATCH_BG = QColor("#E8D9AA")
-_MATCH_FG = QColor("#54411E")
-_CURRENT_BG = QColor("#D29C43")
-_CURRENT_FG = QColor("#FFFDF7")
-_CURRENT_BORDER = QColor("#B97828")
+def _find_highlight_colors() -> tuple[QColor, QColor, QColor, QColor, QColor]:
+    """Find-match colours derived from the live accent token.
+
+    Returns ``(match_bg, match_fg, current_bg, current_fg, current_border)``.
+    Resolved at call time so a theme switch (light/dark) is reflected on the
+    next selection refresh instead of being frozen at import time.
+    """
+    from writer.ui.theme import current_tokens
+
+    t = current_tokens()
+    accent = QColor(t.accent)
+    # Non-current matches: a soft translucent accent wash so surrounding
+    # text stays readable.
+    match_bg = QColor(accent)
+    match_bg.setAlpha(48)
+    match_fg = QColor(t.text_primary)
+    # Current match: solid accent fill with on-accent text + accent underline.
+    current_bg = QColor(accent)
+    current_fg = QColor(t.text_on_accent)
+    current_border = QColor(t.accent_pressed)
+    return match_bg, match_fg, current_bg, current_fg, current_border
+
+
 _WHEEL_LINES_PER_NOTCH = 3
 _WHEEL_ANIMATION_MS = 90
 
@@ -215,17 +233,20 @@ class EditorFindController(QObject):
             if 0 <= self._current_index < len(self._matches)
             else None
         )
+        match_bg, match_fg, current_bg, current_fg, current_border = (
+            _find_highlight_colors()
+        )
         for match in self._matches:
             selection = _selection_type()()
             selection.cursor = QTextCursor(editor.document())
             selection.cursor.setPosition(match.start)
             selection.cursor.setPosition(match.end, QTextCursor.MoveMode.KeepAnchor)
             selection.format = QTextCharFormat()
-            selection.format.setBackground(_CURRENT_BG if match == current_range else _MATCH_BG)
-            selection.format.setForeground(_CURRENT_FG if match == current_range else _MATCH_FG)
+            selection.format.setBackground(current_bg if match == current_range else match_bg)
+            selection.format.setForeground(current_fg if match == current_range else match_fg)
             if match == current_range:
                 selection.format.setFontUnderline(True)
-                selection.format.setUnderlineColor(_CURRENT_BORDER)
+                selection.format.setUnderlineColor(current_border)
             selections.append(selection)
         try:
             if hasattr(editor, "set_find_selections"):
