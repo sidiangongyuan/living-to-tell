@@ -117,60 +117,60 @@ class Tokens:
 
 
 LIGHT_TOKENS = Tokens(
-    bg_window="#F1ECE2",
-    bg_rail="#E5DDD0",
+    bg_window="#F5F5F7",
+    bg_rail="#ECECEE",
     bg_list="#FFFFFF",
-    bg_main="#F4EEE2",
-    bg_context="#EFE7D8",
-    bg_input="#FFFDF8",
-    bg_card="#FBF7EF",
-    bg_soft="#F8F1E5",
-    bg_preview="#FFF9EF",
-    bg_done="#F1E8D9",
-    bg_search="#FFF7E8",
-    text_primary="#2D2418",
-    text_secondary="#625443",
-    text_muted="#9A8872",
+    bg_main="#FFFFFF",
+    bg_context="#F5F5F7",
+    bg_input="#FFFFFF",
+    bg_card="#FFFFFF",
+    bg_soft="#F0F0F2",
+    bg_preview="#F5F5F7",
+    bg_done="#EEEEF0",
+    bg_search="#F0F0F2",
+    text_primary="#1D1D1F",
+    text_secondary="#5A5A5E",
+    text_muted="#8E8E93",
     text_on_accent="#FFFFFF",
-    border="#DCCFB9",
-    border_strong="#C8B596",
-    accent="#7C8B6A",
-    accent_hover="#68765A",
-    accent_pressed="#56624A",
-    selected_bg="#EBE1CB",
-    hover_bg="#F5ECDD",
-    danger="#B2553F",
-    danger_hover="#8F4332",
-    archived_bg="#F4E5CF",
-    archived_fg="#916235",
+    border="#E2E2E5",
+    border_strong="#D1D1D6",
+    accent="#007AFF",
+    accent_hover="#0071EB",
+    accent_pressed="#0062CC",
+    selected_bg="#E8F0FE",
+    hover_bg="#F0F0F2",
+    danger="#FF3B30",
+    danger_hover="#E0352B",
+    archived_bg="#FFF0DB",
+    archived_fg="#9A6B1F",
 )
 
 
 DARK_TOKENS = Tokens(
-    bg_window="#11161C",
-    bg_rail="#161D24",
-    bg_list="#1B232C",
-    bg_main="#202A34",
-    bg_context="#18212A",
-    bg_input="#1F2933",
-    bg_card="#1E2731",
-    bg_soft="#18212A",
-    bg_preview="#202B35",
-    bg_done="#232A2F",
-    bg_search="#232D36",
-    text_primary="#E9EEF5",
-    text_secondary="#A9B3C2",
-    text_muted="#7D8898",
-    text_on_accent="#0E1418",
-    border="#2B3744",
-    border_strong="#3A4654",
-    accent="#48B7B8",
-    accent_hover="#62C7C8",
-    accent_pressed="#7AD2D3",
-    selected_bg="#14373B",
-    hover_bg="#222D38",
-    danger="#E07060",
-    danger_hover="#EE8472",
+    bg_window="#1C1C1E",
+    bg_rail="#161618",
+    bg_list="#2C2C2E",
+    bg_main="#1C1C1E",
+    bg_context="#161618",
+    bg_input="#2C2C2E",
+    bg_card="#2C2C2E",
+    bg_soft="#242426",
+    bg_preview="#2C2C2E",
+    bg_done="#242426",
+    bg_search="#242426",
+    text_primary="#F5F5F7",
+    text_secondary="#AEAEB2",
+    text_muted="#8E8E93",
+    text_on_accent="#FFFFFF",
+    border="#38383A",
+    border_strong="#48484A",
+    accent="#0A84FF",
+    accent_hover="#3B9BFF",
+    accent_pressed="#0A6FD8",
+    selected_bg="#0A3055",
+    hover_bg="#2C2C2E",
+    danger="#FF453A",
+    danger_hover="#FF6961",
     archived_bg="#3B2B1D",
     archived_fg="#E2B37A",
 )
@@ -386,7 +386,8 @@ QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox {{
 }}
 QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus,
 QComboBox:focus, QSpinBox:focus {{
-    border: 1px solid {t.accent};
+    border: 2px solid {t.accent};
+    padding: 5px 9px;
 }}
 QLineEdit:disabled, QPlainTextEdit:disabled, QTextEdit:disabled,
 QComboBox:disabled, QSpinBox:disabled {{
@@ -588,7 +589,7 @@ QLineEdit#EditorTitle {{
     color: {t.text_primary};
 }}
 QLineEdit#EditorTitle:focus {{
-    border-bottom: 1px solid {t.accent};
+    border-bottom: 2px solid {t.accent};
 }}
 QFrame#EditorFindBar {{
     background: {t.bg_card};
