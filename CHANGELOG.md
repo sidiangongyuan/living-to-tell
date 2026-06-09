@@ -2,6 +2,33 @@
 
 Product-facing changes only.
 
+## 0.2.0-alpha.43 — Major UI refresh: Apple-style neutral theme
+
+This is a **major UI update**. The whole interface was reskinned around a calm,
+Apple-inspired neutral aesthetic, with no change to features, layout, or where
+things live — every entry point stays exactly where it was.
+
+- Reworked the colour system for both light and dark modes: a neutral grey/white
+  canvas (light) and a neutral charcoal canvas (dark), replacing the older warm
+  beige and teal palettes, with the iOS/macOS system blue as the single accent.
+- Tightened geometry into an Apple-style hierarchy of corner radii, so small
+  controls read as precise rather than rounded, while cards and large containers
+  keep softer corners.
+- Switched region separation to favour subtle background steps and faint hairline
+  borders over heavy outlines, reserving shadows for pop-up surfaces only.
+- Replaced the navigation rail's emoji glyphs with crisp line icons (Segoe Fluent
+  Icons, with graceful fallback on systems without the icon font), and gave the
+  selected item a calm tinted highlight with a blue icon instead of a solid fill.
+- Refreshed sticky writing notes into softer, theme-aware pastels so note text
+  stays readable in dark mode.
+- Normalised find-in-page highlights and focus-mode paragraph dimming to the
+  active theme accent, removing leftover off-theme colours.
+- Slimmed and calmed the scrollbars, strengthened keyboard focus rings, and added
+  a few restrained micro-interactions (mode fade, context-pane slide) that respect
+  the reduced-motion setting.
+- Added a tertiary blue text-button style for lightweight inline actions.
+- No functional changes; the full test suite continues to pass.
+
 ## 0.2.0-alpha.42 — Collection arrangement and context pane polish
 
 - Made article collections easier to fill: collection pages now support

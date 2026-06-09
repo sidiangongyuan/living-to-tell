@@ -28,6 +28,7 @@ Writer 把文章库、作品集、文脉标本库和 AI 工作区放在一个本
 | 🤖 AI 工作区 | 润色、按风格润色、扩写、续写、摘要、提纲、标题、结构诊断、一致性检查、资料库问答 |
 | 💬 上下文对话 | 按文章 / 作品集 / 全局隔离对话，本地持久保存，并做上下文预算裁剪 |
 | 🔐 安全机制 | 接受前对比，手动 checkpoint，写回前快照，不把原始 AI 密钥存进设置 |
+| 🎨 界面 | 苹果风中性灰白皮肤、系统蓝强调色、层级化圆角、Fluent 线性导航图标、light / dark 双主题、克制的微交互 |
 | 🪟 分发 | Windows 便携 zip、本地 PyInstaller 打包脚本、GitHub Actions 构建流程 |
 
 ## 🧭 产品 TODO
@@ -50,6 +51,7 @@ Writer 把文章库、作品集、文脉标本库和 AI 工作区放在一个本
 - [x] AI 对话中的选中文字或最近回复可保存为当前片段便签，方便把讨论结果沉淀回写作桌面
 - [x] 片段便签默认收起设置，切换片段时更安静
 - [x] UI 质感优化：更清晰的工具栏、安静滚动条和防滚轮误改控件
+- [x] 界面重大更新：苹果式中性灰白皮肤，系统蓝强调色，线性导航图标，层级化圆角，安静分区与精修的明暗双主题
 - [x] 右侧信息栏可通过顶部工具栏收起，不再依赖拖动 splitter
 - [x] Gemini API 与 Gemini CLI / OAuth 默认等待时间加长，降低长文本请求过早超时的概率
 - [ ] 补齐公开截图、短视频演示和功能预览
@@ -68,8 +70,8 @@ Writer 把文章库、作品集、文脉标本库和 AI 工作区放在一个本
 
 推荐的公开分发方式是 **Windows 便携 zip**。
 
-- 最新 alpha：[Writer-0.2.0-alpha.42-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.42/Writer-0.2.0-alpha.42-portable.zip)
-- 发布页：[v0.2.0-alpha.42](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.42)
+- 最新 alpha：[Writer-0.2.0-alpha.43-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.43/Writer-0.2.0-alpha.43-portable.zip)
+- 发布页：[v0.2.0-alpha.43](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.43)
 - 如果想试最新分支，可以使用 **Build Windows Portable** GitHub Action 生成的 artifact。
 - 如果要本地自己打包，见 [从源码构建](#从源码构建)。
 

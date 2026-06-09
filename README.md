@@ -30,6 +30,7 @@ suggestions before they touch the manuscript.
 | 🤖 AI workspace | Polish, style-aware polish, expand, continue, summarize, outline, title ideas, structure diagnosis, consistency checks, library Q&A |
 | 💬 Scoped chat | Article / collection / global chat scopes, persisted threads, context budget trimming |
 | 🔐 Safety | Compare before accepting, checkpoints, snapshots before write-back, no stored raw AI keys |
+| 🎨 Interface | Apple-style neutral light/dark themes, system-blue accent, tiered corners, line nav icons, calmer sticky notes |
 | 🪟 Distribution | Windows portable zip, local PyInstaller build script, GitHub Actions build path |
 
 ## 🧭 Product TODO
@@ -52,6 +53,7 @@ suggestions before they touch the manuscript.
 - [x] Save selected AI chat text or the latest reply back into the current fragment as reusable notes
 - [x] Fragment-note default-collapse setting for calmer fragment switching
 - [x] UI polish: clearer toolbar controls, calmer scrollbars, and no-wheel form controls
+- [x] Major UI refresh: Apple-style neutral palette, system-blue accent, line nav icons, tiered radii, and restrained motion
 - [x] Collapsible right context pane controlled from the top toolbar
 - [x] Longer default Gemini API and Gemini CLI / OAuth timeout for large writing prompts
 - [ ] Public screenshot gallery and short demo videos
@@ -70,8 +72,8 @@ Public screenshots, short walkthrough videos, and workflow demos are on the road
 
 The recommended public distribution format is a **Windows portable zip**.
 
-- Latest alpha: [Writer-0.2.0-alpha.42-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.42/Writer-0.2.0-alpha.42-portable.zip)
-- Release page: [v0.2.0-alpha.42](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.42)
+- Latest alpha: [Writer-0.2.0-alpha.43-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.43/Writer-0.2.0-alpha.43-portable.zip)
+- Release page: [v0.2.0-alpha.43](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.43)
 - If you are testing the latest branch, use the **Build Windows Portable** GitHub Action artifact.
 - To build locally, run the packaging command in [Build from source](#build-from-source).
 
