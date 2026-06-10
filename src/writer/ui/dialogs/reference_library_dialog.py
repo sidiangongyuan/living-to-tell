@@ -40,3 +40,7 @@ class ReferenceLibraryDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(self.panel)
         layout.addWidget(buttons)
+
+    def locate_passage(self, passage_id: str) -> None:
+        """Select the passage's group and scroll the passage into view."""
+        self.panel.locate_passage(passage_id)

@@ -182,6 +182,28 @@ class TestShellLayout:
         assert window2._context_pane_visible is True  # noqa: SLF001
         assert window2._main_splitter.sizes()[2] >= 220  # noqa: SLF001
 
+    def test_context_pane_can_shrink_after_growing(self, qtbot, container):
+        """Regression: normalize used max(current, remembered) — a ratchet
+        that let the pane grow but never shrink, freezing the splitter handle
+        entirely once the pane hit its maximum width."""
+        from writer.ui.main_window import MainWindow
+
+        window = MainWindow(container, autosave_debounce_ms=50)
+        qtbot.addWidget(window)
+        window.resize(1500, 900)
+        window.show()
+
+        total = sum(window._main_splitter.sizes())  # noqa: SLF001
+        # Grow the pane (simulated drag), then drag it back narrower.
+        window._main_splitter.setSizes([80, total - 80 - 320, 320])  # noqa: SLF001
+        window._on_main_splitter_moved(0, 2)  # noqa: SLF001
+        assert window._main_splitter.sizes()[2] >= 300  # noqa: SLF001
+
+        window._main_splitter.setSizes([80, total - 80 - 240, 240])  # noqa: SLF001
+        window._on_main_splitter_moved(0, 2)  # noqa: SLF001
+        shrunk = window._main_splitter.sizes()[2]  # noqa: SLF001
+        assert 220 <= shrunk <= 260  # must not snap back to the grown width
+
     def test_window_still_has_toolbar_for_backcompat(self, qtbot, container):
         from PySide6.QtWidgets import QToolBar
 

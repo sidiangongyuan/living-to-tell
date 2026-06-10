@@ -21,8 +21,8 @@ import hashlib
 from datetime import date
 from typing import Dict, Iterable, List, Optional
 
-from PySide6.QtCore import QDate, Qt, Signal
-from PySide6.QtGui import QPalette
+from PySide6.QtCore import QDate, QEvent, Qt, Signal
+from PySide6.QtGui import QColor, QPalette, QTextCharFormat
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,
@@ -128,6 +128,48 @@ class _DatesCalendar(QCalendarWidget):
         self.setGridVisible(True)
         self.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
         self._stats: Dict[date, DailyStat] = {}
+        self._apply_theme_formats()
+
+    def _apply_theme_formats(self) -> None:
+        """Pin header/day-cell formats to the active theme tokens.
+
+        QCalendarWidget derives cell backgrounds from palette snapshots that
+        lag one theme switch behind when an app stylesheet is active (dark
+        cell backgrounds under light text and vice versa). Explicit
+        QTextCharFormats bypass the palette entirely, so the cells stay
+        readable no matter how many times the theme flips. This also folds
+        Qt's default red weekends into the token palette.
+        """
+        from writer.ui.theme import current_tokens
+
+        t = current_tokens()
+
+        def _fmt(foreground: str) -> QTextCharFormat:
+            fmt = QTextCharFormat()
+            fmt.setBackground(QColor(t.bg_card))
+            fmt.setForeground(QColor(foreground))
+            return fmt
+
+        self.setHeaderTextFormat(_fmt(t.text_secondary))
+        for day in (
+            Qt.DayOfWeek.Monday,
+            Qt.DayOfWeek.Tuesday,
+            Qt.DayOfWeek.Wednesday,
+            Qt.DayOfWeek.Thursday,
+            Qt.DayOfWeek.Friday,
+        ):
+            self.setWeekdayTextFormat(day, _fmt(t.text_primary))
+        for day in (Qt.DayOfWeek.Saturday, Qt.DayOfWeek.Sunday):
+            self.setWeekdayTextFormat(day, _fmt(t.text_secondary))
+
+    def changeEvent(self, event) -> None:  # noqa: N802 — Qt override
+        super().changeEvent(event)
+        if event.type() in (
+            QEvent.Type.PaletteChange,
+            QEvent.Type.ApplicationPaletteChange,
+            QEvent.Type.StyleChange,
+        ):
+            self._apply_theme_formats()
 
     def set_stats(self, stats: Dict[date, DailyStat]) -> None:
         self._stats = stats
@@ -189,7 +231,7 @@ class DatesPanel(QWidget):
     new_today_requested = Signal()  # host should create + open
     append_tags_requested = Signal(list)  # list[str] entry_ids
     merge_requested = Signal(list)  # list[str] entry_ids
-    manage_quotes_requested = Signal()
+    manage_quotes_requested = Signal(str)  # displayed daily-quote id ("" if none)
 
     def __init__(
         self,
@@ -336,7 +378,7 @@ class DatesPanel(QWidget):
         self._tag_btn.clicked.connect(self._on_tag_clicked)
         self._merge_btn.clicked.connect(self._on_merge_clicked)
         self._replace_quote_btn.clicked.connect(self._on_replace_daily_quote)
-        self._manage_quotes_btn.clicked.connect(self.manage_quotes_requested.emit)
+        self._manage_quotes_btn.clicked.connect(self._on_manage_quotes_clicked)
         self._copy_quote_btn.clicked.connect(self._on_copy_daily_quote)
         self._entry_list.itemActivated.connect(self._on_item_activated)
         self._entry_list.itemDoubleClicked.connect(self._on_item_activated)
@@ -487,6 +529,9 @@ class DatesPanel(QWidget):
         if quote is None:
             return
         QApplication.clipboard().setText(_quote_text(quote.content))
+
+    def _on_manage_quotes_clicked(self) -> None:
+        self.manage_quotes_requested.emit(self._displayed_daily_quote_id or "")
 
     def _on_item_activated(self, item: QListWidgetItem) -> None:
         entry_id = item.data(Qt.ItemDataRole.UserRole)

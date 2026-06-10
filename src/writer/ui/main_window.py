@@ -702,11 +702,15 @@ class MainWindow(QMainWindow):
             self._main_splitter.setSizes(self._normalized_main_splitter_sizes(sizes))
 
     def _on_main_splitter_moved(self, _pos: int, _index: int) -> None:
-        self._normalize_main_splitter_sizes()
+        # Record the dragged width FIRST so the normalize pass below honours
+        # the user's drag instead of pulling the pane back to the previous
+        # width (the old order acted as a grow-only ratchet that eventually
+        # froze the handle at the pane's maximum width).
         if self._context_pane_visible:
             sizes = self._main_splitter.sizes()
             if len(sizes) >= 3 and sizes[2] > 0:
                 self._last_context_pane_width = max(_MIN_CONTEXT_WIDTH, sizes[2])
+        self._normalize_main_splitter_sizes()
         self._container.settings.set(
             _MAIN_SPLITTER_SIZES_KEY,
             json.dumps(self._main_splitter.sizes()),
@@ -769,10 +773,12 @@ class MainWindow(QMainWindow):
         if not getattr(self, "_context_pane_visible", True):
             return [rail, available, 0]
         context_max = max(_MIN_CONTEXT_WIDTH, available - _MIN_MAIN_AREA_WIDTH)
-        preferred_context = max(
-            cleaned[2],
-            self._last_context_pane_width or ContextPane.DEFAULT_WIDTH,
-        )
+        # Normalization is layout correction (restore/resize/show), where the
+        # live sizes may be transient layout artefacts — so the remembered
+        # width is the preference. User drags stay authoritative because
+        # _on_main_splitter_moved updates _last_context_pane_width from the
+        # dragged size before normalizing.
+        preferred_context = self._last_context_pane_width or ContextPane.DEFAULT_WIDTH
         context = max(_MIN_CONTEXT_WIDTH, min(context_max, preferred_context))
         main = max(1, available - context)
         return [rail, main, context]
@@ -1381,7 +1387,10 @@ class MainWindow(QMainWindow):
             self._apply_editor_preferences()
 
     def _on_open_reference_library(
-        self, *, initial_usage_kind: Optional[str] = None
+        self,
+        *,
+        initial_usage_kind: Optional[str] = None,
+        select_passage_id: Optional[str] = None,
     ) -> None:
         try:
             dialog = ReferenceLibraryDialog(
@@ -1396,11 +1405,13 @@ class MainWindow(QMainWindow):
                 parent=self,
                 initial_usage_kind=initial_usage_kind,
             )
+        if select_passage_id:
+            dialog.locate_passage(select_passage_id)
         dialog.exec()
         self._dates_panel.refresh_daily_quote()
 
-    def _on_manage_quotes(self) -> None:
-        self._on_open_reference_library()
+    def _on_manage_quotes(self, quote_id: str = "") -> None:
+        self._on_open_reference_library(select_passage_id=quote_id or None)
 
     # --------------------------------------------------------------
     # M-Dates: signals from DatesPanel

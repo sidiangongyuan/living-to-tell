@@ -690,3 +690,35 @@ def test_main_window_passes_references_into_request(qtbot, container, monkeypatc
     qtbot.wait(200)
 
     assert captured == [["inspiration-1"]]
+
+
+def test_locate_passage_switches_group_and_selects(qtbot, container):
+    """``locate_passage`` must jump to the passage's own group (not stay on
+    the "all" pseudo-group) and select + scroll to the passage itself. Used
+    by the Dates daily-quote card's "manage quotes" button."""
+    from PySide6.QtCore import Qt
+
+    from writer.ui.panels.reference_library_panel import ReferenceLibraryPanel
+    from writer.ui.reference_grouping import ALL_GROUP_KEY
+
+    container.reference_repository.create(
+        source_title="Book One",
+        content="First passage body.",
+    )
+    target = container.reference_repository.create(
+        source_title="Book Two",
+        content="Second passage body, shown as the daily quote.",
+    )
+
+    panel = ReferenceLibraryPanel(
+        container.reference_repository,
+        settings=container.settings,
+    )
+    qtbot.addWidget(panel)
+
+    panel.locate_passage(target.id)
+
+    current = panel._list.currentItem()  # noqa: SLF001
+    assert current is not None
+    assert current.data(Qt.ItemDataRole.UserRole) == target.id
+    assert panel._active_group_key not in (None, ALL_GROUP_KEY)  # noqa: SLF001

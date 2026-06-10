@@ -843,6 +843,19 @@ class ReferenceLibraryPanel(QWidget):
         idx = self._usage_kind_filter_combo.findData(usage_kind)
         self._usage_kind_filter_combo.setCurrentIndex(max(0, idx))
 
+    def locate_passage(self, passage_id: str) -> None:
+        """Jump to a passage: select its group, then select and scroll to it.
+
+        Clearing the active group key first lets ``_resolve_group_key`` fall
+        through to ``find_group_key_for_passage``, so the shelf list switches
+        to the group that actually contains the passage instead of staying on
+        the current (typically "all") group.
+        """
+        if not passage_id:
+            return
+        self._active_group_key = None
+        self.refresh(select_id=passage_id)
+
     def refresh(self, *, select_id: Optional[str] = None) -> None:
         query = self._search.text().strip()
         kind = self._current_kind_filter()

@@ -190,6 +190,51 @@ def test_dates_panel_manage_quotes_button_emits_signal(qtbot, container):
         panel._manage_quotes_btn.click()  # noqa: SLF001
 
 
+def test_dates_panel_manage_quotes_signal_carries_displayed_quote_id(qtbot, container):
+    from writer.ui.panels.dates_panel import DatesPanel
+
+    passage = container.reference_repository.create(
+        source_title="Le Petit Prince",
+        content="What is essential is invisible to the eye.",
+        usage_kind="style",
+    )
+
+    panel = DatesPanel(container)
+    qtbot.addWidget(panel)
+    assert panel._displayed_daily_quote_id == passage.id  # noqa: SLF001
+
+    with qtbot.waitSignal(panel.manage_quotes_requested, timeout=1000) as blocker:
+        panel._manage_quotes_btn.click()  # noqa: SLF001
+    assert blocker.args == [passage.id]
+
+
+def test_dates_calendar_cell_formats_survive_theme_round_trip(qtbot, container):
+    """Regression: after light→dark→light the weekday cells kept the dark
+    theme's background under light-theme text (QCalendarWidget derives cell
+    backgrounds from palette snapshots that lag one theme switch behind).
+    Explicit per-weekday formats must track the live tokens instead."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QApplication
+
+    from writer.ui.panels.dates_panel import DatesPanel
+    from writer.ui.theme import LIGHT_TOKENS, ThemeMode, apply_theme
+
+    app = QApplication.instance()
+    panel = DatesPanel(container)
+    qtbot.addWidget(panel)
+    try:
+        apply_theme(app, ThemeMode.LIGHT)
+        apply_theme(app, ThemeMode.DARK)
+        apply_theme(app, ThemeMode.LIGHT)
+        app.processEvents()
+        fmt = panel._calendar.weekdayTextFormat(Qt.DayOfWeek.Monday)  # noqa: SLF001
+        assert fmt.background().color() == QColor(LIGHT_TOKENS.bg_card)
+        assert fmt.foreground().color() == QColor(LIGHT_TOKENS.text_primary)
+    finally:
+        apply_theme(app, ThemeMode.LIGHT)
+
+
 def test_daily_quote_buttons_keep_readable_size(qtbot, container):
     from writer.ui.panels.dates_panel import DatesPanel
 
