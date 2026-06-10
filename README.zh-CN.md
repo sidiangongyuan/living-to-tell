@@ -70,8 +70,8 @@ Writer 把文章库、作品集、文脉标本库和 AI 工作区放在一个本
 
 推荐的公开分发方式是 **Windows 便携 zip**。
 
-- 最新 alpha：[Writer-0.2.0-alpha.43-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.43/Writer-0.2.0-alpha.43-portable.zip)
-- 发布页：[v0.2.0-alpha.43](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.43)
+- 最新 alpha：[Writer-0.2.0-alpha.44-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.44/Writer-0.2.0-alpha.44-portable.zip)
+- 发布页：[v0.2.0-alpha.44](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.44)
 - 如果想试最新分支，可以使用 **Build Windows Portable** GitHub Action 生成的 artifact。
 - 如果要本地自己打包，见 [从源码构建](#从源码构建)。
 
