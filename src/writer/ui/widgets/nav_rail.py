@@ -7,10 +7,11 @@ text label so unfamiliar users still understand them at a glance.
 Icons use **Segoe Fluent Icons** (the Win11 system icon font) when present,
 falling back to **Segoe MDL2 Assets** (Win10) and finally to plain Unicode
 glyphs, so the rail never renders as tofu boxes on a machine missing the
-icon font. The icon lives in its own ``QLabel`` (with the icon font applied
-directly in Python, so the global ``*`` font-family rule can't override it),
-which lets the selected/hover states recolour the glyph through pure QSS
-descendant selectors (``#RailButton:checked QLabel#RailIcon``).
+icon font. The icon lives in its own ``QLabel`` with the icon font pinned via
+a per-widget stylesheet — the app-wide ``* { font-family }`` rule overrides
+``setFont()``, and only a widget-level stylesheet outranks the app sheet.
+Selected/hover states still recolour the glyph through app-QSS descendant
+selectors (``#RailButton:checked QLabel#RailIcon``).
 """
 from __future__ import annotations
 
@@ -39,7 +40,7 @@ _ICON_GLYPHS = {
     "dates": "",      # Calendar
     "fragments": "",  # Edit (pencil)
     "collections": "",  # Library
-    "ai": "",         # Lightbulb / idea (Sparkle E945)
+    "ai": "",         # Lightbulb / idea (EA80)
     "search": "",     # Search
     "theme": "",      # Brightness
     "settings": "",   # Settings (gear)
@@ -96,9 +97,10 @@ class RailButton(QPushButton):
     Subclasses ``QPushButton`` so it can still join the mode ``QButtonGroup``
     and be exposed through the same property accessors as before. The button
     carries no text itself; an icon ``QLabel`` and a text ``QLabel`` are laid
-    out inside it. The icon label gets the icon font applied directly so the
-    global ``*`` font-family stylesheet rule cannot replace it with the UI
-    font (which would render Fluent code points as tofu).
+    out inside it. The icon label pins the icon font through its own widget
+    stylesheet because the application stylesheet's ``*`` font-family rule
+    overrides a plain ``setFont()`` (which would leave glyph rendering to the
+    OS font fallback instead of the font this module actually selected).
     """
 
     ICON_POINT_SIZE = 18
@@ -126,6 +128,11 @@ class RailButton(QPushButton):
         family = _icon_font_family()
         if family is not None:
             icon_font.setFamily(family)
+            # The app stylesheet's `* { font-family }` rule beats setFont();
+            # a widget-level stylesheet is the only thing that beats the app
+            # sheet, so pin the family here. Colour still comes from app-QSS
+            # descendant selectors (only conflicting properties are overridden).
+            self._icon.setStyleSheet(f'font-family: "{family}";')
         icon_font.setPointSize(self.ICON_POINT_SIZE)
         self._icon.setFont(icon_font)
 

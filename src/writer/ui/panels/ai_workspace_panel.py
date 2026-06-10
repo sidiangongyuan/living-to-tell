@@ -2373,6 +2373,17 @@ class AIChatTab(QWidget):
             self._append_message(msg.role, msg.content)
         self._refresh_message_actions()
 
+    def refresh_theme(self) -> None:
+        """Re-render persisted history so inline role colours match the theme.
+
+        Chat HTML embeds token colours at append time, so a light/dark switch
+        would otherwise leave older messages in the previous theme's colours.
+        Skipped when no thread is active: nothing persisted needs re-rendering,
+        and clearing the view could drop an in-flight unsaved exchange.
+        """
+        if self._thread_id is not None:
+            self._render_history()
+
     def _append_message(self, role: str, content: str) -> None:
         from writer.ui.theme import current_tokens
 
@@ -2746,3 +2757,7 @@ class AIWorkspacePanel(QWidget):
 
     def set_include_writing_notes(self, enabled: bool) -> None:
         self._tools_tab.set_include_writing_notes(enabled)
+
+    def refresh_theme(self) -> None:
+        """Propagate a light/dark switch to content with baked-in colours."""
+        self._chat_tab.refresh_theme()

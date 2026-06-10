@@ -2252,6 +2252,12 @@ class MainWindow(QMainWindow):
         if app is not None:
             apply_theme(app, mode)
         try:
+            # Chat history bakes token colours into its HTML; re-render it so
+            # a light/dark switch doesn't leave old messages in stale colours.
+            self._ai_workspace_panel.refresh_theme()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
             self._container.settings.set(KEY_THEME_MODE, mode.value)
         except Exception:  # noqa: BLE001
             pass

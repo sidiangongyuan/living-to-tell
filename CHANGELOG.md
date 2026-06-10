@@ -26,6 +26,9 @@ things live — every entry point stays exactly where it was.
 - Slimmed and calmed the scrollbars, strengthened keyboard focus rings, and added
   a restrained mode-switch fade that respects the reduced-motion setting.
 - Added a tertiary blue text-button style for lightweight inline actions.
+- Hardened the rail icons against the app-wide font rule (the icon font is now
+  pinned per widget instead of relying on OS glyph fallback), and AI chat
+  history re-renders on light/dark switches so role colours never go stale.
 - No functional changes; the full test suite continues to pass.
 
 ## 0.2.0-alpha.42 — Collection arrangement and context pane polish
