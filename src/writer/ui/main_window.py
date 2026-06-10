@@ -2114,9 +2114,9 @@ class MainWindow(QMainWindow):
 
     def _toggle_context_pane(self) -> None:
         self._context_pane_visible = not self._context_pane_visible
-        self._apply_context_pane_visibility(save=True, animate=True)
+        self._apply_context_pane_visibility(save=True)
 
-    def _apply_context_pane_visibility(self, *, save: bool, animate: bool = False) -> None:
+    def _apply_context_pane_visibility(self, *, save: bool) -> None:
         if not hasattr(self, "_main_splitter"):
             return
         self._context_pane.setVisible(self._context_pane_visible)
@@ -2131,10 +2131,7 @@ class MainWindow(QMainWindow):
         else:
             total = max(1, self._main_splitter.width())
             target = [NavigationRail.RAIL_WIDTH, max(1, total), 0]
-        if animate and not self._reduced_motion:
-            slide_splitter_sizes(self._main_splitter, target, reduced=self._reduced_motion)
-        else:
-            self._main_splitter.setSizes(target)
+        self._main_splitter.setSizes(target)
         self._update_shell_toggle_buttons()
         if save:
             try:

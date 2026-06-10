@@ -24,8 +24,7 @@ things live — every entry point stays exactly where it was.
 - Normalised find-in-page highlights and focus-mode paragraph dimming to the
   active theme accent, removing leftover off-theme colours.
 - Slimmed and calmed the scrollbars, strengthened keyboard focus rings, and added
-  a few restrained micro-interactions (mode fade, context-pane slide) that respect
-  the reduced-motion setting.
+  a restrained mode-switch fade that respects the reduced-motion setting.
 - Added a tertiary blue text-button style for lightweight inline actions.
 - No functional changes; the full test suite continues to pass.
 
