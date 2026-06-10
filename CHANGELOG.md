@@ -2,6 +2,15 @@
 
 Product-facing changes only.
 
+## 0.2.0-alpha.44 — Shell and Dates fixes
+
+- Fixed the right context pane refusing to be dragged narrower after growing —
+  the splitter handle could end up frozen in both directions.
+- Fixed calendar day cells in the Dates view becoming unreadable (stale
+  background from the previous theme) after switching between light and dark.
+- "Manage quotes" on the daily quote card now opens the reference library with
+  that quote's shelf selected and the quote scrolled into view.
+
 ## 0.2.0-alpha.43 — Major UI refresh: Apple-style neutral theme
 
 This is a **major UI update**. The whole interface was reskinned around a calm,
