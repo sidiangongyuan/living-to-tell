@@ -2,6 +2,15 @@
 
 Product-facing changes only.
 
+## 0.2.0-alpha.45 — Maximize/toggle layout fix
+
+- Fixed the context pane becoming invisible or squeezed after maximizing the
+  window and toggling it visible, or after opening the sidebar while maximized.
+  Root cause: internal splitter-sizing calls passed column widths whose sum
+  exceeded the viewport, forcing Qt to steal from the context pane. Now uses
+  the splitter's real width as budget and defers layout updates so Qt's
+  constraint propagation finishes before re-normalizing.
+
 ## 0.2.0-alpha.44 — Shell and Dates fixes
 
 - Fixed the right context pane refusing to be dragged narrower after growing —
