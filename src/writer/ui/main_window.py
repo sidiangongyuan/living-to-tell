@@ -683,6 +683,13 @@ class MainWindow(QMainWindow):
             _SIDEBAR_COLLAPSED_KEY, "true" if self._sidebar_collapsed else "false"
         )
         self._update_shell_toggle_buttons()
+        # Opening/closing the sidebar changes the main area's minimum width
+        # (sidebar + editor content vs editor alone). Qt propagates the new
+        # minimum asynchronously; schedule the outer-splitter re-normalize to
+        # the next event loop so it sees the updated constraint and pulls the
+        # context pane back to its preferred width.
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._normalize_main_splitter_sizes)
 
     def _restore_main_splitter_state(self) -> None:
         sizes_raw = self._container.settings.get(_MAIN_SPLITTER_SIZES_KEY)
@@ -767,17 +774,17 @@ class MainWindow(QMainWindow):
         if len(sizes) != 3:
             sizes = [NavigationRail.RAIL_WIDTH, _MIN_MAIN_AREA_WIDTH, ContextPane.DEFAULT_WIDTH]
         cleaned = [max(0, int(size)) for size in sizes]
-        total = max(sum(cleaned), self.width() or sum(cleaned), 1)
+        # The splitter's actual width is the ONLY source of truth. Never trust
+        # the sum of the input sizes: callers often pass [rail, current_main,
+        # context] where current_main already fills the viewport — sum would
+        # exceed the real width, forcing Qt to squeeze the context pane to fit.
+        splitter_width = self._main_splitter.width() if hasattr(self, "_main_splitter") else 0
+        total = max(splitter_width, sum(cleaned), 1)
         rail = NavigationRail.RAIL_WIDTH
         available = max(1, total - rail)
         if not getattr(self, "_context_pane_visible", True):
             return [rail, available, 0]
         context_max = max(_MIN_CONTEXT_WIDTH, available - _MIN_MAIN_AREA_WIDTH)
-        # Normalization is layout correction (restore/resize/show), where the
-        # live sizes may be transient layout artefacts — so the remembered
-        # width is the preference. User drags stay authoritative because
-        # _on_main_splitter_moved updates _last_context_pane_width from the
-        # dragged size before normalizing.
         preferred_context = self._last_context_pane_width or ContextPane.DEFAULT_WIDTH
         context = max(_MIN_CONTEXT_WIDTH, min(context_max, preferred_context))
         main = max(1, available - context)
@@ -2132,16 +2139,20 @@ class MainWindow(QMainWindow):
             return
         self._context_pane.setVisible(self._context_pane_visible)
         if self._context_pane_visible:
+            # Showing the context pane: let the normalizer compute the layout
+            # from the splitter's real width and the remembered context width,
+            # instead of passing [rail, current_main_width, context] which sums
+            # to more than the splitter's width and forces Qt to squeeze.
             context_width = max(
                 _MIN_CONTEXT_WIDTH,
                 self._last_context_pane_width or ContextPane.DEFAULT_WIDTH,
             )
             target = self._normalized_main_splitter_sizes(
-                [NavigationRail.RAIL_WIDTH, max(1, self._main_splitter.width()), context_width]
+                [NavigationRail.RAIL_WIDTH, 1, context_width]
             )
         else:
             total = max(1, self._main_splitter.width())
-            target = [NavigationRail.RAIL_WIDTH, max(1, total), 0]
+            target = [NavigationRail.RAIL_WIDTH, max(1, total - NavigationRail.RAIL_WIDTH), 0]
         self._main_splitter.setSizes(target)
         self._update_shell_toggle_buttons()
         if save:
