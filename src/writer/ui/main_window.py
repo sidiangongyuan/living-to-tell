@@ -2179,47 +2179,55 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "_main_splitter"):
             return
         self._context_pane.setVisible(self._context_pane_visible)
-        if self._context_pane_visible:
-            # Showing the context pane: let the normalizer compute the layout
-            # from the splitter's real width and the remembered context width,
-            # instead of passing [rail, current_main_width, context] which sums
-            # to more than the splitter's width and forces Qt to squeeze.
-            context_width = max(
-                _MIN_CONTEXT_WIDTH,
-                self._last_context_pane_width or ContextPane.DEFAULT_WIDTH,
-            )
-            target = self._normalized_main_splitter_sizes(
-                [NavigationRail.RAIL_WIDTH, 1, context_width]
-            )
-        else:
-            # Hiding the context pane: also go through the normalizer so it
-            # reads the splitter's current width consistently. Passing a dummy
-            # context=0 signals "hide" mode.
-            target = self._normalized_main_splitter_sizes(
-                [NavigationRail.RAIL_WIDTH, 1, 0]
-            )
-        self._main_splitter.setSizes(target)
 
-        # If normalizer auto-hid context due to insufficient space, inform user
-        if self._context_pane_visible and target[2] == 0:
-            from writer.ui.i18n import TR
-            self.statusBar().showMessage(
-                TR("context.auto_hidden_insufficient_space"), 3000
-            )
+        # Defer setSizes to the next event loop so Qt's layout propagation
+        # finishes after the visibility change. Immediate setSizes may read
+        # stale splitter.width() or trigger before Qt updates constraints.
+        def _apply_sizes():
+            if self._context_pane_visible:
+                # Showing the context pane: let the normalizer compute the layout
+                # from the splitter's real width and the remembered context width,
+                # instead of passing [rail, current_main_width, context] which sums
+                # to more than the splitter's width and forces Qt to squeeze.
+                context_width = max(
+                    _MIN_CONTEXT_WIDTH,
+                    self._last_context_pane_width or ContextPane.DEFAULT_WIDTH,
+                )
+                target = self._normalized_main_splitter_sizes(
+                    [NavigationRail.RAIL_WIDTH, 1, context_width]
+                )
+            else:
+                # Hiding the context pane: also go through the normalizer so it
+                # reads the splitter's current width consistently. Passing a dummy
+                # context=0 signals "hide" mode.
+                target = self._normalized_main_splitter_sizes(
+                    [NavigationRail.RAIL_WIDTH, 1, 0]
+                )
+            self._main_splitter.setSizes(target)
 
-        self._update_shell_toggle_buttons()
-        if save:
-            try:
-                self._container.settings.set(
-                    KEY_CONTEXT_PANE_VISIBLE,
-                    "true" if self._context_pane_visible else "false",
+            # If normalizer auto-hid context due to insufficient space, inform user
+            if self._context_pane_visible and target[2] == 0:
+                from writer.ui.i18n import TR
+                self.statusBar().showMessage(
+                    TR("context.auto_hidden_insufficient_space"), 3000
                 )
-                self._container.settings.set(
-                    _MAIN_SPLITTER_SIZES_KEY,
-                    json.dumps(target),
-                )
-            except Exception:  # noqa: BLE001
-                pass
+
+            self._update_shell_toggle_buttons()
+            if save:
+                try:
+                    self._container.settings.set(
+                        KEY_CONTEXT_PANE_VISIBLE,
+                        "true" if self._context_pane_visible else "false",
+                    )
+                    self._container.settings.set(
+                        _MAIN_SPLITTER_SIZES_KEY,
+                        json.dumps(target),
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, _apply_sizes)
 
     def _toggle_focus_mode(self) -> None:
         if self._focus_mode_enabled:

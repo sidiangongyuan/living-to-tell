@@ -167,6 +167,8 @@ class TestShellLayout:
         window.show()
         # Default state is visible; toggling once should collapse.
         window._toggle_context_pane()  # noqa: SLF001
+        # _apply_context_pane_visibility defers setSizes and save to next event loop
+        qtbot.wait(10)
         assert container.settings.get(KEY_CONTEXT_PANE_VISIBLE) == "false"
         assert window._main_splitter.sizes()[2] == 0  # noqa: SLF001
 
@@ -180,6 +182,8 @@ class TestShellLayout:
 
         window2._toggle_context_pane()  # noqa: SLF001
         assert window2._context_pane_visible is True  # noqa: SLF001
+        # Wait for deferred setSizes to fire
+        qtbot.wait(10)
         assert window2._main_splitter.sizes()[2] >= 220  # noqa: SLF001
 
     def test_context_pane_can_shrink_after_growing(self, qtbot, container):
