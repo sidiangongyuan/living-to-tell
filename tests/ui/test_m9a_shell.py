@@ -329,6 +329,9 @@ class TestShellLayout:
         qtbot.addWidget(window)
         window.resize(1400, 860)
         window.show()
+        # showEvent defers normalization to the next event loop (QTimer.singleShot(0, ...))
+        # so pump events to let it fire before asserting the corrected sizes.
+        qtbot.wait(10)
 
         sidebar, editor = window._splitter.sizes()  # noqa: SLF001
         assert sidebar <= _MAX_SIDEBAR_WIDTH
@@ -372,6 +375,8 @@ class TestShellLayout:
         qtbot.addWidget(window2)
         window2.resize(1500, 900)
         window2.show()
+        # showEvent defers normalization; wait for it to fire.
+        qtbot.wait(10)
 
         restored = window2._main_splitter.sizes()  # noqa: SLF001
         assert restored[2] >= 220

@@ -804,14 +804,23 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        self._normalize_main_splitter_sizes()
-        self._normalize_fragment_splitter_sizes()
-        self._editor_panel.refresh_writing_notes_layer()
+        # Defer normalization to the next event loop: during resize, the
+        # splitter's width() may not yet reflect the new window size, causing
+        # the normalizer to compute layout from stale constraints and squeeze
+        # the context pane. Deferring ensures Qt's layout pass finishes first.
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._normalize_main_splitter_sizes)
+        QTimer.singleShot(0, self._normalize_fragment_splitter_sizes)
+        # Writing notes layer position depends on context pane geometry, so
+        # refresh after the deferred normalize has a chance to run.
+        QTimer.singleShot(0, self._editor_panel.refresh_writing_notes_layer)
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
-        self._normalize_main_splitter_sizes()
-        self._normalize_fragment_splitter_sizes()
+        # Defer normalization for the same reason as resizeEvent.
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._normalize_main_splitter_sizes)
+        QTimer.singleShot(0, self._normalize_fragment_splitter_sizes)
         self._editor_panel.set_writing_notes_active(
             self._stack.currentIndex() == MODE_FRAGMENTS and not self.isMinimized()
         )
