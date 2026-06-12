@@ -2160,8 +2160,12 @@ class MainWindow(QMainWindow):
                 [NavigationRail.RAIL_WIDTH, 1, context_width]
             )
         else:
-            total = max(1, self._main_splitter.width())
-            target = [NavigationRail.RAIL_WIDTH, max(1, total - NavigationRail.RAIL_WIDTH), 0]
+            # Hiding the context pane: also go through the normalizer so it
+            # reads the splitter's current width consistently. Passing a dummy
+            # context=0 signals "hide" mode.
+            target = self._normalized_main_splitter_sizes(
+                [NavigationRail.RAIL_WIDTH, 1, 0]
+            )
         self._main_splitter.setSizes(target)
         self._update_shell_toggle_buttons()
         if save:
