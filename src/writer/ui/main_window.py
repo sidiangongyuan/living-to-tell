@@ -813,9 +813,10 @@ class MainWindow(QMainWindow):
             main = main_area_actual_min
             context = available - main
         else:
-            # Should not reach here due to check above, but defensive fallback
-            context = _MIN_CONTEXT_WIDTH
-            main = max(1, available - context)
+            # Insufficient space: hide context to prevent Qt from expanding window.
+            # Giving context even _MIN_CONTEXT_WIDTH would leave main < main_min,
+            # forcing Qt to expand the window uncontrollably.
+            return [rail, available, 0]
 
         return [rail, main, context]
 
