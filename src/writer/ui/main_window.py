@@ -779,28 +779,41 @@ class MainWindow(QMainWindow):
         # context] where current_main already fills the viewport — sum would
         # exceed the real width, forcing Qt to squeeze the context pane to fit.
         splitter_width = self._main_splitter.width() if hasattr(self, "_main_splitter") else 0
-        total = max(splitter_width, sum(cleaned), 1)
+        total = max(splitter_width, 1)  # sum(cleaned) is meaningless; only trust real width
         rail = NavigationRail.RAIL_WIDTH
         available = max(1, total - rail)
         if not getattr(self, "_context_pane_visible", True):
             return [rail, available, 0]
 
-        # Adaptive strategy: context gets its preferred width first; main takes
-        # the rest. Only when the viewport is too narrow do we proportionally
-        # shrink both, keeping context >= its minimum (220).
+        # Query the actual minimum width Qt will enforce for the main area,
+        # accounting for all children's constraints (sidebar, editor, handles).
+        main_area_actual_min = _MIN_MAIN_AREA_WIDTH
+        if hasattr(self, "_main_area"):
+            hint = self._main_area.minimumSizeHint()
+            if hint.isValid() and hint.width() > 0:
+                main_area_actual_min = max(hint.width(), _MIN_MAIN_AREA_WIDTH)
+
+        # If viewport cannot fit rail + main_actual_min + context_min, the
+        # context pane would be pushed offscreen. Return [rail, available, 0]
+        # to hide it explicitly instead of letting Qt render it offscreen.
+        if available < main_area_actual_min + _MIN_CONTEXT_WIDTH:
+            return [rail, available, 0]
+
+        # Adaptive strategy with HARD constraint checking:
         preferred_context = self._last_context_pane_width or ContextPane.DEFAULT_WIDTH
-        if available >= _MIN_MAIN_AREA_WIDTH + preferred_context:
+        if available >= main_area_actual_min + preferred_context:
             # Plenty of space: context gets preferred width, main gets the rest.
             context = preferred_context
             main = available - context
-        elif available >= _MIN_MAIN_AREA_WIDTH + _MIN_CONTEXT_WIDTH:
-            # Tight: main gets its minimum, context gets the rest (may be < preferred).
-            main = _MIN_MAIN_AREA_WIDTH
+        elif available >= main_area_actual_min + _MIN_CONTEXT_WIDTH:
+            # Tight: main gets its actual minimum, context gets the rest.
+            main = main_area_actual_min
             context = available - main
         else:
-            # Very tight: both shrink proportionally, but context stays >= minimum.
-            context = max(_MIN_CONTEXT_WIDTH, min(preferred_context, available // 3))
+            # Should not reach here due to check above, but defensive fallback
+            context = _MIN_CONTEXT_WIDTH
             main = max(1, available - context)
+
         return [rail, main, context]
 
     def _on_toggle_language(self) -> None:
@@ -2180,6 +2193,14 @@ class MainWindow(QMainWindow):
                 [NavigationRail.RAIL_WIDTH, 1, 0]
             )
         self._main_splitter.setSizes(target)
+
+        # If normalizer auto-hid context due to insufficient space, inform user
+        if self._context_pane_visible and target[2] == 0:
+            from writer.ui.i18n import TR
+            self.statusBar().showMessage(
+                TR("context.auto_hidden_insufficient_space"), 3000
+            )
+
         self._update_shell_toggle_buttons()
         if save:
             try:

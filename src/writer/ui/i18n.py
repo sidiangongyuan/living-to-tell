@@ -183,6 +183,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "context.no_value": "—",
         "context.no_target": "No target set",
         "context.writing_notes_count": "{count} open",
+        "context.auto_hidden_insufficient_space": "Context pane hidden: window too narrow",
         # ── M9A: empty states (welcome + per mode) ───────────────────────────
         "empty.welcome_title": "Start with a single line.",
         "empty.welcome_desc": (
@@ -1330,6 +1331,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "context.no_value": "—",
         "context.no_target": "未设置目标字数",
         "context.writing_notes_count": "{count} 条未完成",
+        "context.auto_hidden_insufficient_space": "上下文栏已隐藏：窗口过窄",
         # ── M9A：空状态 ──────────────────────────────────────────────────────
         "empty.welcome_title": "从一句话开始。",
         "empty.welcome_desc": "先写文章，把灵感便签留在旁边，再把文章编排成可以导出的作品集。",
