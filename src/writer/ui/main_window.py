@@ -793,13 +793,10 @@ class MainWindow(QMainWindow):
             if hint.isValid() and hint.width() > 0:
                 main_area_actual_min = max(hint.width(), _MIN_MAIN_AREA_WIDTH)
 
-        # If viewport cannot fit rail + main_actual_min + context_min, the
-        # context pane would be pushed offscreen. Return [rail, available, 0]
-        # to hide it explicitly instead of letting Qt render it offscreen.
-        if available < main_area_actual_min + _MIN_CONTEXT_WIDTH:
-            return [rail, available, 0]
-
-        # Adaptive strategy with HARD constraint checking:
+        # Adaptive strategy: allocate context its preferred width (capped at 40%),
+        # then give main the rest. If the result violates Qt's hard minimums, Qt
+        # will either expand the window or compress proportionally — don't second-
+        # guess it with early-return checks that use stale minimumSizeHint values.
         preferred_context = self._last_context_pane_width or ContextPane.DEFAULT_WIDTH
         # Cap preferred at 40% of available space to ensure main always gets
         # a reasonable share, preventing context from squeezing main below its
