@@ -801,6 +801,12 @@ class MainWindow(QMainWindow):
 
         # Adaptive strategy with HARD constraint checking:
         preferred_context = self._last_context_pane_width or ContextPane.DEFAULT_WIDTH
+        # Cap preferred at 40% of available space to ensure main always gets
+        # a reasonable share, preventing context from squeezing main below its
+        # actual minimum (which would force Qt to push context offscreen).
+        max_context_share = max(_MIN_CONTEXT_WIDTH, int(available * 0.4))
+        preferred_context = min(preferred_context, max_context_share)
+
         if available >= main_area_actual_min + preferred_context:
             # Plenty of space: context gets preferred width, main gets the rest.
             context = preferred_context
