@@ -784,10 +784,23 @@ class MainWindow(QMainWindow):
         available = max(1, total - rail)
         if not getattr(self, "_context_pane_visible", True):
             return [rail, available, 0]
-        context_max = max(_MIN_CONTEXT_WIDTH, available - _MIN_MAIN_AREA_WIDTH)
+
+        # Adaptive strategy: context gets its preferred width first; main takes
+        # the rest. Only when the viewport is too narrow do we proportionally
+        # shrink both, keeping context >= its minimum (220).
         preferred_context = self._last_context_pane_width or ContextPane.DEFAULT_WIDTH
-        context = max(_MIN_CONTEXT_WIDTH, min(context_max, preferred_context))
-        main = max(1, available - context)
+        if available >= _MIN_MAIN_AREA_WIDTH + preferred_context:
+            # Plenty of space: context gets preferred width, main gets the rest.
+            context = preferred_context
+            main = available - context
+        elif available >= _MIN_MAIN_AREA_WIDTH + _MIN_CONTEXT_WIDTH:
+            # Tight: main gets its minimum, context gets the rest (may be < preferred).
+            main = _MIN_MAIN_AREA_WIDTH
+            context = available - main
+        else:
+            # Very tight: both shrink proportionally, but context stays >= minimum.
+            context = max(_MIN_CONTEXT_WIDTH, min(preferred_context, available // 3))
+            main = max(1, available - context)
         return [rail, main, context]
 
     def _on_toggle_language(self) -> None:
