@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "writer-app",
-  "version": "0.1.0",
-  "identifier": "com.writer.app",
+  "productName": "Writer",
+  "version": "0.1.2",
+  "identifier": "com.writer.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420"
@@ -10,11 +10,15 @@
   "app": {
     "windows": [
       {
-        "title": "Writer App",
+        "title": "Writer",
         "width": 1400,
         "height": 900,
+        "minWidth": 1024,
+        "minHeight": 768,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false
       }
     ],
     "security": {
@@ -30,6 +34,17 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "externalBin": [
+      "binaries/writer-backend"
+    ],
+    "windows": {
+      "wix": {
+        "language": "en-US"
+      },
+      "nsis": {
+        "languages": ["English", "SimpChinese"]
+      }
+    }
   }
 }

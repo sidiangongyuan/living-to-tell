@@ -34,17 +34,28 @@ class AiCardRepository:
         return loaded
 
     def update(
-        self, card_id: str, *, name: str, body: str
+        self, card_id: str, *, name: str, body: str, kind: str | None = None
     ) -> Optional[AiCard]:
-        self._conn.execute(
-            """
-            UPDATE ai_cards
-               SET name = ?, body = ?,
-                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-             WHERE id = ?
-            """,
-            (name, body, card_id),
-        )
+        if kind is None:
+            self._conn.execute(
+                """
+                UPDATE ai_cards
+                   SET name = ?, body = ?,
+                       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                 WHERE id = ?
+                """,
+                (name, body, card_id),
+            )
+        else:
+            self._conn.execute(
+                """
+                UPDATE ai_cards
+                   SET kind = ?, name = ?, body = ?,
+                       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                 WHERE id = ?
+                """,
+                (kind, name, body, card_id),
+            )
         return self.get(card_id)
 
     def delete(self, card_id: str) -> None:

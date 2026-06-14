@@ -13,3 +13,15 @@ frontend/dist/
 
 # Rust / Tauri build output
 frontend/src-tauri/target/
+
+# Local runtime data / generated assets
+backend/.data/
+frontend/src-tauri/binaries/
+frontend/src-tauri/gen/
+
+# Local assistant/session artifacts
+.claude/
+.claude_session_extract.txt
+
+# Local desktop launcher artifacts
+writer deskapp/

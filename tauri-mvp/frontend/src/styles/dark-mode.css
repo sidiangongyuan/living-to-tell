@@ -1,0 +1,256 @@
+/* 深色模式样式 */
+.dark {
+  /* 背景色 */
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2d2d2d;
+  --bg-tertiary: #3a3a3a;
+
+  /* 文字色 */
+  --text-primary: #e5e5e5;
+  --text-secondary: #a3a3a3;
+  --text-tertiary: #737373;
+
+  /* 边框色 */
+  --border-primary: #404040;
+  --border-secondary: #525252;
+}
+
+/* 全局深色模式覆盖 */
+.dark body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* 容器 */
+.dark .bg-gray-50 {
+  background-color: var(--bg-primary);
+}
+
+.dark .bg-white {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.dark .bg-gray-100 {
+  background-color: var(--bg-tertiary);
+}
+
+.dark .bg-gray-200 {
+  background-color: #4a4a4a;
+}
+
+/* 文字 */
+.dark .text-gray-900 {
+  color: var(--text-primary);
+}
+
+.dark .text-gray-800 {
+  color: var(--text-primary);
+}
+
+.dark .text-gray-700 {
+  color: var(--text-secondary);
+}
+
+.dark .text-gray-600 {
+  color: var(--text-secondary);
+}
+
+.dark .text-gray-500 {
+  color: var(--text-tertiary);
+}
+
+.dark .text-gray-400 {
+  color: var(--text-tertiary);
+}
+
+/* 边框 */
+.dark .border-gray-200 {
+  border-color: var(--border-primary);
+}
+
+.dark .border-gray-300 {
+  border-color: var(--border-secondary);
+}
+
+/* 输入框 */
+.dark input[type="text"],
+.dark input[type="password"],
+.dark input[type="email"],
+.dark textarea,
+.dark select {
+  background-color: var(--bg-tertiary);
+  border-color: var(--border-secondary);
+  color: var(--text-primary);
+}
+
+.dark input[type="text"]:focus,
+.dark input[type="password"]:focus,
+.dark input[type="email"]:focus,
+.dark textarea:focus,
+.dark select:focus {
+  background-color: var(--bg-tertiary);
+  border-color: #3b82f6;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* 按钮 */
+.dark .bg-gray-800 {
+  background-color: var(--bg-tertiary);
+}
+
+.dark .bg-gray-800:hover {
+  background-color: #4a4a4a;
+}
+
+.dark .hover\:bg-gray-300:hover {
+  background-color: #525252;
+}
+
+.dark .hover\:bg-gray-700:hover {
+  background-color: #525252;
+}
+
+/* 卡片阴影 */
+.dark .shadow-sm {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+}
+
+.dark .shadow-md {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+}
+
+.dark .shadow-lg {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
+}
+
+.dark .shadow-xl {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+}
+
+/* Hover 状态 */
+.dark .hover\:shadow-md:hover {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+}
+
+/* 滚动条 */
+.dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #525252;
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}
+
+/* 分割线 */
+.dark .divide-gray-200 > * + * {
+  border-color: var(--border-primary);
+}
+
+/* 特殊背景色 */
+.dark .bg-blue-50 {
+  background-color: #1e3a5f;
+}
+
+.dark .bg-green-50 {
+  background-color: #1e3a2f;
+}
+
+.dark .bg-purple-50 {
+  background-color: #2d1e3a;
+}
+
+.dark .bg-orange-50 {
+  background-color: #3a2e1e;
+}
+
+.dark .bg-red-50 {
+  background-color: #3a1e1e;
+}
+
+/* 特殊文字色 */
+.dark .text-blue-600 {
+  color: #60a5fa;
+}
+
+.dark .text-blue-900 {
+  color: #93c5fd;
+}
+
+.dark .text-green-600 {
+  color: #4ade80;
+}
+
+.dark .text-green-900 {
+  color: #86efac;
+}
+
+.dark .text-purple-600 {
+  color: #a78bfa;
+}
+
+.dark .text-purple-900 {
+  color: #c4b5fd;
+}
+
+.dark .text-orange-600 {
+  color: #fb923c;
+}
+
+.dark .text-orange-900 {
+  color: #fdba74;
+}
+
+.dark .text-red-800 {
+  color: #fca5a5;
+}
+
+.dark .text-green-800 {
+  color: #86efac;
+}
+
+/* 主题过渡动画 */
+* {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+/* 代码块 */
+.dark pre,
+.dark code {
+  background-color: var(--bg-tertiary);
+  color: #e5e5e5;
+}
+
+/* 链接 */
+.dark a {
+  color: #60a5fa;
+}
+
+.dark a:hover {
+  color: #93c5fd;
+}
+
+/* 禁用状态 */
+.dark .disabled\:bg-gray-300:disabled {
+  background-color: #404040;
+  color: #666;
+}
+
+.dark .disabled\:bg-gray-400:disabled {
+  background-color: #404040;
+  color: #666;
+}

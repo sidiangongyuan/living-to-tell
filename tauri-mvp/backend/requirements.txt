@@ -1,3 +1,8 @@
+# FastAPI backend for the Tauri MVP.
+#
+# The actual business logic lives in the repo-root `writer` package (src/writer),
+# which is installed in editable mode via `pip install -e .` from the repo root.
+# These are only the extra deps the HTTP layer needs on top of `writer`.
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
 pydantic==2.9.0

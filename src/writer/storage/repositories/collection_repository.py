@@ -94,12 +94,7 @@ class CollectionRepository:
             (collection_id, entry_id),
         ).fetchone()
         if existing is not None:
-            row = self._conn.execute(
-                "SELECT id, collection_id, work_id AS entry_id, sort_order, created_at "
-                "FROM collection_items WHERE id = ?",
-                (existing["id"],),
-            ).fetchone()
-            return _row_to_item(row)
+            return _row_to_item(existing)
         next_order = self._conn.execute(
             "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n "
             "FROM collection_entries WHERE collection_id = ?",

@@ -17,6 +17,8 @@ htmlcov/
 .env.*
 .codex/
 .gemini/
+.claude/
+.claude_session_extract.txt
 
 # Local app data / databases accidentally generated in the repo
 *.sqlite
@@ -31,3 +33,6 @@ htmlcov/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Local installed desktop app copy
+writer deskapp/

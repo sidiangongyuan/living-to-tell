@@ -1,87 +1,78 @@
-# Writer — Tauri MVP
+# Writer Tauri MVP
 
-A from-scratch rebuild of Writer's shell on **Tauri 2 + Vue 3 + Tailwind**, backed by
-**FastAPI + SQLite**. This MVP exists to prove the layout that the Qt/PySide6 build
-could not get right: a three-column shell where toggling the right context pane
-**reflows the center column** instead of pushing the pane off-screen.
+Writer 的 Tauri 版本正在把桌面端迁移到更轻量的 Vue + FastAPI + Tauri 架构。当前版本与现有 Writer 数据库共享数据，方便在不丢失旧内容的前提下验证新界面。
 
-## Why this rebuild
+## 功能
 
-The Qt version drove splitter sizes with manual width math (`setSizes`,
-`minimumSizeHint`, deferred normalize). Across 9 fixes it still let the context
-pane render off-screen on maximize+toggle, because Qt enforces child minimum
-widths by stealing pixels from the rightmost pane.
+- **文章写作**：文章列表、正文编辑、自动保存、全文搜索、查找替换、标签与统计。
+- **作品集**：创建合集、批量加入文章、调整阅读顺序、预览正文，并导出 Markdown / TXT / DOCX。
+- **AI 工作台**：支持润色、扩写、续写、摘要、大纲、标题等任务。
+- **AI Card**：内置作家风格样例，用户可继续新建、编辑、删除自己的风格卡、角色卡和场景卡。
+- **文脉标本库**：管理摘录、出处、用途类型和标签。
+- **日期视图**：按日期浏览文章和每日统计。
+- **备份与检查点**：创建备份、检查点并支持恢复。
+- **桌面打包**：Release 包内置 Python 后端 sidecar，启动应用时自动启动后端。
 
-Here the shell is plain CSS flexbox:
+## 开发运行
 
-- left rail — `w-20 shrink-0`
-- center (list + editor) — `flex-1 min-w-0` (the only column that shrinks)
-- right context pane — `w-72 shrink-0`, shown/hidden with `v-show`
+```powershell
+# 后端
+cd tauri-mvp\backend
+$env:WRITER_USE_DEV_DB = "1"
+D:\anaconda\envs\writer\python.exe run.py --dev
 
-There is **no width arithmetic anywhere**. The browser's layout engine reflows
-the center column when the pane appears or disappears, so the off-screen bug is
-structurally impossible.
-
-## Architecture
-
-```
-frontend/  Tauri 2 + Vue 3 + Vite + Tailwind
-  src/App.vue          three-column shell, list/editor/context, debounced autosave
-  src/api/client.ts    typed fetch wrapper for the backend
-  src-tauri/           Tauri shell (Rust)
-
-backend/   FastAPI + SQLite
-  server.py            /entries CRUD (list, get, create, update, delete, count)
-  repository.py        EntryRepository — SQLite access
-  database.py          connection + idempotent schema (WAL, FK on)
-  models.py            Pydantic Entry / EntryCreate / EntryUpdate
-```
-
-Frontend talks to the backend over HTTP at `http://127.0.0.1:8000`
-(override with `VITE_API_BASE_URL`).
-
-## Run it (development)
-
-Two processes. **Backend** first:
-
-```bash
-cd backend
-"D:/anaconda/envs/writer/python.exe" -m pip install -r requirements.txt   # first time
-"D:/anaconda/envs/writer/python.exe" server.py
-# serves http://127.0.0.1:8000  (docs at /docs)
-```
-
-**Frontend** (browser dev, fastest iteration):
-
-```bash
-cd frontend
-npm install        # first time
+# 前端
+cd tauri-mvp\frontend
+npm install
 npm run dev
-# open http://localhost:1420
 ```
 
-**Frontend (native Tauri window):**
+开发模式默认连接 `http://127.0.0.1:8000`。Release 模式由 Tauri sidecar 自动分配后端端口，前端会通过 Tauri command 获取真实 API 地址。
 
-```bash
-cd frontend
-npm run tauri:dev
+## 构建
+
+```powershell
+cd tauri-mvp\frontend
+npm run build
+cargo check --manifest-path src-tauri\Cargo.toml
+npm run tauri build
 ```
 
-## Verify
+后端 sidecar 位于：
 
-```bash
-cd frontend && npm run build      # vue-tsc type-check + vite bundle
+```text
+tauri-mvp\frontend\src-tauri\binaries\writer-backend-x86_64-pc-windows-msvc.exe
 ```
 
-Backend CRUD was verified end-to-end (create → list → get → update → delete → 404).
+Windows 安装包输出位置：
 
-## MVP scope
+```text
+tauri-mvp\frontend\src-tauri\target\release\bundle\nsis\
+tauri-mvp\frontend\src-tauri\target\release\bundle\msi\
+```
 
-- [x] Three-column shell + context-pane toggle (reflow, no off-screen bug)
-- [x] Article list with selection
-- [x] Editor (title + body) with debounced autosave
-- [x] Create / delete
-- [x] Live word / char / line counts
-- [x] SQLite persistence via FastAPI
-- [ ] Tauri sidecar packaging (bundle the Python backend into the app)
-- [ ] Port the rest of the Qt features (collections, AI, reference library)
+## 验证
+
+```powershell
+D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py
+cd tauri-mvp\frontend
+npm run build
+cargo check --manifest-path src-tauri\Cargo.toml
+```
+
+核心 smoke 覆盖：
+
+- AI Card 内置样例不会重复生成，CRUD 正常。
+- 作品集可以加入文章、重排、查询文章所属作品集、导出和移除文章。
+- 前端 TypeScript/Vite 构建通过。
+- Tauri Rust sidecar 编译通过。
+
+## 数据
+
+默认使用现有 Writer 数据目录。开发测试建议设置：
+
+```powershell
+$env:WRITER_USE_DEV_DB = "1"
+```
+
+这样会使用 `tauri-mvp\backend\.data\writer.sqlite3`，避免影响真实写作数据库。
