@@ -32,13 +32,11 @@ npm run dev
 ## 构建
 
 ```powershell
-cd tauri-mvp\frontend
-npm run build
-cargo check --manifest-path src-tauri\Cargo.toml
-npm run tauri build
+cd tauri-mvp
+.\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe
 ```
 
-后端 sidecar 位于：
+脚本会先构建 Python 后端 sidecar，再复制到 Tauri `externalBin` 目录，最后生成 Windows 安装包。后端 sidecar 位于：
 
 ```text
 tauri-mvp\frontend\src-tauri\binaries\writer-backend-x86_64-pc-windows-msvc.exe

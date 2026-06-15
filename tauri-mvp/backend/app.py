@@ -1,20 +1,29 @@
-"""FastAPI application factory.
-
-Routers are auto-discovered from ``features/<name>/routes.py`` — each must
-expose a module-level ``router = APIRouter(...)``. This keeps feature agents
-from ever editing this shared file: they only add their own feature folder.
-"""
+"""FastAPI application factory."""
 from __future__ import annotations
-
-import importlib
-import pkgutil
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Importing deps triggers configure_data_dir() before any writer.* import.
 from deps import get_container
+from features.ai.routes import router as ai_router
+from features.ai_cards.routes import router as ai_cards_router
+from features.articles.routes import router as articles_router
+from features.backup.routes import router as backup_router
+from features.collections.routes import router as collections_router
+from features.dates.routes import router as dates_router
+from features.library.routes import router as library_router
+
+
+_FEATURE_ROUTERS = (
+    articles_router,
+    collections_router,
+    ai_router,
+    ai_cards_router,
+    dates_router,
+    library_router,
+    backup_router,
+)
 
 
 def create_app() -> FastAPI:
@@ -44,19 +53,8 @@ def create_app() -> FastAPI:
 
 
 def _mount_feature_routers(app: FastAPI) -> None:
-    features_dir = Path(__file__).parent / "features"
-    if not features_dir.is_dir():
-        return
-    for mod in pkgutil.iter_modules([str(features_dir)]):
-        if not mod.ispkg:
-            continue
-        try:
-            routes = importlib.import_module(f"features.{mod.name}.routes")
-        except ModuleNotFoundError:
-            continue
-        router = getattr(routes, "router", None)
-        if router is not None:
-            app.include_router(router)
+    for router in _FEATURE_ROUTERS:
+        app.include_router(router)
 
 
 app = create_app()

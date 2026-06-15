@@ -22,6 +22,8 @@ frontend/src-tauri/gen/
 # Local assistant/session artifacts
 .claude/
 .claude_session_extract.txt
+backend/sidecar.out
+backend/sidecar.err
 
 # Local desktop launcher artifacts
 writer deskapp/

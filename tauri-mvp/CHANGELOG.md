@@ -1,5 +1,17 @@
 # Writer Tauri MVP Changelog
 
+## 0.1.3 - Packaged API Fix (2026-06-15)
+
+### Fixed
+
+- Fixed the packaged Python sidecar returning `404 Not Found` for article, collection, library, AI, backup, and settings-related API routes.
+- Fixed the release package so Tauri reads the existing Qt Writer database instead of showing an empty app surface.
+
+### Verification
+
+- Direct sidecar smoke: `/api/articles` returned 7 existing articles from `%APPDATA%\Writer\Writer\writer.sqlite3`.
+- Direct sidecar smoke: `/api/library/references` returned 15 existing reference passages from the same database.
+
 ## 0.1.2 - UI and Localization Polish (2026-06-15)
 
 ### Fixed
