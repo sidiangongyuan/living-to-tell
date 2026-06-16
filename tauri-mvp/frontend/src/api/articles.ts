@@ -27,6 +27,8 @@ export interface EntryUpdate {
   tags?: string[]
 }
 
+export type ArticleExportFormat = 'txt' | 'md' | 'docx'
+
 export const articlesApi = {
   async listArticles(limit = 100, includeArchived = false): Promise<Entry[]> {
     const params = new URLSearchParams({
@@ -99,5 +101,13 @@ export const articlesApi = {
       method: 'POST',
     })
     return handleResponse(res)
+  },
+
+  async exportArticle(id: string, format: ArticleExportFormat): Promise<Blob> {
+    const res = await apiFetch(`/api/articles/${id}/export?format=${format}`)
+    if (!res.ok) {
+      await handleResponse(res)
+    }
+    return res.blob()
   },
 }

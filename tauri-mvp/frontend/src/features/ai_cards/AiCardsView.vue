@@ -10,7 +10,10 @@ const loading = ref(false)
 const error = ref('')
 const notice = ref('')
 const filterType = ref<'all' | 'style' | 'character' | 'setting'>('all')
+const filterSource = ref<'all' | 'preset' | 'user'>('all')
+const sortMode = ref<'recent' | 'title'>('recent')
 const searchQuery = ref('')
+const presetSignatures = ref(new Set<string>())
 
 const selectedCard = computed(() => cards.value.find(c => c.id === selectedCardId.value) || null)
 
@@ -19,6 +22,9 @@ const filteredCards = computed(() => {
   if (filterType.value !== 'all') {
     result = result.filter(c => c.card_type === filterType.value)
   }
+  if (filterSource.value !== 'all') {
+    result = result.filter(c => cardSource(c) === filterSource.value)
+  }
   if (searchQuery.value.trim()) {
     const q = searchQuery.value.toLowerCase()
     result = result.filter(c =>
@@ -26,7 +32,14 @@ const filteredCards = computed(() => {
       c.content.toLowerCase().includes(q)
     )
   }
-  return result
+  return [...result].sort((a, b) => {
+    if (sortMode.value === 'title') {
+      return (a.title || '').localeCompare(b.title || '', 'zh-CN')
+    }
+    const aTime = Date.parse(a.updated_at || a.created_at || '') || 0
+    const bTime = Date.parse(b.updated_at || b.created_at || '') || 0
+    return bTime - aTime
+  })
 })
 
 const cardTypeLabels = computed<Record<string, string>>(() => ({
@@ -37,6 +50,7 @@ const cardTypeLabels = computed<Record<string, string>>(() => ({
 
 onMounted(() => {
   loadCards()
+  loadPresets()
 })
 
 async function loadCards() {
@@ -53,6 +67,25 @@ async function loadCards() {
   } finally {
     loading.value = false
   }
+}
+
+async function loadPresets() {
+  try {
+    const presets = await aiCardApi.listPresets()
+    presetSignatures.value = new Set(
+      presets.map((preset) => `${String(preset.title || '').trim()}::${String(preset.card_type || 'style').trim()}`)
+    )
+  } catch (e) {
+    console.error('Load presets failed:', e)
+  }
+}
+
+function cardSource(card: AiCard): 'preset' | 'user' {
+  return presetSignatures.value.has(`${card.title.trim()}::${card.card_type}`) ? 'preset' : 'user'
+}
+
+function sourceLabel(card: AiCard): string {
+  return cardSource(card) === 'preset' ? t('aiCards.sourcePreset') : t('aiCards.sourceUser')
 }
 
 async function createCard() {
@@ -149,7 +182,7 @@ async function generatePresets() {
           class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
         />
         <!-- 类型过滤 -->
-        <div class="flex gap-2">
+        <div class="flex flex-wrap gap-2">
           <button
             v-for="type in ['all', 'style', 'character', 'setting'] as const"
             :key="type"
@@ -163,6 +196,23 @@ async function generatePresets() {
           >
             {{ type === 'all' ? t('aiCards.filterAll') : cardTypeLabels[type] }}
           </button>
+        </div>
+        <div class="mt-3 grid grid-cols-2 gap-2">
+          <select
+            v-model="filterSource"
+            class="rounded-lg border border-gray-300 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">{{ t('aiCards.sourceAll') }}</option>
+            <option value="preset">{{ t('aiCards.sourcePreset') }}</option>
+            <option value="user">{{ t('aiCards.sourceUser') }}</option>
+          </select>
+          <select
+            v-model="sortMode"
+            class="rounded-lg border border-gray-300 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="recent">{{ t('aiCards.sortRecent') }}</option>
+            <option value="title">{{ t('aiCards.sortTitle') }}</option>
+          </select>
         </div>
       </div>
 
@@ -188,9 +238,12 @@ async function generatePresets() {
           <div class="text-xs text-gray-500 line-clamp-2">
             {{ card.content || t('library.empty') }}
           </div>
-          <div class="mt-2">
+          <div class="mt-2 flex flex-wrap gap-2">
             <span class="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
               {{ cardTypeLabels[card.card_type] }}
+            </span>
+            <span class="rounded bg-stone-100 px-2 py-0.5 text-xs text-stone-600">
+              {{ sourceLabel(card) }}
             </span>
           </div>
         </div>

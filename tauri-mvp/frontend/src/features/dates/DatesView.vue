@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useDatesStore } from './store'
+import { buildDailyQuoteLibraryQuery } from './quoteLink'
+import { formatDateKey, useDatesStore } from './store'
 import { useI18n } from '../../i18n'
 
 const store = useDatesStore()
@@ -45,7 +46,7 @@ const calendarDays = computed(() => {
       count: stat?.entry_count || 0,
       hasCurated: stat?.has_curated || false,
       isSelected: dateStr === store.selectedDate,
-      isToday: dateStr === new Date().toISOString().split('T')[0],
+      isToday: dateStr === formatDateKey(new Date()),
     })
   }
   return days
@@ -79,6 +80,11 @@ function selectDay(dateStr: string) {
 
 function openArticle(entryId: string) {
   router.push({ name: 'articles', query: { id: entryId } })
+}
+
+function openDailyQuoteInLibrary() {
+  if (!store.dailyQuote) return
+  router.push({ name: 'library', query: buildDailyQuoteLibraryQuery(store.dailyQuote) })
 }
 </script>
 
@@ -122,11 +128,23 @@ function openArticle(entryId: string) {
       </div>
 
       <div v-if="store.dailyQuote" class="border-b border-gray-200 bg-blue-50 p-4">
-        <p class="mb-2 text-sm italic text-gray-700">"{{ store.dailyQuote.text }}"</p>
-        <p class="text-xs text-gray-500">
-          — 《{{ store.dailyQuote.source_title }}》
-          <span v-if="store.dailyQuote.source_author">{{ store.dailyQuote.source_author }}</span>
-        </p>
+        <div class="rounded-2xl border border-blue-100 bg-white/80 p-4 shadow-sm">
+          <div class="max-h-56 overflow-y-auto pr-2">
+            <p class="whitespace-pre-wrap text-sm italic leading-6 text-gray-700">"{{ store.dailyQuote.text }}"</p>
+          </div>
+          <div class="mt-4 flex items-end justify-between gap-3 border-t border-blue-100 pt-3">
+            <p class="min-w-0 text-xs text-gray-500">
+              — 《{{ store.dailyQuote.source_title }}》
+              <span v-if="store.dailyQuote.source_author">{{ store.dailyQuote.source_author }}</span>
+            </p>
+            <button
+              @click="openDailyQuoteInLibrary"
+              class="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-blue-700"
+            >
+              {{ t('nav.library') }}
+            </button>
+          </div>
+        </div>
       </div>
     </aside>
 

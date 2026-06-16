@@ -18,9 +18,11 @@ const testingConnection = ref(false)
 const testResult = ref<{ success: boolean; message: string } | null>(null)
 const autoBackupEnabled = ref(false)
 const autoBackupInterval = ref('daily')
+const closeBehaviorNotice = ref('')
 
 onMounted(() => {
   loadSettings()
+  void settings.loadNativePreferences()
 })
 
 function loadSettings() {
@@ -34,7 +36,7 @@ function loadSettings() {
   autoBackupInterval.value = localStorage.getItem('auto_backup_interval') || 'daily'
 }
 
-function saveSettings() {
+async function saveSettings() {
   localStorage.setItem('ai_provider', aiProvider.value)
   localStorage.setItem('ai_api_key', apiKey.value)
   localStorage.setItem('ai_model_thrifty', modelThrifty.value)
@@ -43,6 +45,12 @@ function saveSettings() {
   localStorage.setItem('ai_base_url', baseUrl.value)
   localStorage.setItem('auto_backup_enabled', String(autoBackupEnabled.value))
   localStorage.setItem('auto_backup_interval', autoBackupInterval.value)
+  closeBehaviorNotice.value = ''
+  const requestedCloseBehavior = settings.closeBehavior
+  const effectiveCloseBehavior = await settings.saveCloseBehavior(requestedCloseBehavior)
+  if (effectiveCloseBehavior !== requestedCloseBehavior) {
+    closeBehaviorNotice.value = t('settings.closeBehaviorTrayUnavailable')
+  }
   alert(t('settings.saved'))
 }
 
@@ -227,6 +235,20 @@ function toggleApiKeyVisibility() {
               <option value="zh">{{ t('settings.languages.zh') }}</option>
               <option value="en">{{ t('settings.languages.en') }}</option>
             </select>
+          </div>
+
+          <div>
+            <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.closeBehaviorLabel') }}</label>
+            <select
+              v-model="settings.closeBehavior"
+              class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="ask">{{ t('settings.closeBehaviorAsk') }}</option>
+              <option value="tray">{{ t('settings.closeBehaviorTray') }}</option>
+              <option value="exit">{{ t('settings.closeBehaviorExit') }}</option>
+            </select>
+            <p class="mt-1 text-xs text-gray-500">{{ t('settings.closeBehaviorHelp') }}</p>
+            <p v-if="closeBehaviorNotice" class="mt-2 text-xs text-amber-700">{{ closeBehaviorNotice }}</p>
           </div>
         </div>
       </section>

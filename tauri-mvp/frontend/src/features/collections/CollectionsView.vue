@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useCollectionsStore } from './store'
 import { articlesApi, type Entry } from '../../api/articles'
 import { useI18n } from '../../i18n'
 
 const store = useCollectionsStore()
+const router = useRouter()
 const { t } = useI18n()
 
 const allArticles = ref<Entry[]>([])
@@ -93,6 +95,18 @@ async function deleteSelectedCollection() {
 async function removeArticle(entryId: string) {
   if (!confirm(t('collections.confirmRemoveArticle'))) return
   await store.removeArticle(entryId)
+}
+
+function openAiChatForCollection() {
+  if (!store.selectedCollection) return
+  router.push({
+    name: 'ai',
+    query: {
+      tab: 'chat',
+      scope_kind: 'collection',
+      scope_id: store.selectedCollection.id,
+    },
+  })
 }
 
 function togglePickArticle(entryId: string) {
@@ -206,6 +220,12 @@ async function onDrop(targetId: string) {
                 class="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700"
               >
                 {{ t('collections.addArticles') }}
+              </button>
+              <button
+                @click="openAiChatForCollection"
+                class="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                {{ t('collections.aiChat') }}
               </button>
               <button
                 @click="store.exportSelected('md')"

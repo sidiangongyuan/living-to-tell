@@ -2,8 +2,15 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { datesApi, type DailyStat, type DailyEntrySummary, type DailyQuote } from '../../api/dates'
 
+export function formatDateKey(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export const useDatesStore = defineStore('dates', () => {
-  const selectedDate = ref<string>(new Date().toISOString().split('T')[0]) // YYYY-MM-DD
+  const selectedDate = ref<string>(formatDateKey(new Date())) // YYYY-MM-DD
   const currentYear = ref(new Date().getFullYear())
   const currentMonth = ref(new Date().getMonth() + 1) // 1-12
   const dailyStats = ref<DailyStat[]>([])
@@ -52,7 +59,7 @@ export const useDatesStore = defineStore('dates', () => {
 
   async function goToToday() {
     const today = new Date()
-    const todayStr = today.toISOString().split('T')[0]
+    const todayStr = formatDateKey(today)
     await loadMonthStats(today.getFullYear(), today.getMonth() + 1)
     await selectDate(todayStr)
   }

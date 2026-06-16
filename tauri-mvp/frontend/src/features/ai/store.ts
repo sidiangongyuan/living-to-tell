@@ -56,15 +56,54 @@ export const useAiStore = defineStore('ai', () => {
     }
   }
 
-  async function sendMessage(message: string) {
-    if (!selectedThreadId.value) return
+  async function loadCurrentThread(
+    scopeKind: 'global' | 'article' | 'collection',
+    scopeId: string | null = null,
+    create = true,
+  ) {
+    loading.value = true
+    error.value = null
+    try {
+      const current = await aiApi.getCurrentThread(scopeKind, scopeId, create)
+      if (!current) {
+        selectedThreadId.value = null
+        messages.value = []
+        return null
+      }
+      const existingIndex = threads.value.findIndex((thread) => thread.id === current.thread.id)
+      if (existingIndex === -1) {
+        threads.value.unshift(current.thread)
+      } else {
+        threads.value[existingIndex] = current.thread
+      }
+      selectedThreadId.value = current.thread.id
+      messages.value = current.messages
+      return current.thread
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function sendMessage(
+    message: string,
+    scopeKind: 'global' | 'article' | 'collection' = 'global',
+    scopeId: string | null = null,
+  ) {
     loading.value = true
     error.value = null
     try {
       const response = await aiApi.chat({
         thread_id: selectedThreadId.value,
         message,
+        scope_kind: scopeKind,
+        scope_id: scopeId,
       })
+      if (!selectedThreadId.value) {
+        selectedThreadId.value = response.thread_id
+      }
       messages.value.push(response.user_message)
       messages.value.push(response.assistant_message)
     } catch (e) {
@@ -105,6 +144,7 @@ export const useAiStore = defineStore('ai', () => {
     loadThreads,
     createThread,
     deleteThread,
+    loadCurrentThread,
     sendMessage,
     runTask,
     selectThread,

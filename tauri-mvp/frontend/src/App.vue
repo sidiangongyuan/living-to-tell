@@ -1,17 +1,23 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { invoke } from '@tauri-apps/api/core'
 import { useRouter } from 'vue-router'
 import { useSettingsStore } from './stores/settings'
 import { useI18n } from './i18n'
 import CommandPalette from './components/CommandPalette.vue'
 import QuickCapture from './components/QuickCapture.vue'
-import { ref } from 'vue'
 
 const router = useRouter()
 const settings = useSettingsStore()
 const { t } = useI18n()
 const commandPaletteRef = ref<InstanceType<typeof CommandPalette> | null>(null)
 const quickCaptureRef = ref<InstanceType<typeof QuickCapture> | null>(null)
+const showCloseDialog = ref(false)
+const closeChoice = ref<'tray' | 'exit'>('tray')
+const rememberCloseChoice = ref(false)
+const closeDialogMessage = ref('')
+let closeDialogUnlisten: UnlistenFn | null = null
 
 const navItems = computed(() => [
   { name: 'dates', label: t('nav.dates'), icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
@@ -38,18 +44,108 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => {
+  settings.loadNativePreferences()
   window.addEventListener('keydown', handleKeydown)
+  void bindCloseDialogListener()
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
+  if (closeDialogUnlisten) {
+    closeDialogUnlisten()
+    closeDialogUnlisten = null
+  }
 })
+
+async function bindCloseDialogListener() {
+  try {
+    closeDialogUnlisten = await listen('writer://confirm-close', () => {
+      closeChoice.value = settings.closeBehavior === 'exit' ? 'exit' : 'tray'
+      rememberCloseChoice.value = false
+      closeDialogMessage.value = ''
+      showCloseDialog.value = true
+    })
+  } catch {
+    closeDialogUnlisten = null
+  }
+}
+
+async function confirmCloseChoice() {
+  closeDialogMessage.value = ''
+  try {
+    const effective = await invoke<'ask' | 'tray' | 'exit'>('resolve_close_action', {
+      action: closeChoice.value,
+      remember: rememberCloseChoice.value,
+    })
+    if (rememberCloseChoice.value) {
+      settings.closeBehavior = effective
+    }
+    if (effective !== closeChoice.value && closeChoice.value === 'tray') {
+      closeDialogMessage.value = t('settings.closeBehaviorTrayUnavailable')
+    } else if (effective !== 'exit') {
+      showCloseDialog.value = false
+    }
+  } catch (error) {
+    closeDialogMessage.value = error instanceof Error ? error.message : String(error)
+  }
+}
 </script>
 
 <template>
   <div class="flex h-screen bg-gray-50">
     <CommandPalette ref="commandPaletteRef" />
     <QuickCapture ref="quickCaptureRef" />
+    <div v-if="showCloseDialog" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 px-4">
+      <div class="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+        <h2 class="text-xl font-semibold text-stone-900">{{ t('settings.closeBehaviorPromptTitle') }}</h2>
+        <p class="mt-2 text-sm leading-6 text-stone-600">{{ t('settings.closeBehaviorPromptBody') }}</p>
+        <div class="mt-5 grid grid-cols-2 gap-3">
+          <button
+            @click="closeChoice = 'tray'"
+            :class="[
+              'rounded-2xl border px-4 py-3 text-sm font-semibold transition-colors',
+              closeChoice === 'tray'
+                ? 'border-amber-400 bg-amber-50 text-amber-900'
+                : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300'
+            ]"
+          >
+            {{ t('settings.closeBehaviorTray') }}
+          </button>
+          <button
+            @click="closeChoice = 'exit'"
+            :class="[
+              'rounded-2xl border px-4 py-3 text-sm font-semibold transition-colors',
+              closeChoice === 'exit'
+                ? 'border-amber-400 bg-amber-50 text-amber-900'
+                : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300'
+            ]"
+          >
+            {{ t('settings.closeBehaviorExit') }}
+          </button>
+        </div>
+        <label class="mt-4 flex items-center gap-3 text-sm text-stone-700">
+          <input v-model="rememberCloseChoice" type="checkbox" class="h-4 w-4 rounded border-stone-300 text-amber-600" />
+          {{ t('settings.closeBehaviorRemember') }}
+        </label>
+        <div v-if="closeDialogMessage" class="mt-4 rounded-2xl bg-stone-100 px-4 py-3 text-sm text-stone-700">
+          {{ closeDialogMessage }}
+        </div>
+        <div class="mt-6 flex justify-end gap-3">
+          <button
+            @click="showCloseDialog = false"
+            class="rounded-xl bg-stone-100 px-4 py-2 text-sm text-stone-700 hover:bg-stone-200"
+          >
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            @click="confirmCloseChoice"
+            class="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700"
+          >
+            {{ t('common.confirm') }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Left Navigation Rail (80px) -->
     <div v-show="!settings.focusMode" class="w-20 shrink-0 bg-gray-900 flex flex-col items-center py-6 gap-2">
@@ -117,7 +213,7 @@ onUnmounted(() => {
       <button
         v-if="settings.focusMode"
         @click="settings.toggleFocusMode"
-        class="absolute top-4 left-4 z-50 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors shadow-lg"
+        class="absolute top-4 right-4 z-50 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors shadow-lg"
       >
         {{ t('nav.exitFocusMode') }}
       </button>

@@ -1,5 +1,30 @@
 # Writer Tauri MVP Changelog
 
+## 0.1.4 - Writing and AI MVP Completion (2026-06-16)
+
+### Added
+
+- Added full daily quote display with a link from Dates to the matching Reference Library passage.
+- Added Reference Library organization by source book or usage type, with persisted group mode and deep-link selection.
+- Added article epigraph editing: detected opening epigraphs appear in a separate editing area while staying stored as plain text.
+- Added single-article export for TXT, Markdown, and DOCX.
+- Added AI Tool / Chat tabs. Chat supports one ongoing conversation for global, each article, and each collection.
+- Added article and collection shortcuts into scoped AI Chat.
+- Added AI Card filtering by type, source, keyword, and sort order.
+- Added first-run close behavior choices: ask, minimize to tray, or exit directly.
+
+### Fixed
+
+- Moved focus-mode exit control to the top-right safe area so it no longer overlaps article titles.
+- Preserved existing Writer SQLite data access in the Tauri backend while expanding article, collection, reference, and AI endpoints.
+- Prevented article/collection AI chat from creating empty-scope conversations.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py`
+- `npm run build`
+- `cargo check --manifest-path tauri-mvp\frontend\src-tauri\Cargo.toml`
+
 ## 0.1.3 - Packaged API Fix (2026-06-15)
 
 ### Fixed

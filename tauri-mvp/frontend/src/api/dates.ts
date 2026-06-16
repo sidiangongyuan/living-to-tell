@@ -21,6 +21,7 @@ export interface DailyEntrySummary {
 
 export interface DailyQuote {
   id: string
+  reference_id?: string | null
   text: string
   source_title: string
   source_author: string

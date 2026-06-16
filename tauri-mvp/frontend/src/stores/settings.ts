@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 
 export type Theme = 'light' | 'dark'
 export type Language = 'zh' | 'en'
+export type CloseBehavior = 'ask' | 'tray' | 'exit'
 
 export const useSettingsStore = defineStore('settings', () => {
   // 从 localStorage 读取保存的设置
@@ -10,6 +11,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const language = ref<Language>((localStorage.getItem('language') as Language) || 'zh')
   const focusMode = ref(false)
   const rightContextPaneCollapsed = ref(localStorage.getItem('right_context_pane_collapsed') === 'true')
+  const closeBehavior = ref<CloseBehavior>('ask')
+  const closeBehaviorLoaded = ref(false)
 
   function toggleTheme() {
     theme.value = theme.value === 'light' ? 'dark' : 'light'
@@ -26,6 +29,35 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function toggleRightContextPane() {
     rightContextPaneCollapsed.value = !rightContextPaneCollapsed.value
+  }
+
+  async function loadNativePreferences() {
+    if (closeBehaviorLoaded.value) return
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      const value = await invoke<CloseBehavior>('get_close_preference')
+      closeBehavior.value = value
+    } catch {
+      const fallback = localStorage.getItem('close_behavior') as CloseBehavior | null
+      closeBehavior.value = fallback || 'ask'
+    } finally {
+      closeBehaviorLoaded.value = true
+    }
+  }
+
+  async function saveCloseBehavior(next: CloseBehavior): Promise<CloseBehavior> {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      const effective = await invoke<CloseBehavior>('set_close_preference', {
+        preference: next,
+      })
+      closeBehavior.value = effective
+      return effective
+    } catch {
+      closeBehavior.value = next
+      localStorage.setItem('close_behavior', next)
+      return next
+    }
   }
 
   function applyTheme() {
@@ -58,9 +90,13 @@ export const useSettingsStore = defineStore('settings', () => {
     language,
     focusMode,
     rightContextPaneCollapsed,
+    closeBehavior,
+    closeBehaviorLoaded,
     toggleTheme,
     toggleLanguage,
     toggleFocusMode,
     toggleRightContextPane,
+    loadNativePreferences,
+    saveCloseBehavior,
   }
 })

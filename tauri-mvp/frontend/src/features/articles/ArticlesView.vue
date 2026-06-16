@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import { nextTick, ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useArticlesStore } from './store'
 import { useSettingsStore } from '../../stores/settings'
 import { collectionsApi, type Collection } from '../../api/collections'
+import { articlesApi, type ArticleExportFormat } from '../../api/articles'
 import FindReplace from '../../components/FindReplace.vue'
 import { useI18n } from '../../i18n'
+import { composeArticleBody, detectEpigraph, type EpigraphParts } from './epigraph'
 
 const store = useArticlesStore()
 const settings = useSettingsStore()
+const route = useRoute()
+const router = useRouter()
 const { t } = useI18n()
 
 const saveTimer = ref<number | null>(null)
@@ -25,10 +30,16 @@ const selectedCollectionIds = ref<string[]>([])
 const existingCollectionIds = computed(() => new Set(collectionsForEntry.value.map((collection) => collection.id)))
 const collectionLoading = ref(false)
 const collectionError = ref('')
+const bodyDraft = ref('')
+const epigraphActive = ref(false)
+const epigraphQuote = ref('')
+const epigraphAttribution = ref('')
+const syncingDraft = ref(false)
 
-const wordCount = computed(() => countWords(store.selectedEntry?.body ?? ''))
-const charCount = computed(() => store.selectedEntry?.body.length ?? 0)
-const lineCount = computed(() => store.selectedEntry?.body.split('\n').length ?? 0)
+const currentBodyText = computed(() => composeCurrentBody())
+const wordCount = computed(() => countWords(currentBodyText.value))
+const charCount = computed(() => currentBodyText.value.length)
+const lineCount = computed(() => currentBodyText.value.split('\n').length)
 
 function countWords(body: string): number {
   if (!body) return 0
@@ -52,6 +63,8 @@ function preview(body: string): string {
 }
 
 function scheduleSave() {
+  if (syncingDraft.value) return
+  applyDraftToSelected()
   if (saveTimer.value) clearTimeout(saveTimer.value)
   saveTimer.value = window.setTimeout(saveNow, 600)
 }
@@ -59,6 +72,7 @@ function scheduleSave() {
 async function saveNow() {
   const entry = store.selectedEntry
   if (!entry) return
+  applyDraftToSelected()
   try {
     await store.updateEntry(entry.id, entry.title, entry.body, entry.tags)
   } catch (e) {
@@ -83,7 +97,7 @@ function handleReplace(findText: string, replaceText: string, replaceAll: boolea
   if (!store.selectedEntry) return
   const flags = replaceAll ? 'g' : ''
   const regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags)
-  store.selectedEntry.body = store.selectedEntry.body.replace(regex, replaceText)
+  bodyDraft.value = bodyDraft.value.replace(regex, replaceText)
   scheduleSave()
   refreshMatches(findText, false)
 }
@@ -106,7 +120,7 @@ function refreshMatches(query = findQuery.value, caseSensitive = findCaseSensiti
   const regex = new RegExp(pattern, flags)
   const matches: number[] = []
   let match: RegExpExecArray | null
-  while ((match = regex.exec(store.selectedEntry.body)) !== null) {
+  while ((match = regex.exec(bodyDraft.value)) !== null) {
     matches.push(match.index)
     if (match.index === regex.lastIndex) {
       regex.lastIndex += 1
@@ -140,6 +154,124 @@ function syncFindQuery(query: string, caseSensitive: boolean) {
   findQuery.value = query
   findCaseSensitive.value = caseSensitive
   refreshMatches(query, caseSensitive)
+}
+
+function composeCurrentBody(): string {
+  if (!epigraphActive.value) {
+    return bodyDraft.value
+  }
+  if (!epigraphQuote.value.trim() || !epigraphAttribution.value.trim()) {
+    const prefix = [
+      epigraphQuote.value.trim(),
+      epigraphAttribution.value.trim() ? `——${epigraphAttribution.value.trim()}` : '',
+    ].filter(Boolean).join('\n')
+    return prefix ? `${prefix}\n\n${bodyDraft.value.trimStart()}` : bodyDraft.value
+  }
+  const parts: EpigraphParts = {
+    quote: epigraphQuote.value,
+    attribution: epigraphAttribution.value,
+    body: bodyDraft.value,
+    raw: '',
+  }
+  return composeArticleBody(parts, bodyDraft.value)
+}
+
+function syncDraftFromSelected() {
+  syncingDraft.value = true
+  const body = store.selectedEntry?.body ?? ''
+  const epigraph = detectEpigraph(body)
+  if (epigraph) {
+    epigraphActive.value = true
+    epigraphQuote.value = epigraph.quote
+    epigraphAttribution.value = epigraph.attribution
+    bodyDraft.value = epigraph.body
+  } else {
+    epigraphActive.value = false
+    epigraphQuote.value = ''
+    epigraphAttribution.value = ''
+    bodyDraft.value = body
+  }
+  refreshMatches()
+  void nextTick(() => {
+    syncingDraft.value = false
+  })
+}
+
+function applyDraftToSelected() {
+  const entry = store.selectedEntry
+  if (!entry) return
+
+  if (epigraphActive.value && !epigraphQuote.value.trim() && !epigraphAttribution.value.trim()) {
+    epigraphActive.value = false
+  }
+
+  entry.body = composeCurrentBody()
+}
+
+function enableEpigraph() {
+  if (epigraphActive.value) return
+  epigraphActive.value = true
+  epigraphQuote.value = ''
+  epigraphAttribution.value = ''
+}
+
+function moveEpigraphBackToBody() {
+  if (!epigraphActive.value) return
+  bodyDraft.value = composeCurrentBody()
+  epigraphActive.value = false
+  epigraphQuote.value = ''
+  epigraphAttribution.value = ''
+  scheduleSave()
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+function safeFilename(title: string, format: ArticleExportFormat): string {
+  const safeTitle = (title || t('articles.untitled')).replace(/[<>:"/\\|?*]/g, '').trim() || 'article'
+  return `${safeTitle}.${format}`
+}
+
+async function exportArticle(format: ArticleExportFormat) {
+  if (!store.selectedEntry) return
+  await saveNow()
+  const blob = await articlesApi.exportArticle(store.selectedEntry.id, format)
+  downloadBlob(blob, safeFilename(store.selectedEntry.title, format))
+}
+
+function openAiChatForArticle() {
+  if (!store.selectedEntry) return
+  router.push({
+    name: 'ai',
+    query: {
+      tab: 'chat',
+      scope_kind: 'article',
+      scope_id: store.selectedEntry.id,
+    },
+  })
+}
+
+async function applyRouteArticle() {
+  const articleId = typeof route.query.id === 'string' ? route.query.id : null
+  if (!articleId) return
+  if (!store.entries.some((entry) => entry.id === articleId)) {
+    try {
+      const loaded = await articlesApi.get(articleId)
+      store.entries.unshift(loaded)
+    } catch (e) {
+      console.error('Load routed article failed:', e)
+      return
+    }
+  }
+  store.selectEntry(articleId)
 }
 
 async function refreshEntryCollections() {
@@ -202,8 +334,10 @@ async function addToSelectedCollections() {
   }
 }
 
-onMounted(() => {
-  store.loadEntries()
+onMounted(async () => {
+  await store.loadEntries()
+  await applyRouteArticle()
+  syncDraftFromSelected()
   window.addEventListener('keydown', handleKeydown)
 })
 
@@ -214,7 +348,15 @@ onUnmounted(() => {
 watch(
   () => store.selectedEntry?.id,
   () => {
+    syncDraftFromSelected()
     refreshEntryCollections()
+  }
+)
+
+watch(
+  () => route.query.id,
+  () => {
+    void applyRouteArticle()
   }
 )
 
@@ -290,7 +432,7 @@ const displayList = computed(() =>
     <main class="flex-1 min-w-0 flex flex-col bg-[#fffdf8] overflow-hidden relative">
       <FindReplace
         :show="showFindReplace"
-        :text="store.selectedEntry?.body ?? ''"
+        :text="bodyDraft"
         @close="showFindReplace = false"
         @replace="handleReplace"
         @navigate="navigateMatch"
@@ -315,6 +457,23 @@ const displayList = computed(() =>
           >
             🔍
           </button>
+          <button
+            v-if="store.selectedEntry"
+            @click="enableEpigraph"
+            class="px-3 py-2 text-sm bg-stone-100 hover:bg-stone-200 rounded transition-colors"
+          >
+            {{ t('articles.addEpigraph') }}
+          </button>
+          <div v-if="store.selectedEntry" class="flex overflow-hidden rounded-lg border border-stone-200">
+            <button
+              v-for="format in ['md', 'txt', 'docx'] as const"
+              :key="format"
+              @click="exportArticle(format)"
+              class="px-3 py-2 text-xs font-semibold uppercase text-stone-600 hover:bg-stone-100"
+            >
+              {{ format }}
+            </button>
+          </div>
           <span class="text-xs text-stone-400">{{ store.saving ? t('common.saving') : t('common.saved') }}</span>
           <button
             @click="settings.toggleRightContextPane"
@@ -331,14 +490,45 @@ const displayList = computed(() =>
       </div>
 
       <div class="flex-1 overflow-y-auto p-6">
-        <textarea
-          v-if="store.selectedEntry"
-          ref="bodyRef"
-          v-model="store.selectedEntry.body"
-          @input="scheduleSave"
-          class="w-full h-full min-h-[500px] max-w-3xl mx-auto block p-6 border border-stone-200 rounded-[1.5rem] bg-[#fffdf8] shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-300 resize-none leading-relaxed"
-          :placeholder="t('articles.startWriting')"
-        />
+        <div v-if="store.selectedEntry" class="mx-auto flex h-full max-w-3xl flex-col gap-5">
+          <section
+            v-if="epigraphActive"
+            class="rounded-[1.75rem] border border-amber-200 bg-[#fff8e8] px-8 py-6 shadow-sm"
+          >
+            <div class="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.28em] text-amber-700">{{ t('articles.epigraph') }}</p>
+                <p class="mt-1 text-xs text-stone-500">{{ t('articles.epigraphHint') }}</p>
+              </div>
+              <button
+                @click="moveEpigraphBackToBody"
+                class="rounded-lg bg-white/80 px-3 py-2 text-xs text-stone-600 hover:bg-white"
+              >
+                {{ t('articles.epigraphBackToBody') }}
+              </button>
+            </div>
+            <textarea
+              v-model="epigraphQuote"
+              @input="scheduleSave"
+              rows="3"
+              class="w-full resize-none border-none bg-transparent font-serif text-lg italic leading-8 text-stone-800 outline-none"
+              :placeholder="t('articles.epigraphQuotePlaceholder')"
+            />
+            <input
+              v-model="epigraphAttribution"
+              @input="scheduleSave"
+              class="mt-3 w-full bg-transparent text-right text-sm text-stone-500 outline-none"
+              :placeholder="t('articles.epigraphAttributionPlaceholder')"
+            />
+          </section>
+          <textarea
+            ref="bodyRef"
+            v-model="bodyDraft"
+            @input="scheduleSave"
+            class="w-full flex-1 min-h-[500px] block p-6 border border-stone-200 rounded-[1.5rem] bg-[#fffdf8] shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-300 resize-none leading-relaxed"
+            :placeholder="t('articles.startWriting')"
+          />
+        </div>
         <div v-else class="text-center text-stone-400 mt-20">
           {{ t('articles.selectOrCreate') }}
         </div>
@@ -430,6 +620,12 @@ const displayList = computed(() =>
                 class="w-full px-3 py-2 bg-stone-900 hover:bg-stone-700 text-white rounded-lg text-sm transition-colors"
               >
                 {{ t('articles.saveNow') }}
+              </button>
+              <button
+                @click="openAiChatForArticle"
+                class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+              >
+                {{ t('articles.aiChat') }}
               </button>
               <button
                 v-if="!store.selectedEntry.archived_at"

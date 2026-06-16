@@ -35,6 +35,7 @@ class DailyEntrySummary(BaseModel):
 
 class DailyQuote(BaseModel):
     id: str
+    reference_id: str
     text: str
     source_title: str
     source_author: str
@@ -97,7 +98,7 @@ def get_daily_quote(
     date_str: str = Query(..., description="ISO format YYYY-MM-DD"),
     container: AppContainer = Depends(get_container),
 ) -> Optional[DailyQuote]:
-    """获取某天的每日引用（从文脉库确定性选取）。"""
+    """获取某天的每日引用（从文脉库确定性选取，返回完整摘录）。"""
     target_date = date.fromisoformat(date_str)
     all_refs = container.reference_repository.list_recent(limit=1000)
     if not all_refs:
@@ -107,19 +108,10 @@ def get_daily_quote(
     day_offset = (target_date - date(2024, 1, 1)).days
     selected = all_refs[day_offset % len(all_refs)]
 
-    # 取第一句作为引用
-    content = selected.content or ""
-    # 按中文句号或英文句号断句
-    for sep in ["。", ". ", "\n"]:
-        if sep in content:
-            quote_text = content.split(sep)[0] + (sep.strip() if sep != "\n" else "")
-            break
-    else:
-        quote_text = content[:200]
-
     return DailyQuote(
         id=selected.id,
-        text=quote_text.strip(),
+        reference_id=selected.id,
+        text=(selected.content or "").strip(),
         source_title=selected.source_title or "",
         source_author=selected.source_author or "",
     )

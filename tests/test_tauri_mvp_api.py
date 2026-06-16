@@ -105,3 +105,84 @@ def test_tauri_article_collection_flow(monkeypatch):
         f"/api/collections/{collection['id']}/articles/{entry_a['id']}"
     )
     assert removed.status_code == 204
+
+
+def test_tauri_daily_quote_returns_full_reference_and_id(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    created = client.post(
+        "/api/library/references",
+        json={
+            "source_title": "测试书",
+            "content": "第一句。\n第二句，应该完整保留。",
+            "source_author": "作者",
+            "tags": [],
+            "kind": "excerpt",
+            "usage_kind": "style",
+            "personal_note": "",
+        },
+    )
+    assert created.status_code == 201
+    ref_id = created.json()["id"]
+
+    quote = client.get("/api/dates/quote?date_str=2024-01-01")
+    assert quote.status_code == 200
+    data = quote.json()
+    assert data["reference_id"] == ref_id
+    assert data["text"] == "第一句。\n第二句，应该完整保留。"
+
+
+def test_tauri_article_export_formats_keep_epigraph_rules(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    body = "你必须先相信某种回声。\n——《夜航西飞》 柏瑞尔·马卡姆\n\n正文第一段。"
+    entry = client.post(
+        "/api/articles",
+        json={"title": "题记文章", "body": body, "tags": []},
+    ).json()
+
+    txt = client.get(f"/api/articles/{entry['id']}/export?format=txt")
+    assert txt.status_code == 200
+    assert "——《夜航西飞》 柏瑞尔·马卡姆" in txt.text
+    assert "正文第一段。" in txt.text
+
+    md = client.get(f"/api/articles/{entry['id']}/export?format=md")
+    assert md.status_code == 200
+    assert "> 你必须先相信某种回声。" in md.text
+    assert "> -- 《夜航西飞》 柏瑞尔·马卡姆" in md.text
+    assert md.text.count("《夜航西飞》 柏瑞尔·马卡姆") == 1
+    assert "正文第一段。" in md.text
+
+
+def test_tauri_ai_current_thread_is_scope_aware(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    entry = client.post(
+        "/api/articles",
+        json={"title": "会话文章", "body": "正文", "tags": []},
+    ).json()
+
+    created = client.get(
+        f"/api/ai/threads/current?scope_kind=article&scope_id={entry['id']}&create=true"
+    )
+    assert created.status_code == 200
+    payload = created.json()
+    assert payload["thread"]["scope_kind"] == "article"
+    assert payload["thread"]["scope_id"] == entry["id"]
+    assert payload["messages"] == []
+
+    from deps import get_container
+
+    get_container().ai_thread_repository.add_message(
+        thread_id=payload["thread"]["id"],
+        role="user",
+        content="讨论这个开头",
+    )
+
+    restored = client.get(
+        f"/api/ai/threads/current?scope_kind=article&scope_id={entry['id']}"
+    )
+    assert restored.status_code == 200
+    restored_payload = restored.json()
+    assert restored_payload["thread"]["id"] == payload["thread"]["id"]
+    assert restored_payload["messages"][0]["content"] == "讨论这个开头"
