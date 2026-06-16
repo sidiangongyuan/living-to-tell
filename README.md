@@ -2,23 +2,37 @@
 
 # Writer
 
-### A local-first writing studio for articles, collections, references, and scoped AI help
+### A local-first writing studio for articles, collections, references, and scoped AI
 
-[中文](README.zh-CN.md) · English
+[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/writer/releases/tag/tauri-v0.1.6)
 
 [![Version](https://img.shields.io/badge/tauri%20preview-0.1.6-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/writer/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
-[![Status](https://img.shields.io/badge/status-preview-orange.svg)](tauri-mvp/README.md)
+[![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[Download](#download) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Development](#development)
+**Write articles. Arrange collections. Keep references. Talk with AI without losing control of the manuscript.**
+
+[Download for Windows](https://github.com/sidiangongyuan/writer/releases/tag/tauri-v0.1.6) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
 
 </div>
 
-Writer is a calm desktop app for writing articles, arranging them into collections, saving reference passages, and using AI without giving up control of the manuscript. It keeps your writing database local and treats AI output as something to review, copy, discuss, or explicitly apply.
+---
 
-The current public preview is the Tauri version under [`tauri-mvp/`](tauri-mvp/). The earlier PySide/Qt implementation remains in the repository, but new public-facing work is focused on the Tauri app.
+Writer is a desktop writing app for people who work with long text, fragments, quotes, and revision ideas. It keeps the writing database local, lets you organize articles into collections, and treats AI output as something you review before applying.
+
+The current public preview is the Tauri version under [`tauri-mvp/`](tauri-mvp/). The earlier PySide/Qt app remains in the repository, but public-facing releases now focus on the Tauri app.
+
+## Why Writer
+
+| If you often... | Writer gives you... |
+| --- | --- |
+| Draft essays, fiction, notes, or serialized articles | A calm article editor with autosave, tags, search, epigraphs, and export |
+| Need to turn many articles into one larger work | Collections with ordering, preview, and book-style export |
+| Save quotes from books or reading material | A reference library grouped by source book or usage |
+| Use AI but worry about accidental overwrites | Scoped AI tools and chat that never apply changes without your action |
+| Want a local writing workflow | Local SQLite data, explicit AI calls, and manual backups/checkpoints |
 
 ## Screenshots
 
@@ -39,43 +53,42 @@ The current public preview is the Tauri version under [`tauri-mvp/`](tauri-mvp/)
 ### Writing
 
 - Article editor with autosave, tags, full-text search, find/replace, and a collapsible context pane.
-- Epigraph editing for opening quotes, while keeping export output clean.
-- Focus mode hides the surrounding interface and leaves only the writing area.
-- Single-article export to Markdown, TXT, and DOCX.
-- Date view for browsing daily writing activity, with a direct "start writing" action on empty days.
+- Epigraph editing for opening quotes, with clean Markdown, TXT, and DOCX export.
+- Pure focus mode that leaves only the writing area and an exit control.
+- Date view for browsing daily writing activity, with a direct start-writing button on empty days.
 
 ### Collections
 
-- Create article collections and add multiple articles at once.
-- Drag to reorder articles, or use up/down controls as a fallback.
+- Build article collections from multiple articles.
+- Add articles in batches, then reorder with drag-and-drop or up/down controls.
 - Preview the selected article in a paper-like reading pane.
 - Export a collection in Markdown, TXT, or DOCX using the current order.
 
 ### Reference Library
 
 - Save reference passages with source title, author, usage type, and personal notes.
-- Browse by source book or by usage.
+- Browse references by source book or usage.
 - Jump from the daily quote card to the matching reference passage.
-- Copy just the passage body, or copy a complete citation with title and author.
+- Copy the passage body, or copy a complete citation with title and author.
 
-### AI
+### AI Workspace
 
-- AI tools for polishing, rewriting, expanding, continuing, summarizing, outlining, and title generation.
-- Free chat tab with one ongoing conversation per global scope, article, or collection.
-- AI Cards for style, character, and setting context, with type/source filters and keyword search.
+- Task tools for polishing, rewriting, expanding, continuing, summarizing, outlining, and title generation.
+- Free chat with one ongoing conversation per global scope, article, or collection.
+- AI Cards for reusable style, character, and setting context, with type/source filters and keyword search.
 - Supports OpenAI-compatible APIs, Codex local auth, Gemini API/local config, and Gemini CLI / OAuth.
-- API keys are not stored in Writer settings; only the selected credential source is saved.
+- Writer stores the selected credential source, not raw API keys.
 
-### Desktop
+### Desktop Experience
 
-- Windows installer builds with a bundled Python backend sidecar.
-- Release builds discover the sidecar port automatically, so users do not need to run a backend manually.
+- Windows installer with a bundled Python backend sidecar.
+- Automatic sidecar port discovery in release builds.
 - Close behavior can be set to ask every time, minimize to tray, or exit directly.
-- Public preview uses light mode only; dark mode will return after a full theme pass.
+- Public preview uses light mode only while the dark theme is being polished.
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/writer/releases).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/writer/releases/tag/tauri-v0.1.6).
 
 Recommended Windows asset:
 
@@ -114,6 +127,51 @@ Long Gemini requests default to a 120 second wait. Advanced users can tune this 
 - Writer settings store the selected provider and credential source, not raw API keys.
 - Use backups/checkpoints before major editing or migration tests.
 
+## Roadmap / TODO
+
+The public TODO list is kept visible but folded so the README stays readable.
+
+<details>
+<summary>Show planned work</summary>
+
+### Near Term
+
+- Add signed Windows builds or published checksums for unsigned preview installers.
+- Improve first-run onboarding for language, data location, backups, and AI provider setup.
+- Add a cleaner update story for public preview users.
+- Re-enable dark mode after a complete visual pass.
+
+### Writing
+
+- Add editor layout presets for compact, balanced, and wide screens.
+- Improve keyboard-only navigation across Dates, Articles, Collections, and AI Workspace.
+- Add optional backup reminders for active daily writers.
+- Add richer collection publishing options such as cover notes, section dividers, and saved export presets.
+
+### AI
+
+- Improve AI revision comparison with clearer original-vs-result review.
+- Add visible long-text request size, wait-time, and timeout guidance.
+- Add saved AI context sets for repeated article and collection workflows.
+- Expand clickable AI reports so issues can locate source text or become follow-up tasks.
+- Add Claude / Anthropic support after the provider backend is complete.
+
+### Knowledge & Planning
+
+- Add a mind map view for articles and collections, so writers can organize themes, plot threads, arguments, references, and AI-generated ideas visually.
+- Add more ways to turn AI chat ideas into articles, notes, reference passages, and future tasks.
+- Add richer reference-library views for large reading collections.
+
+### Platform
+
+- Keep GitHub Actions manual-only unless release automation is deliberately re-enabled.
+- Evaluate macOS and Linux packaging after the Windows workflow is mature.
+- Add a troubleshooting page for AI provider setup and Windows packaging issues.
+
+</details>
+
+See the full list in [docs/todo.md](docs/todo.md).
+
 ## Development
 
 See [tauri-mvp/README.md](tauri-mvp/README.md) for Tauri preview development and release commands.
@@ -130,14 +188,6 @@ cargo check --manifest-path src-tauri\Cargo.toml
 
 GitHub Actions are manual-only to avoid consuming free CI minutes on every push. Releases are built locally and uploaded manually to GitHub Releases.
 
-## Roadmap
-
-- Full dark theme pass before re-enabling the theme switcher.
-- First-run onboarding and sample project.
-- More polished release signing and update story.
-- Richer reference-library views and AI report actions.
-- Claude / Anthropic provider support once the provider backend is complete.
-
 ## License
 
-MIT © Writer contributors
+MIT License. See [LICENSE](LICENSE).

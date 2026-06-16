@@ -17,6 +17,7 @@ This list tracks product-facing work that would make Writer more reliable and ea
 - Add optional backup reminders for active daily writers.
 - Add more ways to turn AI chat ideas into articles, notes, and reference-library items.
 - Add richer collection publishing options such as cover notes, section dividers, and saved export presets.
+- Add a mind map view for organizing articles, collections, themes, plot threads, arguments, references, and AI-generated ideas visually.
 
 ## Data management
 
@@ -29,6 +30,7 @@ This list tracks product-facing work that would make Writer more reliable and ea
 
 - Improve revision comparison for AI edits with clearer original-vs-result review.
 - Add richer controls for long prompts, including visible request size and timeout guidance.
+- Add saved AI context sets for repeated article and collection workflows.
 - Add more per-context actions after the unified AI context menu, such as saved context sets and quick re-use.
 - Improve quota, model availability, network, and proxy error messages.
 - Add provider-native token counting where available.
@@ -51,6 +53,7 @@ This list tracks product-facing work that would make Writer more reliable and ea
 
 - Added clean public screenshots for the Tauri preview.
 - Reworked the public README into a product overview with screenshots, features, download, AI setup, privacy, and development sections.
+- Added a folded TODO / Roadmap section to the README, including mind maps as a future flagship feature.
 - Changed GitHub Actions to manual-only triggers to avoid consuming free CI minutes on every push.
 - Hid dark-mode UI entry points for the public preview and forced light mode until the dark theme is fully polished.
 - Fixed Tauri window close behavior for ask, tray, and direct-exit modes.
