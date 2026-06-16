@@ -176,16 +176,15 @@ The public TODO list is kept visible but folded so the README stays readable.
 
 ### AI
 
-- [ ] Improve AI revision comparison with clearer original-vs-result review.
-- [ ] Add visible long-text request size, wait-time, and timeout guidance.
-- [ ] Add saved AI context sets for repeated article and collection workflows.
-- [ ] Expand clickable AI reports so issues can locate source text or become follow-up tasks.
-- [ ] Add Claude / Anthropic support after the provider backend is complete.
+- [ ] Make AI results safer to apply with clearer original-vs-result comparison and explicit replace / insert / copy actions.
+- [ ] Give polish, rewrite, expand, and continue their own focused controls instead of treating them as the same prompt with a different label.
+- [ ] Let users save personal prompt presets for each writing tool.
+- [ ] Add clearer long-text request size, wait-time, and timeout feedback.
+- [ ] Make it easier to turn AI chat ideas into articles, notes, or reference material.
 
 ### Knowledge & Planning
 
-- [ ] Add a mind map view for articles and collections, so writers can organize themes, plot threads, arguments, references, and AI-generated ideas visually.
-- [ ] Add more ways to turn AI chat ideas into articles, notes, reference passages, and future tasks.
+- [ ] Add a future mind map / imagery collection space for organizing themes, symbols, motifs, character links, arguments, references, and AI-generated ideas visually.
 - [ ] Add richer reference-library views for large reading collections.
 
 ### Platform

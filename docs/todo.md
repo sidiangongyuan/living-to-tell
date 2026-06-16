@@ -17,7 +17,7 @@ This list tracks product-facing work that would make Writer more reliable and ea
 - [ ] Add optional backup reminders for active daily writers.
 - [ ] Add more ways to turn AI chat ideas into articles, notes, and reference-library items.
 - [ ] Add richer collection publishing options such as cover notes, section dividers, and saved export presets.
-- [ ] Add a mind map view for organizing articles, collections, themes, plot threads, arguments, references, and AI-generated ideas visually.
+- [ ] Add a future mind map / imagery collection space for organizing articles, collections, themes, symbols, motifs, arguments, references, and AI-generated ideas visually.
 
 ## Data management
 
@@ -28,10 +28,11 @@ This list tracks product-facing work that would make Writer more reliable and ea
 
 ## AI workflow
 
-- [ ] Improve revision comparison for AI edits with clearer original-vs-result review.
-- [ ] Add richer controls for long prompts, including visible request size and timeout guidance.
-- [ ] Add saved AI context sets for repeated article and collection workflows.
-- [ ] Add more per-context actions after the unified AI context menu, such as saved context sets and quick re-use.
+- [ ] Make AI results safer to apply with clearer original-vs-result comparison and explicit replace / insert / copy actions.
+- [ ] Give polish, rewrite, expand, and continue their own focused controls and writing intentions.
+- [ ] Let users save personal prompt presets for each writing tool.
+- [ ] Add clearer long-text request size, wait-time, and timeout feedback.
+- [ ] Make it easier to turn AI chat ideas into articles, notes, or reference material.
 - [ ] Improve quota, model availability, network, and proxy error messages.
 - [ ] Add provider-native token counting where available.
 - [ ] Expand clickable AI reports so issues can locate source text or become follow-up tasks.
