@@ -24,6 +24,29 @@ Writer is a desktop writing app for people who work with long text, fragments, q
 
 The current public preview is the Tauri version under [`tauri-mvp/`](tauri-mvp/). The earlier PySide/Qt app remains in the repository, but public-facing releases now focus on the Tauri app.
 
+## At a Glance
+
+| | |
+| --- | --- |
+| **📝 Article Studio** | Draft long-form writing with autosave, tags, search, epigraphs, focus mode, and export. |
+| **📚 Collections** | Arrange multiple articles into a reading order and export them as a collected manuscript. |
+| **🔖 Reference Library** | Keep quotes, sources, authors, usage notes, and citation-ready snippets in one place. |
+| **🤖 Scoped AI** | Use task tools or persistent chat for an article, a collection, or the whole workspace. |
+| **🧠 AI Cards** | Save reusable style, character, and setting context for later prompts. |
+| **🔒 Local First** | Store writing data locally and send text to AI only when you explicitly run an AI action. |
+
+## Current Preview Status
+
+| Area | Status |
+| --- | --- |
+| Windows desktop app | ✅ Public preview available |
+| Article writing | ✅ Usable |
+| Collections | ✅ Usable |
+| Reference library | ✅ Usable |
+| AI tools and scoped chat | ✅ Usable after provider setup |
+| Dark mode | 🚧 Hidden until the theme pass is complete |
+| macOS / Linux packages | 🗓️ Planned after Windows stabilizes |
+
 ## Why Writer
 
 | If you often... | Writer gives you... |
@@ -132,41 +155,41 @@ Long Gemini requests default to a 120 second wait. Advanced users can tune this 
 The public TODO list is kept visible but folded so the README stays readable.
 
 <details>
-<summary>Show planned work</summary>
+<summary>Show detailed TODO checklist</summary>
 
 ### Near Term
 
-- Add signed Windows builds or published checksums for unsigned preview installers.
-- Improve first-run onboarding for language, data location, backups, and AI provider setup.
-- Add a cleaner update story for public preview users.
-- Re-enable dark mode after a complete visual pass.
+- [ ] Add signed Windows builds or published checksums for unsigned preview installers.
+- [ ] Improve first-run onboarding for language, data location, backups, and AI provider setup.
+- [ ] Add a cleaner update story for public preview users.
+- [ ] Re-enable dark mode after a complete visual pass.
 
 ### Writing
 
-- Add editor layout presets for compact, balanced, and wide screens.
-- Improve keyboard-only navigation across Dates, Articles, Collections, and AI Workspace.
-- Add optional backup reminders for active daily writers.
-- Add richer collection publishing options such as cover notes, section dividers, and saved export presets.
+- [ ] Add editor layout presets for compact, balanced, and wide screens.
+- [ ] Improve keyboard-only navigation across Dates, Articles, Collections, and AI Workspace.
+- [ ] Add optional backup reminders for active daily writers.
+- [ ] Add richer collection publishing options such as cover notes, section dividers, and saved export presets.
 
 ### AI
 
-- Improve AI revision comparison with clearer original-vs-result review.
-- Add visible long-text request size, wait-time, and timeout guidance.
-- Add saved AI context sets for repeated article and collection workflows.
-- Expand clickable AI reports so issues can locate source text or become follow-up tasks.
-- Add Claude / Anthropic support after the provider backend is complete.
+- [ ] Improve AI revision comparison with clearer original-vs-result review.
+- [ ] Add visible long-text request size, wait-time, and timeout guidance.
+- [ ] Add saved AI context sets for repeated article and collection workflows.
+- [ ] Expand clickable AI reports so issues can locate source text or become follow-up tasks.
+- [ ] Add Claude / Anthropic support after the provider backend is complete.
 
 ### Knowledge & Planning
 
-- Add a mind map view for articles and collections, so writers can organize themes, plot threads, arguments, references, and AI-generated ideas visually.
-- Add more ways to turn AI chat ideas into articles, notes, reference passages, and future tasks.
-- Add richer reference-library views for large reading collections.
+- [ ] Add a mind map view for articles and collections, so writers can organize themes, plot threads, arguments, references, and AI-generated ideas visually.
+- [ ] Add more ways to turn AI chat ideas into articles, notes, reference passages, and future tasks.
+- [ ] Add richer reference-library views for large reading collections.
 
 ### Platform
 
-- Keep GitHub Actions manual-only unless release automation is deliberately re-enabled.
-- Evaluate macOS and Linux packaging after the Windows workflow is mature.
-- Add a troubleshooting page for AI provider setup and Windows packaging issues.
+- [x] Keep GitHub Actions manual-only unless release automation is deliberately re-enabled.
+- [ ] Evaluate macOS and Linux packaging after the Windows workflow is mature.
+- [ ] Add a troubleshooting page for AI provider setup and Windows packaging issues.
 
 </details>
 
