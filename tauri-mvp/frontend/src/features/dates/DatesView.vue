@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { articlesApi } from '../../api/articles'
 import { buildDailyQuoteLibraryQuery } from './quoteLink'
 import { formatDateKey, useDatesStore } from './store'
 import { useI18n } from '../../i18n'
@@ -9,6 +10,7 @@ const store = useDatesStore()
 const router = useRouter()
 const { t } = useI18n()
 const calendarRef = ref<HTMLDivElement | null>(null)
+const createError = ref('')
 
 onMounted(() => {
   store.goToToday()
@@ -86,6 +88,20 @@ function openDailyQuoteInLibrary() {
   if (!store.dailyQuote) return
   router.push({ name: 'library', query: buildDailyQuoteLibraryQuery(store.dailyQuote) })
 }
+
+async function startWritingForSelectedDate() {
+  createError.value = ''
+  try {
+    const created = await articlesApi.create({
+      title: t('dates.newArticleTitle', { date: store.selectedDate }),
+      body: '',
+      tags: [],
+    })
+    router.push({ name: 'articles', query: { id: created.id } })
+  } catch (e) {
+    createError.value = e instanceof Error ? e.message : String(e)
+  }
+}
 </script>
 
 <template>
@@ -162,7 +178,14 @@ function openDailyQuoteInLibrary() {
         <div v-if="store.loading" class="mt-20 text-center text-gray-400">{{ t('common.loading') }}</div>
         <div v-else-if="store.error" class="mt-20 text-center text-red-500">{{ store.error }}</div>
         <div v-else-if="!store.entriesForSelectedDate.length" class="mt-20 text-center text-gray-400">
-          {{ t('dates.noEntries') }}
+          <p>{{ t('dates.noEntries') }}</p>
+          <button
+            @click="startWritingForSelectedDate"
+            class="mt-5 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+          >
+            {{ t('dates.startWriting') }}
+          </button>
+          <p v-if="createError" class="mt-3 text-sm text-red-500">{{ createError }}</p>
         </div>
         <div v-else class="space-y-4">
           <article

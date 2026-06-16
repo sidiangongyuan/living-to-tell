@@ -1,5 +1,28 @@
 # Writer Tauri MVP Changelog
 
+## 0.1.5 - Public Polish and AI Settings (2026-06-16)
+
+### Added
+
+- Added a cleaner focus mode for articles that hides surrounding panels and keeps only the writing area.
+- Added a real “Start Writing” action on empty date pages, creating a new article for the selected date.
+- Added Reference Library copy actions for passage text and full source citation.
+- Added backend-backed AI settings for OpenAI-compatible providers, Codex local auth, Gemini API, local Gemini config, and Gemini CLI / OAuth.
+- Added AI credential status and config validation without saving raw API keys.
+
+### Changed
+
+- Removed implementation-oriented epigraph helper copy from the public article UI.
+- Removed unavailable Claude provider choices from the public settings UI.
+- Updated public documentation for focus mode, reference copying, AI settings, and date writing actions.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest`
+- `npm test`
+- `npm run build`
+- `cargo check --manifest-path tauri-mvp\frontend\src-tauri\Cargo.toml`
+
 ## 0.1.4 - Writing and AI MVP Completion (2026-06-16)
 
 ### Added

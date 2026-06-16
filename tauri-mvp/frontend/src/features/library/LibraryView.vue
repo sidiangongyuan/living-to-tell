@@ -14,6 +14,7 @@ const saveTimer = ref<number | null>(null)
 const stats = ref<LibraryStats | null>(null)
 const initialized = ref(false)
 const applyingRouteState = ref(false)
+const copyNotice = ref('')
 
 onMounted(async () => {
   await Promise.all([store.loadReferences(), loadStats()])
@@ -163,6 +164,41 @@ async function createReference() {
   await store.createReference()
   await loadStats()
 }
+
+function formatFullReferenceCopy(): string {
+  const reference = store.selectedReference
+  if (!reference) return ''
+  const content = reference.content.trim()
+  const title = reference.source_title.trim()
+  const author = reference.source_author.trim()
+  const sourceParts = [
+    title ? `《${title}》` : '',
+    author,
+  ].filter(Boolean)
+  if (!sourceParts.length) return content
+  return [content, `——${sourceParts.join(' ')}`].filter(Boolean).join('\n\n')
+}
+
+async function copyText(text: string, noticeKey: string) {
+  if (!text.trim()) return
+  try {
+    await navigator.clipboard.writeText(text)
+    copyNotice.value = t(noticeKey)
+  } catch (e) {
+    copyNotice.value = e instanceof Error ? e.message : String(e)
+  }
+  window.setTimeout(() => {
+    copyNotice.value = ''
+  }, 1800)
+}
+
+async function copyReferenceContent() {
+  await copyText(store.selectedReference?.content ?? '', 'library.copyContentDone')
+}
+
+async function copyReferenceFull() {
+  await copyText(formatFullReferenceCopy(), 'library.copyFullDone')
+}
 </script>
 
 <template>
@@ -297,6 +333,25 @@ async function createReference() {
 
     <section class="flex min-w-0 flex-1 flex-col overflow-y-auto bg-white">
       <div v-if="store.selectedReference" class="mx-auto w-full max-w-3xl p-8">
+        <div class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-3">
+          <div class="text-sm text-gray-500">
+            {{ copyNotice || t('library.copyHint') }}
+          </div>
+          <div class="flex gap-2">
+            <button
+              @click="copyReferenceContent"
+              class="rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 transition-colors hover:bg-gray-100"
+            >
+              {{ t('library.copyContent') }}
+            </button>
+            <button
+              @click="copyReferenceFull"
+              class="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-gray-700"
+            >
+              {{ t('library.copyFull') }}
+            </button>
+          </div>
+        </div>
         <div class="mb-6">
           <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('library.content') }}</label>
           <textarea

@@ -367,7 +367,7 @@ const displayList = computed(() =>
 
 <template>
   <div class="flex h-full overflow-hidden bg-[#f7f3ea] text-stone-900">
-    <aside class="w-80 shrink-0 border-r border-stone-200 bg-white flex flex-col">
+    <aside v-if="!settings.focusMode" class="w-80 shrink-0 border-r border-stone-200 bg-white flex flex-col">
       <div class="p-4 border-b border-stone-200">
         <div class="flex items-center justify-between mb-3">
           <h2 class="text-xl font-bold">{{ t('articles.title') }}</h2>
@@ -431,6 +431,7 @@ const displayList = computed(() =>
 
     <main class="flex-1 min-w-0 flex flex-col bg-[#fffdf8] overflow-hidden relative">
       <FindReplace
+        v-if="!settings.focusMode"
         :show="showFindReplace"
         :text="bodyDraft"
         @close="showFindReplace = false"
@@ -439,7 +440,7 @@ const displayList = computed(() =>
         @queryChange="syncFindQuery"
       />
 
-      <div class="flex items-center justify-between gap-4 p-4 border-b border-stone-200 bg-white/80">
+      <div v-if="!settings.focusMode" class="flex items-center justify-between gap-4 p-4 border-b border-stone-200 bg-white/80">
         <input
           v-if="store.selectedEntry"
           v-model="store.selectedEntry.title"
@@ -489,16 +490,21 @@ const displayList = computed(() =>
         </div>
       </div>
 
-      <div class="flex-1 overflow-y-auto p-6">
-        <div v-if="store.selectedEntry" class="mx-auto flex h-full max-w-3xl flex-col gap-5">
+      <div :class="['flex-1 overflow-y-auto', settings.focusMode ? 'p-8 md:p-12' : 'p-6']">
+        <div
+          v-if="store.selectedEntry"
+          :class="[
+            'mx-auto flex h-full flex-col',
+            settings.focusMode ? 'max-w-5xl gap-0' : 'max-w-3xl gap-5'
+          ]"
+        >
           <section
-            v-if="epigraphActive"
+            v-if="epigraphActive && !settings.focusMode"
             class="rounded-[1.75rem] border border-amber-200 bg-[#fff8e8] px-8 py-6 shadow-sm"
           >
             <div class="mb-4 flex items-center justify-between gap-3">
               <div>
                 <p class="text-xs font-semibold uppercase tracking-[0.28em] text-amber-700">{{ t('articles.epigraph') }}</p>
-                <p class="mt-1 text-xs text-stone-500">{{ t('articles.epigraphHint') }}</p>
               </div>
               <button
                 @click="moveEpigraphBackToBody"
@@ -525,7 +531,12 @@ const displayList = computed(() =>
             ref="bodyRef"
             v-model="bodyDraft"
             @input="scheduleSave"
-            class="w-full flex-1 min-h-[500px] block p-6 border border-stone-200 rounded-[1.5rem] bg-[#fffdf8] shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-300 resize-none leading-relaxed"
+            :class="[
+              'w-full flex-1 block bg-[#fffdf8] focus:outline-none resize-none leading-relaxed',
+              settings.focusMode
+                ? 'min-h-[calc(100vh-6rem)] border-0 p-8 text-lg shadow-none focus:ring-0'
+                : 'min-h-[500px] rounded-[1.5rem] border border-stone-200 p-6 shadow-sm focus:ring-2 focus:ring-amber-300'
+            ]"
             :placeholder="t('articles.startWriting')"
           />
         </div>
@@ -536,7 +547,7 @@ const displayList = computed(() =>
     </main>
 
     <aside
-      v-if="!settings.rightContextPaneCollapsed"
+      v-if="!settings.rightContextPaneCollapsed && !settings.focusMode"
       class="w-80 shrink-0 bg-white border-l border-stone-200 flex flex-col overflow-hidden"
     >
       <div class="p-4 border-b border-stone-200">

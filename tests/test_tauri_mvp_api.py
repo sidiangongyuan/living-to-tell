@@ -186,3 +186,106 @@ def test_tauri_ai_current_thread_is_scope_aware(monkeypatch):
     restored_payload = restored.json()
     assert restored_payload["thread"]["id"] == payload["thread"]["id"]
     assert restored_payload["messages"][0]["content"] == "讨论这个开头"
+
+
+def test_tauri_ai_settings_read_save_and_validate(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    initial = client.get("/api/settings/ai")
+    assert initial.status_code == 200
+    initial_payload = initial.json()
+    assert initial_payload["provider_name"] in {"openai", "gemini", "gemini_cli"}
+    assert "status" in initial_payload
+    assert "model_presets" in initial_payload
+
+    saved = client.put(
+        "/api/settings/ai",
+        json={
+            "provider_name": "gemini",
+            "base_url": "https://generativelanguage.googleapis.com",
+            "wire_api": "responses",
+            "model": "gemini-2.5-flash",
+            "api_key_source": "env:GEMINI_API_KEY",
+            "gemini_cli_proxy": "",
+        },
+    )
+    assert saved.status_code == 200
+    payload = saved.json()
+    assert payload["provider_name"] == "gemini"
+    assert payload["model"] == "gemini-2.5-flash"
+    assert payload["api_key_source"] == "env:GEMINI_API_KEY"
+
+    cli = client.put(
+        "/api/settings/ai",
+        json={
+            "provider_name": "gemini_cli",
+            "base_url": "https://should-be-cleared.example",
+            "wire_api": "responses",
+            "model": "",
+            "api_key_source": "env:IGNORED",
+            "gemini_cli_proxy": "http://127.0.0.1:7890",
+        },
+    )
+    assert cli.status_code == 200
+    cli_payload = cli.json()
+    assert cli_payload["provider_name"] == "gemini_cli"
+    assert cli_payload["api_key_source"] == "gemini-cli"
+    assert cli_payload["model"] == "gemini-cli-default"
+
+    invalid = client.put(
+        "/api/settings/ai",
+        json={
+            "provider_name": "anthropic",
+            "base_url": "",
+            "wire_api": "responses",
+            "model": "claude",
+            "api_key_source": "env:ANTHROPIC_API_KEY",
+        },
+    )
+    assert invalid.status_code == 400
+
+
+def test_tauri_ai_settings_test_endpoint_uses_preflight(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    failed = client.post(
+        "/api/settings/ai/test",
+        json={
+            "provider_name": "openai",
+            "base_url": "",
+            "wire_api": "responses",
+            "model": "gpt-4o-mini",
+            "api_key_source": "env:WRITER_TEST_MISSING_KEY",
+        },
+    )
+    assert failed.status_code == 200
+    assert failed.json()["ok"] is False
+    assert "WRITER_TEST_MISSING_KEY" in failed.json()["message"]
+
+    monkeypatch.setenv("WRITER_TEST_PRESENT_KEY", "test-key")
+    passed = client.post(
+        "/api/settings/ai/test",
+        json={
+            "provider_name": "openai",
+            "base_url": "",
+            "wire_api": "responses",
+            "model": "gpt-4o-mini",
+            "api_key_source": "env:WRITER_TEST_PRESENT_KEY",
+        },
+    )
+    assert passed.status_code == 200
+    assert passed.json()["ok"] is True
+
+
+def test_tauri_ai_settings_import_failures_are_explicit(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    codex = client.post("/api/settings/ai/import-codex")
+    assert codex.status_code in {200, 400, 404}
+    if codex.status_code == 200:
+        assert codex.json()["config"]["provider_name"] == "openai"
+
+    gemini = client.post("/api/settings/ai/import-gemini")
+    assert gemini.status_code in {200, 400, 404}
+    if gemini.status_code == 200:
+        assert gemini.json()["config"]["provider_name"] == "gemini"
