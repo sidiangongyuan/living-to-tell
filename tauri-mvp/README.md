@@ -1,62 +1,161 @@
-# Writer Tauri MVP
+<div align="center">
 
-Writer 的 Tauri 版本正在把桌面端迁移到更轻量的 Vue + FastAPI + Tauri 架构。当前版本与现有 Writer 数据库共享数据，方便在不丢失旧内容的前提下验证新界面。
+# Writer Tauri Preview
 
-## 功能
+### A local-first writing studio for articles, collections, references, and scoped AI help
 
-- **文章写作**：文章列表、正文编辑、自动保存、全文搜索、查找替换、标签、统计与右侧上下文栏；专注模式可隐藏所有辅助界面，只保留正文写作区。
-- **题记编辑**：文章开头题记会独立显示和编辑，Markdown / DOCX 导出会按题记样式排版。
-- **文章导出**：单篇文章支持导出 Markdown / TXT / DOCX。
-- **作品集**：创建合集、批量加入文章、拖拽调整阅读顺序、预览正文，并按顺序导出 Markdown / TXT / DOCX。
-- **AI 工作台**：工具页支持润色、扩写、续写、摘要、大纲、标题等任务；对话页支持围绕全局、单篇文章或作品集持续讨论。
-- **AI 配置**：支持 OpenAI 兼容接口、Codex 本地登录、Gemini API、本地 Gemini 配置和 Gemini CLI / OAuth；只保存凭据来源，不保存明文 API Key。
-- **AI Card**：内置作家风格样例，用户可新建、编辑、删除风格卡、角色卡和场景卡，并按类型、来源、关键词和排序方式筛选。
-- **文脉标本库**：管理摘录、出处、用途类型和标签；支持按书籍或按用途浏览，并可复制正文或带出处的完整引用。
-- **日期视图**：按日期浏览文章和每日统计；每日精句可跳转到文脉库对应标本；空日期可一键开始写作。
-- **备份与检查点**：创建备份、检查点并支持恢复。
-- **关闭行为**：可选择关闭窗口时直接退出、每次询问或最小化到系统托盘。
-- **桌面打包**：Release 包内置 Python 后端 sidecar，启动应用时自动启动后端。
+[![Version](https://img.shields.io/badge/version-0.1.6-blue.svg)](CHANGELOG.md)
+[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/writer/releases)
+[![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
+[![Status](https://img.shields.io/badge/status-preview-orange.svg)](#download)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 
-## 开发运行
+[Download](#download) · [Screenshots](#screenshots) · [Features](#features) · [Development](#development)
+
+</div>
+
+Writer is a calm desktop app for writing articles, arranging them into collections, saving reference passages, and using AI without giving up control of the manuscript. It keeps your writing database local and treats AI output as something to review, copy, discuss, or explicitly apply.
+
+This Tauri preview is the current public direction for Writer. It shares the same Writer SQLite data layer as the earlier desktop version, while providing a lighter Vue + Tauri interface.
+
+## Screenshots
+
+| Article Writing | Focus Mode |
+| :---: | :---: |
+| ![Article writing](docs/assets/screenshots/article-writing.png) | ![Focus mode](docs/assets/screenshots/focus-mode.png) |
+
+| Collections | Reference Library |
+| :---: | :---: |
+| ![Collections](docs/assets/screenshots/collections.png) | ![Reference library](docs/assets/screenshots/reference-library.png) |
+
+| AI Workspace | Settings |
+| :---: | :---: |
+| ![AI workspace](docs/assets/screenshots/ai-workspace.png) | ![Settings](docs/assets/screenshots/settings.png) |
+
+## Features
+
+### Writing
+
+- Article editor with autosave, tags, full-text search, find/replace, and a collapsible context pane.
+- Epigraphs can be edited as a separate section at the top of an article, while export still produces clean text.
+- Focus mode hides the surrounding interface and leaves only the writing area.
+- Single-article export to Markdown, TXT, and DOCX.
+- Date view for browsing daily writing activity, with a direct "start writing" action on empty days.
+
+### Collections
+
+- Create article collections and add multiple articles at once.
+- Drag to reorder articles, or use up/down controls as a fallback.
+- Preview the selected article in a paper-like reading pane.
+- Export a collection in Markdown, TXT, or DOCX using the current order.
+
+### Reference Library
+
+- Save reference passages with source title, author, usage type, and personal notes.
+- Browse by source book or by usage.
+- Jump from the daily quote card to the matching reference passage.
+- Copy just the passage body, or copy a complete citation with title and author.
+
+### AI
+
+- AI tools for polishing, rewriting, expanding, continuing, summarizing, outlining, and title generation.
+- Free chat tab with one ongoing conversation per global scope, article, or collection.
+- AI Cards for style, character, and setting context, with type/source filters and keyword search.
+- Supports OpenAI-compatible APIs, Codex local auth, Gemini API/local config, and Gemini CLI / OAuth.
+- API keys are not stored in Writer settings; only the selected credential source is saved.
+
+### Desktop
+
+- Windows installer builds with a bundled Python backend sidecar.
+- Release builds discover the sidecar port automatically, so users do not need to run a backend manually.
+- Close behavior can be set to ask every time, minimize to tray, or exit directly.
+- Public preview uses light mode only; dark mode code remains available for a later full theme pass.
+
+## Download
+
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/writer/releases).
+
+Recommended Windows asset:
+
+- `Writer_0.1.6_x64-setup.exe`
+
+Optional assets:
+
+- `Writer_0.1.6_x64_en-US.msi`
+- `writer-app.exe` for direct smoke testing
+
+Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
+
+## Quick Start
+
+1. Install Writer from the latest Release.
+2. Open the app and go to Articles.
+3. Create or select an article and start writing.
+4. Use Collections to arrange multiple articles into a reading order.
+5. Use the Reference Library to save quotes and source material.
+6. Configure AI in Settings if you want AI tools or scoped chat.
+
+## AI Setup
+
+Open Settings and choose one provider:
+
+- OpenAI-compatible: set a base URL/model and use `env:OPENAI_API_KEY` or Codex local auth.
+- Gemini API: use `env:GEMINI_API_KEY` or import local Gemini configuration.
+- Gemini CLI / OAuth: reuse a local Gemini CLI login. No API key field is required.
+
+Long Gemini requests default to a 120 second wait. Advanced users can tune this with `WRITER_GEMINI_TIMEOUT_SECONDS` or `WRITER_GEMINI_CLI_TIMEOUT_SECONDS`.
+
+## Data & Privacy
+
+- Writing data is stored locally in Writer's SQLite database.
+- AI requests are sent only when you run an AI tool or send a chat message.
+- API keys are read from environment variables or local provider configuration at runtime.
+- Writer settings store the selected provider and credential source, not raw API keys.
+- Use backups/checkpoints before major editing or migration tests.
+
+## Development
+
+Requirements:
+
+- Windows
+- Python 3.12 or the local `writer` conda environment
+- Node.js 20+
+- Rust stable
+
+Run the backend:
 
 ```powershell
-# 后端
 cd tauri-mvp\backend
 $env:WRITER_USE_DEV_DB = "1"
 D:\anaconda\envs\writer\python.exe run.py --dev
+```
 
-# 前端
+Run the frontend:
+
+```powershell
 cd tauri-mvp\frontend
 npm install
 npm run dev
 ```
 
-开发模式默认连接 `http://127.0.0.1:8000`。Release 模式由 Tauri sidecar 自动分配后端端口，前端会通过 Tauri command 获取真实 API 地址。
-
-## 构建
+Build the release package:
 
 ```powershell
 cd tauri-mvp
 .\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe
 ```
 
-脚本会先构建 Python 后端 sidecar，再复制到 Tauri `externalBin` 目录，最后生成 Windows 安装包。后端 sidecar 位于：
+Release artifacts are written under:
 
 ```text
-tauri-mvp\frontend\src-tauri\binaries\writer-backend-x86_64-pc-windows-msvc.exe
-```
-
-Windows 安装包输出位置：
-
-```text
+tauri-mvp\frontend\src-tauri\target\release\
 tauri-mvp\frontend\src-tauri\target\release\bundle\nsis\
 tauri-mvp\frontend\src-tauri\target\release\bundle\msi\
 ```
 
-## 验证
+## Verification
 
 ```powershell
-D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py
 D:\anaconda\envs\writer\python.exe -m pytest
 cd tauri-mvp\frontend
 npm test
@@ -64,28 +163,16 @@ npm run build
 cargo check --manifest-path src-tauri\Cargo.toml
 ```
 
-核心 smoke 覆盖：
+GitHub Actions are manual-only in this preview branch to avoid consuming free CI minutes on every push. Releases are built locally and uploaded manually to GitHub Releases.
 
-- 每日精句返回完整文脉标本并可深链定位。
-- 单篇文章导出支持 TXT / Markdown / DOCX，题记不会在 Markdown / DOCX 中重复。
-- AI scoped 对话能按文章或作品集恢复同一条会话。
-- AI 设置会保存到后端配置，并支持 OpenAI / Gemini / Gemini CLI 凭据来源检查。
-- AI Card 内置样例不会重复生成，CRUD 和筛选数据正常。
-- 作品集可以加入文章、重排、查询文章所属作品集、导出和移除文章。
-- 前端 TypeScript/Vite 构建通过。
-- Tauri Rust sidecar 编译通过。
+## Roadmap
 
-## 更新记录与计划
+- Full dark theme pass before re-enabling the theme switcher.
+- First-run onboarding and sample project.
+- More polished release signing and update story.
+- Richer reference-library views and AI report actions.
+- Claude / Anthropic provider support once the provider backend is complete.
 
-- [CHANGELOG](CHANGELOG.md)
-- [公开 TODO](docs/TODO.md)
+## License
 
-## 数据
-
-默认使用现有 Writer 数据目录。开发测试建议设置：
-
-```powershell
-$env:WRITER_USE_DEV_DB = "1"
-```
-
-这样会使用 `tauri-mvp\backend\.data\writer.sqlite3`，避免影响真实写作数据库。
+MIT © Writer contributors

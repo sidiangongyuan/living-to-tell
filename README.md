@@ -1,283 +1,143 @@
-# Writer
-
 <div align="center">
 
-**A calm, local-first writing studio for turning fragments into finished work**
+# Writer
+
+### A local-first writing studio for articles, collections, references, and scoped AI help
 
 [中文](README.zh-CN.md) · English
 
-[![Tests](https://github.com/sidiangongyuan/writer/actions/workflows/tests.yml/badge.svg)](https://github.com/sidiangongyuan/writer/actions/workflows/tests.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB.svg)
-![Windows](https://img.shields.io/badge/Windows-portable-0078D4.svg)
-![Status](https://img.shields.io/badge/Status-Alpha-orange.svg)
+[![Version](https://img.shields.io/badge/tauri%20preview-0.1.6-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/writer/releases)
+[![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
+[![Status](https://img.shields.io/badge/status-preview-orange.svg)](tauri-mvp/README.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[Download Latest](#️-download) · [User Guide](docs/user-guide.md) · [Contributing](CONTRIBUTING.md)
+[Download](#download) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Development](#development)
 
 </div>
 
----
+Writer is a calm desktop app for writing articles, arranging them into collections, saving reference passages, and using AI without giving up control of the manuscript. It keeps your writing database local and treats AI output as something to review, copy, discuss, or explicitly apply.
 
-## Why Writer?
+The current public preview is the Tauri version under [`tauri-mvp/`](tauri-mvp/). The earlier PySide/Qt implementation remains in the repository, but new public-facing work is focused on the Tauri app.
 
-Writer is for writers who work with **fragments** — scenes, sentences, notes, research, half-formed ideas — and need to **shape them into finished articles** without losing focus. 
+## Screenshots
 
-Your drafts stay **local**. Articles can be arranged into **collections**. AI assistance is **bounded** — you review every suggestion before it touches your manuscript. No cloud sync, no subscription, no distraction.
+| Article Writing | Focus Mode |
+| :---: | :---: |
+| ![Article writing](tauri-mvp/docs/assets/screenshots/article-writing.png) | ![Focus mode](tauri-mvp/docs/assets/screenshots/focus-mode.png) |
 
-> **Status:** Alpha, daily-usable, moving fast. Core writing flow is stable; current focus is UI modernization and cross-platform support.
+| Collections | Reference Library |
+| :---: | :---: |
+| ![Collections](tauri-mvp/docs/assets/screenshots/collections.png) | ![Reference library](tauri-mvp/docs/assets/screenshots/reference-library.png) |
 
-### 🚀 What's New
+| AI Workspace | Settings |
+| :---: | :---: |
+| ![AI workspace](tauri-mvp/docs/assets/screenshots/ai-workspace.png) | ![Settings](tauri-mvp/docs/assets/screenshots/settings.png) |
 
-**Active Development (June 2026):**
-- 🎨 **Tauri + Vue UI Rewrite** - Migrating from Qt to modern web technologies for better layout stability and cross-platform support ([#tauri-mvp branch](https://github.com/sidiangongyuan/writer/tree/tauri-mvp))
-- 🔧 Layout fixes and improved context pane reliability
-- 📦 Smaller bundle size and faster startup (target: < 50MB vs current 150MB)
+## Features
 
-See [CHANGELOG.md](CHANGELOG.md) for release history.
+### Writing
 
----
+- Article editor with autosave, tags, full-text search, find/replace, and a collapsible context pane.
+- Epigraph editing for opening quotes, while keeping export output clean.
+- Focus mode hides the surrounding interface and leaves only the writing area.
+- Single-article export to Markdown, TXT, and DOCX.
+- Date view for browsing daily writing activity, with a direct "start writing" action on empty days.
 
-## ✨ Features
+### Collections
 
-### 📝 Writing Flow
-- **Fragment-first editing** - Capture ideas fast, organize later
-- **Version history** - Safe snapshots before every major change
-- **Focus mode** - Distraction-free writing with typography controls
-- **Sticky notes** - Context for your future self, pinned beside the text
-- **Full-text search** - Find any fragment instantly
+- Create article collections and add multiple articles at once.
+- Drag to reorder articles, or use up/down controls as a fallback.
+- Preview the selected article in a paper-like reading pane.
+- Export a collection in Markdown, TXT, or DOCX using the current order.
 
-### 📚 Organization
-- **Collections** - Curate articles into reading-order anthologies
-- **Multi-format export** - TXT, Markdown, DOCX with one click
-- **Tag system** - Flexible categorization without rigid folders
-- **Reference library** - Store quotes, sources, and research separately
+### Reference Library
 
-### 🤖 AI Assistance (Bounded)
-- **Compare before accepting** - Review every AI suggestion side-by-side
-- **Scoped chat** - Conversations stay tied to articles or collections
-- **Writing tools** - Polish, expand, summarize, outline, consistency checks
-- **No stored keys** - API keys live in environment variables only
+- Save reference passages with source title, author, usage type, and personal notes.
+- Browse by source book or by usage.
+- Jump from the daily quote card to the matching reference passage.
+- Copy just the passage body, or copy a complete citation with title and author.
 
-### 🎨 Interface
-- **Apple-inspired design** - Neutral palette, system-blue accents, clean typography
-- **Light/dark themes** - Respects your system preference
-- **Three-column layout** - Navigation rail, main editor, collapsible context pane
-- **Portable Windows app** - No installation, runs from a folder
+### AI
 
----
+- AI tools for polishing, rewriting, expanding, continuing, summarizing, outlining, and title generation.
+- Free chat tab with one ongoing conversation per global scope, article, or collection.
+- AI Cards for style, character, and setting context, with type/source filters and keyword search.
+- Supports OpenAI-compatible APIs, Codex local auth, Gemini API/local config, and Gemini CLI / OAuth.
+- API keys are not stored in Writer settings; only the selected credential source is saved.
 
-## 🚧 Current TODO
+### Desktop
 
-**Near-term (Next 2 Weeks):**
-- [ ] 🎨 Complete Tauri + Vue UI migration (in progress on `tauri-mvp` branch)
-- [ ] 🐛 Fix context pane toggle reliability (root cause: Qt splitter constraints)
-- [ ] 📦 Reduce bundle size from 150MB → <50MB
-- [ ] 🎬 Add demo GIF to README showing three-column layout in action
+- Windows installer builds with a bundled Python backend sidecar.
+- Release builds discover the sidecar port automatically, so users do not need to run a backend manually.
+- Close behavior can be set to ask every time, minimize to tray, or exit directly.
+- Public preview uses light mode only; dark mode will return after a full theme pass.
 
-**Mid-term (Next Month):**
-- [ ] 📸 Public screenshot gallery and workflow videos
-- [ ] 🎓 Step-by-step onboarding for first-time users
-- [ ] 🍎 macOS build (enabled by Tauri migration)
-- [ ] 🐧 Linux build (AppImage or .deb)
+## Download
 
-**Long-term Vision:**
-- [ ] 🔄 Real-time sync (optional, user-controlled)
-- [ ] 📱 Mobile companion app (read-only access)
-- [ ] 🎯 Clickable AI reports that locate and apply suggested edits
-- [ ] 🔐 Signed builds and auto-updates
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/writer/releases).
 
-<details>
-<summary><b>✅ Completed Features (Click to expand)</b></summary>
+Recommended Windows asset:
 
-- [x] Fragment-first writing desk with autosave
-- [x] Article collections with reading-order preview
-- [x] Version history and safe write-back snapshots
-- [x] GPT / OpenAI-compatible providers
-- [x] Gemini API key and Gemini CLI / OAuth support
-- [x] AI workspace with bounded assistance tools
-- [x] Scoped AI chat with persisted threads
-- [x] Literary reference library with tag browsing
-- [x] Focus mode and typography controls
-- [x] Sticky fragment notes with visual board
-- [x] Apple-style UI refresh (neutral palette, system-blue accent)
-- [x] Collapsible context pane
-- [x] Full-text search across all fragments
+- `Writer_0.1.6_x64-setup.exe`
 
-</details>
+Optional assets:
 
----
+- `Writer_0.1.6_x64_en-US.msi`
+- `writer-app.exe` for direct smoke testing
 
-## ⬇️ Download
+Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 
-**Windows (Portable):**  
-Latest stable: [Writer-0.2.0-alpha.45-portable.zip](https://github.com/sidiangongyuan/writer/releases/download/v0.2.0-alpha.45/Writer-0.2.0-alpha.45-portable.zip) (150MB)
+## Quick Start
 
-- Extract the ZIP anywhere
-- Run `Writer.exe` from the `Writer/` folder
-- No installation required
+1. Install Writer from the latest Release.
+2. Open Articles and start a new article.
+3. Use Collections to arrange multiple articles into a reading order.
+4. Save quotes and sources in the Reference Library.
+5. Configure AI in Settings if you want AI tools or scoped chat.
 
-> **Note:** Windows may show a SmartScreen warning for unsigned alpha builds. Verify the download comes from this repository's [release page](https://github.com/sidiangongyuan/writer/releases/tag/v0.2.0-alpha.45) before running.
+## AI Setup
 
-**Other Platforms:**  
-macOS and Linux builds coming soon (after Tauri migration). Track progress on the [`tauri-mvp`](https://github.com/sidiangongyuan/writer/tree/tauri-mvp) branch.
+Open Settings and choose one provider:
 
----
+- OpenAI-compatible: set a base URL/model and use `env:OPENAI_API_KEY` or Codex local auth.
+- Gemini API: use `env:GEMINI_API_KEY` or import local Gemini configuration.
+- Gemini CLI / OAuth: reuse a local Gemini CLI login. No API key field is required.
 
-## 🚀 Quick Start
+Long Gemini requests default to a 120 second wait. Advanced users can tune this with `WRITER_GEMINI_TIMEOUT_SECONDS` or `WRITER_GEMINI_CLI_TIMEOUT_SECONDS`.
 
-### Option 1: Run From Source (Developers)
+## Data & Privacy
 
-**Requirements:** Windows, Python 3.12+
+- Writing data is stored locally in Writer's SQLite database.
+- AI requests are sent only when you run an AI tool or send a chat message.
+- API keys are read from environment variables or local provider configuration at runtime.
+- Writer settings store the selected provider and credential source, not raw API keys.
+- Use backups/checkpoints before major editing or migration tests.
+
+## Development
+
+See [tauri-mvp/README.md](tauri-mvp/README.md) for Tauri preview development and release commands.
+
+Quick verification:
 
 ```powershell
-# Install dependencies
-pip install -e .[dev]
-
-# Launch the app
-writer
-
-# Or use the module path
-python -m writer.main
+D:\anaconda\envs\writer\python.exe -m pytest
+cd tauri-mvp\frontend
+npm test
+npm run build
+cargo check --manifest-path src-tauri\Cargo.toml
 ```
 
-**Run tests:**
-```powershell
-python -m pytest
-```
+GitHub Actions are manual-only to avoid consuming free CI minutes on every push. Releases are built locally and uploaded manually to GitHub Releases.
 
-### Option 2: Build Portable Exe
+## Roadmap
 
-```powershell
-.\scripts\build_windows.ps1 -PythonExe D:\path\to\python.exe
-```
+- Full dark theme pass before re-enabling the theme switcher.
+- First-run onboarding and sample project.
+- More polished release signing and update story.
+- Richer reference-library views and AI report actions.
+- Claude / Anthropic provider support once the provider backend is complete.
 
-Outputs:
-- `dist\Writer\Writer.exe` - Unpacked portable app
-- `dist\Writer-<version>-portable.zip` - Versioned release archive
+## License
 
----
-
-## 🛠️ Tech Stack
-
-**Current (Qt Version):**
-- **Frontend:** PySide6 (Qt 6) for desktop UI
-- **Backend:** Python 3.12+ with SQLite
-- **AI:** OpenAI API, Gemini API, Gemini CLI/OAuth
-- **Packaging:** PyInstaller (Windows portable)
-
-**In Progress (Tauri Migration):**
-- **Frontend:** Tauri 2.0 + Vue 3 + Tailwind CSS
-- **Backend:** FastAPI + existing Python repositories
-- **Database:** Same SQLite schema (fully compatible)
-- **Target:** Cross-platform (Windows, macOS, Linux), <50MB bundle
-
----
-
-## 📘 Documentation
-
-- [English User Guide](docs/user-guide.md) - Complete feature walkthrough
-- [中文使用教程](docs/user-guide.zh-CN.md) - 完整功能说明
-- [Contributing Guide](CONTRIBUTING.md) - Development setup and PR guidelines
-- [Security Policy](SECURITY.md) - Reporting vulnerabilities
-- [Roadmap](docs/roadmap.md) - Alpha-to-beta plan
-
----
-
-## 🤖 AI Setup
-
-Writer supports multiple AI providers. Open **Settings** in the app and configure:
-
-**GPT / OpenAI:**
-- Set `OPENAI_API_KEY` environment variable
-- Or use any OpenAI-compatible endpoint
-
-**Gemini:**
-- **API Key:** Set `GEMINI_API_KEY` or create `~/.gemini/.env`
-- **CLI/OAuth:** Reuse existing Gemini CLI login (no key needed)
-
-**Supported Gemini models:**
-- `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`
-- `gemini-3.1-pro-preview`, `gemini-3-flash-preview`, `gemini-3.1-flash-lite-preview`
-
-> **Timeout for large prompts:** Defaults to 120 seconds. Override with `WRITER_GEMINI_TIMEOUT_SECONDS` or `WRITER_GEMINI_CLI_TIMEOUT_SECONDS` environment variables.
-
----
-
-## 🔒 Privacy & Security
-
-Writer is **local-first** — your drafts stay on your machine. However:
-
-- **AI providers** receive the text you send to them. Review prompts before running AI tasks.
-- **No telemetry** - Writer does not phone home or track usage.
-- **No stored keys** - API keys live in environment variables, never committed to disk.
-
-**What Writer never stores in Git:**
-- API keys or OAuth tokens
-- Private writing content
-- Local SQLite databases
-- Build artifacts (`dist/`, `build/`)
-
-See [SECURITY.md](SECURITY.md) for vulnerability reporting and contributor security guidelines.
-
----
-
-## 🤝 Contributing
-
-Pull requests are welcome! Writer is alpha and moving fast.
-
-**How to help:**
-- 🐛 Report bugs via [GitHub Issues](https://github.com/sidiangongyuan/writer/issues)
-- 💡 Suggest features (please check [roadmap](docs/roadmap.md) first)
-- 🔧 Submit PRs (see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines)
-- 📖 Improve documentation
-
-**Development setup:**
-```powershell
-git clone https://github.com/sidiangongyuan/writer.git
-cd writer
-pip install -e .[dev]
-python -m pytest  # Run tests
-```
-
-CI runs Python 3.12 tests on Windows via [GitHub Actions](.github/workflows/tests.yml).
-
----
-
-## 🗺️ Roadmap
-
-**Alpha → Beta (2026 Q3-Q4):**
-1. ✅ Core writing flow stable
-2. ✅ Collections and reference library
-3. 🚧 UI migration to Tauri (in progress)
-4. ⏳ macOS and Linux builds
-5. ⏳ Signed builds and auto-updates
-6. ⏳ Public demo gallery
-
-See [docs/roadmap.md](docs/roadmap.md) for detailed milestones.
-
----
-
-## 📜 License
-
-Writer is open source under the [MIT License](LICENSE).
-
----
-
-## 🙏 Acknowledgments
-
-Built with:
-- [PySide6](https://doc.qt.io/qtforpython-6/) - Current Qt UI (being replaced)
-- [Tauri](https://tauri.app/) - Next-gen cross-platform framework
-- [Vue 3](https://vuejs.org/) - Reactive frontend
-- [FastAPI](https://fastapi.tiangolo.com/) - Python backend API
-- [SQLite](https://www.sqlite.org/) - Local database
-
----
-
-<div align="center">
-
-**[⬆ Back to top](#writer)**
-
-Made with ❤️ for writers who think in fragments
-
-</div>
+MIT © Writer contributors

@@ -6,8 +6,8 @@ This list tracks product-facing work that would make Writer more reliable and ea
 
 - Add signed Windows builds or a documented verification workflow for unsigned alpha archives.
 - Add a reproducible release checklist that covers privacy review, tests, packaging, and release notes.
-- Add clean demo screenshots captured from non-private sample data.
 - Improve first-run onboarding for language, data location, backup, and AI provider setup.
+- Add installer checksums to each public release.
 
 ## Writing experience
 
@@ -39,9 +39,18 @@ This list tracks product-facing work that would make Writer more reliable and ea
 - Keep Windows portable zip as the primary alpha distribution.
 - Evaluate installer packaging after the portable build is stable.
 - Evaluate macOS and Linux packaging after the Windows workflow is mature.
+- Keep GitHub Actions manual-only unless release automation is deliberately re-enabled.
 
 ## Documentation
 
 - Keep English and Chinese user guides in sync.
 - Add short tutorial videos or GIFs after clean demo screenshots are available.
 - Add a troubleshooting page for AI provider setup and Windows packaging issues.
+
+## Completed recently
+
+- Added clean public screenshots for the Tauri preview.
+- Reworked the public README into a product overview with screenshots, features, download, AI setup, privacy, and development sections.
+- Changed GitHub Actions to manual-only triggers to avoid consuming free CI minutes on every push.
+- Hid dark-mode UI entry points for the public preview and forced light mode until the dark theme is fully polished.
+- Fixed Tauri window close behavior for ask, tray, and direct-exit modes.

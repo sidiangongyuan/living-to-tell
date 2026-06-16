@@ -43,7 +43,6 @@ const allCommands = computed<Command[]>(() => [
   },
   { id: 'collections-new', label: t('commandPalette.commands.newCollection.label'), description: t('commandPalette.commands.newCollection.description'), action: () => { router.push('/collections'); collectionsStore.createCollection('新建作品集', '') }, category: 'collections' },
   { id: 'view-focus', label: t('nav.focusMode'), description: t('commandPalette.commands.toggleFocus.description'), action: () => settingsStore.toggleFocusMode(), category: 'view' },
-  { id: 'view-theme', label: t('nav.darkMode'), description: t('commandPalette.commands.toggleTheme.description'), action: () => settingsStore.toggleTheme(), category: 'view' },
   { id: 'reload', label: t('commandPalette.commands.reload.label'), description: t('commandPalette.commands.reload.description'), action: () => window.location.reload(), category: 'settings' },
 ])
 

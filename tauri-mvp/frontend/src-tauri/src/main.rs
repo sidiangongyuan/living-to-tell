@@ -174,7 +174,7 @@ fn main() {
                         ClosePreference::Ask => {
                             api.prevent_close();
                             let _ = window.emit(
-                                "writer://confirm-close",
+                                "writer-confirm-close",
                                 CloseConfirmPayload {
                                     preference: ClosePreference::Ask.as_str().to_string(),
                                 },

@@ -7,7 +7,8 @@ export type CloseBehavior = 'ask' | 'tray' | 'exit'
 
 export const useSettingsStore = defineStore('settings', () => {
   // 从 localStorage 读取保存的设置
-  const theme = ref<Theme>((localStorage.getItem('theme') as Theme) || 'light')
+  localStorage.setItem('theme', 'light')
+  const theme = ref<Theme>('light')
   const language = ref<Language>((localStorage.getItem('language') as Language) || 'zh')
   const focusMode = ref(false)
   const rightContextPaneCollapsed = ref(localStorage.getItem('right_context_pane_collapsed') === 'true')
@@ -15,7 +16,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const closeBehaviorLoaded = ref(false)
 
   function toggleTheme() {
-    theme.value = theme.value === 'light' ? 'dark' : 'light'
+    theme.value = 'light'
     applyTheme()
   }
 
@@ -61,11 +62,8 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   function applyTheme() {
-    if (theme.value === 'dark') {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
+    theme.value = 'light'
+    document.documentElement.classList.remove('dark')
   }
 
   // 监听主题变化，保存到 localStorage
