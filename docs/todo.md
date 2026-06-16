@@ -5,9 +5,9 @@ This list tracks product-facing work that would make Writer more reliable and ea
 ## Release quality
 
 - [ ] Add signed Windows builds or a documented verification workflow for unsigned alpha archives.
-- [ ] Add a reproducible release checklist that covers privacy review, tests, packaging, and release notes.
 - [ ] Improve first-run onboarding for language, data location, backup, and AI provider setup.
 - [ ] Add installer checksums to each public release.
+- [ ] Add a sample project that demonstrates articles, collections, references, and AI setup.
 
 ## Writing experience
 
@@ -38,22 +38,19 @@ This list tracks product-facing work that would make Writer more reliable and ea
 
 ## Packaging and platform
 
-- [ ] Keep Windows portable zip as the primary alpha distribution.
-- [ ] Evaluate installer packaging after the portable build is stable.
 - [ ] Evaluate macOS and Linux packaging after the Windows workflow is mature.
-- [x] Keep GitHub Actions manual-only unless release automation is deliberately re-enabled.
+- [ ] Add a clearer update path for public preview users.
 
 ## Documentation
 
 - [ ] Keep English and Chinese user guides in sync.
 - [ ] Add short tutorial videos or GIFs after clean demo screenshots are available.
-- [ ] Add a troubleshooting page for AI provider setup and Windows packaging issues.
+- [ ] Add a troubleshooting page for AI provider setup.
 
 ## Completed recently
 
-- Added clean public screenshots for the Tauri preview.
-- Reworked the public README into a product overview with screenshots, features, download, AI setup, privacy, and development sections.
-- Added a folded TODO / Roadmap section to the README, including mind maps as a future flagship feature.
-- Changed GitHub Actions to manual-only triggers to avoid consuming free CI minutes on every push.
-- Hid dark-mode UI entry points for the public preview and forced light mode until the dark theme is fully polished.
-- Fixed Tauri window close behavior for ask, tray, and direct-exit modes.
+- Released the Windows public preview with articles, collections, references, and scoped AI.
+- Added clean public screenshots for article writing, focus mode, collections, references, AI, and settings.
+- Added epigraph editing, focus mode, and Markdown / TXT / DOCX export.
+- Added AI tools, scoped chat, AI Cards, and Gemini / OpenAI-compatible setup.
+- Added daily writing quote links and one-click start writing.

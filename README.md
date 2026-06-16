@@ -22,8 +22,6 @@
 
 Writer is a desktop writing app for people who work with long text, fragments, quotes, and revision ideas. It keeps the writing database local, lets you organize articles into collections, and treats AI output as something you review before applying.
 
-The current public preview is the Tauri version under [`tauri-mvp/`](tauri-mvp/). The earlier PySide/Qt app remains in the repository, but public-facing releases now focus on the Tauri app.
-
 ## At a Glance
 
 | | |
@@ -104,8 +102,7 @@ The current public preview is the Tauri version under [`tauri-mvp/`](tauri-mvp/)
 
 ### Desktop Experience
 
-- Windows installer with a bundled Python backend sidecar.
-- Automatic sidecar port discovery in release builds.
+- Windows desktop preview with a simple installer.
 - Close behavior can be set to ask every time, minimize to tray, or exit directly.
 - Public preview uses light mode only while the dark theme is being polished.
 
@@ -120,7 +117,6 @@ Recommended Windows asset:
 Optional assets:
 
 - `Writer_0.1.6_x64_en-US.msi`
-- `writer-app.exe` for direct smoke testing
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 
@@ -148,7 +144,15 @@ Long Gemini requests default to a 120 second wait. Advanced users can tune this 
 - AI requests are sent only when you run an AI tool or send a chat message.
 - API keys are read from environment variables or local provider configuration at runtime.
 - Writer settings store the selected provider and credential source, not raw API keys.
-- Use backups/checkpoints before major editing or migration tests.
+- Use backups/checkpoints before major editing sessions.
+
+## Recently Completed
+
+- Public Windows preview with article writing, collections, references, and scoped AI.
+- Clean screenshot set for the main writing, collection, reference, AI, and settings views.
+- Epigraph editing, focus mode, and Markdown / TXT / DOCX export.
+- AI tools, scoped chat, AI Cards, and Gemini / OpenAI-compatible setup.
+- Daily writing view with reference quote links and one-click start writing.
 
 ## Roadmap / TODO
 
@@ -157,11 +161,10 @@ The public TODO list is kept visible but folded so the README stays readable.
 <details>
 <summary>Show detailed TODO checklist</summary>
 
-### Near Term
+### First-Run Experience
 
-- [ ] Add signed Windows builds or published checksums for unsigned preview installers.
 - [ ] Improve first-run onboarding for language, data location, backups, and AI provider setup.
-- [ ] Add a cleaner update story for public preview users.
+- [ ] Add a sample project so new users can understand the workflow quickly.
 - [ ] Re-enable dark mode after a complete visual pass.
 
 ### Writing
@@ -187,9 +190,9 @@ The public TODO list is kept visible but folded so the README stays readable.
 
 ### Platform
 
-- [x] Keep GitHub Actions manual-only unless release automation is deliberately re-enabled.
+- [ ] Add signed Windows builds or published checksums for preview installers.
 - [ ] Evaluate macOS and Linux packaging after the Windows workflow is mature.
-- [ ] Add a troubleshooting page for AI provider setup and Windows packaging issues.
+- [ ] Add a troubleshooting page for AI provider setup.
 
 </details>
 
@@ -197,7 +200,7 @@ See the full list in [docs/todo.md](docs/todo.md).
 
 ## Development
 
-See [tauri-mvp/README.md](tauri-mvp/README.md) for Tauri preview development and release commands.
+See [tauri-mvp/README.md](tauri-mvp/README.md) for development commands.
 
 Quick verification:
 
@@ -208,8 +211,6 @@ npm test
 npm run build
 cargo check --manifest-path src-tauri\Cargo.toml
 ```
-
-GitHub Actions are manual-only to avoid consuming free CI minutes on every push. Releases are built locally and uploaded manually to GitHub Releases.
 
 ## License
 
