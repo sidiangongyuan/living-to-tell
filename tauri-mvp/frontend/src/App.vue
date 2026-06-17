@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useRouter } from 'vue-router'
 import { useSettingsStore } from './stores/settings'
 import { useI18n } from './i18n'
@@ -18,6 +19,7 @@ const closeChoice = ref<'tray' | 'exit'>('tray')
 const rememberCloseChoice = ref(false)
 const closeDialogMessage = ref('')
 let closeDialogUnlisten: UnlistenFn | null = null
+let closeDialogWindowUnlisten: UnlistenFn | null = null
 
 const navItems = computed(() => [
   { name: 'dates', label: t('nav.dates'), icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
@@ -55,18 +57,28 @@ onUnmounted(() => {
     closeDialogUnlisten()
     closeDialogUnlisten = null
   }
+  if (closeDialogWindowUnlisten) {
+    closeDialogWindowUnlisten()
+    closeDialogWindowUnlisten = null
+  }
 })
 
 async function bindCloseDialogListener() {
+  const openCloseDialog = () => {
+    closeChoice.value = settings.closeBehavior === 'exit' ? 'exit' : 'tray'
+    rememberCloseChoice.value = false
+    closeDialogMessage.value = ''
+    showCloseDialog.value = true
+  }
   try {
-    closeDialogUnlisten = await listen('writer-confirm-close', () => {
-      closeChoice.value = settings.closeBehavior === 'exit' ? 'exit' : 'tray'
-      rememberCloseChoice.value = false
-      closeDialogMessage.value = ''
-      showCloseDialog.value = true
-    })
+    closeDialogUnlisten = await listen('writer-confirm-close', openCloseDialog)
   } catch {
     closeDialogUnlisten = null
+  }
+  try {
+    closeDialogWindowUnlisten = await getCurrentWindow().listen('writer-confirm-close', openCloseDialog)
+  } catch {
+    closeDialogWindowUnlisten = null
   }
 }
 

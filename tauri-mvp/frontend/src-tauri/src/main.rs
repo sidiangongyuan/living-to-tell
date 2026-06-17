@@ -17,6 +17,10 @@ use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::CommandEvent;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    MessageBoxW, IDNO, IDYES, MB_ICONQUESTION, MB_TASKMODAL, MB_YESNOCANCEL,
+};
 
 #[derive(Clone)]
 struct AppState {
@@ -173,12 +177,22 @@ fn main() {
                     match normalize_close_preference(preference, app_state.tray_available) {
                         ClosePreference::Ask => {
                             api.prevent_close();
-                            let _ = window.emit(
-                                "writer-confirm-close",
-                                CloseConfirmPayload {
-                                    preference: ClosePreference::Ask.as_str().to_string(),
-                                },
-                            );
+                            match ask_close_action_native(app_state.tray_available) {
+                                Some(ClosePreference::Tray) => {
+                                    let _ = window.hide();
+                                }
+                                Some(ClosePreference::Exit) => {
+                                    kill_backend_child(&app_state);
+                                    window.app_handle().exit(0);
+                                }
+                                Some(ClosePreference::Ask) | None => {
+                                    let payload = CloseConfirmPayload {
+                                        preference: ClosePreference::Ask.as_str().to_string(),
+                                    };
+                                    let _ = window.emit("writer-confirm-close", payload.clone());
+                                    let _ = window.app_handle().emit("writer-confirm-close", payload);
+                                }
+                            }
                         }
                         ClosePreference::Tray => {
                             api.prevent_close();
@@ -220,6 +234,37 @@ fn normalize_close_preference(preference: ClosePreference, tray_available: bool)
     } else {
         preference
     }
+}
+
+#[cfg(target_os = "windows")]
+fn ask_close_action_native(tray_available: bool) -> Option<ClosePreference> {
+    let body = if tray_available {
+        "Writer 要最小化到系统托盘吗？\n\n是：最小化到托盘\n否：直接退出\n取消：继续使用"
+    } else {
+        "Writer 要退出吗？\n\n是：直接退出\n取消：继续使用"
+    };
+    let title = "关闭 Writer";
+    let body_wide: Vec<u16> = body.encode_utf16().chain(std::iter::once(0)).collect();
+    let title_wide: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+    let answer = unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            body_wide.as_ptr(),
+            title_wide.as_ptr(),
+            MB_YESNOCANCEL | MB_ICONQUESTION | MB_TASKMODAL,
+        )
+    };
+    match answer {
+        IDYES if tray_available => Some(ClosePreference::Tray),
+        IDYES => Some(ClosePreference::Exit),
+        IDNO if tray_available => Some(ClosePreference::Exit),
+        _ => None,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn ask_close_action_native(_tray_available: bool) -> Option<ClosePreference> {
+    None
 }
 
 fn preferences_path(app: &AppHandle) -> Result<PathBuf, String> {

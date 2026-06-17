@@ -8,6 +8,11 @@
 - Added a public-facing README structure with screenshots, features, download, quick start, AI setup, privacy, development, and roadmap sections.
 - Added repeatable screenshot capture script at `tauri-mvp/scripts/capture-screenshots.cjs`.
 - Added release notes for `tauri-v0.1.6`.
+- Added article notes in the article context pane for reminders, fragments, and next-step ideas.
+- Added focused controls for polish, rewrite, expand, and continue AI tools.
+- Added per-tool AI writing presets.
+- Added manual article-note and reference attachments for AI tool context.
+- Added explicit AI writeback actions: replace, insert, copy, and return to the source article.
 
 ### Changed
 
@@ -15,21 +20,25 @@
 - Public preview now forces light mode and hides dark mode UI entry points until the full dark theme is polished.
 - Updated version metadata to `0.1.6`.
 - Clarified that preview releases are built locally and uploaded manually instead of using automatic GitHub Actions builds.
+- AI tool results now default to review-first behavior instead of automatic manuscript changes.
+- Public TODO and README roadmap now reflect completed article notes, focused AI tools, and safe writeback.
 
 ### Fixed
 
 - Fixed the Tauri close confirmation event by switching from the custom-protocol-like event name to `writer-confirm-close`.
 - Fixed the close preference prompt so `ask`, `tray`, and `exit` paths are reachable from the window close button.
 - Improved the tray-unavailable fallback so the prompt shows a clear message and lets the user confirm direct exit.
+- Fixed the Windows title-bar close button so it no longer depends on the web UI receiving a close event.
+- Fixed article AI writeback so selected body ranges can be replaced or appended without rewriting the whole article.
 
 ### Verification
 
-- Pending for final release pass:
-  - `D:\anaconda\envs\writer\python.exe -m pytest`
-  - `npm test`
-  - `npm run build`
-  - `cargo check --manifest-path tauri-mvp\frontend\src-tauri\Cargo.toml`
-  - `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+- `D:\anaconda\envs\writer\python.exe -m pytest`
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py -q`
+- `npm test`
+- `npm run build`
+- `cargo check --manifest-path tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
 
 ## 0.1.5 - Public Polish and AI Settings (2026-06-16)
 

@@ -12,6 +12,7 @@ This list tracks product-facing work that would make Writer more reliable and ea
 ## Writing experience
 
 - [ ] Add a clearer focus-mode entry and exit hint.
+- [x] Add article notes for keeping ideas, reminders, and next-step thoughts beside the current article.
 - [ ] Add more editor layout presets for compact, balanced, and wide screens.
 - [ ] Improve keyboard-only navigation across Dates, Articles, Collections, and AI Workspace.
 - [ ] Add optional backup reminders for active daily writers.
@@ -28,9 +29,9 @@ This list tracks product-facing work that would make Writer more reliable and ea
 
 ## AI workflow
 
-- [ ] Make AI results safer to apply with clearer original-vs-result comparison and explicit replace / insert / copy actions.
-- [ ] Give polish, rewrite, expand, and continue their own focused controls and writing intentions.
-- [ ] Let users save personal prompt presets for each writing tool.
+- [x] Make AI results safer to apply with clearer original-vs-result comparison and explicit replace / insert / copy actions.
+- [x] Give polish, rewrite, expand, and continue their own focused controls and writing intentions.
+- [x] Let users save personal prompt presets for each writing tool.
 - [ ] Add clearer long-text request size, wait-time, and timeout feedback.
 - [ ] Make it easier to turn AI chat ideas into articles, notes, or reference material.
 - [ ] Improve quota, model availability, network, and proxy error messages.
@@ -54,4 +55,6 @@ This list tracks product-facing work that would make Writer more reliable and ea
 - Added clean public screenshots for article writing, focus mode, collections, references, AI, and settings.
 - Added epigraph editing, focus mode, and Markdown / TXT / DOCX export.
 - Added AI tools, scoped chat, AI Cards, and Gemini / OpenAI-compatible setup.
+- Added article notes, focused controls for polish / rewrite / expand / continue, per-tool presets, and explicit AI writeback actions.
 - Added daily writing quote links and one-click start writing.
+- Fixed the window close button flow with native ask / tray / exit behavior.

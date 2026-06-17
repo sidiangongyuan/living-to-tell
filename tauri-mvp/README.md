@@ -41,6 +41,7 @@ This Tauri preview is the current public direction for Writer. It shares the sam
 - Focus mode hides the surrounding interface and leaves only the writing area.
 - Single-article export to Markdown, TXT, and DOCX.
 - Date view for browsing daily writing activity, with a direct "start writing" action on empty days.
+- Article notes live beside the current article for reminders, fragments, and next-step ideas without entering the manuscript.
 
 ### Collections
 
@@ -59,6 +60,8 @@ This Tauri preview is the current public direction for Writer. It shares the sam
 ### AI
 
 - AI tools for polishing, rewriting, expanding, continuing, summarizing, outlining, and title generation.
+- Polishing, rewriting, expanding, and continuing have focused controls and per-tool personal presets.
+- AI results are reviewed before writing back, with explicit replace, insert, and copy actions.
 - Free chat tab with one ongoing conversation per global scope, article, or collection.
 - AI Cards for style, character, and setting context, with type/source filters and keyword search.
 - Supports OpenAI-compatible APIs, Codex local auth, Gemini API/local config, and Gemini CLI / OAuth.
@@ -163,14 +166,13 @@ npm run build
 cargo check --manifest-path src-tauri\Cargo.toml
 ```
 
-GitHub Actions are manual-only in this preview branch to avoid consuming free CI minutes on every push. Releases are built locally and uploaded manually to GitHub Releases.
-
 ## Roadmap
 
 - Full dark theme pass before re-enabling the theme switcher.
 - First-run onboarding and sample project.
 - More polished release signing and update story.
-- Richer reference-library views and AI report actions.
+- Richer reference-library views, AI report actions, and easier chat-to-note / chat-to-reference flows.
+- A future mind map / imagery collection space for visually organizing themes, symbols, motifs, character links, arguments, references, and AI-generated ideas.
 - Claude / Anthropic provider support once the provider backend is complete.
 
 ## License

@@ -5,6 +5,8 @@ Long-running AI calls are synchronous with extended timeout (handled by frontend
 """
 from __future__ import annotations
 
+import json
+import uuid
 from typing import Any
 from typing import Optional
 
@@ -13,20 +15,70 @@ from pydantic import BaseModel, Field
 
 from deps import get_container
 from writer.app.container import AppContainer
-from writer.services.ai.task_types import AiContextAttachment
+from writer.domain.enums import AiCostTier, AiTargetKind, AiTaskType
 from writer.domain.models.ai_thread import AiThread as DomainThread
 from writer.domain.models.ai_thread import AiMessage as DomainMessage
-from writer.services.ai.task_types import AiTaskType
+from writer.services.ai.task_types import (
+    AiContextAttachment as DomainContextAttachment,
+)
+from writer.services.ai.task_types import AiTaskRequest as DomainAiTaskRequest
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
+KEY_TAURI_AI_TASK_PRESETS = "ai.tauri_task_presets"
+MAX_PRESETS_PER_TASK = 50
+MAX_ATTACHMENT_CHARS = 40_000
+
+TASK_TYPE_MAP = {
+    "polish": AiTaskType.POLISH,
+    # The domain enum does not have a standalone rewrite task. The Tauri UI
+    # exposes "rewrite" as a user-facing task, backed by style-transfer with
+    # explicit rewrite controls.
+    "rewrite": AiTaskType.STYLE_TRANSFER,
+    "expand": AiTaskType.EXPAND,
+    "continue": AiTaskType.CONTINUE,
+    "style_transfer": AiTaskType.STYLE_TRANSFER,
+    "summarize": AiTaskType.SUMMARIZE,
+    "outline": AiTaskType.OUTLINE,
+    "title": AiTaskType.TITLE,
+    "structure_diagnose": AiTaskType.STRUCTURE_DIAGNOSE,
+    "consistency_check": AiTaskType.CONSISTENCY_CHECK,
+}
+TARGET_KIND_MAP = {
+    "selection": AiTargetKind.SELECTION,
+    "article": AiTargetKind.FRAGMENT,
+    "fragment": AiTargetKind.FRAGMENT,
+    "collection": AiTargetKind.COLLECTION,
+    "paste": AiTargetKind.PASTE,
+}
+SUPPORTED_TASK_PRESET_TYPES = set(TASK_TYPE_MAP)
+
 
 # ---- DTOs ----
+class AiAttachmentIn(BaseModel):
+    kind: str
+    ref_id: str
+    name: str
+    body: str
+
+
 class AiTaskRequest(BaseModel):
     task_type: str  # 'rewrite', 'continue', 'summarize', etc.
     text: str
     instructions: Optional[str] = None
     context: Optional[str] = None
+    target_kind: str = "paste"
+    target_ref_id: Optional[str] = None
+    style: Optional[str] = None
+    intensity: Optional[str] = None
+    extra_instructions: Optional[str] = None
+    max_output_chars: Optional[int] = None
+    preserve_meaning: bool = True
+    preserve_voice: bool = True
+    forbid_terms: list[str] = Field(default_factory=list)
+    must_keep_terms: list[str] = Field(default_factory=list)
+    attachments: list[AiAttachmentIn] = Field(default_factory=list)
+    cost_tier: str = "balanced"
 
 
 class AiTaskResponse(BaseModel):
@@ -76,6 +128,13 @@ class ChatResponse(BaseModel):
     assistant_message: MessageOut
 
 
+class AiTaskPreset(BaseModel):
+    id: str = ""
+    task_type: str
+    name: str
+    controls: dict[str, Any] = Field(default_factory=dict)
+
+
 def _thread_to_dto(t: DomainThread) -> ThreadOut:
     scope_kind = "article" if t.scope_kind == "fragment" else t.scope_kind
     return ThreadOut(
@@ -120,6 +179,75 @@ def _storage_scope_kind(scope_kind: str) -> str:
     return "fragment" if scope_kind == "article" else scope_kind
 
 
+def _target_kind(value: str) -> AiTargetKind:
+    normalized = (value or "paste").strip().lower()
+    try:
+        return TARGET_KIND_MAP[normalized]
+    except KeyError as exc:
+        raise HTTPException(400, f"Unknown target_kind: {value}") from exc
+
+
+def _cost_tier(value: str) -> AiCostTier:
+    normalized = (value or AiCostTier.BALANCED.value).strip().lower()
+    try:
+        return AiCostTier(normalized)
+    except ValueError as exc:
+        raise HTTPException(400, f"Unknown cost_tier: {value}") from exc
+
+
+def _clean_terms(values: list[str]) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        value = str(raw).strip()
+        if not value:
+            continue
+        lowered = value.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        cleaned.append(value)
+    return cleaned
+
+
+def _task_extra_instructions(request: AiTaskRequest) -> Optional[str]:
+    parts = [
+        part.strip()
+        for part in (request.instructions, request.extra_instructions)
+        if part and part.strip()
+    ]
+    return "\n\n".join(parts) if parts else None
+
+
+def _task_attachments(request: AiTaskRequest) -> list[DomainContextAttachment]:
+    attachments: list[DomainContextAttachment] = []
+    if request.context and request.context.strip():
+        attachments.append(
+            DomainContextAttachment(
+                kind="context",
+                ref_id="manual",
+                name="Manual context",
+                body=request.context.strip()[:MAX_ATTACHMENT_CHARS],
+            )
+        )
+    for item in request.attachments:
+        kind = item.kind.strip() or "context"
+        ref_id = item.ref_id.strip() or "manual"
+        name = item.name.strip() or kind
+        body = item.body.strip()
+        if not body:
+            continue
+        attachments.append(
+            DomainContextAttachment(
+                kind=kind[:80],
+                ref_id=ref_id[:120],
+                name=name[:160],
+                body=body[:MAX_ATTACHMENT_CHARS],
+            )
+        )
+    return attachments
+
+
 def _default_thread_title(
     scope_kind: str,
     scope_id: Optional[str],
@@ -144,12 +272,12 @@ def _scope_attachment_for(
     scope_kind: str,
     scope_id: Optional[str],
     container: AppContainer,
-) -> Optional[AiContextAttachment]:
+) -> Optional[DomainContextAttachment]:
     if scope_kind == "article" and scope_id:
         entry = container.entry_repository.get(scope_id)
         if entry is None:
             raise HTTPException(404, "Article not found")
-        return AiContextAttachment(
+        return DomainContextAttachment(
             kind="article",
             ref_id=entry.id,
             name=entry.title or "Untitled",
@@ -162,7 +290,7 @@ def _scope_attachment_for(
         sections = container.work_section_repository.list_for_work(scope_id)
         parts = [work.summary.strip()] if work.summary.strip() else []
         parts.extend((section.content or "").strip() for section in sections if (section.content or "").strip())
-        return AiContextAttachment(
+        return DomainContextAttachment(
             kind="work",
             ref_id=work.id,
             name=work.title or "Untitled work",
@@ -180,7 +308,7 @@ def _scope_attachment_for(
             title = (entry.title or "").strip() or f"Article {index}"
             body = (entry.body or "").strip()
             blocks.append(f"{index}. {title}\n\n{body}".strip())
-        return AiContextAttachment(
+        return DomainContextAttachment(
             kind="collection",
             ref_id=collection.id,
             name=collection.name or "Untitled collection",
@@ -197,7 +325,7 @@ def _require_scope_id(scope_kind: str, scope_id: Optional[str]) -> None:
 def _resolve_thread_for_chat(
     request: ChatRequest,
     container: AppContainer,
-) -> tuple[DomainThread, Optional[AiContextAttachment]]:
+) -> tuple[DomainThread, Optional[DomainContextAttachment]]:
     if request.thread_id:
         thread = container.ai_thread_repository.get(request.thread_id)
         if thread is None:
@@ -231,32 +359,105 @@ def run_ai_task(
     This is SYNCHRONOUS and may take 30-120s. The frontend must set a long
     timeout when calling this endpoint.
     """
-    task_type_map = {
-        'polish': AiTaskType.POLISH,
-        'rewrite': AiTaskType.REWRITE,
-        'expand': AiTaskType.EXPAND,
-        'continue': AiTaskType.CONTINUE_WRITING,
-        'style_transfer': AiTaskType.STYLE_TRANSFER,
-        'summarize': AiTaskType.SUMMARIZE,
-        'outline': AiTaskType.OUTLINE,
-        'title': AiTaskType.TITLE,
-        'structure_diagnose': AiTaskType.STRUCTURE_DIAGNOSE,
-        'consistency_check': AiTaskType.CONSISTENCY_CHECK,
-    }
-    task_enum = task_type_map.get(request.task_type)
+    task_enum = TASK_TYPE_MAP.get(request.task_type)
     if not task_enum:
         raise HTTPException(400, f"Unknown task_type: {request.task_type}")
 
     try:
-        result = container.ai_task_service.run_task(
-            task_type=task_enum,
-            text=request.text,
-            instructions=request.instructions,
-            context=request.context,
+        result = container.ai_task_service.generate(
+            DomainAiTaskRequest(
+                task_type=task_enum,
+                target_kind=_target_kind(request.target_kind),
+                text=request.text,
+                target_ref_id=request.target_ref_id,
+                style=request.style,
+                intensity=request.intensity,
+                extra_instructions=_task_extra_instructions(request),
+                max_output_chars=request.max_output_chars,
+                preserve_meaning=request.preserve_meaning,
+                preserve_voice=request.preserve_voice,
+                forbid_terms=_clean_terms(request.forbid_terms),
+                must_keep_terms=_clean_terms(request.must_keep_terms),
+                attachments=_task_attachments(request),
+                cost_tier=_cost_tier(request.cost_tier),
+            )
         )
-        return AiTaskResponse(result=result, task_type=request.task_type)
+        return AiTaskResponse(result=result.content, task_type=request.task_type)
     except Exception as e:
         raise HTTPException(500, f"AI task failed: {str(e)}")
+
+
+def _clean_task_presets(raw: Any) -> dict[str, list[AiTaskPreset]]:
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+    if not isinstance(raw, dict):
+        return {}
+
+    cleaned: dict[str, list[AiTaskPreset]] = {}
+    for task_type, values in raw.items():
+        if task_type not in SUPPORTED_TASK_PRESET_TYPES or not isinstance(values, list):
+            continue
+        presets: list[AiTaskPreset] = []
+        seen_names: set[str] = set()
+        for value in values[:MAX_PRESETS_PER_TASK]:
+            item = value.model_dump() if isinstance(value, AiTaskPreset) else value
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "")).strip()
+            if not name:
+                continue
+            lowered = name.lower()
+            if lowered in seen_names:
+                continue
+            seen_names.add(lowered)
+            controls = item.get("controls")
+            if not isinstance(controls, dict):
+                controls = {}
+            preset_id = str(item.get("id", "")).strip() or uuid.uuid4().hex
+            presets.append(
+                AiTaskPreset(
+                    id=preset_id[:80],
+                    task_type=task_type,
+                    name=name[:80],
+                    controls=controls,
+                )
+            )
+        if presets:
+            cleaned[task_type] = presets
+    return cleaned
+
+
+@router.get("/task-presets", response_model=dict[str, list[AiTaskPreset]])
+def list_task_presets(
+    container: AppContainer = Depends(get_container),
+) -> dict[str, list[AiTaskPreset]]:
+    return _clean_task_presets(container.settings.get(KEY_TAURI_AI_TASK_PRESETS))
+
+
+@router.put("/task-presets", response_model=dict[str, list[AiTaskPreset]])
+def save_task_presets(
+    presets: dict[str, list[AiTaskPreset]],
+    container: AppContainer = Depends(get_container),
+) -> dict[str, list[AiTaskPreset]]:
+    cleaned = _clean_task_presets(presets)
+    if cleaned:
+        container.settings.set(
+            KEY_TAURI_AI_TASK_PRESETS,
+            json.dumps(
+                {
+                    task_type: [preset.model_dump() for preset in values]
+                    for task_type, values in cleaned.items()
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+        )
+    else:
+        container.settings_repository.delete(KEY_TAURI_AI_TASK_PRESETS)
+    return cleaned
 
 
 # ---- Thread management ----

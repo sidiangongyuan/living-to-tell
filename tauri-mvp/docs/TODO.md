@@ -15,6 +15,7 @@
 - [ ] Better typography controls in the Tauri article editor.
 - [ ] More refined epigraph import/export edge-case handling.
 - [ ] Optional article templates.
+- [ ] Future mind map / imagery collection space for organizing themes, symbols, motifs, character links, arguments, references, and AI-generated ideas visually.
 
 ## Collections
 
@@ -38,9 +39,13 @@
 ## Completed Recently
 
 - [x] Public screenshots for article writing, focus mode, collections, reference library, AI, and settings.
-- [x] Manual-only GitHub Actions to avoid automatic CI minute usage.
 - [x] Public preview forced to light mode with dark mode entry hidden.
 - [x] Window close behavior: ask, minimize to tray, or direct exit.
+- [x] Native close-button flow that no longer depends on the web UI receiving a close event.
+- [x] Article notes for reminders, fragments, and next-step ideas beside the current article.
+- [x] Safe AI writeback with original/result review, replace, insert, and copy actions.
+- [x] Focused controls for polish, rewrite, expand, and continue.
+- [x] Per-tool AI writing presets.
 - [x] Backend-backed AI settings for OpenAI, Codex local auth, Gemini API, Gemini local config, and Gemini CLI / OAuth.
 - [x] Date empty-state writing action.
 - [x] Reference Library passage and full-citation copy actions.

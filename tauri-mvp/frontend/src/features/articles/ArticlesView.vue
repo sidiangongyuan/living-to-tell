@@ -5,6 +5,7 @@ import { useArticlesStore } from './store'
 import { useSettingsStore } from '../../stores/settings'
 import { collectionsApi, type Collection } from '../../api/collections'
 import { articlesApi, type ArticleExportFormat } from '../../api/articles'
+import { notesApi, type WritingNote } from '../../api/notes'
 import FindReplace from '../../components/FindReplace.vue'
 import { useI18n } from '../../i18n'
 import { composeArticleBody, detectEpigraph, type EpigraphParts } from './epigraph'
@@ -35,11 +36,20 @@ const epigraphActive = ref(false)
 const epigraphQuote = ref('')
 const epigraphAttribution = ref('')
 const syncingDraft = ref(false)
+const writingNotes = ref<WritingNote[]>([])
+const newNoteBody = ref('')
+const editingNoteId = ref<string | null>(null)
+const editingNoteBody = ref('')
+const notesError = ref('')
+const notesLoading = ref(false)
+const showDoneNotes = ref(false)
 
 const currentBodyText = computed(() => composeCurrentBody())
 const wordCount = computed(() => countWords(currentBodyText.value))
 const charCount = computed(() => currentBodyText.value.length)
 const lineCount = computed(() => currentBodyText.value.split('\n').length)
+const openWritingNotes = computed(() => writingNotes.value.filter((note) => note.status === 'open'))
+const doneWritingNotes = computed(() => writingNotes.value.filter((note) => note.status === 'done'))
 
 function countWords(body: string): number {
   if (!body) return 0
@@ -259,6 +269,48 @@ function openAiChatForArticle() {
   })
 }
 
+async function openAiToolsForArticle() {
+  if (!store.selectedEntry) return
+  await saveNow()
+  const start = bodyRef.value?.selectionStart ?? 0
+  const end = bodyRef.value?.selectionEnd ?? 0
+  const hasSelection = end > start
+  router.push({
+    name: 'ai',
+    query: {
+      tab: 'tools',
+      task: 'polish',
+      scope_kind: 'article',
+      scope_id: store.selectedEntry.id,
+      ...(hasSelection
+        ? {
+            selection_start: String(start),
+            selection_end: String(end),
+          }
+        : {}),
+    },
+  })
+}
+
+async function applyRouteFocusRange() {
+  const start = parseNumberQuery(route.query.focus_start)
+  const end = parseNumberQuery(route.query.focus_end)
+  if (start === null || end === null || !bodyRef.value) return
+  await nextTick()
+  const safeStart = Math.max(0, Math.min(start, bodyDraft.value.length))
+  const safeEnd = Math.max(safeStart, Math.min(end, bodyDraft.value.length))
+  bodyRef.value.focus()
+  bodyRef.value.setSelectionRange(safeStart, safeEnd)
+  const approxLine = bodyDraft.value.slice(0, safeStart).split('\n').length
+  bodyRef.value.scrollTop = Math.max(0, approxLine * 28 - bodyRef.value.clientHeight / 2)
+}
+
+function parseNumberQuery(value: unknown): number | null {
+  if (typeof value !== 'string') return null
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 async function applyRouteArticle() {
   const articleId = typeof route.query.id === 'string' ? route.query.id : null
   if (!articleId) return
@@ -285,6 +337,107 @@ async function refreshEntryCollections() {
   } catch (e) {
     collectionError.value = e instanceof Error ? e.message : String(e)
   }
+}
+
+async function refreshWritingNotes() {
+  notesError.value = ''
+  if (!store.selectedEntry) {
+    writingNotes.value = []
+    return
+  }
+  notesLoading.value = true
+  try {
+    writingNotes.value = await notesApi.listNotes(store.selectedEntry.id, true)
+  } catch (e) {
+    notesError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    notesLoading.value = false
+  }
+}
+
+async function addWritingNote() {
+  const body = newNoteBody.value.trim()
+  if (!store.selectedEntry || !body) return
+  notesError.value = ''
+  try {
+    const note = await notesApi.createNote(store.selectedEntry.id, body)
+    writingNotes.value = sortWritingNotes([note, ...writingNotes.value.filter((item) => item.id !== note.id)])
+    newNoteBody.value = ''
+  } catch (e) {
+    notesError.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+function startEditNote(note: WritingNote) {
+  editingNoteId.value = note.id
+  editingNoteBody.value = note.body
+}
+
+function cancelEditNote() {
+  editingNoteId.value = null
+  editingNoteBody.value = ''
+}
+
+async function saveEditNote(note: WritingNote) {
+  if (!store.selectedEntry) return
+  const body = editingNoteBody.value.trim()
+  if (!body) return
+  notesError.value = ''
+  try {
+    const updated = await notesApi.updateNote(store.selectedEntry.id, note.id, body)
+    replaceWritingNote(updated)
+    cancelEditNote()
+  } catch (e) {
+    notesError.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function toggleNotePinned(note: WritingNote) {
+  if (!store.selectedEntry) return
+  notesError.value = ''
+  try {
+    const updated = await notesApi.setPinned(store.selectedEntry.id, note.id, !note.pinned)
+    replaceWritingNote(updated)
+  } catch (e) {
+    notesError.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function toggleNoteDone(note: WritingNote) {
+  if (!store.selectedEntry) return
+  notesError.value = ''
+  try {
+    const updated = await notesApi.setDone(store.selectedEntry.id, note.id, note.status !== 'done')
+    replaceWritingNote(updated)
+  } catch (e) {
+    notesError.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function deleteWritingNote(note: WritingNote) {
+  if (!store.selectedEntry) return
+  if (!confirm(t('articles.notesDeleteConfirm'))) return
+  notesError.value = ''
+  try {
+    await notesApi.deleteNote(store.selectedEntry.id, note.id)
+    writingNotes.value = writingNotes.value.filter((item) => item.id !== note.id)
+  } catch (e) {
+    notesError.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+function replaceWritingNote(note: WritingNote) {
+  writingNotes.value = sortWritingNotes(
+    writingNotes.value.map((item) => (item.id === note.id ? note : item))
+  )
+}
+
+function sortWritingNotes(notes: WritingNote[]): WritingNote[] {
+  return [...notes].sort((a, b) => {
+    if (a.status !== b.status) return a.status === 'open' ? -1 : 1
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+    return a.sort_order - b.sort_order
+  })
 }
 
 async function openCollectionPicker() {
@@ -338,6 +491,8 @@ onMounted(async () => {
   await store.loadEntries()
   await applyRouteArticle()
   syncDraftFromSelected()
+  await Promise.all([refreshEntryCollections(), refreshWritingNotes()])
+  await applyRouteFocusRange()
   window.addEventListener('keydown', handleKeydown)
 })
 
@@ -350,13 +505,23 @@ watch(
   () => {
     syncDraftFromSelected()
     refreshEntryCollections()
+    refreshWritingNotes()
   }
 )
 
 watch(
   () => route.query.id,
+  async () => {
+    await applyRouteArticle()
+    syncDraftFromSelected()
+    await applyRouteFocusRange()
+  }
+)
+
+watch(
+  () => [route.query.focus_start, route.query.focus_end],
   () => {
-    void applyRouteArticle()
+    void applyRouteFocusRange()
   }
 )
 
@@ -624,6 +789,106 @@ const displayList = computed(() =>
           </section>
 
           <section>
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <h3 class="text-sm font-semibold text-stone-700">{{ t('articles.writingNotes') }}</h3>
+              <span class="rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-700">
+                {{ t('articles.openNotesCount', { count: openWritingNotes.length }) }}
+              </span>
+            </div>
+            <p class="mb-3 text-xs leading-5 text-stone-500">{{ t('articles.writingNotesHint') }}</p>
+            <div v-if="notesError" class="mb-2 rounded-lg bg-red-50 p-2 text-xs text-red-700">
+              {{ notesError }}
+            </div>
+            <div class="mb-3 rounded-2xl border border-amber-100 bg-amber-50/50 p-3">
+              <textarea
+                v-model="newNoteBody"
+                rows="3"
+                class="w-full resize-none rounded-xl border border-amber-100 bg-white/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-300"
+                :placeholder="t('articles.writingNotePlaceholder')"
+                @keydown.ctrl.enter.prevent="addWritingNote"
+                @keydown.meta.enter.prevent="addWritingNote"
+              />
+              <button
+                @click="addWritingNote"
+                :disabled="!newNoteBody.trim() || notesLoading"
+                class="mt-2 w-full rounded-xl bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
+              >
+                {{ t('articles.addWritingNote') }}
+              </button>
+            </div>
+
+            <div v-if="notesLoading" class="text-sm text-stone-400">{{ t('common.loading') }}</div>
+            <div v-else-if="!openWritingNotes.length" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-400">
+              {{ t('articles.noWritingNotes') }}
+            </div>
+            <div v-else class="space-y-2">
+              <article
+                v-for="note in openWritingNotes"
+                :key="note.id"
+                class="rounded-2xl border border-amber-100 bg-[#fff9e8] p-3 shadow-sm"
+              >
+                <textarea
+                  v-if="editingNoteId === note.id"
+                  v-model="editingNoteBody"
+                  rows="4"
+                  class="w-full resize-none rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-300"
+                />
+                <p v-else class="whitespace-pre-wrap text-sm leading-6 text-stone-700">{{ note.body }}</p>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <template v-if="editingNoteId === note.id">
+                    <button @click="saveEditNote(note)" class="rounded-lg bg-stone-900 px-2.5 py-1 text-xs text-white">
+                      {{ t('common.save') }}
+                    </button>
+                    <button @click="cancelEditNote" class="rounded-lg bg-stone-100 px-2.5 py-1 text-xs text-stone-600">
+                      {{ t('common.cancel') }}
+                    </button>
+                  </template>
+                  <template v-else>
+                    <button @click="toggleNotePinned(note)" class="rounded-lg bg-white/80 px-2.5 py-1 text-xs text-stone-600 hover:bg-white">
+                      {{ note.pinned ? t('articles.unpinNote') : t('articles.pinNote') }}
+                    </button>
+                    <button @click="startEditNote(note)" class="rounded-lg bg-white/80 px-2.5 py-1 text-xs text-stone-600 hover:bg-white">
+                      {{ t('common.edit') }}
+                    </button>
+                    <button @click="toggleNoteDone(note)" class="rounded-lg bg-white/80 px-2.5 py-1 text-xs text-stone-600 hover:bg-white">
+                      {{ t('articles.completeNote') }}
+                    </button>
+                    <button @click="deleteWritingNote(note)" class="rounded-lg bg-red-50 px-2.5 py-1 text-xs text-red-600 hover:bg-red-100">
+                      {{ t('common.delete') }}
+                    </button>
+                  </template>
+                </div>
+              </article>
+            </div>
+
+            <div v-if="doneWritingNotes.length" class="mt-3">
+              <button
+                @click="showDoneNotes = !showDoneNotes"
+                class="w-full rounded-xl bg-stone-50 px-3 py-2 text-left text-xs font-semibold text-stone-500 hover:bg-stone-100"
+              >
+                {{ showDoneNotes ? t('articles.hideDoneNotes') : t('articles.showDoneNotes', { count: doneWritingNotes.length }) }}
+              </button>
+              <div v-if="showDoneNotes" class="mt-2 space-y-2">
+                <article
+                  v-for="note in doneWritingNotes"
+                  :key="note.id"
+                  class="rounded-2xl border border-stone-100 bg-stone-50 p-3 opacity-75"
+                >
+                  <p class="whitespace-pre-wrap text-sm leading-6 text-stone-500 line-through">{{ note.body }}</p>
+                  <div class="mt-2 flex gap-2">
+                    <button @click="toggleNoteDone(note)" class="rounded-lg bg-white px-2.5 py-1 text-xs text-stone-600">
+                      {{ t('articles.restoreNote') }}
+                    </button>
+                    <button @click="deleteWritingNote(note)" class="rounded-lg bg-red-50 px-2.5 py-1 text-xs text-red-600">
+                      {{ t('common.delete') }}
+                    </button>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section>
             <h3 class="text-sm font-semibold text-stone-700 mb-2">{{ t('articles.actions') }}</h3>
             <div class="space-y-2">
               <button
@@ -637,6 +902,12 @@ const displayList = computed(() =>
                 class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
               >
                 {{ t('articles.aiChat') }}
+              </button>
+              <button
+                @click="openAiToolsForArticle"
+                class="w-full px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm transition-colors"
+              >
+                {{ t('articles.aiTools') }}
               </button>
               <button
                 v-if="!store.selectedEntry.archived_at"

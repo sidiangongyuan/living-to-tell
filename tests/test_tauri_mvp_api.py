@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 import sys
 from pathlib import Path
 
@@ -107,6 +108,80 @@ def test_tauri_article_collection_flow(monkeypatch):
     assert removed.status_code == 204
 
 
+def test_tauri_article_writing_notes_crud(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    entry = client.post(
+        "/api/articles",
+        json={"title": "便签文章", "body": "正文", "tags": []},
+    ).json()
+    other = client.post(
+        "/api/articles",
+        json={"title": "另一篇", "body": "正文", "tags": []},
+    ).json()
+
+    created = client.post(
+        f"/api/articles/{entry['id']}/notes",
+        json={"body": "下一段写雨声。", "pinned": True},
+    )
+    assert created.status_code == 201
+    note = created.json()
+    assert note["entry_id"] == entry["id"]
+    assert note["body"] == "下一段写雨声。"
+    assert note["pinned"] is True
+    assert note["status"] == "open"
+
+    listed = client.get(f"/api/articles/{entry['id']}/notes")
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()] == [note["id"]]
+
+    other_listed = client.get(f"/api/articles/{other['id']}/notes")
+    assert other_listed.status_code == 200
+    assert other_listed.json() == []
+
+    updated = client.put(
+        f"/api/articles/{entry['id']}/notes/{note['id']}",
+        json={"body": "下一段写雨声和旧楼梯。"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["body"] == "下一段写雨声和旧楼梯。"
+
+    unpinned = client.put(
+        f"/api/articles/{entry['id']}/notes/{note['id']}/pinned",
+        json={"pinned": False},
+    )
+    assert unpinned.status_code == 200
+    assert unpinned.json()["pinned"] is False
+
+    done = client.put(
+        f"/api/articles/{entry['id']}/notes/{note['id']}/done",
+        json={"done": True},
+    )
+    assert done.status_code == 200
+    assert done.json()["status"] == "done"
+
+    open_only = client.get(f"/api/articles/{entry['id']}/notes?include_done=false")
+    assert open_only.status_code == 200
+    assert open_only.json() == []
+
+    restored = client.put(
+        f"/api/articles/{entry['id']}/notes/{note['id']}/done",
+        json={"done": False},
+    )
+    assert restored.status_code == 200
+    assert restored.json()["status"] == "open"
+
+    wrong_article = client.put(
+        f"/api/articles/{other['id']}/notes/{note['id']}",
+        json={"body": "不该能改"},
+    )
+    assert wrong_article.status_code == 404
+
+    deleted = client.delete(f"/api/articles/{entry['id']}/notes/{note['id']}")
+    assert deleted.status_code == 204
+    assert client.get(f"/api/articles/{entry['id']}/notes").json() == []
+
+
 def test_tauri_daily_quote_returns_full_reference_and_id(monkeypatch):
     client = _tauri_client(monkeypatch)
 
@@ -186,6 +261,97 @@ def test_tauri_ai_current_thread_is_scope_aware(monkeypatch):
     restored_payload = restored.json()
     assert restored_payload["thread"]["id"] == payload["thread"]["id"]
     assert restored_payload["messages"][0]["content"] == "讨论这个开头"
+
+
+def test_tauri_ai_task_accepts_controls_and_attachments(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    from deps import get_container
+
+    captured = {}
+
+    class FakeTaskService:
+        def generate(self, request):
+            captured["request"] = request
+            return SimpleNamespace(content="处理结果")
+
+    get_container().ai_task_service = FakeTaskService()
+
+    response = client.post(
+        "/api/ai/task",
+        json={
+            "task_type": "polish",
+            "target_kind": "selection",
+            "target_ref_id": "entry-1",
+            "text": "原文",
+            "style": "自然",
+            "intensity": "strong",
+            "extra_instructions": "保留尾句。",
+            "preserve_voice": True,
+            "attachments": [
+                {
+                    "kind": "writing_note",
+                    "ref_id": "entry-1",
+                    "name": "文章便签 · 1",
+                    "body": "下一段写雨。",
+                },
+                {
+                    "kind": "reference",
+                    "ref_id": "ref-1",
+                    "name": "《测试书》 作者",
+                    "body": "标本正文",
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["result"] == "处理结果"
+    request = captured["request"]
+    assert request.target_kind.value == "selection"
+    assert request.target_ref_id == "entry-1"
+    assert request.intensity == "strong"
+    assert request.extra_instructions == "保留尾句。"
+    assert [attachment.kind for attachment in request.attachments] == [
+        "writing_note",
+        "reference",
+    ]
+
+
+def test_tauri_ai_task_presets_roundtrip(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    saved = client.put(
+        "/api/ai/task-presets",
+        json={
+            "polish": [
+                {
+                    "id": "preset-1",
+                    "task_type": "polish",
+                    "name": "克制润色",
+                    "controls": {
+                        "polishIntensity": "light",
+                        "preserveVoice": True,
+                    },
+                }
+            ],
+            "unknown": [
+                {
+                    "id": "bad",
+                    "task_type": "unknown",
+                    "name": "不应保存",
+                    "controls": {},
+                }
+            ],
+        },
+    )
+    assert saved.status_code == 200
+    assert list(saved.json().keys()) == ["polish"]
+    assert saved.json()["polish"][0]["name"] == "克制润色"
+
+    restored = client.get("/api/ai/task-presets")
+    assert restored.status_code == 200
+    assert restored.json()["polish"][0]["controls"]["polishIntensity"] == "light"
 
 
 def test_tauri_ai_settings_read_save_and_validate(monkeypatch):

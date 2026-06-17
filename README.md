@@ -152,6 +152,7 @@ Long Gemini requests default to a 120 second wait. Advanced users can tune this 
 - Clean screenshot set for the main writing, collection, reference, AI, and settings views.
 - Epigraph editing, focus mode, and Markdown / TXT / DOCX export.
 - AI tools, scoped chat, AI Cards, and Gemini / OpenAI-compatible setup.
+- Article notes, focused AI writing controls, per-tool presets, and explicit AI apply actions.
 - Daily writing view with reference quote links and one-click start writing.
 
 ## Roadmap / TODO
@@ -169,6 +170,7 @@ The public TODO list is kept visible but folded so the README stays readable.
 
 ### Writing
 
+- [x] Add article notes for keeping fragmentary ideas beside the current article.
 - [ ] Add editor layout presets for compact, balanced, and wide screens.
 - [ ] Improve keyboard-only navigation across Dates, Articles, Collections, and AI Workspace.
 - [ ] Add optional backup reminders for active daily writers.
@@ -176,9 +178,9 @@ The public TODO list is kept visible but folded so the README stays readable.
 
 ### AI
 
-- [ ] Make AI results safer to apply with clearer original-vs-result comparison and explicit replace / insert / copy actions.
-- [ ] Give polish, rewrite, expand, and continue their own focused controls instead of treating them as the same prompt with a different label.
-- [ ] Let users save personal prompt presets for each writing tool.
+- [x] Make AI results safer to apply with clearer original-vs-result comparison and explicit replace / insert / copy actions.
+- [x] Give polish, rewrite, expand, and continue their own focused controls instead of treating them as the same prompt with a different label.
+- [x] Let users save personal prompt presets for each writing tool.
 - [ ] Add clearer long-text request size, wait-time, and timeout feedback.
 - [ ] Make it easier to turn AI chat ideas into articles, notes, or reference material.
 

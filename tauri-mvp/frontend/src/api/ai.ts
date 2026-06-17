@@ -8,12 +8,40 @@ export interface AiTaskRequest {
   text: string
   instructions?: string
   context?: string
+  target_kind?: 'selection' | 'article' | 'collection' | 'paste'
+  target_ref_id?: string | null
+  style?: string | null
+  intensity?: string | null
+  extra_instructions?: string | null
+  max_output_chars?: number | null
+  preserve_meaning?: boolean
+  preserve_voice?: boolean
+  forbid_terms?: string[]
+  must_keep_terms?: string[]
+  attachments?: AiContextAttachment[]
+  cost_tier?: 'thrifty' | 'balanced' | 'strong'
 }
 
 export interface AiTaskResponse {
   result: string
   task_type: string
 }
+
+export interface AiContextAttachment {
+  kind: string
+  ref_id: string
+  name: string
+  body: string
+}
+
+export interface AiTaskPreset {
+  id: string
+  task_type: AiTaskRequest['task_type']
+  name: string
+  controls: Record<string, unknown>
+}
+
+export type AiTaskPresetMap = Partial<Record<AiTaskRequest['task_type'], AiTaskPreset[]>>
 
 export interface Thread {
   id: string
@@ -65,6 +93,20 @@ export const aiApi = {
       body: JSON.stringify(request),
       // Extended timeout for long AI operations
       signal: AbortSignal.timeout(120000),
+    })
+    return handleResponse(res)
+  },
+
+  async listTaskPresets(): Promise<AiTaskPresetMap> {
+    const res = await apiFetch('/api/ai/task-presets')
+    return handleResponse(res)
+  },
+
+  async saveTaskPresets(presets: AiTaskPresetMap): Promise<AiTaskPresetMap> {
+    const res = await apiFetch('/api/ai/task-presets', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(presets),
     })
     return handleResponse(res)
   },
