@@ -8,7 +8,22 @@ import { articlesApi, type ArticleExportFormat } from '../../api/articles'
 import { notesApi, type WritingNote } from '../../api/notes'
 import FindReplace from '../../components/FindReplace.vue'
 import { useI18n } from '../../i18n'
+import { collectArticleTags, countParagraphs, filterArticlesByTag } from './articleList'
 import { composeArticleBody, detectEpigraph, type EpigraphParts } from './epigraph'
+import {
+  type ArticleEditorInteraction,
+  COMFORT_ANCHOR_RATIO,
+  EDITOR_LINE_HEIGHT_PX,
+  editorTailSpace,
+  estimateScrollTopForPosition,
+  getLastSelectedArticleId,
+  getArticleEditorPosition,
+  insertIndentedParagraph,
+  isNearArticleEnd,
+  saveLastSelectedArticleId,
+  saveArticleEditorPosition,
+  shouldRecenterCaret,
+} from './editorPosition'
 
 const store = useArticlesStore()
 const settings = useSettingsStore()
@@ -18,8 +33,10 @@ const { t } = useI18n()
 
 const saveTimer = ref<number | null>(null)
 const searchInput = ref('')
+const selectedTag = ref('')
 const showFindReplace = ref(false)
 const bodyRef = ref<HTMLTextAreaElement | null>(null)
+const editorScrollRef = ref<HTMLDivElement | null>(null)
 const findQuery = ref('')
 const findCaseSensitive = ref(false)
 const findMatches = ref<number[]>([])
@@ -43,13 +60,68 @@ const editingNoteBody = ref('')
 const notesError = ref('')
 const notesLoading = ref(false)
 const showDoneNotes = ref(false)
+const positionSaveTimer = ref<number | null>(null)
+const pendingPositionArticleId = ref<string | null>(null)
+const pendingPositionInteraction = ref<ArticleEditorInteraction>('edit')
+const restoringEditorPosition = ref(false)
+const tailSpace = ref(260)
+const suppressReadPositionUntil = ref(0)
+const lastEditorInteraction = ref<ArticleEditorInteraction | null>(null)
+const hasSavedEditInteraction = ref(false)
+let restoreToken = 0
+
+const POSITION_DEBUG_LOG_KEY = 'article_editor_position_debug'
+const POSITION_DEBUG_FLAG_KEY = 'article_editor_position_debug_enabled'
+const POSITION_DEBUG_LIMIT = 180
+
+type PositionDebugEvent =
+  | 'save-edit'
+  | 'save-read'
+  | 'restore-edit'
+  | 'restore-read'
+  | 'restore-retry'
+  | 'restore-missing'
+  | 'skip-programmatic-read'
+  | 'route-change'
+
+function positionDebugEnabled(): boolean {
+  return import.meta.env.DEV || localStorage.getItem(POSITION_DEBUG_FLAG_KEY) === '1'
+}
+
+function logPositionEvent(event: PositionDebugEvent, payload: Record<string, unknown> = {}) {
+  if (!positionDebugEnabled()) return
+  const entry = {
+    event,
+    at: new Date().toISOString(),
+    ...payload,
+  }
+  console.debug('[article-position]', entry)
+  try {
+    const parsed = JSON.parse(localStorage.getItem(POSITION_DEBUG_LOG_KEY) || '[]')
+    const log = Array.isArray(parsed) ? parsed : []
+    log.push(entry)
+    localStorage.setItem(POSITION_DEBUG_LOG_KEY, JSON.stringify(log.slice(-POSITION_DEBUG_LIMIT)))
+  } catch {
+    localStorage.setItem(POSITION_DEBUG_LOG_KEY, JSON.stringify([entry]))
+  }
+}
 
 const currentBodyText = computed(() => composeCurrentBody())
 const wordCount = computed(() => countWords(currentBodyText.value))
 const charCount = computed(() => currentBodyText.value.length)
-const lineCount = computed(() => currentBodyText.value.split('\n').length)
+const paragraphCount = computed(() => countParagraphs(currentBodyText.value))
 const openWritingNotes = computed(() => writingNotes.value.filter((note) => note.status === 'open'))
 const doneWritingNotes = computed(() => writingNotes.value.filter((note) => note.status === 'done'))
+const hasSearchQuery = computed(() => Boolean(searchInput.value.trim()))
+const allTags = computed(() => collectArticleTags(store.entries))
+const activeBaseList = computed(() => hasSearchQuery.value ? store.searchResults : store.entries)
+const displayList = computed(() => filterArticlesByTag(activeBaseList.value, selectedTag.value))
+const listStatusLabel = computed(() =>
+  hasSearchQuery.value || selectedTag.value ? t('articles.results') : t('articles.total')
+)
+const emptyListLabel = computed(() =>
+  hasSearchQuery.value || selectedTag.value ? t('articles.noResults') : t('articles.noArticles')
+)
 
 function countWords(body: string): number {
   if (!body) return 0
@@ -79,6 +151,34 @@ function scheduleSave() {
   saveTimer.value = window.setTimeout(saveNow, 600)
 }
 
+function handleBodyInput() {
+  lastEditorInteraction.value = 'edit'
+  hasSavedEditInteraction.value = true
+  resizeBodyEditor()
+  saveCurrentEditorEditPositionNow()
+  scheduleSave()
+  void nextTick(() => {
+    resizeBodyEditor()
+    keepCaretNearComfortLine()
+    saveCurrentEditorEditPositionNow()
+  })
+}
+
+function handleBodyPointerSettled() {
+  lastEditorInteraction.value = 'edit'
+  hasSavedEditInteraction.value = true
+  saveCurrentEditorEditPositionNow()
+}
+
+function handleBodyFocusOut() {
+  lastEditorInteraction.value = lastEditorInteraction.value ?? 'edit'
+  saveCurrentEditorPositionNow()
+}
+
+function handleBeforeUnload() {
+  saveCurrentEditorPositionNow()
+}
+
 async function saveNow() {
   const entry = store.selectedEntry
   if (!entry) return
@@ -103,6 +203,26 @@ function clearSearch() {
   store.searchResults = []
 }
 
+function selectTag(tag: string) {
+  selectedTag.value = selectedTag.value === tag ? '' : tag
+}
+
+function clearTagFilter() {
+  selectedTag.value = ''
+}
+
+function selectEntryFromList(entryId: string) {
+  flushPendingEditorPosition()
+  saveLastKnownEditorPosition()
+  saveLastSelectedArticleId(entryId)
+  if (route.query.id === entryId) {
+    store.selectEntry(entryId)
+    void restoreEditorPositionIfNeeded(entryId)
+    return
+  }
+  router.push({ name: 'articles', query: { id: entryId } })
+}
+
 function handleReplace(findText: string, replaceText: string, replaceAll: boolean) {
   if (!store.selectedEntry) return
   const flags = replaceAll ? 'g' : ''
@@ -117,6 +237,27 @@ function handleKeydown(e: KeyboardEvent) {
     e.preventDefault()
     showFindReplace.value = !showFindReplace.value
   }
+}
+
+function handleBodyKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || e.isComposing || !bodyRef.value) {
+    return
+  }
+  lastEditorInteraction.value = 'edit'
+  hasSavedEditInteraction.value = true
+  e.preventDefault()
+  const edit = insertIndentedParagraph(
+    bodyDraft.value,
+    bodyRef.value.selectionStart,
+    bodyRef.value.selectionEnd
+  )
+  bodyDraft.value = edit.text
+  void nextTick(() => {
+    bodyRef.value?.setSelectionRange(edit.selectionStart, edit.selectionEnd)
+    keepCaretNearComfortLine()
+    saveCurrentEditorPosition()
+  })
+  scheduleSave()
 }
 
 function refreshMatches(query = findQuery.value, caseSensitive = findCaseSensitive.value) {
@@ -155,9 +296,15 @@ async function navigateMatch(direction: 'prev' | 'next', query: string, caseSens
   const length = query.length
   bodyRef.value.focus()
   bodyRef.value.setSelectionRange(start, start + length)
-  const approxLine = bodyRef.value.value.slice(0, start).split('\n').length
-  const lineHeight = 28
-  bodyRef.value.scrollTop = Math.max(0, approxLine * lineHeight - bodyRef.value.clientHeight / 2)
+  scrollEditorTo(
+    estimateScrollTopForPosition({
+      text: bodyDraft.value,
+      position: start,
+      clientHeight: editorViewportHeight(),
+      lineHeight: EDITOR_LINE_HEIGHT_PX,
+      anchorRatio: 0.5,
+    })
+  )
 }
 
 function syncFindQuery(query: string, caseSensitive: boolean) {
@@ -203,6 +350,7 @@ function syncDraftFromSelected() {
   }
   refreshMatches()
   void nextTick(() => {
+    resizeBodyEditor()
     syncingDraft.value = false
   })
 }
@@ -293,16 +441,30 @@ async function openAiToolsForArticle() {
 }
 
 async function applyRouteFocusRange() {
+  if (typeof route.query.id === 'string' && store.selectedEntry?.id && route.query.id !== store.selectedEntry.id) {
+    return false
+  }
   const start = parseNumberQuery(route.query.focus_start)
   const end = parseNumberQuery(route.query.focus_end)
-  if (start === null || end === null || !bodyRef.value) return
+  if (start === null || end === null || !bodyRef.value) return false
   await nextTick()
   const safeStart = Math.max(0, Math.min(start, bodyDraft.value.length))
   const safeEnd = Math.max(safeStart, Math.min(end, bodyDraft.value.length))
+  resizeBodyEditor()
   bodyRef.value.focus()
   bodyRef.value.setSelectionRange(safeStart, safeEnd)
-  const approxLine = bodyDraft.value.slice(0, safeStart).split('\n').length
-  bodyRef.value.scrollTop = Math.max(0, approxLine * 28 - bodyRef.value.clientHeight / 2)
+  scrollEditorTo(
+    estimateScrollTopForPosition({
+      text: bodyDraft.value,
+      position: safeStart,
+      clientHeight: editorViewportHeight(),
+      lineHeight: EDITOR_LINE_HEIGHT_PX,
+      anchorRatio: 0.5,
+    })
+  )
+  lastEditorInteraction.value = 'edit'
+  saveEditorPositionForArticle(store.selectedEntry?.id, 'edit')
+  return true
 }
 
 function parseNumberQuery(value: unknown): number | null {
@@ -312,8 +474,13 @@ function parseNumberQuery(value: unknown): number | null {
 }
 
 async function applyRouteArticle() {
-  const articleId = typeof route.query.id === 'string' ? route.query.id : null
+  const articleId = typeof route.query.id === 'string'
+    ? route.query.id
+    : getLastSelectedArticleId()
   if (!articleId) return
+  if (store.selectedEntry?.id !== articleId) {
+    resetEditorInteractionTracking()
+  }
   if (!store.entries.some((entry) => entry.id === articleId)) {
     try {
       const loaded = await articlesApi.get(articleId)
@@ -324,6 +491,336 @@ async function applyRouteArticle() {
     }
   }
   store.selectEntry(articleId)
+  saveLastSelectedArticleId(articleId)
+}
+
+function saveCurrentEditorPosition() {
+  const articleId = store.selectedEntry?.id
+  saveEditorPositionForArticle(articleId)
+}
+
+function saveLastKnownEditorPosition() {
+  const articleId = store.selectedEntry?.id
+  saveLastKnownEditorPositionForArticle(articleId)
+}
+
+function saveLastKnownEditorPositionForArticle(articleId: string | null | undefined) {
+  if (!articleId) return
+  if (bodyRef.value && hasSavedEditInteraction.value) {
+    saveEditorPositionForArticle(articleId, 'edit')
+    if (lastEditorInteraction.value === 'read') {
+      saveEditorPositionForArticle(articleId, 'read')
+    }
+    return
+  }
+  if (lastEditorInteraction.value === 'edit') {
+    saveEditorPositionForArticle(articleId, 'edit')
+    return
+  }
+  if (lastEditorInteraction.value === 'read') {
+    saveEditorPositionForArticle(articleId, 'read')
+  }
+}
+
+function currentTextareaPosition() {
+  if (!bodyRef.value) return null
+  return {
+    selectionStart: bodyRef.value.selectionStart,
+    selectionEnd: bodyRef.value.selectionEnd,
+    scrollTop: editorScrollRef.value?.scrollTop ?? 0,
+  }
+}
+
+function saveEditorPositionForArticle(
+  articleId: string | null | undefined,
+  interaction: ArticleEditorInteraction = 'edit'
+) {
+  if (!articleId || !bodyRef.value) return
+  const position = currentTextareaPosition()
+  if (!position) return
+  saveArticleEditorPosition(articleId, position, interaction)
+  lastEditorInteraction.value = interaction
+  if (interaction === 'edit') {
+    hasSavedEditInteraction.value = true
+  }
+  logPositionEvent(interaction === 'read' ? 'save-read' : 'save-edit', {
+    articleId,
+    ...position,
+  })
+}
+
+function scheduleEditorPositionSave(
+  articleId = store.selectedEntry?.id,
+  interaction: ArticleEditorInteraction = 'edit'
+) {
+  if (!articleId) return
+  if (positionSaveTimer.value) clearTimeout(positionSaveTimer.value)
+  pendingPositionArticleId.value = articleId
+  pendingPositionInteraction.value = interaction
+  positionSaveTimer.value = window.setTimeout(() => {
+    saveEditorPositionForArticle(articleId, interaction)
+    positionSaveTimer.value = null
+    pendingPositionArticleId.value = null
+    pendingPositionInteraction.value = 'edit'
+  }, 120)
+}
+
+function scheduleCurrentEditorPositionSave() {
+  lastEditorInteraction.value = 'edit'
+  hasSavedEditInteraction.value = true
+  saveCurrentEditorEditPositionNow()
+}
+
+function scheduleReadPositionSave() {
+  if (Date.now() < suppressReadPositionUntil.value) {
+    logPositionEvent('skip-programmatic-read', {
+      articleId: store.selectedEntry?.id ?? null,
+      suppressUntil: suppressReadPositionUntil.value,
+    })
+    return
+  }
+  lastEditorInteraction.value = 'read'
+  scheduleEditorPositionSave(store.selectedEntry?.id, 'read')
+}
+
+function saveCurrentEditorPositionNow() {
+  flushPendingEditorPosition()
+  saveLastKnownEditorPosition()
+}
+
+function saveCurrentEditorEditPositionNow() {
+  flushPendingEditorPosition()
+  const articleId = store.selectedEntry?.id
+  saveEditorPositionForArticle(articleId, 'edit')
+}
+
+function resetEditorInteractionTracking() {
+  lastEditorInteraction.value = null
+  hasSavedEditInteraction.value = false
+}
+
+function flushPendingEditorPosition() {
+  if (!positionSaveTimer.value) return
+  clearTimeout(positionSaveTimer.value)
+  const articleId = pendingPositionArticleId.value
+  const interaction = pendingPositionInteraction.value
+  positionSaveTimer.value = null
+  pendingPositionArticleId.value = null
+  pendingPositionInteraction.value = 'edit'
+  saveEditorPositionForArticle(articleId, interaction)
+}
+
+function waitForAnimationFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => resolve())
+  })
+}
+
+async function waitForBodyEditor(): Promise<HTMLTextAreaElement | null> {
+  await nextTick()
+  resizeBodyEditor()
+  if (bodyRef.value) return bodyRef.value
+  await waitForAnimationFrame()
+  resizeBodyEditor()
+  return bodyRef.value
+}
+
+async function restoreSavedEditorPosition(articleId = store.selectedEntry?.id) {
+  if (!articleId) return
+  const token = ++restoreToken
+  const position = getArticleEditorPosition(articleId)
+  if (!position) {
+    logPositionEvent('restore-missing', { articleId, token })
+    const textarea = await waitForBodyEditor()
+    if (store.selectedEntry?.id === articleId) {
+      textarea?.focus()
+    }
+    return
+  }
+  restoringEditorPosition.value = true
+  const textarea = await waitForBodyEditor()
+  if (!textarea || store.selectedEntry?.id !== articleId) {
+    restoringEditorPosition.value = false
+    return
+  }
+  const textLength = bodyDraft.value.length
+  const safeStart = Math.max(0, Math.min(position.selectionStart, textLength))
+  const safeEnd = Math.max(safeStart, Math.min(position.selectionEnd, textLength))
+  resizeBodyEditor()
+  updateTailSpace()
+  await nextTick()
+  await waitForAnimationFrame()
+  resizeBodyEditor()
+
+  const applyRestore = (phase: 'initial' | 'retry-80' | 'retry-250') => {
+    const current = bodyRef.value
+    const scrollContainer = editorScrollRef.value
+    if (!current || !scrollContainer || store.selectedEntry?.id !== articleId || token !== restoreToken) return false
+    const restoreAsReadPosition = position.interaction === 'read'
+    resizeBodyEditor()
+    const maxScrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight)
+    const nextScrollTop = !restoreAsReadPosition && isNearArticleEnd({
+      textLength,
+      selectionEnd: safeEnd,
+      scrollTop: position.scrollTop,
+      scrollHeight: scrollContainer.scrollHeight,
+      clientHeight: scrollContainer.clientHeight,
+    })
+      ? estimateScrollTopForPosition({
+          text: bodyDraft.value,
+          position: safeEnd,
+          clientHeight: scrollContainer.clientHeight,
+          lineHeight: EDITOR_LINE_HEIGHT_PX,
+          anchorRatio: COMFORT_ANCHOR_RATIO,
+        })
+      : Math.max(0, position.scrollTop)
+    const clampedScrollTop = Math.min(maxScrollTop, nextScrollTop)
+
+    suppressReadPositionUntil.value = Date.now() + 450
+    if (restoreAsReadPosition) {
+      scrollContainer.scrollTop = clampedScrollTop
+    } else {
+      current.focus({ preventScroll: true })
+      current.setSelectionRange(safeStart, safeEnd)
+      scrollContainer.scrollTop = clampedScrollTop
+    }
+    lastEditorInteraction.value = position.interaction
+    const actual = {
+      selectionStart: current.selectionStart,
+      selectionEnd: current.selectionEnd,
+      scrollTop: scrollContainer.scrollTop,
+    }
+    logPositionEvent(restoreAsReadPosition ? 'restore-read' : 'restore-edit', {
+      articleId,
+      token,
+      phase,
+      expectedScrollTop: clampedScrollTop,
+      expectedSelectionStart: safeStart,
+      expectedSelectionEnd: safeEnd,
+      actualSelectionStart: actual.selectionStart,
+      actualSelectionEnd: actual.selectionEnd,
+      actualScrollTop: actual.scrollTop,
+    })
+    return Math.abs(scrollContainer.scrollTop - clampedScrollTop) <= 4 &&
+      (restoreAsReadPosition || (current.selectionStart === safeStart && current.selectionEnd === safeEnd))
+  }
+
+  applyRestore('initial')
+  window.setTimeout(() => {
+    if (!applyRestore('retry-80')) {
+      logPositionEvent('restore-retry', { articleId, token, phase: 'retry-80' })
+    }
+  }, 80)
+  window.setTimeout(() => {
+    if (!applyRestore('retry-250')) {
+      logPositionEvent('restore-retry', { articleId, token, phase: 'retry-250' })
+    }
+    if (store.selectedEntry?.id === articleId && token === restoreToken) {
+      restoringEditorPosition.value = false
+    }
+  }, 250)
+}
+
+async function restoreEditorPositionIfNeeded(articleId = store.selectedEntry?.id) {
+  const appliedRouteFocus = await applyRouteFocusRange()
+  if (!appliedRouteFocus) {
+    await restoreSavedEditorPosition(articleId)
+  }
+}
+
+function updateTailSpace() {
+  tailSpace.value = editorTailSpace(editorViewportHeight())
+}
+
+function editorViewportHeight(): number {
+  return editorScrollRef.value?.clientHeight || bodyRef.value?.clientHeight || 600
+}
+
+function editorMaxScrollTop(): number {
+  const scrollContainer = editorScrollRef.value
+  if (!scrollContainer) return 0
+  return Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight)
+}
+
+function scrollEditorTo(scrollTop: number) {
+  const scrollContainer = editorScrollRef.value
+  if (!scrollContainer) return
+  suppressReadPositionUntil.value = Date.now() + 450
+  scrollContainer.scrollTop = Math.min(editorMaxScrollTop(), Math.max(0, scrollTop))
+}
+
+function resizeBodyEditor() {
+  const textarea = bodyRef.value
+  if (!textarea) return
+  textarea.style.height = 'auto'
+  const minHeight = settings.focusMode ? Math.max(720, editorViewportHeight() - 64) : 520
+  textarea.style.height = `${Math.max(textarea.scrollHeight, minHeight)}px`
+}
+
+function caretScrollTopForTextArea(textarea: HTMLTextAreaElement): number {
+  const style = window.getComputedStyle(textarea)
+  const mirror = document.createElement('div')
+  const caret = document.createElement('span')
+  const properties = [
+    'box-sizing',
+    'width',
+    'font-family',
+    'font-size',
+    'font-weight',
+    'font-style',
+    'letter-spacing',
+    'text-transform',
+    'word-spacing',
+    'text-indent',
+    'line-height',
+    'padding-top',
+    'padding-right',
+    'padding-bottom',
+    'padding-left',
+    'border-top-width',
+    'border-right-width',
+    'border-bottom-width',
+    'border-left-width',
+    'white-space',
+    'word-break',
+    'overflow-wrap',
+  ] as const
+  for (const property of properties) {
+    mirror.style.setProperty(property, style.getPropertyValue(property))
+  }
+  mirror.style.position = 'absolute'
+  mirror.style.visibility = 'hidden'
+  mirror.style.left = '-9999px'
+  mirror.style.top = '0'
+  mirror.style.height = 'auto'
+  mirror.style.minHeight = '0'
+  mirror.style.overflow = 'hidden'
+  mirror.style.whiteSpace = 'pre-wrap'
+  mirror.style.overflowWrap = 'break-word'
+  mirror.textContent = textarea.value.slice(0, textarea.selectionEnd)
+  caret.textContent = '\u200b'
+  mirror.appendChild(caret)
+  document.body.appendChild(mirror)
+  const result = caret.offsetTop
+  mirror.remove()
+  return result
+}
+
+function keepCaretNearComfortLine(force = false) {
+  if (!bodyRef.value || !editorScrollRef.value || restoringEditorPosition.value) return
+  updateTailSpace()
+  const textarea = bodyRef.value
+  const scrollContainer = editorScrollRef.value
+  const caretScrollTop = caretScrollTopForTextArea(textarea)
+  if (!force && !shouldRecenterCaret({
+    caretScrollTop,
+    currentScrollTop: scrollContainer.scrollTop,
+    clientHeight: scrollContainer.clientHeight,
+  })) {
+    return
+  }
+  const nextScrollTop = Math.max(0, caretScrollTop - scrollContainer.clientHeight * COMFORT_ANCHOR_RATIO)
+  scrollEditorTo(nextScrollTop)
 }
 
 async function refreshEntryCollections() {
@@ -490,31 +987,52 @@ async function addToSelectedCollections() {
 onMounted(async () => {
   await store.loadEntries()
   await applyRouteArticle()
+  if (store.selectedEntry && route.name === 'articles' && typeof route.query.id !== 'string') {
+    router.replace({ name: 'articles', query: { id: store.selectedEntry.id } })
+  }
   syncDraftFromSelected()
   await Promise.all([refreshEntryCollections(), refreshWritingNotes()])
-  await applyRouteFocusRange()
+  await restoreEditorPositionIfNeeded()
+  updateTailSpace()
+  window.addEventListener('resize', updateTailSpace)
   window.addEventListener('keydown', handleKeydown)
+  window.addEventListener('beforeunload', handleBeforeUnload)
 })
 
 onUnmounted(() => {
+  flushPendingEditorPosition()
+  saveCurrentEditorPositionNow()
+  window.removeEventListener('resize', updateTailSpace)
   window.removeEventListener('keydown', handleKeydown)
+  window.removeEventListener('beforeunload', handleBeforeUnload)
 })
 
 watch(
   () => store.selectedEntry?.id,
-  () => {
+  async (_newId, oldId) => {
+    flushPendingEditorPosition()
+    saveLastKnownEditorPositionForArticle(oldId)
     syncDraftFromSelected()
     refreshEntryCollections()
     refreshWritingNotes()
+    await restoreEditorPositionIfNeeded(_newId ?? undefined)
+    updateTailSpace()
   }
 )
 
 watch(
   () => route.query.id,
   async () => {
+    logPositionEvent('route-change', {
+      fromArticleId: store.selectedEntry?.id ?? null,
+      toArticleId: typeof route.query.id === 'string' ? route.query.id : null,
+    })
+    flushPendingEditorPosition()
+    saveCurrentEditorPositionNow()
     await applyRouteArticle()
     syncDraftFromSelected()
-    await applyRouteFocusRange()
+    await restoreEditorPositionIfNeeded()
+    updateTailSpace()
   }
 )
 
@@ -525,9 +1043,6 @@ watch(
   }
 )
 
-const displayList = computed(() =>
-  store.searchResults.length ? store.searchResults : store.entries
-)
 </script>
 
 <template>
@@ -560,20 +1075,43 @@ const displayList = computed(() =>
           </button>
         </div>
         <p class="text-sm text-stone-500 mt-2">
-          {{ displayList.length }} {{ store.searchResults.length ? t('articles.results') : t('articles.total') }}
+          {{ displayList.length }} {{ listStatusLabel }}
         </p>
+        <div v-if="allTags.length" class="mt-3 flex flex-wrap gap-1.5">
+          <button
+            v-if="selectedTag"
+            @click="clearTagFilter"
+            class="rounded-full bg-stone-900 px-2.5 py-1 text-xs font-medium text-white"
+          >
+            {{ t('articles.allTags') }}
+          </button>
+          <button
+            v-for="tag in allTags"
+            :key="tag"
+            @click="selectTag(tag)"
+            :class="[
+              'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
+              selectedTag === tag
+                ? 'bg-amber-500 text-white'
+                : 'bg-stone-100 text-stone-600 hover:bg-stone-200',
+            ]"
+          >
+            {{ tag }}
+          </button>
+        </div>
       </div>
 
       <div class="flex-1 overflow-y-auto">
         <div v-if="store.loading" class="p-4 text-sm text-stone-400">{{ t('common.loading') }}</div>
         <div v-else-if="store.error" class="p-4 text-sm text-red-500">{{ store.error }}</div>
         <div v-else-if="!displayList.length" class="p-4 text-sm text-stone-400">
-          {{ searchInput ? t('articles.noResults') : t('articles.noArticles') }}
+          {{ emptyListLabel }}
         </div>
         <button
           v-for="entry in displayList"
           :key="entry.id"
-          @click="store.selectEntry(entry.id)"
+          @click="selectEntryFromList(entry.id)"
+          :data-testid="`article-entry-${entry.id}`"
           :class="[
             'w-full p-4 border-b border-stone-100 cursor-pointer text-left transition-colors',
             store.selectedId === entry.id
@@ -584,17 +1122,21 @@ const displayList = computed(() =>
           <h3 class="font-semibold mb-1 truncate">{{ entry.title || t('articles.untitled') }}</h3>
           <p class="text-sm text-stone-500 line-clamp-2">{{ preview(entry.body) }}</p>
           <div v-if="entry.tags.length" class="flex flex-wrap gap-1 mt-2">
-            <span
+            <button
               v-for="tag in entry.tags"
               :key="tag"
-              class="text-xs px-2 py-1 bg-stone-100 text-stone-600 rounded"
-            >{{ tag }}</span>
+              @click.stop="selectTag(tag)"
+              :class="[
+                'rounded px-2 py-1 text-xs transition-colors',
+                selectedTag === tag ? 'bg-amber-500 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200',
+              ]"
+            >{{ tag }}</button>
           </div>
         </button>
       </div>
     </aside>
 
-    <main class="flex-1 min-w-0 flex flex-col bg-[#fffdf8] overflow-hidden relative">
+    <main class="flex-1 min-w-0 min-h-0 flex flex-col bg-[#fffdf8] overflow-hidden relative">
       <FindReplace
         v-if="!settings.focusMode"
         :show="showFindReplace"
@@ -655,12 +1197,17 @@ const displayList = computed(() =>
         </div>
       </div>
 
-      <div :class="['flex-1 overflow-y-auto', settings.focusMode ? 'p-8 md:p-12' : 'p-6']">
+      <div
+        ref="editorScrollRef"
+        :class="['flex-1 min-h-0 overflow-y-auto', settings.focusMode ? 'p-8 md:p-12' : 'p-6']"
+        data-testid="article-editor-scroll"
+        @scroll="scheduleReadPositionSave"
+      >
         <div
           v-if="store.selectedEntry"
           :class="[
-            'mx-auto flex h-full flex-col',
-            settings.focusMode ? 'max-w-5xl gap-0' : 'max-w-3xl gap-5'
+            'mx-auto flex min-h-full flex-col',
+            settings.focusMode ? 'w-full max-w-[108rem] gap-0' : 'w-full max-w-7xl gap-5'
           ]"
         >
           <section
@@ -694,13 +1241,22 @@ const displayList = computed(() =>
           </section>
           <textarea
             ref="bodyRef"
+            data-testid="article-body-editor"
             v-model="bodyDraft"
-            @input="scheduleSave"
+            @input="handleBodyInput"
+            @keydown="handleBodyKeydown"
+            @keyup="scheduleCurrentEditorPositionSave"
+            @click="scheduleCurrentEditorPositionSave"
+            @pointerup="handleBodyPointerSettled"
+            @mouseup="handleBodyPointerSettled"
+            @focusout="handleBodyFocusOut"
+            @select="scheduleCurrentEditorPositionSave"
+            :style="{ paddingBottom: `${tailSpace}px` }"
             :class="[
-              'w-full flex-1 block bg-[#fffdf8] focus:outline-none resize-none leading-relaxed',
+              'w-full block overflow-hidden bg-[#fffdf8] focus:outline-none resize-none leading-relaxed',
               settings.focusMode
-                ? 'min-h-[calc(100vh-6rem)] border-0 p-8 text-lg shadow-none focus:ring-0'
-                : 'min-h-[500px] rounded-[1.5rem] border border-stone-200 p-6 shadow-sm focus:ring-2 focus:ring-amber-300'
+                ? 'min-h-[calc(100vh-5rem)] border-0 px-6 py-8 md:px-10 text-lg shadow-none focus:ring-0'
+                : 'min-h-[520px] rounded-[1.5rem] border border-stone-200 p-6 shadow-sm focus:ring-2 focus:ring-amber-300'
             ]"
             :placeholder="t('articles.startWriting')"
           />
@@ -730,7 +1286,7 @@ const displayList = computed(() =>
                 <span>{{ t('articles.charCount') }}</span><span class="font-medium">{{ charCount }}</span>
               </div>
               <div class="flex justify-between">
-                <span>{{ t('articles.lineCount') }}</span><span class="font-medium">{{ lineCount }}</span>
+                <span>{{ t('articles.paragraphCount') }}</span><span class="font-medium">{{ paragraphCount }}</span>
               </div>
             </div>
           </section>

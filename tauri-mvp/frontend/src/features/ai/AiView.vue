@@ -11,19 +11,22 @@ import { useI18n } from '../../i18n'
 import { applyArticleBodyEdit, selectArticleBodyText } from './applyArticleEdit'
 import { useAiStore } from './store'
 import {
+  useAiWorkspaceStore,
+  type AiTab,
+  type ContextItem,
+  type ContextKind,
+  type RouteSelection,
+  type TaskType,
+  type ToolScope,
+} from './workspaceStore'
+import {
   buildTaskRequestOptions,
   cloneControls,
-  createDefaultControls,
   isFocusTask,
   mergeControls,
-  type TaskControls,
 } from './taskControls'
 
-type TaskType = 'polish' | 'rewrite' | 'expand' | 'continue' | 'style_transfer' | 'summarize' | 'outline' | 'title'
-type AiTab = 'tools' | 'chat'
 type ChatScopeKind = 'global' | 'article' | 'collection'
-type ToolScope = 'paste' | 'article'
-type ContextKind = 'ai_card' | 'writing_note' | 'reference'
 
 interface TaskOption {
   value: TaskType
@@ -36,39 +39,14 @@ interface TaskGroup {
   tasks: TaskOption[]
 }
 
-interface ContextItem {
-  uid: string
-  kind: ContextKind
-  ref_id: string
-  title: string
-  subtitle: string
-  body: string
-}
-
-interface RouteSelection {
-  articleId: string
-  start: number
-  end: number
-}
-
 const store = useAiStore()
+const workspace = useAiWorkspaceStore()
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 
-const activeTab = ref<AiTab>('tools')
-const taskInput = ref('')
-const taskType = ref<TaskType>('polish')
-const taskResult = ref('')
-const showComparison = ref(false)
-const error = ref('')
-const notice = ref('')
-const routeSelection = ref<RouteSelection | null>(null)
-
 const aiCards = ref<AiCard[]>([])
-const selectedCardIds = ref<string[]>([])
 const showCardSelector = ref(false)
-const manualContextItems = ref<ContextItem[]>([])
 
 const referencePickerOpen = ref(false)
 const referenceSearch = ref('')
@@ -76,28 +54,109 @@ const referenceResults = ref<Reference[]>([])
 const selectedReferenceIds = ref<string[]>([])
 const referenceLoading = ref(false)
 
-const scopeType = ref<ToolScope>('paste')
-const selectedArticleId = ref<string | null>(null)
 const articles = ref<Entry[]>([])
 const collections = ref<Collection[]>([])
 
-const chatScopeKind = ref<ChatScopeKind>('global')
-const chatScopeId = ref<string | null>(null)
-const chatInput = ref('')
-
-const controlsByTask = ref<Record<TaskType, TaskControls>>({
-  polish: createDefaultControls(),
-  rewrite: createDefaultControls(),
-  expand: createDefaultControls(),
-  continue: createDefaultControls(),
-  style_transfer: createDefaultControls(),
-  summarize: createDefaultControls(),
-  outline: createDefaultControls(),
-  title: createDefaultControls(),
-})
 const taskPresets = ref<AiTaskPresetMap>({})
 const presetName = ref('')
-const selectedPresetId = ref('')
+const activeTab = computed({
+  get: () => workspace.activeTab,
+  set: (value: AiTab) => {
+    workspace.activeTab = value
+  },
+})
+const taskType = computed({
+  get: () => workspace.taskType,
+  set: (value: TaskType) => {
+    workspace.setTaskType(value)
+  },
+})
+const currentTaskState = computed(() => workspace.currentTask())
+const taskInput = computed({
+  get: () => currentTaskState.value.taskInput,
+  set: (value: string) => {
+    currentTaskState.value.taskInput = value
+  },
+})
+const taskResult = computed({
+  get: () => currentTaskState.value.taskResult,
+  set: (value: string) => {
+    currentTaskState.value.taskResult = value
+  },
+})
+const showComparison = computed({
+  get: () => currentTaskState.value.showComparison,
+  set: (value: boolean) => {
+    currentTaskState.value.showComparison = value
+  },
+})
+const selectedCardIds = computed({
+  get: () => currentTaskState.value.selectedCardIds,
+  set: (value: string[]) => {
+    currentTaskState.value.selectedCardIds = value
+  },
+})
+const manualContextItems = computed({
+  get: () => currentTaskState.value.manualContextItems,
+  set: (value: ContextItem[]) => {
+    currentTaskState.value.manualContextItems = value
+  },
+})
+const scopeType = computed({
+  get: () => currentTaskState.value.scopeType,
+  set: (value: ToolScope) => {
+    currentTaskState.value.scopeType = value
+  },
+})
+const selectedArticleId = computed({
+  get: () => currentTaskState.value.selectedArticleId,
+  set: (value: string | null) => {
+    currentTaskState.value.selectedArticleId = value
+  },
+})
+const routeSelection = computed({
+  get: () => currentTaskState.value.routeSelection,
+  set: (value: RouteSelection | null) => {
+    currentTaskState.value.routeSelection = value
+  },
+})
+const controlsByTask = computed(() => workspace.tasks)
+const selectedPresetId = computed({
+  get: () => currentTaskState.value.selectedPresetId,
+  set: (value: string) => {
+    currentTaskState.value.selectedPresetId = value
+  },
+})
+const error = computed({
+  get: () => currentTaskState.value.error,
+  set: (value: string) => {
+    currentTaskState.value.error = value
+  },
+})
+const notice = computed({
+  get: () => currentTaskState.value.notice,
+  set: (value: string) => {
+    currentTaskState.value.notice = value
+  },
+})
+const chatInput = computed({
+  get: () => workspace.chatInput,
+  set: (value: string) => {
+    workspace.chatInput = value
+  },
+})
+const chatScopeKind = computed({
+  get: () => workspace.chatScopeKind,
+  set: (value: ChatScopeKind) => {
+    workspace.chatScopeKind = value
+  },
+})
+const chatScopeId = computed({
+  get: () => workspace.chatScopeId,
+  set: (value: string | null) => {
+    workspace.chatScopeId = value
+  },
+})
 
 const taskGroups = computed<TaskGroup[]>(() => [
   {
@@ -309,7 +368,7 @@ async function handleRunTask() {
   }
 
   try {
-    const controls = controlsByTask.value[taskType.value]
+    const controls = controlsByTask.value[taskType.value].controls
     const focusOptions = isFocusTask(taskType.value)
       ? buildTaskRequestOptions(taskType.value, controls)
       : { extra_instructions: controls.extraInstructions }
@@ -397,6 +456,24 @@ function clearContextItems() {
   manualContextItems.value = []
 }
 
+function clearCurrentResult() {
+  workspace.clearCurrentResult()
+  notice.value = t('ai.currentResultCleared')
+}
+
+function clearCurrentTaskState() {
+  workspace.clearCurrentTask()
+  showCardSelector.value = false
+  notice.value = t('ai.currentTaskCleared')
+}
+
+function clearAllWorkspaceState() {
+  if (!confirm(t('ai.clearAllWorkspaceConfirm'))) return
+  workspace.clearAllTools()
+  showCardSelector.value = false
+  notice.value = t('ai.allWorkspaceCleared')
+}
+
 async function addArticleNotesContext() {
   if (!selectedArticleId.value) return
   error.value = ''
@@ -475,7 +552,7 @@ async function saveCurrentPreset() {
     id: makeId(),
     task_type: taskType.value,
     name,
-    controls: cloneControls(controlsByTask.value[taskType.value]) as unknown as Record<string, unknown>,
+    controls: cloneControls(controlsByTask.value[taskType.value].controls) as unknown as Record<string, unknown>,
   }
   const next = {
     ...taskPresets.value,
@@ -493,7 +570,7 @@ async function saveCurrentPreset() {
 function applyPreset(presetId: string) {
   const preset = currentTaskPresets.value.find((item) => item.id === presetId)
   if (!preset) return
-  controlsByTask.value[taskType.value] = mergeControls(preset.controls)
+  controlsByTask.value[taskType.value].controls = mergeControls(preset.controls)
   selectedPresetId.value = presetId
   notice.value = t('ai.presetApplied')
 }
@@ -617,75 +694,75 @@ function makeId(): string {
 
             <template v-if="taskType === 'polish'">
               <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.intensity') }}</label>
-              <select v-model="controlsByTask[taskType].polishIntensity" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm">
+              <select v-model="controlsByTask[taskType].controls.polishIntensity" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm">
                 <option value="light">{{ t('ai.options.light') }}</option>
                 <option value="medium">{{ t('ai.options.medium') }}</option>
                 <option value="strong">{{ t('ai.options.strong') }}</option>
               </select>
               <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.languageStyle') }}</label>
-              <input v-model="controlsByTask[taskType].polishStyle" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
+              <input v-model="controlsByTask[taskType].controls.polishStyle" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
               <label class="flex items-center gap-2 text-sm text-gray-700">
-                <input v-model="controlsByTask[taskType].preserveVoice" type="checkbox" />
+                <input v-model="controlsByTask[taskType].controls.preserveVoice" type="checkbox" />
                 {{ t('ai.controls.preserveVoice') }}
               </label>
               <label class="flex items-center gap-2 text-sm text-gray-700">
-                <input v-model="controlsByTask[taskType].compressRedundancy" type="checkbox" />
+                <input v-model="controlsByTask[taskType].controls.compressRedundancy" type="checkbox" />
                 {{ t('ai.controls.compressRedundancy') }}
               </label>
             </template>
 
             <template v-if="taskType === 'rewrite'">
               <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.rewriteDirection') }}</label>
-              <input v-model="controlsByTask[taskType].rewriteDirection" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
+              <input v-model="controlsByTask[taskType].controls.rewriteDirection" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
               <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.narrativeTone') }}</label>
-              <input v-model="controlsByTask[taskType].narrativeTone" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
+              <input v-model="controlsByTask[taskType].controls.narrativeTone" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
               <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.sentenceChange') }}</label>
-              <select v-model="controlsByTask[taskType].sentenceChange" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm">
+              <select v-model="controlsByTask[taskType].controls.sentenceChange" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm">
                 <option value="light">{{ t('ai.options.light') }}</option>
                 <option value="medium">{{ t('ai.options.medium') }}</option>
                 <option value="strong">{{ t('ai.options.strong') }}</option>
               </select>
               <label class="flex items-center gap-2 text-sm text-gray-700">
-                <input v-model="controlsByTask[taskType].keepImagery" type="checkbox" />
+                <input v-model="controlsByTask[taskType].controls.keepImagery" type="checkbox" />
                 {{ t('ai.controls.keepImagery') }}
               </label>
             </template>
 
             <template v-if="taskType === 'expand'">
               <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.expandLength') }}</label>
-              <select v-model="controlsByTask[taskType].expandLength" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm">
+              <select v-model="controlsByTask[taskType].controls.expandLength" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm">
                 <option value="short">{{ t('ai.options.short') }}</option>
                 <option value="medium">{{ t('ai.options.medium') }}</option>
                 <option value="long">{{ t('ai.options.long') }}</option>
               </select>
               <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.expandFocus') }}</label>
-              <input v-model="controlsByTask[taskType].expandFocus" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
+              <input v-model="controlsByTask[taskType].controls.expandFocus" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
               <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.detailType') }}</label>
-              <input v-model="controlsByTask[taskType].detailType" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
+              <input v-model="controlsByTask[taskType].controls.detailType" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
               <label class="flex items-center gap-2 text-sm text-gray-700">
-                <input v-model="controlsByTask[taskType].sensoryDetail" type="checkbox" />
+                <input v-model="controlsByTask[taskType].controls.sensoryDetail" type="checkbox" />
                 {{ t('ai.controls.sensoryDetail') }}
               </label>
             </template>
 
             <template v-if="taskType === 'continue'">
               <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.continueLength') }}</label>
-              <select v-model="controlsByTask[taskType].continueLength" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm">
+              <select v-model="controlsByTask[taskType].controls.continueLength" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm">
                 <option value="short">{{ t('ai.options.short') }}</option>
                 <option value="medium">{{ t('ai.options.medium') }}</option>
                 <option value="long">{{ t('ai.options.long') }}</option>
               </select>
               <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.emotionalDirection') }}</label>
-              <input v-model="controlsByTask[taskType].emotionalDirection" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
+              <input v-model="controlsByTask[taskType].controls.emotionalDirection" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
               <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.pacing') }}</label>
-              <input v-model="controlsByTask[taskType].pacing" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
+              <input v-model="controlsByTask[taskType].controls.pacing" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
               <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.continuationMode') }}</label>
-              <input v-model="controlsByTask[taskType].continuationMode" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
+              <input v-model="controlsByTask[taskType].controls.continuationMode" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
             </template>
 
             <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.extraInstructions') }}</label>
             <textarea
-              v-model="controlsByTask[taskType].extraInstructions"
+              v-model="controlsByTask[taskType].controls.extraInstructions"
               rows="3"
               class="w-full resize-none rounded-lg border border-blue-100 px-3 py-2 text-sm"
               :placeholder="t('ai.controls.extraPlaceholder')"
@@ -845,6 +922,27 @@ function makeId(): string {
           >
             {{ store.taskRunning ? t('ai.running') : t('ai.runTask') }}
           </button>
+          <div class="grid grid-cols-3 gap-2">
+            <button
+              @click="clearCurrentResult"
+              :disabled="!taskResult.trim() && !showComparison"
+              class="rounded-lg bg-gray-100 px-2 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-200 disabled:opacity-40"
+            >
+              {{ t('ai.clearCurrentResult') }}
+            </button>
+            <button
+              @click="clearCurrentTaskState"
+              class="rounded-lg bg-gray-100 px-2 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-200"
+            >
+              {{ t('ai.clearCurrentTask') }}
+            </button>
+            <button
+              @click="clearAllWorkspaceState"
+              class="rounded-lg bg-red-50 px-2 py-2 text-xs font-semibold text-red-600 hover:bg-red-100"
+            >
+              {{ t('ai.clearAllWorkspace') }}
+            </button>
+          </div>
         </div>
       </aside>
 
