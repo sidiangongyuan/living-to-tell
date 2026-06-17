@@ -1,0 +1,67 @@
+!include LogicLib.nsh
+
+!macro WRITER_PROCESS_EXISTS PROCESS_NAME RESULT_VAR
+  nsExec::ExecToStack 'cmd /C tasklist /FI "IMAGENAME eq ${PROCESS_NAME}" /NH 2>NUL | find /I "${PROCESS_NAME}" >NUL'
+  Pop $R9
+  Pop $R8
+  StrCpy ${RESULT_VAR} "0"
+  ${If} $R9 == 0
+    StrCpy ${RESULT_VAR} "1"
+  ${EndIf}
+!macroend
+
+!macro WRITER_KILL_PROCESS PROCESS_NAME
+  nsExec::ExecToStack 'cmd /C taskkill /F /T /IM "${PROCESS_NAME}" 2>NUL'
+  Pop $R9
+  Pop $R8
+!macroend
+
+!macro WRITER_CHECK_AND_CLOSE_RUNNING_APP
+  StrCpy $R0 "0"
+  !insertmacro WRITER_PROCESS_EXISTS "writer-app.exe" $R1
+  ${If} $R1 == "1"
+    StrCpy $R0 "1"
+  ${EndIf}
+  !insertmacro WRITER_PROCESS_EXISTS "Writer.exe" $R1
+  ${If} $R1 == "1"
+    StrCpy $R0 "1"
+  ${EndIf}
+  !insertmacro WRITER_PROCESS_EXISTS "writer-backend.exe" $R1
+  ${If} $R1 == "1"
+    StrCpy $R0 "1"
+  ${EndIf}
+
+  ${If} $R0 == "1"
+    MessageBox MB_ICONEXCLAMATION|MB_OKCANCEL "Writer is still running.$\r$\n$\r$\nPlease make sure your writing is saved. The installer will close Writer and its background service before continuing." IDOK close_writer IDCANCEL cancel_install
+    cancel_install:
+      Abort "Writer is still running. Installation was cancelled."
+    close_writer:
+      !insertmacro WRITER_KILL_PROCESS "writer-app.exe"
+      !insertmacro WRITER_KILL_PROCESS "Writer.exe"
+      !insertmacro WRITER_KILL_PROCESS "writer-backend.exe"
+      Sleep 1200
+
+      StrCpy $R0 "0"
+      !insertmacro WRITER_PROCESS_EXISTS "writer-app.exe" $R1
+      ${If} $R1 == "1"
+        StrCpy $R0 "1"
+      ${EndIf}
+      !insertmacro WRITER_PROCESS_EXISTS "Writer.exe" $R1
+      ${If} $R1 == "1"
+        StrCpy $R0 "1"
+      ${EndIf}
+      !insertmacro WRITER_PROCESS_EXISTS "writer-backend.exe" $R1
+      ${If} $R1 == "1"
+        StrCpy $R0 "1"
+      ${EndIf}
+
+      ${If} $R0 == "1"
+        MessageBox MB_ICONSTOP|MB_OK "Writer could not be closed automatically.$\r$\n$\r$\nPlease close Writer from Task Manager and run the installer again."
+        Abort "Writer is still running."
+      ${EndIf}
+  ${EndIf}
+!macroend
+
+!macro NSIS_HOOK_PREINSTALL
+  !insertmacro WRITER_CHECK_AND_CLOSE_RUNNING_APP
+!macroend

@@ -125,15 +125,18 @@ def create_reference(
     data: ReferenceCreate,
     container: AppContainer = Depends(get_container),
 ) -> ReferenceOut:
-    ref = container.reference_repository.create(
-        source_title=data.source_title,
-        content=data.content,
-        source_author=data.source_author,
-        tags=_tags_to_str(data.tags),
-        kind=data.kind,
-        usage_kind=data.usage_kind,
-        personal_note=data.personal_note,
-    )
+    try:
+        ref = container.reference_repository.create(
+            source_title=data.source_title,
+            content=data.content,
+            source_author=data.source_author,
+            tags=_tags_to_str(data.tags),
+            kind=data.kind,
+            usage_kind=data.usage_kind,
+            personal_note=data.personal_note,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return _reference_to_dto(ref)
 
 
@@ -143,16 +146,19 @@ def update_reference(
     data: ReferenceUpdate,
     container: AppContainer = Depends(get_container),
 ) -> ReferenceOut:
-    ref = container.reference_repository.update(
-        ref_id,
-        source_title=data.source_title,
-        content=data.content,
-        source_author=data.source_author,
-        tags=_tags_to_str(data.tags),
-        kind=data.kind,
-        usage_kind=data.usage_kind,
-        personal_note=data.personal_note,
-    )
+    try:
+        ref = container.reference_repository.update(
+            ref_id,
+            source_title=data.source_title,
+            content=data.content,
+            source_author=data.source_author,
+            tags=_tags_to_str(data.tags),
+            kind=data.kind,
+            usage_kind=data.usage_kind,
+            personal_note=data.personal_note,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     if not ref:
         raise HTTPException(404, "Reference not found")
     return _reference_to_dto(ref)

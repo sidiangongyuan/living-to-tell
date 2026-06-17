@@ -82,8 +82,6 @@ class ReferenceRepository:
         usage_kind: str = USAGE_KIND_STYLE,
         personal_note: str = "",
     ) -> ReferencePassage:
-        if not source_title.strip():
-            raise ValueError("source_title is required")
         if not content.strip():
             raise ValueError("content is required")
         new_id = str(uuid.uuid4())
@@ -120,8 +118,6 @@ class ReferenceRepository:
         usage_kind: str = USAGE_KIND_STYLE,
         personal_note: str = "",
     ) -> Optional[ReferencePassage]:
-        if not source_title.strip():
-            raise ValueError("source_title is required")
         if not content.strip():
             raise ValueError("content is required")
         cur = self._conn.execute(

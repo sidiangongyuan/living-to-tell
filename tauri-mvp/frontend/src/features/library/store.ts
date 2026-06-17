@@ -126,13 +126,14 @@ export const useLibraryStore = defineStore('library', () => {
     }
   }
 
-  async function createReference() {
+  async function createReference(defaults: Partial<Pick<Reference, 'source_title' | 'source_author' | 'usage_kind'>> = {}) {
     try {
       const created = await libraryApi.createReference({
-        source_title: '',
+        source_title: defaults.source_title ?? '',
         content: '新标本',
-        source_author: '',
+        source_author: defaults.source_author ?? '',
         tags: [],
+        usage_kind: defaults.usage_kind ?? 'style',
       })
       references.value = [created, ...references.value]
       selectedRefId.value = created.id

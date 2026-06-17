@@ -182,6 +182,55 @@ def test_tauri_article_writing_notes_crud(monkeypatch):
     assert client.get(f"/api/articles/{entry['id']}/notes").json() == []
 
 
+def test_tauri_library_allows_draft_reference_without_source(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    created = client.post(
+        "/api/library/references",
+        json={
+            "source_title": "",
+            "content": "新标本",
+            "source_author": "",
+            "tags": [],
+            "kind": "excerpt",
+            "usage_kind": "style",
+            "personal_note": "",
+        },
+    )
+    assert created.status_code == 201
+    data = created.json()
+    assert data["source_title"] == ""
+    assert data["content"] == "新标本"
+
+    updated = client.put(
+        f"/api/library/references/{data['id']}",
+        json={
+            "source_title": "",
+            "content": "后来补正文",
+            "source_author": "",
+            "tags": [],
+            "kind": "excerpt",
+            "usage_kind": "imagery",
+            "personal_note": "先不填来源",
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["source_title"] == ""
+    assert updated.json()["usage_kind"] == "imagery"
+
+    empty_body = client.post(
+        "/api/library/references",
+        json={
+            "source_title": "",
+            "content": "   ",
+            "source_author": "",
+            "tags": [],
+        },
+    )
+    assert empty_body.status_code == 400
+    assert "content is required" in empty_body.json()["detail"]
+
+
 def test_tauri_daily_quote_returns_full_reference_and_id(monkeypatch):
     client = _tauri_client(monkeypatch)
 

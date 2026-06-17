@@ -135,6 +135,7 @@ const translations = {
     library: {
       title: '文脉标本库',
       newReference: '+ 新建',
+      newInCurrentBook: '在本书中新建',
       specimens: '条标本',
       total: '共',
       countSummary: '共 {count} 条',
@@ -685,6 +686,7 @@ const translations = {
     library: {
       title: 'Reference Library',
       newReference: '+ New',
+      newInCurrentBook: 'New in this book',
       specimens: 'specimens',
       total: 'Total',
       countSummary: '{count} specimens',

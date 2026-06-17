@@ -43,7 +43,8 @@
         "language": "en-US"
       },
       "nsis": {
-        "languages": ["English", "SimpChinese"]
+        "languages": ["English", "SimpChinese"],
+        "installerHooks": "nsis/installer-hooks.nsh"
       }
     }
   }

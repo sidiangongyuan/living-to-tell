@@ -34,9 +34,14 @@ def test_create_and_get_roundtrip(repo):
     assert loaded == passage
 
 
-def test_requires_title_and_content(repo):
-    with pytest.raises(ValueError):
-        repo.create(source_title="   ", content="x")
+def test_allows_empty_title_but_requires_content(repo):
+    passage = repo.create(source_title="   ", content="x")
+    assert passage.source_title == ""
+
+    updated = repo.update(passage.id, source_title="   ", content="y")
+    assert updated is not None
+    assert updated.source_title == ""
+
     with pytest.raises(ValueError):
         repo.create(source_title="t", content="   ")
 

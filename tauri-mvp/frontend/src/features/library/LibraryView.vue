@@ -165,6 +165,16 @@ async function createReference() {
   await loadStats()
 }
 
+async function createReferenceInActiveSource() {
+  const sourceReference = store.activeSourceGroup?.references[0]
+  await store.createReference({
+    source_title: sourceReference?.source_title ?? '',
+    source_author: sourceReference?.source_author ?? '',
+  })
+  store.setGroupMode('source')
+  await loadStats()
+}
+
 function formatFullReferenceCopy(): string {
   const reference = store.selectedReference
   if (!reference) return ''
@@ -292,12 +302,23 @@ async function copyReferenceFull() {
         <div class="text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">
           {{ store.groupMode === 'usage' ? t('library.groupByUsage') : t('library.groupBySource') }}
         </div>
-        <h3 class="mt-2 text-lg font-bold text-gray-900">
-          {{ activeGroupLabel || t('library.selectOrCreate') }}
-        </h3>
-        <p class="mt-1 text-sm text-gray-500">
-          {{ activeGroup ? t('library.countSummary', { count: activeGroup.count }) : t('library.noReferences') }}
-        </p>
+        <div class="mt-2 flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <h3 class="truncate text-lg font-bold text-gray-900">
+              {{ activeGroupLabel || t('library.selectOrCreate') }}
+            </h3>
+            <p class="mt-1 text-sm text-gray-500">
+              {{ activeGroup ? t('library.countSummary', { count: activeGroup.count }) : t('library.noReferences') }}
+            </p>
+          </div>
+          <button
+            v-if="store.groupMode === 'source' && activeGroup"
+            @click="createReferenceInActiveSource"
+            class="shrink-0 rounded-lg bg-stone-900 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-stone-700"
+          >
+            {{ t('library.newInCurrentBook') }}
+          </button>
+        </div>
       </div>
 
       <div class="flex-1 overflow-y-auto p-4">
