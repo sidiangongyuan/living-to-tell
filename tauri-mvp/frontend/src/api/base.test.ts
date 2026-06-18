@@ -60,4 +60,14 @@ describe('api base errors', () => {
     await expect(apiFetch('/health')).rejects.toBeInstanceOf(BackendUnavailableError)
     await expect(apiFetch('/health')).rejects.toThrow('后台服务正在启动或连接中')
   })
+
+  it('does not fall back to port 8000 inside the Tauri runtime', async () => {
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: {} })
+    invokeMock.mockResolvedValue(null)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(apiFetch('/health')).rejects.toBeInstanceOf(BackendUnavailableError)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 })

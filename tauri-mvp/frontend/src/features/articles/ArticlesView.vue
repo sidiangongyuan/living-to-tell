@@ -594,6 +594,7 @@ async function archiveSelectedEntry() {
 
 async function deleteSelectedEntry() {
   if (!store.selectedEntry) return
+  if (!confirm(t('articles.deleteConfirm', { title: store.selectedEntry.title || t('articles.untitled') }))) return
   const entryId = store.selectedEntry.id
   if (saveTimer.value) {
     clearTimeout(saveTimer.value)

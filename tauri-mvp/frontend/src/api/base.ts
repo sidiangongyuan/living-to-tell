@@ -68,6 +68,15 @@ function setApiBaseOnWindow(value: string | null) {
   }
 }
 
+function hasTauriRuntime(): boolean {
+  if (typeof window === 'undefined') return false
+  const runtimeWindow = window as Window & {
+    __TAURI__?: unknown
+    __TAURI_INTERNALS__?: unknown
+  }
+  return Boolean(runtimeWindow.__TAURI__ || runtimeWindow.__TAURI_INTERNALS__)
+}
+
 function isNetworkFailure(error: unknown): boolean {
   if (typeof DOMException !== 'undefined' && error instanceof DOMException && error.name === 'AbortError') return false
   if (error instanceof Error && error.name === 'AbortError') return false
@@ -88,6 +97,7 @@ export async function getApiBaseUrl(forceRefresh = false): Promise<string> {
     return cachedApiBaseUrl
   }
 
+  const runningInTauri = hasTauriRuntime()
   try {
     const { invoke } = await import('@tauri-apps/api/core')
     const value = await invoke<string | null>('get_api_base_url')
@@ -96,7 +106,9 @@ export async function getApiBaseUrl(forceRefresh = false): Promise<string> {
       setApiBaseOnWindow(value)
       return value
     }
-  } catch {
+    if (runningInTauri) throw new BackendUnavailableError()
+  } catch (e) {
+    if (runningInTauri) throw new BackendUnavailableError(e)
     // Browser/dev mode has no Tauri runtime.
   }
 

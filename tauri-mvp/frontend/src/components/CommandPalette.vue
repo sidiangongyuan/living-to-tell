@@ -15,6 +15,7 @@ const { t } = useI18n()
 const show = ref(false)
 const searchText = ref('')
 const selectedIndex = ref(0)
+const commandError = ref('')
 
 interface Command {
   id: string
@@ -31,10 +32,8 @@ const allCommands = computed<Command[]>(() => [
   { id: 'nav-ai', label: t('commandPalette.commands.navAi.label'), description: t('commandPalette.commands.navAi.description'), action: async () => { await router.push('/ai') }, category: 'navigation' },
   { id: 'nav-library', label: t('commandPalette.commands.navLibrary.label'), description: t('commandPalette.commands.navLibrary.description'), action: async () => { await router.push('/library') }, category: 'navigation' },
   { id: 'articles-new', label: t('commandPalette.commands.newArticle.label'), description: t('commandPalette.commands.newArticle.description'), action: async () => { await router.push('/articles'); await articlesStore.createEntry() }, category: 'articles' },
-  { id: 'articles-search', label: t('commandPalette.commands.searchArticles.label'), description: t('commandPalette.commands.searchArticles.description'), action: async () => { await router.push('/articles') }, category: 'articles' },
   { id: 'collections-new', label: t('commandPalette.commands.newCollection.label'), description: t('commandPalette.commands.newCollection.description'), action: async () => { await router.push('/collections'); await collectionsStore.createCollection('新建作品集', '') }, category: 'collections' },
   { id: 'view-focus', label: t('nav.focusMode'), description: t('commandPalette.commands.toggleFocus.description'), action: () => settingsStore.toggleFocusMode(), category: 'view' },
-  { id: 'reload', label: t('commandPalette.commands.reload.label'), description: t('commandPalette.commands.reload.description'), action: () => window.location.reload(), category: 'settings' },
 ])
 
 const filteredCommands = computed(() => {
@@ -51,6 +50,7 @@ function open() {
   show.value = true
   searchText.value = ''
   selectedIndex.value = 0
+  commandError.value = ''
 }
 
 function close() {
@@ -58,12 +58,13 @@ function close() {
 }
 
 async function executeCommand(cmd: Command) {
+  commandError.value = ''
   try {
     await cmd.action()
     close()
   } catch (e) {
     console.error('Command failed:', e)
-    alert(e instanceof Error ? e.message : String(e))
+    commandError.value = e instanceof Error ? e.message : String(e)
   }
 }
 
@@ -110,6 +111,9 @@ defineExpose({ open })
             class="w-full px-4 py-3 text-lg outline-none"
             autofocus
           />
+          <p v-if="commandError" class="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+            {{ commandError }}
+          </p>
         </div>
 
         <div class="max-h-96 overflow-y-auto">

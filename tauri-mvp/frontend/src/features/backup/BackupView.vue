@@ -304,7 +304,7 @@ function formatDate(isoString: string): string {
           <button @click="showConfirmDialog = false" class="flex-1 rounded-lg bg-gray-200 px-4 py-2 font-semibold text-gray-800 transition-colors hover:bg-gray-300">
             {{ t('common.cancel') }}
           </button>
-          <button @click="confirmAction" class="flex-1 rounded-lg bg-red-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-red-700">
+          <button @click="confirmAction()" class="flex-1 rounded-lg bg-red-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-red-700">
             {{ t('common.confirm') }}
           </button>
         </div>

@@ -532,8 +532,12 @@ async function saveChatSettings() {
 }
 
 async function copyChatMessage(message: Message) {
-  await navigator.clipboard.writeText(message.content)
-  chatNotice.value = t('ai.chatCopied')
+  try {
+    await navigator.clipboard.writeText(message.content)
+    chatNotice.value = t('ai.chatCopied')
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
 }
 
 async function saveAssistantReplyAsNote(message: Message) {
@@ -554,8 +558,12 @@ function openChatArticle() {
 }
 
 async function copyResult() {
-  await navigator.clipboard.writeText(taskResult.value)
-  notice.value = t('ai.copied')
+  try {
+    await navigator.clipboard.writeText(taskResult.value)
+    notice.value = t('ai.copied')
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
 }
 
 async function applyResultToArticle(mode: 'replace' | 'insert_after') {

@@ -411,17 +411,6 @@ fn show_data_directory_warning(state: &DataDirectoryOverrideState) {
     }
 }
 
-#[cfg(all(target_os = "windows", not(debug_assertions)))]
-fn terminate_stale_backend_processes() {
-    let _ = StdCommand::new("cmd")
-        .args([
-            "/C",
-            "taskkill /F /T /IM living-to-tell-backend.exe >NUL 2>NUL",
-        ])
-        .status();
-    std::thread::sleep(Duration::from_millis(350));
-}
-
 #[cfg(target_os = "windows")]
 static NATIVE_SPLASH_STARTED_AT: OnceLock<Instant> = OnceLock::new();
 
@@ -912,9 +901,6 @@ fn main() {
             // Start backend sidecar
             #[cfg(not(debug_assertions))]
             {
-                #[cfg(target_os = "windows")]
-                terminate_stale_backend_processes();
-
                 let backend_child_clone = app_state.backend_child.clone();
                 let api_base_url_clone = app_state.api_base_url.clone();
                 let app_handle = app.handle().clone();

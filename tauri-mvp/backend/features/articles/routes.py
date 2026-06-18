@@ -11,6 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
 from deps import get_container
 from writer.app.container import AppContainer
@@ -110,6 +111,13 @@ def _export_entry_docx(entry: DomainEntry, output_path: str) -> str:
     return output_path
 
 
+def _cleanup_temp_file(path: str) -> None:
+    try:
+        Path(path).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 # ---- Routes ----
 @router.get("", response_model=list[EntryOut])
 def list_entries(
@@ -162,6 +170,7 @@ def export_entry(
         output,
         filename=_entry_export_filename(entry, "docx"),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        background=BackgroundTask(_cleanup_temp_file, output),
     )
 
 

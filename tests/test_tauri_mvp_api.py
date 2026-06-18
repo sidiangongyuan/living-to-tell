@@ -654,3 +654,53 @@ def test_tauri_data_location_migrate_rejects_existing_database_by_default(
 
     assert response.status_code == 400
     assert "already exists" in response.json()["detail"]
+
+
+def test_tauri_data_location_migrate_rejects_existing_auxiliary_dirs(
+    monkeypatch, tmp_path
+):
+    client = _tauri_client(monkeypatch)
+    target = tmp_path / "existing-auxiliary"
+    existing_backups = target / "backups"
+    existing_backups.mkdir(parents=True)
+    (existing_backups / "keep.sqlite3").write_text("existing", encoding="utf-8")
+
+    response = client.post(
+        "/api/settings/data-location/migrate",
+        json={"target_dir": str(target)},
+    )
+
+    assert response.status_code == 400
+    assert "backups already exists" in response.json()["detail"]
+
+
+def test_tauri_backup_service_handles_single_quote_paths(monkeypatch, tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    backend = root / "tauri-mvp" / "backend"
+    data_dir = tmp_path / "O'Brien data"
+    monkeypatch.setenv("WRITER_DATA_DIR", str(data_dir))
+    sys.path.insert(0, str(backend))
+    try:
+        from features.backup.service import BackupService
+        from writer.app.paths import DATABASE_FILENAME
+        from writer.storage.database import open_and_initialize
+
+        db_path = data_dir / DATABASE_FILENAME
+        conn = open_and_initialize(db_path)
+        conn.execute(
+            "INSERT INTO entries (title, body, entry_type) VALUES (?, ?, ?)",
+            ("quote path", "body", "fragment"),
+        )
+        conn.close()
+
+        service = BackupService(str(db_path))
+        backup_path = Path(service.create_auto_backup())
+        checkpoint_path = Path(service.create_checkpoint("checkpoint", "desc"))
+
+        assert backup_path.exists()
+        assert checkpoint_path.exists()
+    finally:
+        try:
+            sys.path.remove(str(backend))
+        except ValueError:
+            pass

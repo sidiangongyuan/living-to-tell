@@ -205,6 +205,11 @@ def _backup_existing_database(target_db: Path) -> None:
 def _copy_auxiliary_dir(source: Path, target: Path) -> None:
     if not source.exists() or not source.is_dir():
         return
+    if target.exists() and any(target.iterdir()):
+        raise HTTPException(
+            400,
+            f"{target.name} already exists in target_dir and is not empty",
+        )
     shutil.copytree(source, target, dirs_exist_ok=True)
 
 

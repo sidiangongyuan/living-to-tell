@@ -8,6 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
 from deps import get_container
 from writer.app.container import AppContainer
@@ -121,6 +122,13 @@ def _collection_or_404(collection_id: str, container: AppContainer) -> DomainCol
     if collection is None:
         raise HTTPException(404, "Collection not found")
     return collection
+
+
+def _cleanup_temp_file(path: str) -> None:
+    try:
+        Path(path).unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 @router.get("", response_model=list[CollectionOut])
@@ -290,6 +298,7 @@ def export_collection(
         output,
         filename=filename,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        background=BackgroundTask(_cleanup_temp_file, output),
     )
 
 

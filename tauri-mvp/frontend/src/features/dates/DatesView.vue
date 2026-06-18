@@ -91,12 +91,29 @@ function openDailyQuoteInLibrary() {
   router.push({ name: 'library', query: buildDailyQuoteLibraryQuery(store.dailyQuote) })
 }
 
-function openLibrary() {
-  router.push({ name: 'library' })
+function createFirstReference() {
+  router.push({ name: 'library', query: { action: 'create_reference' } })
 }
 
 function openArticles() {
   router.push({ name: 'articles' })
+}
+
+function openArticleChatFromWelcome() {
+  const firstEntry = store.entriesForSelectedDate[0]
+  if (!firstEntry) {
+    openArticles()
+    return
+  }
+
+  router.push({
+    name: 'ai',
+    query: {
+      tab: 'chat',
+      scope_kind: 'article',
+      scope_id: firstEntry.id,
+    },
+  })
 }
 
 function openAiSettings() {
@@ -217,7 +234,7 @@ async function startWritingForSelectedDate() {
               {{ t('welcome.firstArticle') }}
             </button>
             <button
-              @click="openLibrary"
+              @click="createFirstReference"
               class="rounded-2xl bg-white px-4 py-3 text-left text-sm font-semibold text-stone-800 shadow-sm hover:bg-amber-100"
             >
               {{ t('welcome.firstReference') }}
@@ -229,7 +246,7 @@ async function startWritingForSelectedDate() {
               {{ t('welcome.aiSetup') }}
             </button>
             <button
-              @click="openArticles"
+              @click="openArticleChatFromWelcome"
               class="rounded-2xl bg-white px-4 py-3 text-left text-sm font-semibold text-stone-800 shadow-sm hover:bg-amber-100"
             >
               {{ t('welcome.articleChat') }}

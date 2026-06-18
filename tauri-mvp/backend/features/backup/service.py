@@ -39,12 +39,7 @@ class BackupService:
         backup_name = f"auto_backup_{timestamp}.sqlite3"
         backup_path = self.backup_dir / backup_name
 
-        # 使用 SQLite 的 VACUUM INTO 创建紧凑备份
-        conn = sqlite3.connect(self.db_path)
-        try:
-            conn.execute(f"VACUUM INTO '{backup_path}'")
-        finally:
-            conn.close()
+        self._vacuum_into(backup_path)
 
         # 清理旧的自动备份（保留最近 10 个）
         self._cleanup_old_backups()
@@ -67,12 +62,7 @@ class BackupService:
         checkpoint_name = f"checkpoint_{timestamp}_{safe_name}.sqlite3"
         checkpoint_path = self.checkpoint_dir / checkpoint_name
 
-        # 创建检查点
-        conn = sqlite3.connect(self.db_path)
-        try:
-            conn.execute(f"VACUUM INTO '{checkpoint_path}'")
-        finally:
-            conn.close()
+        self._vacuum_into(checkpoint_path)
 
         # 保存元数据
         meta_path = checkpoint_path.with_suffix('.meta.txt')
@@ -138,15 +128,37 @@ class BackupService:
         Returns:
             是否成功
         """
-        if not os.path.exists(backup_path):
+        source = Path(backup_path)
+        if not source.exists() or not source.is_file():
             return False
 
         # 先备份当前数据库
         self.create_auto_backup()
 
-        # 替换数据库
-        shutil.copy2(backup_path, self.db_path)
+        # 替换数据库。调用方应先关闭长期 SQLite 连接；这里同时清理
+        # WAL/SHM sidecar，避免恢复后旧 WAL 被重新 replay。
+        self._remove_sqlite_sidecars(Path(self.db_path))
+        shutil.copy2(source, self.db_path)
+        self._remove_sqlite_sidecars(Path(self.db_path))
         return True
+
+    def _vacuum_into(self, target_path: Path) -> None:
+        """Create a consistent SQLite copy without interpolating file paths."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute("PRAGMA wal_checkpoint(FULL)")
+            conn.execute("VACUUM INTO ?", (str(target_path),))
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _remove_sqlite_sidecars(db_path: Path) -> None:
+        for suffix in ("-wal", "-shm", "-journal"):
+            sidecar = Path(f"{db_path}{suffix}")
+            try:
+                sidecar.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def delete_backup(self, backup_path: str) -> bool:
         """删除备份。

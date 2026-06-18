@@ -1,6 +1,7 @@
 """备份和检查点 API 路由。"""
 from __future__ import annotations
 
+import sqlite3
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -145,9 +146,17 @@ def restore_from_backup(
 
     警告：这会替换当前数据库！会先创建当前数据库的备份。
     """
-    success = container.backup_service.restore_from_backup(data.backup_path)
-    if not success:
-        raise HTTPException(500, "Failed to restore from backup")
+    try:
+        try:
+            container.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except sqlite3.Error:
+            pass
+        container.close()
+        success = container.backup_service.restore_from_backup(data.backup_path)
+        if not success:
+            raise HTTPException(500, "Failed to restore from backup")
+    finally:
+        get_container.cache_clear()
     return {"message": "Database restored successfully"}
 
 

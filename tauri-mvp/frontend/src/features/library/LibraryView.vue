@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useLibraryStore } from './store'
 import { libraryApi, type LibraryStats, type Reference } from '../../api/library'
 import { type LibraryGroupMode, EMPTY_SOURCE_GROUP_KEY } from './grouping'
@@ -8,6 +8,7 @@ import { useI18n } from '../../i18n'
 
 const store = useLibraryStore()
 const route = useRoute()
+const router = useRouter()
 const { t } = useI18n()
 const searchInput = ref('')
 const saveTimer = ref<number | null>(null)
@@ -65,7 +66,7 @@ watch(searchInput, (value) => {
 })
 
 watch(
-  () => [route.query.ref, route.query.group],
+  () => [route.query.ref, route.query.group, route.query.action],
   async () => {
     if (!initialized.value || applyingRouteState.value) return
     const saved = await flushPendingReferenceSave()
@@ -175,13 +176,27 @@ function getRouteGroupMode(): LibraryGroupMode | null {
 async function applyRouteState() {
   const refId = typeof route.query.ref === 'string' ? route.query.ref : null
   const groupMode = getRouteGroupMode()
+  const action = typeof route.query.action === 'string' ? route.query.action : null
 
-  if (!refId && !groupMode) {
+  if (!refId && !groupMode && action !== 'create_reference') {
     return
   }
 
   applyingRouteState.value = true
   try {
+    if (action === 'create_reference') {
+      const created = await store.createReference()
+      await loadStats()
+      const nextQuery: Record<string, string | string[]> = {
+        ...route.query,
+        ref: created.id,
+        group: store.groupMode,
+      }
+      delete nextQuery.action
+      await router.replace({ name: 'library', query: nextQuery })
+      return
+    }
+
     if (refId) {
       await store.selectReferenceFromDeepLink(refId, groupMode)
     } else if (groupMode) {
