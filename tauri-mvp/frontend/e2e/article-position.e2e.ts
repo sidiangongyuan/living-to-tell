@@ -72,6 +72,7 @@ test('restores editor scroll position after switching articles', async ({ page }
   const editor = page.getByTestId('article-body-editor')
   const scrollArea = page.getByTestId('article-editor-scroll')
   await expect(editor).toHaveValue(longBodyA)
+  await page.waitForTimeout(520)
 
   const savedScrollTop = await scrollArea.evaluate((container: HTMLDivElement) => {
     container.scrollTop = Math.min(900, container.scrollHeight - container.clientHeight)
@@ -81,6 +82,38 @@ test('restores editor scroll position after switching articles', async ({ page }
   expect(savedScrollTop).toBeGreaterThan(100)
 
   await page.waitForTimeout(180)
+  await page.getByTestId('article-entry-article-b').click()
+  await expect(editor).toHaveValue(longBodyB)
+
+  await page.getByTestId('article-entry-article-a').click()
+  await expect(editor).toHaveValue(longBodyA)
+  await expect.poll(async () => scrollArea.evaluate((container: HTMLDivElement) => container.scrollTop)).toBeGreaterThan(100)
+})
+
+test('prefers a newer read position over a stale top edit position', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('article_editor_positions', JSON.stringify({
+      'article-a': {
+        edit: { selectionStart: 0, selectionEnd: 0, scrollTop: 0, updatedAt: 1000 },
+        updatedAt: 1000,
+      },
+    }))
+  })
+
+  await page.goto('/articles?id=article-a')
+  const editor = page.getByTestId('article-body-editor')
+  const scrollArea = page.getByTestId('article-editor-scroll')
+  await expect(editor).toHaveValue(longBodyA)
+  await page.waitForTimeout(520)
+
+  const savedScrollTop = await scrollArea.evaluate((container: HTMLDivElement) => {
+    container.scrollTop = Math.min(1400, container.scrollHeight - container.clientHeight)
+    container.dispatchEvent(new Event('scroll', { bubbles: true }))
+    return container.scrollTop
+  })
+  expect(savedScrollTop).toBeGreaterThan(100)
+  await page.waitForTimeout(180)
+
   await page.getByTestId('article-entry-article-b').click()
   await expect(editor).toHaveValue(longBodyB)
 

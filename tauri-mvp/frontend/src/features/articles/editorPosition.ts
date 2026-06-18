@@ -43,6 +43,10 @@ function clampNumber(value: unknown, min = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(min, value) : min
 }
 
+function normalizeTimestamp(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : Date.now()
+}
+
 function isLegacyPosition(value: unknown): value is Partial<ArticleEditorPosition> {
   return Boolean(
     value &&
@@ -74,7 +78,7 @@ export function normalizeEditorPosition(
     selectionStart,
     selectionEnd,
     scrollTop: clampNumber(position.scrollTop),
-    updatedAt: clampNumber(position.updatedAt, Date.now()),
+    updatedAt: normalizeTimestamp(position.updatedAt),
   }
 }
 
@@ -126,9 +130,13 @@ export function getPreferredArticleEditorPosition(
 ): ArticleEditorRestorePosition | null {
   const slots = getArticleEditorPositionSlots(articleId, storage)
   if (!slots) return null
-  if (slots.edit) {
+  if (slots.edit && slots.read) {
+    if (slots.read.updatedAt > slots.edit.updatedAt) {
+      return { ...slots.read, interaction: 'read' }
+    }
     return { ...slots.edit, interaction: 'edit' }
   }
+  if (slots.edit) return { ...slots.edit, interaction: 'edit' }
   if (slots.read) {
     return { ...slots.read, interaction: 'read' }
   }

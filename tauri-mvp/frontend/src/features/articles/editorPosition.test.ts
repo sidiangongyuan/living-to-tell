@@ -76,11 +76,43 @@ describe('article editor position helpers', () => {
     expect(slots?.read).toMatchObject({ selectionStart: 0, selectionEnd: 0, scrollTop: 900 })
   })
 
-  it('prefers edit over read when restoring', () => {
+  it('restores the most recent position slot', () => {
     const storage = new MemoryStorage()
 
-    saveArticleEditorPosition('a1', { selectionStart: 50, selectionEnd: 50, scrollTop: 200 }, 'edit', storage)
-    saveArticleEditorPosition('a1', { selectionStart: 0, selectionEnd: 0, scrollTop: 900 }, 'read', storage)
+    saveArticleEditorPosition('a1', {
+      selectionStart: 50,
+      selectionEnd: 50,
+      scrollTop: 200,
+      updatedAt: 1000,
+    }, 'edit', storage)
+    saveArticleEditorPosition('a1', {
+      selectionStart: 0,
+      selectionEnd: 0,
+      scrollTop: 900,
+      updatedAt: 2000,
+    }, 'read', storage)
+
+    expect(getPreferredArticleEditorPosition('a1', storage)).toMatchObject({
+      interaction: 'read',
+      scrollTop: 900,
+    })
+  })
+
+  it('uses edit when it is the most recent position slot', () => {
+    const storage = new MemoryStorage()
+
+    saveArticleEditorPosition('a1', {
+      selectionStart: 0,
+      selectionEnd: 0,
+      scrollTop: 900,
+      updatedAt: 1000,
+    }, 'read', storage)
+    saveArticleEditorPosition('a1', {
+      selectionStart: 50,
+      selectionEnd: 50,
+      scrollTop: 200,
+      updatedAt: 2000,
+    }, 'edit', storage)
 
     expect(getPreferredArticleEditorPosition('a1', storage)).toMatchObject({
       interaction: 'edit',

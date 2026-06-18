@@ -13,13 +13,10 @@ import { composeArticleBody, detectEpigraph, type EpigraphParts } from './epigra
 import {
   type ArticleEditorInteraction,
   COMFORT_ANCHOR_RATIO,
-  EDITOR_LINE_HEIGHT_PX,
   editorTailSpace,
-  estimateScrollTopForPosition,
   getLastSelectedArticleId,
   getArticleEditorPosition,
   insertIndentedParagraph,
-  isNearArticleEnd,
   saveLastSelectedArticleId,
   saveArticleEditorPosition,
   shouldRecenterCaret,
@@ -66,6 +63,7 @@ const pendingPositionInteraction = ref<ArticleEditorInteraction>('edit')
 const restoringEditorPosition = ref(false)
 const tailSpace = ref(260)
 const suppressReadPositionUntil = ref(0)
+const userScrollIntentUntil = ref(0)
 const lastEditorInteraction = ref<ArticleEditorInteraction | null>(null)
 const hasSavedEditInteraction = ref(false)
 let restoreToken = 0
@@ -165,12 +163,14 @@ function handleBodyInput() {
 }
 
 function handleBodyPointerSettled() {
+  if (restoringEditorPosition.value) return
   lastEditorInteraction.value = 'edit'
   hasSavedEditInteraction.value = true
   saveCurrentEditorEditPositionNow()
 }
 
 function handleBodyFocusOut() {
+  if (restoringEditorPosition.value) return
   lastEditorInteraction.value = lastEditorInteraction.value ?? 'edit'
   saveCurrentEditorPositionNow()
 }
@@ -296,15 +296,7 @@ async function navigateMatch(direction: 'prev' | 'next', query: string, caseSens
   const length = query.length
   bodyRef.value.focus()
   bodyRef.value.setSelectionRange(start, start + length)
-  scrollEditorTo(
-    estimateScrollTopForPosition({
-      text: bodyDraft.value,
-      position: start,
-      clientHeight: editorViewportHeight(),
-      lineHeight: EDITOR_LINE_HEIGHT_PX,
-      anchorRatio: 0.5,
-    })
-  )
+  scrollEditorTo(scrollTopForCaretPosition(bodyRef.value, start, 0.5))
 }
 
 function syncFindQuery(query: string, caseSensitive: boolean) {
@@ -453,15 +445,7 @@ async function applyRouteFocusRange() {
   resizeBodyEditor()
   bodyRef.value.focus()
   bodyRef.value.setSelectionRange(safeStart, safeEnd)
-  scrollEditorTo(
-    estimateScrollTopForPosition({
-      text: bodyDraft.value,
-      position: safeStart,
-      clientHeight: editorViewportHeight(),
-      lineHeight: EDITOR_LINE_HEIGHT_PX,
-      anchorRatio: 0.5,
-    })
-  )
+  scrollEditorTo(scrollTopForCaretPosition(bodyRef.value, safeStart, 0.5))
   lastEditorInteraction.value = 'edit'
   saveEditorPositionForArticle(store.selectedEntry?.id, 'edit')
   return true
@@ -513,10 +497,6 @@ function saveLastKnownEditorPositionForArticle(articleId: string | null | undefi
     }
     return
   }
-  if (lastEditorInteraction.value === 'edit') {
-    saveEditorPositionForArticle(articleId, 'edit')
-    return
-  }
   if (lastEditorInteraction.value === 'read') {
     saveEditorPositionForArticle(articleId, 'read')
   }
@@ -566,13 +546,16 @@ function scheduleEditorPositionSave(
 }
 
 function scheduleCurrentEditorPositionSave() {
+  if (restoringEditorPosition.value) return
   lastEditorInteraction.value = 'edit'
   hasSavedEditInteraction.value = true
   saveCurrentEditorEditPositionNow()
 }
 
 function scheduleReadPositionSave() {
-  if (Date.now() < suppressReadPositionUntil.value) {
+  const now = Date.now()
+  const hasUserScrollIntent = now < userScrollIntentUntil.value
+  if (!hasUserScrollIntent && now < suppressReadPositionUntil.value) {
     logPositionEvent('skip-programmatic-read', {
       articleId: store.selectedEntry?.id ?? null,
       suppressUntil: suppressReadPositionUntil.value,
@@ -581,6 +564,10 @@ function scheduleReadPositionSave() {
   }
   lastEditorInteraction.value = 'read'
   scheduleEditorPositionSave(store.selectedEntry?.id, 'read')
+}
+
+function markUserScrollIntent() {
+  userScrollIntentUntil.value = Date.now() + 1000
 }
 
 function saveCurrentEditorPositionNow() {
@@ -659,29 +646,20 @@ async function restoreSavedEditorPosition(articleId = store.selectedEntry?.id) {
     const restoreAsReadPosition = position.interaction === 'read'
     resizeBodyEditor()
     const maxScrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight)
-    const nextScrollTop = !restoreAsReadPosition && isNearArticleEnd({
-      textLength,
-      selectionEnd: safeEnd,
-      scrollTop: position.scrollTop,
-      scrollHeight: scrollContainer.scrollHeight,
-      clientHeight: scrollContainer.clientHeight,
-    })
-      ? estimateScrollTopForPosition({
-          text: bodyDraft.value,
-          position: safeEnd,
-          clientHeight: scrollContainer.clientHeight,
-          lineHeight: EDITOR_LINE_HEIGHT_PX,
-          anchorRatio: COMFORT_ANCHOR_RATIO,
-        })
-      : Math.max(0, position.scrollTop)
+    if (!restoreAsReadPosition) {
+      current.focus({ preventScroll: true })
+      current.setSelectionRange(safeStart, safeEnd)
+      resizeBodyEditor()
+    }
+    const nextScrollTop = restoreAsReadPosition
+      ? Math.max(0, position.scrollTop)
+      : scrollTopForCaretPosition(current, safeEnd, COMFORT_ANCHOR_RATIO)
     const clampedScrollTop = Math.min(maxScrollTop, nextScrollTop)
 
     suppressReadPositionUntil.value = Date.now() + 450
     if (restoreAsReadPosition) {
       scrollContainer.scrollTop = clampedScrollTop
     } else {
-      current.focus({ preventScroll: true })
-      current.setSelectionRange(safeStart, safeEnd)
       scrollContainer.scrollTop = clampedScrollTop
     }
     lastEditorInteraction.value = position.interaction
@@ -757,7 +735,7 @@ function resizeBodyEditor() {
   textarea.style.height = `${Math.max(textarea.scrollHeight, minHeight)}px`
 }
 
-function caretScrollTopForTextArea(textarea: HTMLTextAreaElement): number {
+function caretOffsetTopForTextArea(textarea: HTMLTextAreaElement, position = textarea.selectionEnd): number {
   const style = window.getComputedStyle(textarea)
   const mirror = document.createElement('div')
   const caret = document.createElement('span')
@@ -784,6 +762,7 @@ function caretScrollTopForTextArea(textarea: HTMLTextAreaElement): number {
     'white-space',
     'word-break',
     'overflow-wrap',
+    'tab-size',
   ] as const
   for (const property of properties) {
     mirror.style.setProperty(property, style.getPropertyValue(property))
@@ -795,9 +774,10 @@ function caretScrollTopForTextArea(textarea: HTMLTextAreaElement): number {
   mirror.style.height = 'auto'
   mirror.style.minHeight = '0'
   mirror.style.overflow = 'hidden'
+  mirror.style.width = `${textarea.clientWidth}px`
   mirror.style.whiteSpace = 'pre-wrap'
   mirror.style.overflowWrap = 'break-word'
-  mirror.textContent = textarea.value.slice(0, textarea.selectionEnd)
+  mirror.textContent = textarea.value.slice(0, Math.max(0, Math.min(position, textarea.value.length)))
   caret.textContent = '\u200b'
   mirror.appendChild(caret)
   document.body.appendChild(mirror)
@@ -806,12 +786,23 @@ function caretScrollTopForTextArea(textarea: HTMLTextAreaElement): number {
   return result
 }
 
+function scrollTopForCaretPosition(
+  textarea: HTMLTextAreaElement,
+  position = textarea.selectionEnd,
+  anchorRatio = COMFORT_ANCHOR_RATIO
+): number {
+  return Math.max(
+    0,
+    textarea.offsetTop + caretOffsetTopForTextArea(textarea, position) - editorViewportHeight() * anchorRatio
+  )
+}
+
 function keepCaretNearComfortLine(force = false) {
   if (!bodyRef.value || !editorScrollRef.value || restoringEditorPosition.value) return
   updateTailSpace()
   const textarea = bodyRef.value
   const scrollContainer = editorScrollRef.value
-  const caretScrollTop = caretScrollTopForTextArea(textarea)
+  const caretScrollTop = textarea.offsetTop + caretOffsetTopForTextArea(textarea)
   if (!force && !shouldRecenterCaret({
     caretScrollTop,
     currentScrollTop: scrollContainer.scrollTop,
@@ -1201,6 +1192,9 @@ watch(
         ref="editorScrollRef"
         :class="['flex-1 min-h-0 overflow-y-auto', settings.focusMode ? 'p-8 md:p-12' : 'p-6']"
         data-testid="article-editor-scroll"
+        @wheel.passive="markUserScrollIntent"
+        @pointerdown="markUserScrollIntent"
+        @touchstart.passive="markUserScrollIntent"
         @scroll="scheduleReadPositionSave"
       >
         <div

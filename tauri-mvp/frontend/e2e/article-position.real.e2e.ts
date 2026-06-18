@@ -69,6 +69,7 @@ test.describe('article position restore against real backend', () => {
       await page.getByTestId(`article-entry-${articleA.id}`).click()
       await expect(editor).toHaveValue(bodyA)
       await expect.poll(async () => scrollArea.evaluate((container: HTMLDivElement) => container.scrollTop)).toBeGreaterThan(100)
+      await page.waitForTimeout(320)
 
       const cursorPosition = bodyA.indexOf('真实文章 A 第 120 行')
       expect(cursorPosition).toBeGreaterThan(0)
