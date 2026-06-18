@@ -58,7 +58,17 @@ async function createCollection() {
 }
 
 async function saveCollectionMeta() {
-  if (!store.selectedCollection || !draftTitle.value.trim()) return
+  await saveCollectionMetaIfNeeded()
+}
+
+async function saveCollectionMetaIfNeeded(): Promise<boolean> {
+  if (!store.selectedCollection || !draftTitle.value.trim()) return true
+  if (
+    draftTitle.value.trim() === store.selectedCollection.title
+    && draftDescription.value.trim() === store.selectedCollection.description
+  ) {
+    return true
+  }
   savingMeta.value = true
   try {
     await store.updateCollection(
@@ -66,6 +76,9 @@ async function saveCollectionMeta() {
       draftTitle.value.trim(),
       draftDescription.value.trim()
     )
+    return true
+  } catch {
+    return false
   } finally {
     savingMeta.value = false
   }
@@ -73,6 +86,8 @@ async function saveCollectionMeta() {
 
 async function openArticlePicker() {
   if (!store.selectedCollection) return
+  const saved = await saveCollectionMetaIfNeeded()
+  if (!saved) return
   allArticles.value = await articlesApi.listArticles(500)
   selectedArticleIds.value = []
   articlePickerOpen.value = true
@@ -88,6 +103,18 @@ async function deleteSelectedCollection() {
   if (!store.selectedCollection) return
   if (!confirm(t('collections.confirmDeleteCollection'))) return
   await store.deleteCollection(store.selectedCollection.id)
+}
+
+async function selectCollection(id: string) {
+  const saved = await saveCollectionMetaIfNeeded()
+  if (!saved) return
+  await store.selectCollection(id)
+}
+
+async function exportSelected(format: 'md' | 'txt' | 'docx') {
+  const saved = await saveCollectionMetaIfNeeded()
+  if (!saved) return
+  await store.exportSelected(format)
 }
 
 async function removeArticle(entryId: string) {
@@ -151,7 +178,7 @@ async function onDrop(targetId: string) {
         <button
           v-for="collection in store.collections"
           :key="collection.id"
-          @click="store.selectCollection(collection.id)"
+          @click="selectCollection(collection.id)"
           :class="[
             'w-full rounded-2xl p-4 text-left transition-all',
             store.selectedCollectionId === collection.id
@@ -208,25 +235,25 @@ async function onDrop(targetId: string) {
                 {{ t('collections.addArticles') }}
               </button>
               <button
-                @click="store.exportSelected('md')"
-                :disabled="!store.articles.length"
+                @click="exportSelected('md')"
+                :disabled="!store.articles.length || store.exportingFormat !== null"
                 class="rounded-xl bg-white px-3 py-2 text-sm text-stone-700 shadow-sm disabled:opacity-40"
               >
-                Markdown
+                {{ store.exportingFormat === 'md' ? '...' : 'Markdown' }}
               </button>
               <button
-                @click="store.exportSelected('txt')"
-                :disabled="!store.articles.length"
+                @click="exportSelected('txt')"
+                :disabled="!store.articles.length || store.exportingFormat !== null"
                 class="rounded-xl bg-white px-3 py-2 text-sm text-stone-700 shadow-sm disabled:opacity-40"
               >
-                TXT
+                {{ store.exportingFormat === 'txt' ? '...' : 'TXT' }}
               </button>
               <button
-                @click="store.exportSelected('docx')"
-                :disabled="!store.articles.length"
+                @click="exportSelected('docx')"
+                :disabled="!store.articles.length || store.exportingFormat !== null"
                 class="rounded-xl bg-white px-3 py-2 text-sm text-stone-700 shadow-sm disabled:opacity-40"
               >
-                DOCX
+                {{ store.exportingFormat === 'docx' ? '...' : 'DOCX' }}
               </button>
               <button
                 @click="deleteSelectedCollection"
@@ -236,6 +263,12 @@ async function onDrop(targetId: string) {
               </button>
             </div>
           </div>
+          <p v-if="store.exportMessage" class="mt-3 text-sm text-emerald-700">
+            {{ store.exportMessage }}
+          </p>
+          <p v-if="store.error" class="mt-3 text-sm text-red-700">
+            {{ store.error }}
+          </p>
         </template>
         <div v-else class="flex items-center justify-between">
           <div>

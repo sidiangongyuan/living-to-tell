@@ -28,9 +28,14 @@ const articles = [
   },
 ]
 
-async function mockWriterApi(page: Page) {
+type MockArticle = typeof articles[number]
+type MockedPage = Page & { __writerArticles?: MockArticle[] }
+
+async function mockWriterApi(page: MockedPage) {
+  const pageArticles = articles.map((article) => ({ ...article, tags: [...article.tags] }))
+  page.__writerArticles = pageArticles
   await page.route('**/api/articles?**', async (route) => {
-    await route.fulfill({ json: articles })
+    await route.fulfill({ json: pageArticles })
   })
   await page.route('**/api/articles/search?**', async (route) => {
     await route.fulfill({ json: [] })
@@ -42,7 +47,7 @@ async function mockWriterApi(page: Page) {
     const request = route.request()
     const url = new URL(request.url())
     const id = url.pathname.split('/').pop()
-    const article = articles.find((item) => item.id === id)
+    const article = pageArticles.find((item) => item.id === id)
     if (request.method() === 'PUT' && article) {
       const body = request.postDataJSON() as { title?: string; body?: string; tags?: string[] }
       Object.assign(article, {
@@ -64,7 +69,53 @@ async function mockWriterApi(page: Page) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await mockWriterApi(page)
+  await mockWriterApi(page as MockedPage)
+})
+
+test('keeps epigraph editor open while typing and autosaving', async ({ page }) => {
+  await page.goto('/articles?id=article-a')
+  await expect(page.getByTestId('article-body-editor')).toHaveValue(longBodyA)
+
+  await page.getByTestId('article-add-epigraph').click()
+  const quote = page.getByTestId('article-epigraph-quote')
+  await expect(quote).toBeVisible()
+
+  await quote.fill('这是一段还没有填写出处的题记')
+  await expect(quote).toBeVisible()
+  await expect(quote).toHaveValue('这是一段还没有填写出处的题记')
+
+  await page.waitForTimeout(850)
+  await expect(quote).toBeVisible()
+  await expect(quote).toHaveValue('这是一段还没有填写出处的题记')
+})
+
+test('keeps an incomplete epigraph draft when switching articles', async ({ page }) => {
+  await page.goto('/articles?id=article-a')
+  await page.getByTestId('article-add-epigraph').click()
+  const quote = page.getByTestId('article-epigraph-quote')
+  await quote.fill('这是一段还没写出处的题记草稿')
+
+  await page.getByTestId('article-entry-article-b').click()
+  await expect(page.getByTestId('article-body-editor')).toHaveValue(longBodyB)
+
+  await page.getByTestId('article-entry-article-a').click()
+  await expect(quote).toBeVisible()
+  await expect(quote).toHaveValue('这是一段还没写出处的题记草稿')
+  await expect(page.getByTestId('article-body-editor')).toHaveValue(longBodyA)
+})
+
+test('flushes pending article edits before switching articles', async ({ page }) => {
+  const mockedPage = page as MockedPage
+  await page.goto('/articles?id=article-a')
+  const editor = page.getByTestId('article-body-editor')
+  await expect(editor).toHaveValue(longBodyA)
+
+  const changedBody = `${longBodyA}\n快速切换前新增的一句。`
+  await editor.fill(changedBody)
+  await page.getByTestId('article-entry-article-b').click()
+  await expect(editor).toHaveValue(longBodyB)
+
+  expect(mockedPage.__writerArticles?.find((article) => article.id === 'article-a')?.body).toBe(changedBody)
 })
 
 test('restores editor scroll position after switching articles', async ({ page }) => {

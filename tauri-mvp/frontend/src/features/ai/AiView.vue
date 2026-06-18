@@ -497,6 +497,9 @@ async function sendChat() {
   try {
     await store.sendMessage(message, 'article', chatScopeId.value)
   } catch (e) {
+    if (!chatInput.value.trim()) {
+      chatInput.value = message
+    }
     error.value = e instanceof Error ? e.message : String(e)
   }
 }

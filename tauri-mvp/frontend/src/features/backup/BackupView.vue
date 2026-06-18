@@ -92,7 +92,12 @@ async function restore(path: string) {
   try {
     await backupApi.restore(path)
     alert(t('backup.restoreSuccess'))
-    location.reload()
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      await invoke<void>('restart_app')
+    } catch {
+      location.reload()
+    }
   } catch (e) {
     error.value = e instanceof Error ? e.message : t('common.error')
   } finally {

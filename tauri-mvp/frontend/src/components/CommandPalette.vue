@@ -20,18 +20,18 @@ interface Command {
   id: string
   label: string
   description: string
-  action: () => void
+  action: () => void | Promise<void>
   category: 'navigation' | 'articles' | 'collections' | 'settings' | 'view'
 }
 
 const allCommands = computed<Command[]>(() => [
-  { id: 'nav-dates', label: t('commandPalette.commands.navDates.label'), description: t('commandPalette.commands.navDates.description'), action: () => router.push('/dates'), category: 'navigation' },
-  { id: 'nav-articles', label: t('commandPalette.commands.navArticles.label'), description: t('commandPalette.commands.navArticles.description'), action: () => router.push('/articles'), category: 'navigation' },
-  { id: 'nav-collections', label: t('commandPalette.commands.navCollections.label'), description: t('commandPalette.commands.navCollections.description'), action: () => router.push('/collections'), category: 'navigation' },
-  { id: 'nav-ai', label: t('commandPalette.commands.navAi.label'), description: t('commandPalette.commands.navAi.description'), action: () => router.push('/ai'), category: 'navigation' },
-  { id: 'nav-library', label: t('commandPalette.commands.navLibrary.label'), description: t('commandPalette.commands.navLibrary.description'), action: () => router.push('/library'), category: 'navigation' },
-  { id: 'articles-new', label: t('commandPalette.commands.newArticle.label'), description: t('commandPalette.commands.newArticle.description'), action: () => { router.push('/articles'); articlesStore.createEntry() }, category: 'articles' },
-  { id: 'articles-search', label: t('commandPalette.commands.searchArticles.label'), description: t('commandPalette.commands.searchArticles.description'), action: () => router.push('/articles'), category: 'articles' },
+  { id: 'nav-dates', label: t('commandPalette.commands.navDates.label'), description: t('commandPalette.commands.navDates.description'), action: async () => { await router.push('/dates') }, category: 'navigation' },
+  { id: 'nav-articles', label: t('commandPalette.commands.navArticles.label'), description: t('commandPalette.commands.navArticles.description'), action: async () => { await router.push('/articles') }, category: 'navigation' },
+  { id: 'nav-collections', label: t('commandPalette.commands.navCollections.label'), description: t('commandPalette.commands.navCollections.description'), action: async () => { await router.push('/collections') }, category: 'navigation' },
+  { id: 'nav-ai', label: t('commandPalette.commands.navAi.label'), description: t('commandPalette.commands.navAi.description'), action: async () => { await router.push('/ai') }, category: 'navigation' },
+  { id: 'nav-library', label: t('commandPalette.commands.navLibrary.label'), description: t('commandPalette.commands.navLibrary.description'), action: async () => { await router.push('/library') }, category: 'navigation' },
+  { id: 'articles-new', label: t('commandPalette.commands.newArticle.label'), description: t('commandPalette.commands.newArticle.description'), action: async () => { await router.push('/articles'); await articlesStore.createEntry() }, category: 'articles' },
+  { id: 'articles-search', label: t('commandPalette.commands.searchArticles.label'), description: t('commandPalette.commands.searchArticles.description'), action: async () => { await router.push('/articles') }, category: 'articles' },
   {
     id: 'articles-archive',
     label: t('commandPalette.commands.archiveArticle.label'),
@@ -41,7 +41,7 @@ const allCommands = computed<Command[]>(() => [
     },
     category: 'articles',
   },
-  { id: 'collections-new', label: t('commandPalette.commands.newCollection.label'), description: t('commandPalette.commands.newCollection.description'), action: () => { router.push('/collections'); collectionsStore.createCollection('新建作品集', '') }, category: 'collections' },
+  { id: 'collections-new', label: t('commandPalette.commands.newCollection.label'), description: t('commandPalette.commands.newCollection.description'), action: async () => { await router.push('/collections'); await collectionsStore.createCollection('新建作品集', '') }, category: 'collections' },
   { id: 'view-focus', label: t('nav.focusMode'), description: t('commandPalette.commands.toggleFocus.description'), action: () => settingsStore.toggleFocusMode(), category: 'view' },
   { id: 'reload', label: t('commandPalette.commands.reload.label'), description: t('commandPalette.commands.reload.description'), action: () => window.location.reload(), category: 'settings' },
 ])
@@ -66,9 +66,14 @@ function close() {
   show.value = false
 }
 
-function executeCommand(cmd: Command) {
-  cmd.action()
-  close()
+async function executeCommand(cmd: Command) {
+  try {
+    await cmd.action()
+    close()
+  } catch (e) {
+    console.error('Command failed:', e)
+    alert(e instanceof Error ? e.message : String(e))
+  }
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -92,7 +97,7 @@ function handleKeydown(e: KeyboardEvent) {
   } else if (e.key === 'Enter') {
     e.preventDefault()
     const command = filteredCommands.value[selectedIndex.value]
-    if (command) executeCommand(command)
+    if (command) void executeCommand(command)
   }
 }
 
@@ -123,7 +128,7 @@ defineExpose({ open })
           <div
             v-for="(cmd, idx) in filteredCommands"
             :key="cmd.id"
-            @click="executeCommand(cmd)"
+            @click="void executeCommand(cmd)"
             @mouseenter="selectedIndex = idx"
             :class="[
               'cursor-pointer border-b border-gray-100 px-4 py-3 transition-colors',

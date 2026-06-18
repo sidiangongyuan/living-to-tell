@@ -6,6 +6,7 @@ import {
   type CollectionArticle,
   type CollectionExportFormat,
 } from '../../api/collections'
+import { saveBlobWithDialog } from '../../utils/exportFile'
 
 export const useCollectionsStore = defineStore('collections', () => {
   const collections = ref<Collection[]>([])
@@ -15,6 +16,8 @@ export const useCollectionsStore = defineStore('collections', () => {
   const loading = ref(false)
   const articlesLoading = ref(false)
   const error = ref<string | null>(null)
+  const exportMessage = ref<string | null>(null)
+  const exportingFormat = ref<CollectionExportFormat | null>(null)
 
   const selectedCollection = computed(() =>
     collections.value.find((c) => c.id === selectedCollectionId.value) ?? null
@@ -176,15 +179,20 @@ export const useCollectionsStore = defineStore('collections', () => {
 
   async function exportSelected(format: CollectionExportFormat) {
     if (!selectedCollectionId.value || !selectedCollection.value) return
-    const blob = await collectionsApi.exportCollection(selectedCollectionId.value, format)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${selectedCollection.value.title || '作品集'}.${format}`
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(url)
+    error.value = null
+    exportMessage.value = null
+    exportingFormat.value = format
+    try {
+      const title = selectedCollection.value.title || '作品集'
+      const safeTitle = title.replace(/[<>:"/\\|?*]/g, '').trim() || 'collection'
+      const blob = await collectionsApi.exportCollection(selectedCollectionId.value, format)
+      const result = await saveBlobWithDialog(blob, `${safeTitle}.${format}`, format)
+      exportMessage.value = result.status === 'cancelled' ? '已取消导出。' : '已导出到文件。'
+    } catch (e) {
+      error.value = e instanceof Error ? `导出失败：${e.message}` : `导出失败：${String(e)}`
+    } finally {
+      exportingFormat.value = null
+    }
   }
 
   async function refreshSelectedCollection() {
@@ -216,6 +224,8 @@ export const useCollectionsStore = defineStore('collections', () => {
     loading,
     articlesLoading,
     error,
+    exportMessage,
+    exportingFormat,
     loadCollections,
     loadArticles,
     createCollection,

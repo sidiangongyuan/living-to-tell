@@ -30,8 +30,6 @@ const saveNotice = ref('')
 const saveError = ref('')
 let applyingAiSettings = false
 
-const autoBackupEnabled = ref(false)
-const autoBackupInterval = ref('daily')
 const closeBehaviorNotice = ref('')
 const dataLocation = ref<DataLocationInfo | null>(null)
 const dataOverride = ref<DataDirectoryOverrideState | null>(null)
@@ -133,15 +131,9 @@ watch(aiProvider, (provider, previous) => {
   }
 })
 
-function loadLocalSettings() {
-  autoBackupEnabled.value = localStorage.getItem('auto_backup_enabled') === 'true'
-  autoBackupInterval.value = localStorage.getItem('auto_backup_interval') || 'daily'
-}
-
 async function loadSettings() {
   loadingAiSettings.value = true
   saveError.value = ''
-  loadLocalSettings()
   try {
     const loaded = await settingsApi.getAiSettings()
     applyAiSettings(loaded)
@@ -184,8 +176,6 @@ async function saveSettings() {
   try {
     const saved = await settingsApi.saveAiSettings(buildAiSettingsUpdate())
     applyAiSettings(saved)
-    localStorage.setItem('auto_backup_enabled', String(autoBackupEnabled.value))
-    localStorage.setItem('auto_backup_interval', autoBackupInterval.value)
     closeBehaviorNotice.value = ''
     const requestedCloseBehavior = settings.closeBehavior
     const effectiveCloseBehavior = await settings.saveCloseBehavior(requestedCloseBehavior)
@@ -207,7 +197,12 @@ async function testConnection() {
   saveError.value = ''
   try {
     const result = await settingsApi.testAiSettings(buildAiSettingsUpdate())
-    testResult.value = { success: result.ok, message: result.message }
+    testResult.value = {
+      success: result.ok,
+      message: result.ok
+        ? t('settings.configCheckPassed')
+        : result.message,
+    }
   } catch (e) {
     testResult.value = { success: false, message: e instanceof Error ? e.message : String(e) }
   } finally {
@@ -619,34 +614,6 @@ async function restoreDefaultDataDirectory() {
               </button>
             </div>
           </div>
-        </div>
-      </section>
-
-      <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 class="mb-4 text-lg font-bold text-gray-900">{{ t('settings.autoBackup') }}</h2>
-        <div class="space-y-4">
-          <div class="flex items-center gap-3">
-            <input
-              v-model="autoBackupEnabled"
-              type="checkbox"
-              id="auto-backup"
-              class="h-4 w-4 rounded text-blue-600 focus:ring-2 focus:ring-blue-500"
-            />
-            <label for="auto-backup" class="text-sm font-semibold text-gray-700">
-              {{ t('settings.enableAutoBackup') }}
-            </label>
-          </div>
-
-          <div v-if="autoBackupEnabled">
-            <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.backupFrequency') }}</label>
-            <select v-model="autoBackupInterval" class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="hourly">{{ t('settings.intervals.hourly') }}</option>
-              <option value="daily">{{ t('settings.intervals.daily') }}</option>
-              <option value="weekly">{{ t('settings.intervals.weekly') }}</option>
-            </select>
-          </div>
-
-          <p class="text-xs text-gray-500">{{ t('settings.autoBackupHelp') }}</p>
         </div>
       </section>
 

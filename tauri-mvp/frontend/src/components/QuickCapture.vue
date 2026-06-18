@@ -50,7 +50,7 @@ function cancel() {
   show.value = false
 }
 
-// Listen for global shortcut (will be triggered by Tauri)
+// Allows other in-app UI to toggle quick capture without coupling to this component instance.
 window.addEventListener('quick-capture-toggle', () => {
   show.value = !show.value
 })

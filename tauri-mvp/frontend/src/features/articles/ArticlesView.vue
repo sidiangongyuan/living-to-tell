@@ -8,6 +8,7 @@ import { articlesApi, type ArticleExportFormat } from '../../api/articles'
 import { notesApi, type WritingNote } from '../../api/notes'
 import FindReplace from '../../components/FindReplace.vue'
 import { useI18n } from '../../i18n'
+import { saveBlobWithDialog } from '../../utils/exportFile'
 import { collectArticleTags, countParagraphs, filterArticlesByTag } from './articleList'
 import { composeArticleBody, detectEpigraph, type EpigraphParts } from './epigraph'
 import {
@@ -46,10 +47,15 @@ const existingCollectionIds = computed(() => new Set(collectionsForEntry.value.m
 const collectionLoading = ref(false)
 const collectionError = ref('')
 const bodyDraft = ref('')
+const draftArticleId = ref<string | null>(null)
 const epigraphActive = ref(false)
 const epigraphQuote = ref('')
 const epigraphAttribution = ref('')
+const epigraphEditingArticleId = ref<string | null>(null)
 const syncingDraft = ref(false)
+const exportingFormat = ref<ArticleExportFormat | null>(null)
+const exportMessage = ref('')
+const exportError = ref('')
 const writingNotes = ref<WritingNote[]>([])
 const newNoteBody = ref('')
 const editingNoteId = ref<string | null>(null)
@@ -69,6 +75,23 @@ const lastEditorInteraction = ref<ArticleEditorInteraction | null>(null)
 const hasSavedEditInteraction = ref(false)
 let restoreToken = 0
 
+interface ArticleSaveSnapshot {
+  id: string
+  title: string
+  body: string
+  tags: string[]
+}
+
+interface EpigraphDraftState {
+  active: boolean
+  quote: string
+  attribution: string
+  updatedAt: number
+}
+
+const pendingArticleSave = ref<ArticleSaveSnapshot | null>(null)
+
+const EPIGRAPH_DRAFTS_KEY = 'article_epigraph_drafts'
 const POSITION_DEBUG_LOG_KEY = 'article_editor_position_debug'
 const POSITION_DEBUG_FLAG_KEY = 'article_editor_position_debug_enabled'
 const POSITION_DEBUG_LIMIT = 180
@@ -145,9 +168,13 @@ function preview(body: string): string {
 
 function scheduleSave() {
   if (syncingDraft.value) return
-  applyDraftToSelected()
+  const snapshot = applyDraftToSelected()
+  if (!snapshot) return
+  pendingArticleSave.value = snapshot
   if (saveTimer.value) clearTimeout(saveTimer.value)
-  saveTimer.value = window.setTimeout(saveNow, 600)
+  saveTimer.value = window.setTimeout(() => {
+    void flushPendingArticleSave()
+  }, 600)
 }
 
 function handleBodyInput() {
@@ -178,16 +205,32 @@ function handleBodyFocusOut() {
 
 function handleBeforeUnload() {
   saveCurrentEditorPositionNow()
+  void flushPendingArticleSave()
 }
 
-async function saveNow() {
-  const entry = store.selectedEntry
-  if (!entry) return
-  applyDraftToSelected()
+async function saveNow(): Promise<boolean> {
+  const snapshot = applyDraftToSelected()
+  if (snapshot) {
+    pendingArticleSave.value = snapshot
+  }
+  return flushPendingArticleSave()
+}
+
+async function flushPendingArticleSave(): Promise<boolean> {
+  if (saveTimer.value) {
+    clearTimeout(saveTimer.value)
+    saveTimer.value = null
+  }
+  const snapshot = pendingArticleSave.value
+  if (!snapshot) return true
+  pendingArticleSave.value = null
   try {
-    await store.updateEntry(entry.id, entry.title, entry.body, entry.tags)
+    await store.updateEntry(snapshot.id, snapshot.title, snapshot.body, snapshot.tags)
+    return true
   } catch (e) {
     console.error('Save failed:', e)
+    pendingArticleSave.value = snapshot
+    return false
   }
 }
 
@@ -212,9 +255,11 @@ function clearTagFilter() {
   selectedTag.value = ''
 }
 
-function selectEntryFromList(entryId: string) {
+async function selectEntryFromList(entryId: string) {
   flushPendingEditorPosition()
   saveLastKnownEditorPosition()
+  const saved = await flushPendingArticleSave()
+  if (!saved) return
   saveLastSelectedArticleId(entryId)
   if (route.query.id === entryId) {
     store.selectEntry(entryId)
@@ -306,11 +351,64 @@ function syncFindQuery(query: string, caseSensitive: boolean) {
   refreshMatches(query, caseSensitive)
 }
 
-function composeCurrentBody(): string {
+function readEpigraphDrafts(): Record<string, EpigraphDraftState> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(EPIGRAPH_DRAFTS_KEY) || '{}')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function getEpigraphDraft(articleId: string): EpigraphDraftState | null {
+  const draft = readEpigraphDrafts()[articleId]
+  return draft?.active ? draft : null
+}
+
+function saveEpigraphDraft(articleId: string, draft: Omit<EpigraphDraftState, 'updatedAt'>) {
+  const drafts = readEpigraphDrafts()
+  drafts[articleId] = {
+    ...draft,
+    updatedAt: Date.now(),
+  }
+  localStorage.setItem(EPIGRAPH_DRAFTS_KEY, JSON.stringify(drafts))
+}
+
+function clearEpigraphDraft(articleId: string | null | undefined) {
+  if (!articleId) return
+  const drafts = readEpigraphDrafts()
+  if (!(articleId in drafts)) return
+  delete drafts[articleId]
+  localStorage.setItem(EPIGRAPH_DRAFTS_KEY, JSON.stringify(drafts))
+}
+
+function syncEpigraphDraftForSelected() {
+  const articleId = store.selectedEntry?.id
+  if (!articleId) return
+  if (!epigraphActive.value) {
+    clearEpigraphDraft(articleId)
+    return
+  }
+  const complete = Boolean(epigraphQuote.value.trim() && epigraphAttribution.value.trim())
+  if (complete) {
+    clearEpigraphDraft(articleId)
+    return
+  }
+  saveEpigraphDraft(articleId, {
+    active: true,
+    quote: epigraphQuote.value,
+    attribution: epigraphAttribution.value,
+  })
+}
+
+function composeCurrentBody(includeIncompleteEpigraph = false): string {
   if (!epigraphActive.value) {
     return bodyDraft.value
   }
   if (!epigraphQuote.value.trim() || !epigraphAttribution.value.trim()) {
+    if (!includeIncompleteEpigraph) {
+      return bodyDraft.value
+    }
     const prefix = [
       epigraphQuote.value.trim(),
       epigraphAttribution.value.trim() ? `——${epigraphAttribution.value.trim()}` : '',
@@ -328,13 +426,39 @@ function composeCurrentBody(): string {
 
 function syncDraftFromSelected() {
   syncingDraft.value = true
-  const body = store.selectedEntry?.body ?? ''
+  const entry = store.selectedEntry
+  const body = entry?.body ?? ''
+  if (entry && draftArticleId.value === entry.id && epigraphActive.value && epigraphEditingArticleId.value === entry.id) {
+    refreshMatches()
+    void nextTick(() => {
+      resizeBodyEditor()
+      syncingDraft.value = false
+    })
+    return
+  }
+  draftArticleId.value = entry?.id ?? null
+  epigraphEditingArticleId.value = null
   const epigraph = detectEpigraph(body)
   if (epigraph) {
     epigraphActive.value = true
+    clearEpigraphDraft(entry?.id)
     epigraphQuote.value = epigraph.quote
     epigraphAttribution.value = epigraph.attribution
     bodyDraft.value = epigraph.body
+  } else if (entry) {
+    const draft = getEpigraphDraft(entry.id)
+    if (draft) {
+      epigraphActive.value = true
+      epigraphEditingArticleId.value = entry.id
+      epigraphQuote.value = draft.quote
+      epigraphAttribution.value = draft.attribution
+      bodyDraft.value = body
+    } else {
+      epigraphActive.value = false
+      epigraphQuote.value = ''
+      epigraphAttribution.value = ''
+      bodyDraft.value = body
+    }
   } else {
     epigraphActive.value = false
     epigraphQuote.value = ''
@@ -348,42 +472,45 @@ function syncDraftFromSelected() {
   })
 }
 
-function applyDraftToSelected() {
+function applyDraftToSelected(): ArticleSaveSnapshot | null {
   const entry = store.selectedEntry
-  if (!entry) return
+  if (!entry) return null
 
-  if (epigraphActive.value && !epigraphQuote.value.trim() && !epigraphAttribution.value.trim()) {
-    epigraphActive.value = false
-  }
-
+  draftArticleId.value = entry.id
+  syncEpigraphDraftForSelected()
   entry.body = composeCurrentBody()
+  return {
+    id: entry.id,
+    title: entry.title,
+    body: entry.body,
+    tags: [...entry.tags],
+  }
 }
 
 function enableEpigraph() {
   if (epigraphActive.value) return
   epigraphActive.value = true
+  epigraphEditingArticleId.value = store.selectedEntry?.id ?? null
   epigraphQuote.value = ''
   epigraphAttribution.value = ''
+  syncEpigraphDraftForSelected()
+}
+
+function handleEpigraphInput() {
+  epigraphEditingArticleId.value = store.selectedEntry?.id ?? null
+  syncEpigraphDraftForSelected()
+  scheduleSave()
 }
 
 function moveEpigraphBackToBody() {
   if (!epigraphActive.value) return
-  bodyDraft.value = composeCurrentBody()
+  bodyDraft.value = composeCurrentBody(true)
   epigraphActive.value = false
+  epigraphEditingArticleId.value = null
   epigraphQuote.value = ''
   epigraphAttribution.value = ''
+  clearEpigraphDraft(store.selectedEntry?.id)
   scheduleSave()
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
 }
 
 function safeFilename(title: string, format: ArticleExportFormat): string {
@@ -393,26 +520,50 @@ function safeFilename(title: string, format: ArticleExportFormat): string {
 
 async function exportArticle(format: ArticleExportFormat) {
   if (!store.selectedEntry) return
-  await saveNow()
-  const blob = await articlesApi.exportArticle(store.selectedEntry.id, format)
-  downloadBlob(blob, safeFilename(store.selectedEntry.title, format))
+  exportingFormat.value = format
+  exportMessage.value = ''
+  exportError.value = ''
+  try {
+    const saved = await saveNow()
+    if (!saved) return
+    const selected = store.selectedEntry
+    if (!selected) return
+    const blob = await articlesApi.exportArticle(selected.id, format)
+    const result = await saveBlobWithDialog(blob, safeFilename(selected.title, format), format)
+    if (result.status === 'cancelled') {
+      exportMessage.value = t('articles.exportCancelled')
+    } else {
+      exportMessage.value = t('articles.exportSaved')
+    }
+  } catch (e) {
+    exportError.value = t('articles.exportFailed', {
+      message: e instanceof Error ? e.message : String(e),
+    })
+  } finally {
+    exportingFormat.value = null
+  }
 }
 
-function openAiChatForArticle() {
+async function openAiChatForArticle() {
   if (!store.selectedEntry) return
+  const saved = await saveNow()
+  if (!saved) return
+  const entryId = store.selectedEntry.id
   router.push({
     name: 'ai',
     query: {
       tab: 'chat',
       scope_kind: 'article',
-      scope_id: store.selectedEntry.id,
+      scope_id: entryId,
     },
   })
 }
 
 async function openAiToolsForArticle() {
   if (!store.selectedEntry) return
-  await saveNow()
+  const saved = await saveNow()
+  if (!saved) return
+  const entryId = store.selectedEntry.id
   const start = bodyRef.value?.selectionStart ?? 0
   const end = bodyRef.value?.selectionEnd ?? 0
   const hasSelection = end > start
@@ -422,7 +573,7 @@ async function openAiToolsForArticle() {
       tab: 'tools',
       task: 'polish',
       scope_kind: 'article',
-      scope_id: store.selectedEntry.id,
+      scope_id: entryId,
       ...(hasSelection
         ? {
             selection_start: String(start),
@@ -431,6 +582,27 @@ async function openAiToolsForArticle() {
         : {}),
     },
   })
+}
+
+async function archiveSelectedEntry() {
+  if (!store.selectedEntry) return
+  const entryId = store.selectedEntry.id
+  const saved = await saveNow()
+  if (!saved) return
+  await store.archiveEntry(entryId)
+}
+
+async function deleteSelectedEntry() {
+  if (!store.selectedEntry) return
+  const entryId = store.selectedEntry.id
+  if (saveTimer.value) {
+    clearTimeout(saveTimer.value)
+    saveTimer.value = null
+  }
+  if (pendingArticleSave.value?.id === entryId) {
+    pendingArticleSave.value = null
+  }
+  await store.deleteEntry(entryId)
 }
 
 async function applyRouteFocusRange() {
@@ -1003,6 +1175,7 @@ onMounted(async () => {
 onUnmounted(() => {
   flushPendingEditorPosition()
   saveCurrentEditorPositionNow()
+  void flushPendingArticleSave()
   window.removeEventListener('resize', updateTailSpace)
   window.removeEventListener('keydown', handleKeydown)
   window.removeEventListener('beforeunload', handleBeforeUnload)
@@ -1013,6 +1186,8 @@ watch(
   async (_newId, oldId) => {
     flushPendingEditorPosition()
     saveLastKnownEditorPositionForArticle(oldId)
+    const saved = await flushPendingArticleSave()
+    if (!saved) return
     syncDraftFromSelected()
     refreshEntryCollections()
     refreshWritingNotes()
@@ -1030,6 +1205,8 @@ watch(
     })
     flushPendingEditorPosition()
     saveCurrentEditorPositionNow()
+    const saved = await flushPendingArticleSave()
+    if (!saved) return
     await applyRouteArticle()
     syncDraftFromSelected()
     await restoreEditorPositionIfNeeded()
@@ -1169,6 +1346,7 @@ watch(
           <button
             v-if="store.selectedEntry"
             @click="enableEpigraph"
+            data-testid="article-add-epigraph"
             class="px-3 py-2 text-sm bg-stone-100 hover:bg-stone-200 rounded transition-colors"
           >
             {{ t('articles.addEpigraph') }}
@@ -1178,9 +1356,10 @@ watch(
               v-for="format in ['md', 'txt', 'docx'] as const"
               :key="format"
               @click="exportArticle(format)"
+              :disabled="exportingFormat !== null"
               class="px-3 py-2 text-xs font-semibold uppercase text-stone-600 hover:bg-stone-100"
             >
-              {{ format }}
+              {{ exportingFormat === format ? '...' : format }}
             </button>
           </div>
           <span class="text-xs text-stone-400">{{ store.saving ? t('common.saving') : t('common.saved') }}</span>
@@ -1196,6 +1375,17 @@ watch(
             {{ settings.rightContextPaneCollapsed ? t('articles.showContext') : t('articles.hideContext') }}
           </button>
         </div>
+      </div>
+      <div
+        v-if="exportError || exportMessage"
+        :class="[
+          'border-b px-6 py-2 text-sm',
+          exportError
+            ? 'border-red-100 bg-red-50 text-red-700'
+            : 'border-emerald-100 bg-emerald-50 text-emerald-700'
+        ]"
+      >
+        {{ exportError || exportMessage }}
       </div>
 
       <div
@@ -1231,14 +1421,16 @@ watch(
             </div>
             <textarea
               v-model="epigraphQuote"
-              @input="scheduleSave"
+              data-testid="article-epigraph-quote"
+              @input="handleEpigraphInput"
               rows="3"
               class="w-full resize-none border-none bg-transparent font-serif text-lg italic leading-8 text-stone-800 outline-none"
               :placeholder="t('articles.epigraphQuotePlaceholder')"
             />
             <input
               v-model="epigraphAttribution"
-              @input="scheduleSave"
+              data-testid="article-epigraph-attribution"
+              @input="handleEpigraphInput"
               class="mt-3 w-full bg-transparent text-right text-sm text-stone-500 outline-none"
               :placeholder="t('articles.epigraphAttributionPlaceholder')"
             />
@@ -1471,13 +1663,13 @@ watch(
               </button>
               <button
                 v-if="!store.selectedEntry.archived_at"
-                @click="store.archiveEntry(store.selectedEntry.id)"
+                @click="archiveSelectedEntry"
                 class="w-full px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg text-sm transition-colors"
               >
                 {{ t('articles.archive') }}
               </button>
               <button
-                @click="store.deleteEntry(store.selectedEntry.id)"
+                @click="deleteSelectedEntry"
                 class="w-full px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm transition-colors"
               >
                 {{ t('common.delete') }}

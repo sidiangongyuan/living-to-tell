@@ -105,6 +105,77 @@ fn choose_data_directory() -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
+fn choose_export_file(default_filename: String, format: String) -> Result<Option<String>, String> {
+    let extension = export_extension(&format).unwrap_or("txt");
+    let mut dialog = rfd::FileDialog::new()
+        .set_title("导出文件")
+        .set_file_name(sanitize_export_filename(&default_filename, extension));
+
+    dialog = match extension {
+        "md" => dialog.add_filter("Markdown", &["md"]),
+        "txt" => dialog.add_filter("Text", &["txt"]),
+        "docx" => dialog.add_filter("Word Document", &["docx"]),
+        _ => dialog.add_filter("File", &[extension]),
+    };
+
+    Ok(dialog
+        .save_file()
+        .map(|path| ensure_export_extension(path, extension).to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+fn write_export_file(path: String, bytes: Vec<u8>) -> Result<(), String> {
+    let target = PathBuf::from(path.trim());
+    if target.as_os_str().is_empty() {
+        return Err("Export path is empty".to_string());
+    }
+    if let Some(parent) = target.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create export directory: {e}"))?;
+        }
+    }
+    fs::write(&target, bytes).map_err(|e| format!("Failed to write export file: {e}"))
+}
+
+fn export_extension(format: &str) -> Option<&'static str> {
+    match format.trim().to_ascii_lowercase().as_str() {
+        "md" | "markdown" => Some("md"),
+        "txt" | "text" => Some("txt"),
+        "docx" => Some("docx"),
+        _ => None,
+    }
+}
+
+fn sanitize_export_filename(filename: &str, extension: &str) -> String {
+    let mut safe = filename
+        .chars()
+        .map(|ch| match ch {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            _ => ch,
+        })
+        .collect::<String>()
+        .trim()
+        .trim_matches('.')
+        .to_string();
+    if safe.is_empty() {
+        safe = format!("export.{extension}");
+    }
+    if Path::new(&safe).extension().is_none() {
+        safe.push('.');
+        safe.push_str(extension);
+    }
+    safe
+}
+
+fn ensure_export_extension(mut path: PathBuf, extension: &str) -> PathBuf {
+    if path.extension().is_none() {
+        path.set_extension(extension);
+    }
+    path
+}
+
+#[tauri::command]
 fn open_path(path: String) -> Result<(), String> {
     let target = PathBuf::from(path.trim());
     if target.as_os_str().is_empty() {
@@ -785,6 +856,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_api_base_url,
             choose_data_directory,
+            choose_export_file,
+            write_export_file,
             open_path,
             get_data_directory_override,
             set_data_directory_override,

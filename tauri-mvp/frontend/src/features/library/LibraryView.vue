@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useLibraryStore } from './store'
-import { libraryApi, type LibraryStats } from '../../api/library'
+import { libraryApi, type LibraryStats, type Reference } from '../../api/library'
 import { type LibraryGroupMode, EMPTY_SOURCE_GROUP_KEY } from './grouping'
 import { useI18n } from '../../i18n'
 
@@ -15,11 +15,16 @@ const stats = ref<LibraryStats | null>(null)
 const initialized = ref(false)
 const applyingRouteState = ref(false)
 const copyNotice = ref('')
+const pendingReferenceSave = ref<Reference | null>(null)
 
 onMounted(async () => {
   await Promise.all([store.loadReferences(), loadStats()])
   initialized.value = true
   await applyRouteState()
+})
+
+onUnmounted(() => {
+  void flushPendingReferenceSave()
 })
 
 async function loadStats() {
@@ -63,21 +68,70 @@ watch(
   () => [route.query.ref, route.query.group],
   async () => {
     if (!initialized.value || applyingRouteState.value) return
+    const saved = await flushPendingReferenceSave()
+    if (!saved) return
     await applyRouteState()
   }
 )
 
 function scheduleSave() {
+  const snapshot = snapshotSelectedReference()
+  if (!snapshot) return
+  pendingReferenceSave.value = snapshot
   if (saveTimer.value) window.clearTimeout(saveTimer.value)
   saveTimer.value = window.setTimeout(() => {
-    void saveNow()
+    void flushPendingReferenceSave()
   }, 600)
 }
 
-async function saveNow() {
-  if (store.selectedReference) {
-    await store.updateReference(store.selectedReference)
+async function flushPendingReferenceSave(): Promise<boolean> {
+  if (saveTimer.value) {
+    window.clearTimeout(saveTimer.value)
+    saveTimer.value = null
   }
+  const snapshot = pendingReferenceSave.value
+  if (!snapshot) return true
+  pendingReferenceSave.value = null
+  try {
+    await store.updateReference(snapshot)
+    return true
+  } catch (e) {
+    pendingReferenceSave.value = snapshot
+    store.error = e instanceof Error ? e.message : String(e)
+    return false
+  }
+}
+
+function snapshotSelectedReference(): Reference | null {
+  const reference = store.selectedReference
+  if (!reference) return null
+  return {
+    ...reference,
+    tags: [...reference.tags],
+  }
+}
+
+async function selectReference(referenceId: string) {
+  const saved = await flushPendingReferenceSave()
+  if (!saved) return
+  store.selectReference(referenceId)
+}
+
+async function selectGroup(mode: LibraryGroupMode, key: string) {
+  const saved = await flushPendingReferenceSave()
+  if (!saved) return
+  if (mode === 'usage') {
+    store.selectUsageGroup(key)
+    return
+  }
+
+  store.selectSourceGroup(key)
+}
+
+async function setGroupMode(mode: LibraryGroupMode) {
+  const saved = await flushPendingReferenceSave()
+  if (!saved) return
+  store.setGroupMode(mode)
 }
 
 function preview(content: string): string {
@@ -113,19 +167,6 @@ function sourceGroupLabel(key: string): string {
   return key === EMPTY_SOURCE_GROUP_KEY ? t('library.empty') : key
 }
 
-function selectGroup(mode: LibraryGroupMode, key: string) {
-  if (mode === 'usage') {
-    store.selectUsageGroup(key)
-    return
-  }
-
-  store.selectSourceGroup(key)
-}
-
-function setGroupMode(mode: LibraryGroupMode) {
-  store.setGroupMode(mode)
-}
-
 function getRouteGroupMode(): LibraryGroupMode | null {
   const group = route.query.group
   return group === 'source' || group === 'usage' ? group : null
@@ -156,16 +197,25 @@ async function applyRouteState() {
 async function deleteSelectedReference() {
   if (!store.selectedReference) return
   if (!confirm(t('library.deleteConfirm'))) return
+  if (pendingReferenceSave.value?.id === store.selectedReference.id) {
+    if (saveTimer.value) window.clearTimeout(saveTimer.value)
+    saveTimer.value = null
+    pendingReferenceSave.value = null
+  }
   await store.deleteReference(store.selectedReference.id)
   await loadStats()
 }
 
 async function createReference() {
+  const saved = await flushPendingReferenceSave()
+  if (!saved) return
   await store.createReference()
   await loadStats()
 }
 
 async function createReferenceInActiveSource() {
+  const saved = await flushPendingReferenceSave()
+  if (!saved) return
   const sourceReference = store.activeSourceGroup?.references[0]
   await store.createReference({
     source_title: sourceReference?.source_title ?? '',
@@ -329,7 +379,7 @@ async function copyReferenceFull() {
           <article
             v-for="reference in store.visibleReferences"
             :key="reference.id"
-            @click="store.selectReference(reference.id)"
+            @click="selectReference(reference.id)"
             :class="[
               'cursor-pointer rounded-2xl border p-4 transition-all',
               store.selectedRefId === reference.id

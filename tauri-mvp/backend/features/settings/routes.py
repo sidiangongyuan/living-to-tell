@@ -451,4 +451,4 @@ def test_ai_settings(data: AiTestRequest) -> AiTestOut:
     issues = preflight_rewrite(config, target_text="_", has_entry=True)
     if issues:
         return AiTestOut(ok=False, message=format_issues(issues))
-    return AiTestOut(ok=True, message="AI configuration is ready.")
+    return AiTestOut(ok=True, message="Local AI configuration check passed. This does not contact the provider.")
