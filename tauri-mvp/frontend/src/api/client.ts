@@ -1,5 +1,5 @@
 /**
- * API Client for Writer Backend (FastAPI + SQLite).
+ * API Client for the Living to Tell backend (FastAPI + SQLite).
  * Typed fetch wrappers matching the backend's /entries contract.
  */
 

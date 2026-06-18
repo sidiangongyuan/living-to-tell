@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "writer"
 version = "0.2.0a45"
-description = "Windows desktop personal writing tool with light AI rewrite assistance."
+description = "Local-first desktop writing tool with optional AI assistance."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-authors = [{ name = "Writer Project" }]
+authors = [{ name = "Living to Tell contributors" }]
 dependencies = [
     "PySide6>=6.6",
     "openai>=1.40",

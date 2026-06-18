@@ -493,8 +493,7 @@ class TestMainWindowM7A:
         window = create_main_window(c)
         qtbot.addWidget(window)
 
-        # Window title should be "Writer"
-        assert window.windowTitle() == "Writer"
+        assert window.windowTitle() == "活着为了讲述"
         c.close()
 
     def test_extra_palette_actions_exist(self, qtbot, isolated_data_dir: Path):

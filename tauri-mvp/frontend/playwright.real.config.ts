@@ -12,7 +12,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'D:\\anaconda\\envs\\writer\\python.exe run.py',
+      command: 'python run.py',
       url: 'http://127.0.0.1:18080/health',
       cwd: '../backend',
       reuseExistingServer: false,

@@ -162,7 +162,7 @@ async function confirmCloseChoice() {
 
     <!-- Left Navigation Rail (80px) -->
     <div v-show="!settings.focusMode" class="w-20 shrink-0 bg-gray-900 flex flex-col items-center py-6 gap-2">
-      <div class="text-white font-bold text-xl mb-2">W</div>
+      <div class="mb-2 text-xl font-bold text-white">讲</div>
 
       <!-- Main nav items -->
       <button

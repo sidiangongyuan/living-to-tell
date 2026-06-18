@@ -36,7 +36,7 @@ def test_main_window_constructs_and_shows(qtbot, container) -> None:
     qtbot.addWidget(window)
     window.show()
     assert window.isVisible()
-    assert window.windowTitle() == "Writer"
+    assert window.windowTitle() == "活着为了讲述"
     titles = {action.text() for action in window.menuBar().actions()}
     assert "&File" in titles
     assert "&AI" not in titles
@@ -93,7 +93,7 @@ def test_app_version_constant_is_set() -> None:
 
 
 def test_about_action_is_enabled(qtbot, container) -> None:
-    """Help > About Writer must not be disabled (M6B requirement)."""
+    """Help > About must not be disabled (M6B requirement)."""
     window = create_main_window(container)
     qtbot.addWidget(window)
 
@@ -110,13 +110,13 @@ def test_about_action_is_enabled(qtbot, container) -> None:
             about = action
             break
     assert about is not None, "About action not found"
-    assert about.isEnabled(), "About Writer action must be enabled"
+    assert about.isEnabled(), "About action must be enabled"
 
 
 def test_main_window_title_is_writer(qtbot, container) -> None:
     window = create_main_window(container)
     qtbot.addWidget(window)
-    assert window.windowTitle() == "Writer"
+    assert window.windowTitle() == "活着为了讲述"
 
 
 def test_bootstrap_sets_app_metadata(qtbot) -> None:
@@ -128,7 +128,9 @@ def test_bootstrap_sets_app_metadata(qtbot) -> None:
         pytest.skip("No QApplication instance available outside qtbot scope")
     # The qtbot fixture ensures a QApplication exists; bootstrap sets these.
     # We just confirm the module-level constants are consistent.
-    from writer.app.paths import APP_NAME, APP_AUTHOR
+    from writer.app.paths import APP_NAME, APP_AUTHOR, DISPLAY_NAME, ENGLISH_NAME
 
-    assert APP_NAME == "Writer"
-    assert APP_AUTHOR == "Writer"
+    assert APP_NAME == "LivingToTell"
+    assert APP_AUTHOR == "LivingToTell"
+    assert DISPLAY_NAME == "活着为了讲述"
+    assert ENGLISH_NAME == "Living to Tell"

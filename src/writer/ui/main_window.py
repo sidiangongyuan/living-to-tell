@@ -116,7 +116,7 @@ class MainWindow(QMainWindow):
         self._context_pane_visible = True
         self._last_context_pane_width = ContextPane.DEFAULT_WIDTH
 
-        self.setWindowTitle("Writer")
+        self.setWindowTitle("活着为了讲述")
         self.resize(1280, 780)
 
         # ---- Fragments mode panels (preserve attribute names for tests) ----

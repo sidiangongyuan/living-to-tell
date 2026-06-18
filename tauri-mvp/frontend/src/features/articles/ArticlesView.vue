@@ -63,6 +63,7 @@ const pendingPositionInteraction = ref<ArticleEditorInteraction>('edit')
 const restoringEditorPosition = ref(false)
 const tailSpace = ref(260)
 const suppressReadPositionUntil = ref(0)
+const lastProgrammaticScrollTop = ref<number | null>(null)
 const userScrollIntentUntil = ref(0)
 const lastEditorInteraction = ref<ArticleEditorInteraction | null>(null)
 const hasSavedEditInteraction = ref(false)
@@ -555,10 +556,16 @@ function scheduleCurrentEditorPositionSave() {
 function scheduleReadPositionSave() {
   const now = Date.now()
   const hasUserScrollIntent = now < userScrollIntentUntil.value
-  if (!hasUserScrollIntent && now < suppressReadPositionUntil.value) {
+  const currentScrollTop = editorScrollRef.value?.scrollTop ?? 0
+  const isStillProgrammaticScroll =
+    lastProgrammaticScrollTop.value !== null &&
+    Math.abs(currentScrollTop - lastProgrammaticScrollTop.value) <= 4
+  if (!hasUserScrollIntent && now < suppressReadPositionUntil.value && isStillProgrammaticScroll) {
     logPositionEvent('skip-programmatic-read', {
       articleId: store.selectedEntry?.id ?? null,
       suppressUntil: suppressReadPositionUntil.value,
+      scrollTop: currentScrollTop,
+      programmaticScrollTop: lastProgrammaticScrollTop.value,
     })
     return
   }
@@ -657,6 +664,7 @@ async function restoreSavedEditorPosition(articleId = store.selectedEntry?.id) {
     const clampedScrollTop = Math.min(maxScrollTop, nextScrollTop)
 
     suppressReadPositionUntil.value = Date.now() + 450
+    lastProgrammaticScrollTop.value = clampedScrollTop
     if (restoreAsReadPosition) {
       scrollContainer.scrollTop = clampedScrollTop
     } else {
@@ -724,7 +732,9 @@ function scrollEditorTo(scrollTop: number) {
   const scrollContainer = editorScrollRef.value
   if (!scrollContainer) return
   suppressReadPositionUntil.value = Date.now() + 450
-  scrollContainer.scrollTop = Math.min(editorMaxScrollTop(), Math.max(0, scrollTop))
+  const nextScrollTop = Math.min(editorMaxScrollTop(), Math.max(0, scrollTop))
+  lastProgrammaticScrollTop.value = nextScrollTop
+  scrollContainer.scrollTop = nextScrollTop
 }
 
 function resizeBodyEditor() {

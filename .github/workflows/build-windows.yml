@@ -1,4 +1,4 @@
-name: Build Windows Portable
+name: Build Legacy Windows Portable
 
 on:
   workflow_dispatch:
@@ -37,7 +37,7 @@ jobs:
       - name: Upload portable zip artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Writer-portable-windows
+          name: legacy-writer-portable-windows
           path: |
             dist/Writer-*-portable.zip
             dist/Writer-portable.zip

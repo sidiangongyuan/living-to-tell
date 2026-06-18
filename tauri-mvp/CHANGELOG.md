@@ -1,4 +1,34 @@
-# Writer Tauri Preview Changelog
+# Living to Tell Tauri Preview Changelog
+
+## 0.1.7 - Living to Tell Brand Preview (2026-06-18)
+
+### Added
+
+- Added the public brand **Living to Tell / 活着为了讲述**.
+- Added copy-only migration from the old Writer data directory to `%APPDATA%\LivingToTell\LivingToTell\living-to-tell.sqlite3`.
+- Added safe demo-data screenshot capture so public screenshots do not include private writing, account paths, or local credential files.
+- Added migration tests for the new app data path.
+
+### Changed
+
+- Updated the Windows app display name, window title, installer name, Tauri identifier, package metadata, README, user guides, TODO, and public release copy.
+- Updated release assets to use English filenames: `LivingToTell_0.1.7_x64-setup.exe` and `LivingToTell_0.1.7_x64_zh-CN.msi`.
+- Renamed the packaged backend sidecar to `living-to-tell-backend`.
+- Kept old Writer data and preferences as compatibility sources; no old user data is deleted.
+
+### Fixed
+
+- Removed the bad tracked `app-icon.png` file that contained HTML instead of image bytes.
+- Updated installer process cleanup so upgrades can close both old Writer processes and new Living to Tell processes before copying files.
+
+### Verification
+
+- `python -m pytest`
+- `npm test -- --run`
+- `npm run test:e2e`
+- `npm run build`
+- `cargo check --manifest-path tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe python`
 
 ## 0.1.6 - Public Preview Final Fixes (2026-06-16)
 
@@ -33,12 +63,12 @@
 
 ### Verification
 
-- `D:\anaconda\envs\writer\python.exe -m pytest`
-- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py -q`
+- `python -m pytest`
+- `python -m pytest tests\test_tauri_mvp_api.py -q`
 - `npm test`
 - `npm run build`
 - `cargo check --manifest-path tauri-mvp\frontend\src-tauri\Cargo.toml`
-- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+- `.\tauri-mvp\build-release.ps1 -PythonExe python`
 
 ## 0.1.5 - Public Polish and AI Settings (2026-06-16)
 
@@ -58,7 +88,7 @@
 
 ### Verification
 
-- `D:\anaconda\envs\writer\python.exe -m pytest`
+- `python -m pytest`
 - `npm test`
 - `npm run build`
 - `cargo check --manifest-path tauri-mvp\frontend\src-tauri\Cargo.toml`
@@ -84,7 +114,7 @@
 
 ### Verification
 
-- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py`
+- `python -m pytest tests\test_tauri_mvp_api.py`
 - `npm run build`
 - `cargo check --manifest-path tauri-mvp\frontend\src-tauri\Cargo.toml`
 
@@ -116,7 +146,7 @@
 ### Verification
 
 - `npm run build`
-- `D:\anaconda\envs\writer\python.exe -m pytest`
+- `python -m pytest`
 
 ## 0.1.1 - Stabilization Pass (2026-06-14)
 
@@ -139,7 +169,7 @@
 
 ### Verification
 
-- `D:\anaconda\envs\writer\python.exe -m pytest tests\storage\test_article_collections.py tests\services\test_article_collection_export.py tests\test_tauri_mvp_api.py`
+- `python -m pytest tests\storage\test_article_collections.py tests\services\test_article_collection_export.py tests\test_tauri_mvp_api.py`
 - `npm run build`
 - `cargo check`
 

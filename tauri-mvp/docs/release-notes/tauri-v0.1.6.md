@@ -30,9 +30,9 @@ Optional:
 
 ## Verification
 
-- `D:\anaconda\envs\writer\python.exe -m pytest`
-- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py -q`
+- `python -m pytest`
+- `python -m pytest tests\test_tauri_mvp_api.py -q`
 - `npm test`
 - `npm run build`
 - `cargo check --manifest-path tauri-mvp\frontend\src-tauri\Cargo.toml`
-- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+- `.\tauri-mvp\build-release.ps1 -PythonExe python`

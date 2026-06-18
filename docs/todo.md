@@ -1,36 +1,28 @@
 # Public TODO List
 
-This list tracks product-facing work that would make Writer more reliable and easier to adopt.
+This list tracks product-facing work that would make Living to Tell more reliable, more expressive, and easier to adopt.
 
-## Release quality
+## First-run experience
 
-- [ ] Add signed Windows builds or a documented verification workflow for unsigned alpha archives.
-- [ ] Improve first-run onboarding for language, data location, backup, and AI provider setup.
-- [ ] Add installer checksums to each public release.
-- [ ] Add a sample project that demonstrates articles, collections, references, and AI setup.
+- [ ] Improve onboarding for language, data location, backups, and AI provider setup.
+- [ ] Add a sample project that demonstrates articles, collections, references, notes, and AI setup.
+- [ ] Add a user-facing data location screen.
+- [ ] Add a safe restore workflow for backups.
+- [ ] Re-enable dark mode after a complete visual pass.
 
 ## Writing experience
 
-- [ ] Add a clearer focus-mode entry and exit hint.
 - [x] Add article notes for keeping ideas, reminders, and next-step thoughts beside the current article.
-- [ ] Add more editor layout presets for compact, balanced, and wide screens.
+- [x] Restore the last article editing position and improve long-document comfort near the end of a draft.
+- [ ] Add editor layout presets for compact, balanced, and wide screens.
 - [ ] Improve keyboard-only navigation across Dates, Articles, Collections, and AI Workspace.
-- [ ] Add optional backup reminders for active daily writers.
-- [ ] Add more ways to turn AI chat ideas into articles, notes, and reference-library items.
 - [ ] Add richer collection publishing options such as cover notes, section dividers, and saved export presets.
-- [ ] Add a future mind map / imagery collection space for organizing articles, collections, themes, symbols, motifs, arguments, references, and AI-generated ideas visually.
-
-## Data management
-
-- [ ] Add import/export backup flows for the local SQLite data directory.
-- [ ] Add a user-facing data location screen.
-- [ ] Add a safe restore workflow for backups.
-- [ ] Add optional encrypted-at-rest local storage research and design.
+- [ ] Add optional backup reminders for active daily writers.
 
 ## AI workflow
 
 - [x] Make AI results safer to apply with clearer original-vs-result comparison and explicit replace / insert / copy actions.
-- [x] Give polish, rewrite, expand, and continue their own focused controls and writing intentions.
+- [x] Give polish, rewrite, expand, and continue their own focused controls.
 - [x] Let users save personal prompt presets for each writing tool.
 - [ ] Add clearer long-text request size, wait-time, and timeout feedback.
 - [ ] Make it easier to turn AI chat ideas into articles, notes, or reference material.
@@ -38,8 +30,15 @@ This list tracks product-facing work that would make Writer more reliable and ea
 - [ ] Add provider-native token counting where available.
 - [ ] Expand clickable AI reports so issues can locate source text or become follow-up tasks.
 
+## Knowledge and planning
+
+- [ ] Add a mind map / imagery collection space for organizing themes, symbols, motifs, character links, arguments, references, and AI-generated ideas visually.
+- [ ] Add richer reference-library views for large reading collections.
+- [ ] Add better cross-links between articles, collections, notes, references, and AI conversations.
+
 ## Packaging and platform
 
+- [ ] Add signed Windows builds or published checksums for preview installers.
 - [ ] Evaluate macOS and Linux packaging after the Windows workflow is mature.
 - [ ] Add a clearer update path for public preview users.
 
@@ -51,10 +50,8 @@ This list tracks product-facing work that would make Writer more reliable and ea
 
 ## Completed recently
 
-- Released the Windows public preview with articles, collections, references, and scoped AI.
-- Added clean public screenshots for article writing, focus mode, collections, references, AI, and settings.
-- Added epigraph editing, focus mode, and Markdown / TXT / DOCX export.
-- Added AI tools, scoped chat, AI Cards, and Gemini / OpenAI-compatible setup.
-- Added article notes, focused controls for polish / rewrite / expand / continue, per-tool presets, and explicit AI writeback actions.
+- Renamed the public app to Living to Tell / 活着为了讲述.
+- Added article notes, focused AI writing controls, per-tool presets, and explicit AI writeback actions.
+- Improved long-form editing with last-position restore, wider writing layout, and end-of-document breathing space.
 - Added daily writing quote links and one-click start writing.
 - Fixed the window close button flow with native ask / tray / exit behavior.

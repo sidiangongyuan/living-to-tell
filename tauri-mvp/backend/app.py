@@ -31,7 +31,7 @@ _FEATURE_ROUTERS = (
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Writer API (Tauri MVP)", version="2.0.0")
+    app = FastAPI(title="Living to Tell API", version="2.0.0")
 
     app.add_middleware(
         CORSMiddleware,

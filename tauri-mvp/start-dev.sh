@@ -4,13 +4,13 @@
 
 set -e
 
-echo "=== Starting Writer Tauri MVP (development) ==="
+echo "=== Starting Living to Tell Tauri preview (development) ==="
 echo ""
 
 # Start backend in background
 echo "[1/2] Starting FastAPI backend on :8000..."
 cd backend
-D:/anaconda/envs/writer/python.exe run.py --dev &
+python run.py --dev &
 BACKEND_PID=$!
 cd ..
 

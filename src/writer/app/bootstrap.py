@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from writer.app.application_controller import ApplicationController
 from writer.app.container import AppContainer, build_container
+from writer.app.paths import APP_AUTHOR, APP_NAME, DISPLAY_NAME
 from writer.app.single_instance import SingleInstanceCoordinator
 from writer.app.version import APP_VERSION
 from writer.ui.main_window import MainWindow
@@ -31,8 +32,8 @@ def run(argv: Optional[List[str]] = None) -> int:
     """Boot the application and run the Qt event loop."""
     args = list(argv) if argv is not None else sys.argv
     app = _ensure_qapplication(args)
-    app.setApplicationName("Writer")
-    app.setOrganizationName("Writer")
+    app.setApplicationName(APP_NAME)
+    app.setOrganizationName(APP_AUTHOR)
     app.setApplicationVersion(APP_VERSION)
 
     controller_holder: dict[str, ApplicationController | None] = {"controller": None}
@@ -99,6 +100,6 @@ def _show_startup_error(message: str) -> None:
     print(full, file=sys.stderr)
     # QApplication may already exist (called from tests), so be safe.
     try:
-        QMessageBox.critical(None, "Writer — Startup Error", full)
+        QMessageBox.critical(None, f"{DISPLAY_NAME} — Startup Error", full)
     except Exception:  # noqa: BLE001
         pass  # if Qt itself is broken, at least stderr was written

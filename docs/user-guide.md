@@ -1,21 +1,22 @@
-# Writer User Guide
+# Living to Tell User Guide
 
-Writer is a local-first desktop writing app for writing articles, arranging collections, managing reference material, and using AI assistance only when you choose to send text to a provider.
+Living to Tell is a local-first desktop writing app for writing articles, arranging collections, managing reference material, and using AI assistance only when you choose to send text to a provider.
 
 ## 1. Install and start
 
-1. Download the latest Windows portable zip from the GitHub Releases page.
-2. Unzip the archive.
-3. Open the `Writer` folder.
-4. Run `Writer.exe`.
+1. Download the latest Windows installer from the GitHub Releases page.
+2. Run `LivingToTell_0.1.7_x64-setup.exe`.
+3. Open **活着为了讲述** from the Start menu or desktop shortcut.
 
-The app stores its database in the platform user-data directory by default. Keep regular backups if you rely on Writer for daily work.
+By default, the app stores its SQLite database at `%APPDATA%\LivingToTell\LivingToTell\living-to-tell.sqlite3`.
+
+If an old Writer database exists at `%APPDATA%\Writer\Writer\writer.sqlite3`, first launch copies it into the new location. The old database is kept unchanged.
 
 ## 2. Recommended first-run setup
 
 1. Open **Settings**.
 2. Choose a language.
-3. Review editor comfort options: font size, line height, paragraph spacing, content width, visual first-line indent, and typewriter mode.
+3. Review close-button behavior: ask every time, minimize to tray, or exit directly.
 4. If you use AI, configure one provider:
    - `env:OPENAI_API_KEY` for OpenAI-compatible providers.
    - `env:GEMINI_API_KEY` or local Gemini configuration for Gemini.
@@ -26,24 +27,14 @@ The app stores its database in the platform user-data directory by default. Keep
 
 1. Open **Dates** from the left rail.
 2. Use the calendar to select a day.
-3. Create a new article for today's writing.
-4. Write normally; Writer autosaves articles.
+3. Click **Start Writing** on an empty day, or open an existing article for that date.
+4. Write normally; the app autosaves articles.
 5. Use tags to make articles easier to recover later.
 6. Use the daily reference card as a prompt. It is selected from your existing reference library.
 
-## 4. Quick capture flow
+## 4. Articles
 
-Use quick capture for fast notes that should not interrupt the main writing context.
-
-- Default quick-capture hotkey: Ctrl+Alt+Backquote.
-- Default main-window hotkey: `Ctrl+Alt+M`.
-- Close-to-tray is enabled by default when supported.
-
-A good quick-capture habit is to write first, organize later. Add tags or develop the note into an article after the idea is safe.
-
-## 5. Articles
-
-Articles are the core unit of Writer.
+Articles are the core writing unit.
 
 Typical uses:
 
@@ -58,10 +49,11 @@ Recommended workflow:
 
 1. Capture the article draft quickly.
 2. Add tags when they are useful.
-3. Search or filter articles when you need to recover them.
-4. Save strong passages into the reference library when they should guide future writing.
+3. Keep temporary reminders in article notes.
+4. Search or filter articles when you need to recover them.
+5. Save strong passages into the reference library when they should guide future writing.
 
-## 6. Collections
+## 5. Collections
 
 Use **Collections** for ordered groups of articles. A collection stores membership and order; removing an article from a collection does not delete the article itself.
 
@@ -73,7 +65,7 @@ Suggested process:
 4. Reorder them and use the preview pane to check reading flow.
 5. Export as TXT, Markdown, or DOCX.
 
-## 7. Reference library
+## 6. Reference library
 
 The reference library stores material you want to reuse or consult later.
 
@@ -88,31 +80,31 @@ Useful categories include:
 
 The daily reference card on the Dates page is drawn from this same library. There is no separate quote database.
 
-## 8. AI workspace
+## 7. AI workspace
 
 The AI workspace is designed as an optional assistant, not an automatic editor.
 
 Recommended safety workflow:
 
 1. Select the scope: article, selection, collection, reference material, or pasted text.
-2. Choose a task such as polish, expand, continue, summarize, outline, or style transfer.
+2. Choose a task such as polish, rewrite, expand, continue, summarize, outline, or title generation.
 3. Review the prompt context before sending sensitive content.
 4. Review the output before applying it.
-5. Keep snapshots for major write-back operations.
+5. Use replace, insert, or copy explicitly. AI output is not written back automatically.
 
 AI providers receive the text you send. Do not send content that you are not comfortable sharing with the configured provider.
 
-## 9. Export
+## 8. Export
 
-Writer can export finished work as:
+Living to Tell can export finished work as:
 
 - TXT
 - Markdown
 - DOCX
 
-Before exporting, review article titles, the collection note, and the article order inside the collection.
+Before exporting, review article titles, epigraphs, collection notes, and article order inside the collection.
 
-## 10. Backup and privacy checklist
+## 9. Backup and privacy checklist
 
 Before publishing screenshots, bug reports, logs, or exported examples:
 
@@ -120,6 +112,6 @@ Before publishing screenshots, bug reports, logs, or exported examples:
 - Do not include real API keys or OAuth tokens.
 - Do not include account emails or cloud project IDs.
 - Do not include local database files.
-- Do not include local machine paths unless they are generic examples.
+- Do not include real local machine paths unless they are generic examples.
 
 For security policy details, see [../SECURITY.md](../SECURITY.md).

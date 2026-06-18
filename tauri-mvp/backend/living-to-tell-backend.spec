@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for Writer backend bundling.
+"""PyInstaller spec for Living to Tell backend bundling.
 
-Packages the FastAPI backend + full writer package into a single-directory
+Packages the FastAPI backend + full writer package into a single-file
 bundle that can be shipped with the Tauri app as a sidecar.
 """
 from pathlib import Path
@@ -69,7 +69,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='writer-backend',
+    name='living-to-tell-backend',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

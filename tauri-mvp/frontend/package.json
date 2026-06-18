@@ -1,6 +1,6 @@
 {
-  "name": "writer-app",
-  "version": "0.1.6",
+  "name": "living-to-tell-app",
+  "version": "0.1.7",
   "type": "module",
   "scripts": {
     "dev": "vite",

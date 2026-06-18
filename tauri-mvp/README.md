@@ -1,11 +1,11 @@
 <div align="center">
 
-# Writer Tauri Preview
+# Living to Tell Tauri Preview
 
-### A local-first writing studio for articles, collections, references, and scoped AI help
+### The current Windows desktop preview for 活着为了讲述 / Living to Tell
 
-[![Version](https://img.shields.io/badge/version-0.1.6-blue.svg)](CHANGELOG.md)
-[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/writer/releases)
+[![Version](https://img.shields.io/badge/version-0.1.7-blue.svg)](CHANGELOG.md)
+[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-preview-orange.svg)](#download)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
@@ -14,9 +14,9 @@
 
 </div>
 
-Writer is a calm desktop app for writing articles, arranging them into collections, saving reference passages, and using AI without giving up control of the manuscript. It keeps your writing database local and treats AI output as something to review, copy, discuss, or explicitly apply.
+Living to Tell is a calm desktop app for writing articles, arranging them into collections, saving reference passages, and using AI without giving up control of the manuscript.
 
-This Tauri preview is the current public direction for Writer. It shares the same Writer SQLite data layer as the earlier desktop version, while providing a lighter Vue + Tauri interface.
+The Tauri preview is the current public direction. It uses a Vue frontend, a bundled FastAPI sidecar, and a local SQLite database.
 
 ## Screenshots
 
@@ -37,11 +37,11 @@ This Tauri preview is the current public direction for Writer. It shares the sam
 ### Writing
 
 - Article editor with autosave, tags, full-text search, find/replace, and a collapsible context pane.
-- Epigraphs can be edited as a separate section at the top of an article, while export still produces clean text.
+- Article notes live beside the current article without entering the manuscript.
+- Epigraphs can be edited as a separate section at the top of an article.
 - Focus mode hides the surrounding interface and leaves only the writing area.
 - Single-article export to Markdown, TXT, and DOCX.
-- Date view for browsing daily writing activity, with a direct "start writing" action on empty days.
-- Article notes live beside the current article for reminders, fragments, and next-step ideas without entering the manuscript.
+- Date view for browsing daily writing activity, with a direct start-writing action on empty days.
 
 ### Collections
 
@@ -53,19 +53,19 @@ This Tauri preview is the current public direction for Writer. It shares the sam
 ### Reference Library
 
 - Save reference passages with source title, author, usage type, and personal notes.
-- Browse by source book or by usage.
+- Browse by source book or usage.
 - Jump from the daily quote card to the matching reference passage.
 - Copy just the passage body, or copy a complete citation with title and author.
 
 ### AI
 
-- AI tools for polishing, rewriting, expanding, continuing, summarizing, outlining, and title generation.
-- Polishing, rewriting, expanding, and continuing have focused controls and per-tool personal presets.
+- Focused AI tools for polishing, rewriting, expanding, and continuing.
+- Per-tool personal presets.
 - AI results are reviewed before writing back, with explicit replace, insert, and copy actions.
 - Free chat tab with one ongoing conversation per global scope, article, or collection.
 - AI Cards for style, character, and setting context, with type/source filters and keyword search.
 - Supports OpenAI-compatible APIs, Codex local auth, Gemini API/local config, and Gemini CLI / OAuth.
-- API keys are not stored in Writer settings; only the selected credential source is saved.
+- Raw API keys are not stored in app settings; only the selected credential source is saved.
 
 ### Desktop
 
@@ -76,22 +76,21 @@ This Tauri preview is the current public direction for Writer. It shares the sam
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/writer/releases).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.7).
 
 Recommended Windows asset:
 
-- `Writer_0.1.6_x64-setup.exe`
+- `LivingToTell_0.1.7_x64-setup.exe`
 
-Optional assets:
+Optional asset:
 
-- `Writer_0.1.6_x64_en-US.msi`
-- `writer-app.exe` for direct smoke testing
+- `LivingToTell_0.1.7_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 
 ## Quick Start
 
-1. Install Writer from the latest Release.
+1. Install Living to Tell from the latest Release.
 2. Open the app and go to Articles.
 3. Create or select an article and start writing.
 4. Use Collections to arrange multiple articles into a reading order.
@@ -110,10 +109,11 @@ Long Gemini requests default to a 120 second wait. Advanced users can tune this 
 
 ## Data & Privacy
 
-- Writing data is stored locally in Writer's SQLite database.
+- Writing data is stored locally in SQLite at `%APPDATA%\LivingToTell\LivingToTell\living-to-tell.sqlite3` by default.
+- First launch copies old Writer data from `%APPDATA%\Writer\Writer\writer.sqlite3` into the new location if it exists. The old database is retained.
 - AI requests are sent only when you run an AI tool or send a chat message.
 - API keys are read from environment variables or local provider configuration at runtime.
-- Writer settings store the selected provider and credential source, not raw API keys.
+- Settings store the selected provider and credential source, not raw API keys.
 - Use backups/checkpoints before major editing or migration tests.
 
 ## Development
@@ -121,7 +121,7 @@ Long Gemini requests default to a 120 second wait. Advanced users can tune this 
 Requirements:
 
 - Windows
-- Python 3.12 or the local `writer` conda environment
+- Python 3.12 or a compatible local environment
 - Node.js 20+
 - Rust stable
 
@@ -130,7 +130,7 @@ Run the backend:
 ```powershell
 cd tauri-mvp\backend
 $env:WRITER_USE_DEV_DB = "1"
-D:\anaconda\envs\writer\python.exe run.py --dev
+python run.py --dev
 ```
 
 Run the frontend:
@@ -145,7 +145,7 @@ Build the release package:
 
 ```powershell
 cd tauri-mvp
-.\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe
+.\build-release.ps1 -PythonExe python
 ```
 
 Release artifacts are written under:
@@ -159,9 +159,10 @@ tauri-mvp\frontend\src-tauri\target\release\bundle\msi\
 ## Verification
 
 ```powershell
-D:\anaconda\envs\writer\python.exe -m pytest
+python -m pytest
 cd tauri-mvp\frontend
 npm test
+npm run test:e2e
 npm run build
 cargo check --manifest-path src-tauri\Cargo.toml
 ```
@@ -170,11 +171,11 @@ cargo check --manifest-path src-tauri\Cargo.toml
 
 - Full dark theme pass before re-enabling the theme switcher.
 - First-run onboarding and sample project.
-- More polished release signing and update story.
+- Signed Windows builds or published checksums for preview installers.
 - Richer reference-library views, AI report actions, and easier chat-to-note / chat-to-reference flows.
 - A future mind map / imagery collection space for visually organizing themes, symbols, motifs, character links, arguments, references, and AI-generated ideas.
-- Claude / Anthropic provider support once the provider backend is complete.
+- macOS and Linux packages after the Windows workflow is mature.
 
 ## License
 
-MIT © Writer contributors
+MIT © Living to Tell contributors

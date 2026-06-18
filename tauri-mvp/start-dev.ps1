@@ -1,14 +1,14 @@
 # Quick start script for Tauri MVP (development mode)
 # Run from tauri-mvp directory: .\start-dev.ps1
 
-Write-Host "=== Starting Writer Tauri MVP (development) ===" -ForegroundColor Cyan
+Write-Host "=== Starting Living to Tell Tauri preview (development) ===" -ForegroundColor Cyan
 Write-Host ""
 
 # Start backend in background
 Write-Host "[1/2] Starting FastAPI backend on :8000..." -ForegroundColor Yellow
 $backendJob = Start-Job -ScriptBlock {
     Set-Location "$using:PWD\backend"
-    & D:/anaconda/envs/writer/python.exe run.py --dev
+    & python run.py --dev
 }
 
 # Wait for backend to be ready

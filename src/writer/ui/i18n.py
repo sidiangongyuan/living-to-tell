@@ -99,7 +99,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "menu.exit_focus_mode": "E&xit Focus Mode",
         "menu.settings": "&Settings…",
         "menu.help": "&Help",
-        "menu.about": "&About Writer",
+        "menu.about": "&About Living to Tell",
         "menu.command_palette": "&Command Palette…",
         # ── Main window – toolbar / status bar ───────────────────────────────
         "toolbar.toggle_sidebar": "Toggle sidebar",
@@ -110,7 +110,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "toolbar.language_switch": "中文",
         "toolbar.language_switch_tooltip": "Switch to Simplified Chinese (restart required)",
         # ── M9A: shell / navigation rail ─────────────────────────────────────
-        "shell.brand": "Writer",
+        "shell.brand": "活着为了讲述",
         "rail.dates": "Dates",
         "rail.fragments": "Articles",
         "rail.works": "Works",
@@ -259,11 +259,14 @@ _CATALOG: dict[str, dict[str, str]] = {
         "dlg.export_md_filter": "Markdown (*.md)",
         "dlg.export_txt_filter": "Text files (*.txt)",
         # ── About dialog ─────────────────────────────────────────────────────
-        "about.title": "About Writer",
+        "about.title": "About Living to Tell",
         "about.content": (
-            "<b>Writer</b><br>"
+            "<b>活着为了讲述</b><br>"
+            "Living to Tell<br>"
             "Version {version}<br><br>"
-            "A personal writing tool with lightweight AI rewrite assistance.<br><br>"
+            "Writing, photography, singing, and speaking are all ways to tell. "
+            "To live is to tell.<br><br>"
+            "A local-first writing tool with lightweight AI rewrite assistance.<br><br>"
             "<i>Internal alpha — not a final release.</i>"
         ),
         # ── Settings dialog ───────────────────────────────────────────────────
@@ -295,13 +298,13 @@ _CATALOG: dict[str, dict[str, str]] = {
             "quick.body_placeholder": "Start writing immediately…",
             "quick.save_close": "Save and Close",
             "quick.save_new": "Save and New",
-            "quick.open_writer": "Open Writer",
+            "quick.open_writer": "Open Living to Tell",
             "quick.status_saved": "Saved",
             "quick.status_saving": "Saving…",
             "quick.status_unsaved": "Unsaved",
             "quick.stats": "{words} words · {chars} chars",
             "tray.quick_capture": "Quick Capture",
-            "tray.show_writer": "Show Writer",
+            "tray.show_writer": "Show Living to Tell",
             "tray.exit": "Exit",
             "settings.gemini_cli_proxy_auto": "auto / inherited",
             "settings.gemini_cli_unknown_account": "unknown account",
@@ -1259,7 +1262,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "menu.exit_focus_mode": "退出专注模式(&F)",
         "menu.settings": "设置(&S)…",
         "menu.help": "帮助(&H)",
-        "menu.about": "关于 Writer(&A)",
+        "menu.about": "关于活着为了讲述(&A)",
         "menu.command_palette": "命令面板(&P)…",
         # ── Toolbar ────────────────────────────────────────────────────────────
         "toolbar.toggle_sidebar": "切换侧栏",
@@ -1270,7 +1273,7 @@ _CATALOG: dict[str, dict[str, str]] = {
         "toolbar.language_switch": "EN",
         "toolbar.language_switch_tooltip": "切换到英文（重启后生效）",
         # ── M9A：壳层 / 导航栏 ───────────────────────────────────────────────
-        "shell.brand": "Writer",
+        "shell.brand": "活着为了讲述",
         "rail.dates": "日期",
         "rail.fragments": "文章",
         "rail.works": "作品",
@@ -1380,11 +1383,13 @@ _CATALOG: dict[str, dict[str, str]] = {
         "dlg.export_md_filter": "Markdown (*.md)",
         "dlg.export_txt_filter": "文本文件 (*.txt)",
         # ── About dialog ─────────────────────────────────────────────────────
-        "about.title": "关于 Writer",
+        "about.title": "关于活着为了讲述",
         "about.content": (
-            "<b>Writer</b><br>"
+            "<b>活着为了讲述</b><br>"
+            "Living to Tell<br>"
             "版本 {version}<br><br>"
-            "专注写作的个人写作工具，内置轻量 AI 改写辅助。<br><br>"
+            "写作、拍照、唱歌、讲话，都是为了讲述。活着，就是为了讲述。<br><br>"
+            "本地优先的个人写作工具，内置轻量 AI 改写辅助。<br><br>"
             "<i>内部 Alpha 版本 — 非最终发布版。</i>"
         ),
         # ── Settings dialog ───────────────────────────────────────────────────
@@ -1461,13 +1466,13 @@ _CATALOG: dict[str, dict[str, str]] = {
         "quick.body_placeholder": "打开即可开写…",
         "quick.save_close": "保存并关闭",
         "quick.save_new": "保存并新建",
-        "quick.open_writer": "打开 Writer",
+        "quick.open_writer": "打开活着为了讲述",
         "quick.status_saved": "已保存",
         "quick.status_saving": "正在保存",
         "quick.status_unsaved": "未保存",
         "quick.stats": "{words} 字 · {chars} 字符",
         "tray.quick_capture": "快速速记",
-        "tray.show_writer": "打开 Writer",
+        "tray.show_writer": "打开活着为了讲述",
         "tray.exit": "退出",
         "settings.key_only_env": "支持 env:VAR 或字面量 'codex' / 'gemini'。API 密钥不会存储在磁盘上。",
         "settings.key_enter_var": "请在 env: 后输入环境变量名称。",

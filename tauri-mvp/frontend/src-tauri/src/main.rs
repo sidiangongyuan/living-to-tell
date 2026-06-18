@@ -2,7 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::{env, fs};
 use std::path::PathBuf;
 use tauri::State;
 use tauri::{
@@ -132,7 +132,7 @@ fn main() {
                 let app_handle = app.handle().clone();
 
                 tauri::async_runtime::spawn(async move {
-                    match app_handle.shell().sidecar("writer-backend") {
+                    match app_handle.shell().sidecar("living-to-tell-backend") {
                         Ok(cmd) => {
                             match cmd.spawn() {
                                 Ok((mut rx, child)) => {
@@ -239,11 +239,11 @@ fn normalize_close_preference(preference: ClosePreference, tray_available: bool)
 #[cfg(target_os = "windows")]
 fn ask_close_action_native(tray_available: bool) -> Option<ClosePreference> {
     let body = if tray_available {
-        "Writer 要最小化到系统托盘吗？\n\n是：最小化到托盘\n否：直接退出\n取消：继续使用"
+        "活着为了讲述 要最小化到系统托盘吗？\n\n是：最小化到托盘\n否：直接退出\n取消：继续使用"
     } else {
-        "Writer 要退出吗？\n\n是：直接退出\n取消：继续使用"
+        "活着为了讲述 要退出吗？\n\n是：直接退出\n取消：继续使用"
     };
-    let title = "关闭 Writer";
+    let title = "关闭活着为了讲述";
     let body_wide: Vec<u16> = body.encode_utf16().chain(std::iter::once(0)).collect();
     let title_wide: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
     let answer = unsafe {
@@ -275,7 +275,34 @@ fn preferences_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(base.join("ui-preferences.json"))
 }
 
+fn legacy_preferences_path() -> Option<PathBuf> {
+    env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .map(|base| base.join("com.writer.desktop").join("ui-preferences.json"))
+}
+
+fn copy_legacy_preferences_if_needed(app: &AppHandle) {
+    let Ok(path) = preferences_path(app) else {
+        return;
+    };
+    if path.exists() {
+        return;
+    }
+    let Some(legacy_path) = legacy_preferences_path() else {
+        return;
+    };
+    if !legacy_path.exists() {
+        return;
+    }
+    if let Some(parent) = path.parent() {
+        if fs::create_dir_all(parent).is_ok() {
+            let _ = fs::copy(legacy_path, path);
+        }
+    }
+}
+
 fn load_close_preference(app: &AppHandle, tray_available: bool) -> ClosePreference {
+    copy_legacy_preferences_if_needed(app);
     let path = match preferences_path(app) {
         Ok(path) => path,
         Err(_) => return normalize_close_preference(ClosePreference::Ask, tray_available),
@@ -350,14 +377,14 @@ fn build_tray(app: &AppHandle) -> Result<bool, tauri::Error> {
         None => return Ok(false),
     };
     let menu = MenuBuilder::new(app)
-        .text("show", "打开 Writer")
+        .text("show", "打开活着为了讲述")
         .text("exit", "退出")
         .build()?;
     let app_handle = app.clone();
     let tray = TrayIconBuilder::with_id("writer-main-tray")
         .icon(icon)
         .menu(&menu)
-        .tooltip("Writer")
+        .tooltip("活着为了讲述")
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event: MenuEvent| match event.id().as_ref() {
             "show" => {

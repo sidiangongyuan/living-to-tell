@@ -1,43 +1,45 @@
-# Writer Backend API
+# Living to Tell Backend API
 
-FastAPI backend for the Writer application.
+FastAPI backend for the Tauri preview of 活着为了讲述 / Living to Tell.
+
+The backend wraps the shared Python `writer` package and exposes HTTP endpoints for the Vue/Tauri frontend.
 
 ## Setup
 
-1. Install dependencies:
-```bash
+```powershell
 pip install -r requirements.txt
 ```
 
-2. Run the server:
-```bash
-python main.py
+## Run in development
+
+Use an isolated development database:
+
+```powershell
+$env:WRITER_USE_DEV_DB = "1"
+python run.py --dev
 ```
 
-The server will start at `http://localhost:8000`
+The server starts at `http://127.0.0.1:8000` by default.
 
-## API Endpoints
+## API documentation
 
-### Base
-- `GET /` - Root endpoint with API info
+When the server is running:
 
-### Entries
-- `GET /entries` - List recent entries
-  - Query params: `limit` (default: 100), `include_archived` (default: false)
-- `GET /entries/{entry_id}` - Get a single entry by ID
-- `POST /entries` - Create a new entry
-  - Body: `{"title": str, "body": str, "entry_type": str, "tags": list[str]}`
-- `PUT /entries/{entry_id}` - Update an entry
-  - Body: `{"title": str, "body": str, "tags": list[str]}`
-- `DELETE /entries/{entry_id}` - Delete an entry
-- `GET /entries/count` - Get total entry count
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- ReDoc: `http://127.0.0.1:8000/redoc`
 
-## API Documentation
+## Data location
 
-When the server is running, visit:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+Production Tauri builds use the branded local data directory:
 
-## Database
+```text
+%APPDATA%\LivingToTell\LivingToTell\living-to-tell.sqlite3
+```
 
-The backend uses SQLite with the database file `writer.db` created in the backend directory.
+On first launch, the app copies old Writer data from:
+
+```text
+%APPDATA%\Writer\Writer\writer.sqlite3
+```
+
+The old database is retained and is not deleted by migration.

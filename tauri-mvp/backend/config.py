@@ -1,7 +1,7 @@
 """Backend configuration: data directory and database location.
 
-The Tauri MVP defaults to **sharing** the production Qt app's database at
-``%APPDATA%\\Writer\\Writer``, so both versions access the same data.
+The Tauri app defaults to ``%APPDATA%\\LivingToTell\\LivingToTell`` and copies
+the legacy Writer database from ``%APPDATA%\\Writer\\Writer`` on first launch.
 
 To use an **isolated** dev database instead (for testing), set
 ``WRITER_USE_DEV_DB=1`` in the environment before launching the backend.
@@ -29,9 +29,9 @@ def configure_data_dir() -> Path:
         os.environ["WRITER_DATA_DIR"] = str(target)
         return target
 
-    # Default: shared Qt database (production location).
+    # Default: branded production location with copy-only legacy migration.
     # Leave WRITER_DATA_DIR unset → writer.app.paths falls back to the
-    # platformdirs production location (the real Qt database).
+    # platformdirs production location.
     os.environ.pop("WRITER_DATA_DIR", None)
     # Import lazily so this module has no import-time writer dependency.
     from writer.app.paths import user_data_directory
