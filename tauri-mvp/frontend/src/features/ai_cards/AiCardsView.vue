@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { aiCardApi, type AiCard } from '../../api/aiCards'
 import { useI18n } from '../../i18n'
 
@@ -14,6 +14,7 @@ const filterSource = ref<'all' | 'preset' | 'user'>('all')
 const sortMode = ref<'recent' | 'title'>('recent')
 const searchQuery = ref('')
 const presetSignatures = ref(new Set<string>())
+const pendingCardSave = ref<AiCard | null>(null)
 
 const selectedCard = computed(() => cards.value.find(c => c.id === selectedCardId.value) || null)
 
@@ -53,6 +54,10 @@ onMounted(() => {
   loadPresets()
 })
 
+onUnmounted(() => {
+  void flushPendingCardSave()
+})
+
 async function loadCards() {
   loading.value = true
   error.value = ''
@@ -89,6 +94,8 @@ function sourceLabel(card: AiCard): string {
 }
 
 async function createCard() {
+  const saved = await flushPendingCardSave()
+  if (!saved) return
   try {
     const card = await aiCardApi.createCard({
       title: t('aiCards.untitled'),
@@ -106,29 +113,62 @@ async function createCard() {
 
 let saveTimer: number | null = null
 function scheduleAutoSave() {
+  const snapshot = snapshotSelectedCard()
+  if (!snapshot) return
+  pendingCardSave.value = snapshot
   if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = window.setTimeout(saveNow, 600)
+  saveTimer = window.setTimeout(() => {
+    void flushPendingCardSave()
+  }, 600)
 }
 
-async function saveNow() {
-  if (!selectedCard.value) return
+function snapshotSelectedCard(): AiCard | null {
+  const card = selectedCard.value
+  if (!card) return null
+  return {
+    ...card,
+    tags: [...card.tags],
+  }
+}
+
+async function flushPendingCardSave(): Promise<boolean> {
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
+  const snapshot = pendingCardSave.value
+  if (!snapshot) return true
+  pendingCardSave.value = null
   try {
-    const updated = await aiCardApi.updateCard(selectedCard.value.id, {
-      title: selectedCard.value.title,
-      content: selectedCard.value.content,
-      card_type: selectedCard.value.card_type,
-      tags: selectedCard.value.tags,
+    const updated = await aiCardApi.updateCard(snapshot.id, {
+      title: snapshot.title,
+      content: snapshot.content,
+      card_type: snapshot.card_type,
+      tags: snapshot.tags,
     })
     const idx = cards.value.findIndex(c => c.id === updated.id)
     if (idx !== -1) cards.value[idx] = updated
+    return true
   } catch (e) {
     console.error('Save card failed:', e)
     error.value = e instanceof Error ? e.message : String(e)
+    pendingCardSave.value = snapshot
+    return false
   }
 }
 
 async function deleteCard(id: string) {
   if (!confirm(t('aiCards.deleteConfirm'))) return
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
+  if (pendingCardSave.value?.id === id) {
+    pendingCardSave.value = null
+  } else {
+    const saved = await flushPendingCardSave()
+    if (!saved) return
+  }
   try {
     await aiCardApi.deleteCard(id)
     cards.value = cards.value.filter(c => c.id !== id)
@@ -142,6 +182,8 @@ async function deleteCard(id: string) {
 }
 
 async function generatePresets() {
+  const saved = await flushPendingCardSave()
+  if (!saved) return
   try {
     const result = await aiCardApi.generateFromPresets()
     notice.value = t('aiCards.generateSuccess', { count: result.created })
@@ -150,7 +192,14 @@ async function generatePresets() {
     console.error('Generate presets failed:', e)
     error.value = `${t('aiCards.generateFailed')}：${e instanceof Error ? e.message : String(e)}`
   }
-}</script>
+}
+
+async function selectCard(id: string) {
+  const saved = await flushPendingCardSave()
+  if (!saved) return
+  selectedCardId.value = id
+}
+</script>
 
 <template>
   <div class="flex h-full overflow-hidden bg-gray-50">
@@ -226,7 +275,7 @@ async function generatePresets() {
         <div
           v-for="card in filteredCards"
           :key="card.id"
-          @click="selectedCardId = card.id"
+          @click="selectCard(card.id)"
           :class="[
             'p-4 border-b border-gray-100 cursor-pointer transition-colors',
             selectedCardId === card.id

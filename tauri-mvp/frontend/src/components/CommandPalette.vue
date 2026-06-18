@@ -32,15 +32,6 @@ const allCommands = computed<Command[]>(() => [
   { id: 'nav-library', label: t('commandPalette.commands.navLibrary.label'), description: t('commandPalette.commands.navLibrary.description'), action: async () => { await router.push('/library') }, category: 'navigation' },
   { id: 'articles-new', label: t('commandPalette.commands.newArticle.label'), description: t('commandPalette.commands.newArticle.description'), action: async () => { await router.push('/articles'); await articlesStore.createEntry() }, category: 'articles' },
   { id: 'articles-search', label: t('commandPalette.commands.searchArticles.label'), description: t('commandPalette.commands.searchArticles.description'), action: async () => { await router.push('/articles') }, category: 'articles' },
-  {
-    id: 'articles-archive',
-    label: t('commandPalette.commands.archiveArticle.label'),
-    description: t('commandPalette.commands.archiveArticle.description'),
-    action: () => {
-      if (articlesStore.selectedId) articlesStore.archiveEntry(articlesStore.selectedId)
-    },
-    category: 'articles',
-  },
   { id: 'collections-new', label: t('commandPalette.commands.newCollection.label'), description: t('commandPalette.commands.newCollection.description'), action: async () => { await router.push('/collections'); await collectionsStore.createCollection('新建作品集', '') }, category: 'collections' },
   { id: 'view-focus', label: t('nav.focusMode'), description: t('commandPalette.commands.toggleFocus.description'), action: () => settingsStore.toggleFocusMode(), category: 'view' },
   { id: 'reload', label: t('commandPalette.commands.reload.label'), description: t('commandPalette.commands.reload.description'), action: () => window.location.reload(), category: 'settings' },
