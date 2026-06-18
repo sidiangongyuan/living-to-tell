@@ -133,6 +133,9 @@ Long Gemini requests default to a 120 second wait. Advanced users can tune this 
 ## Data & Privacy
 
 - Writing data is stored locally in SQLite at `%APPDATA%\LivingToTell\LivingToTell\living-to-tell.sqlite3` by default.
+- The Windows installer usually places app files under `%LOCALAPPDATA%\活着为了讲述`; this is separate from your writing database.
+- Uninstalling the app does not delete the writing database, backups, or checkpoints.
+- You can review, open, and safely migrate the data directory from **Settings → Data and Storage**. Migration copies data to the new folder and keeps the old folder intact.
 - First launch copies old Writer data from `%APPDATA%\Writer\Writer\writer.sqlite3` into the new location if it exists. The old database is retained.
 - AI requests are sent only when you run an AI tool or send a chat message.
 - API keys are read from environment variables or local provider configuration at runtime.
@@ -183,6 +186,7 @@ The public TODO list is kept visible but folded so the README stays readable.
 
 ### Platform
 
+- [ ] Add optional cloud sync for writers who want the same local-first workspace across devices.
 - [ ] Add signed Windows builds or published checksums for preview installers.
 - [ ] Evaluate macOS and Linux packaging after the Windows workflow is mature.
 - [ ] Add a troubleshooting page for AI provider setup.

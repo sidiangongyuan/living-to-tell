@@ -86,6 +86,7 @@ class AiThreadService:
         *,
         scope_attachment: Optional[AiContextAttachment] = None,
         attachments: Optional[List[AiContextAttachment]] = None,
+        system_prompt: str = "",
         cost_tier: AiCostTier = AiCostTier.BALANCED,
         history_window: int = DEFAULT_HISTORY_WINDOW,
         context_budget_chars: int = DEFAULT_CHAT_CONTEXT_BUDGET_CHARS,
@@ -130,6 +131,7 @@ class AiThreadService:
             history=history,
             user_text=user_text,
             attachments=attachments_list,
+            system_prompt=system_prompt,
         )
         provider = self._provider_factory()
         model = self._tasks.model_for_tier(cost_tier)
@@ -162,8 +164,11 @@ def _build_chat_messages(
     history: List[AiMessage],
     user_text: str,
     attachments: List[AiContextAttachment],
+    system_prompt: str = "",
 ) -> List[dict]:
     system = _ZH_SYSTEM if current_locale() == LOCALE_ZH_CN else _EN_SYSTEM
+    if system_prompt.strip():
+        system = f"{system}\n\nUser standing instruction:\n{system_prompt.strip()}"
     messages: List[dict] = [{"role": "system", "content": system}]
     for m in history:
         if m.role in ("user", "assistant"):

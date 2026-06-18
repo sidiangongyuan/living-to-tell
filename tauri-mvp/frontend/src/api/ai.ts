@@ -80,6 +80,10 @@ export interface ChatResponse {
   assistant_message: Message
 }
 
+export interface ChatSettings {
+  system_prompt: string
+}
+
 export interface CurrentThreadResponse {
   thread: Thread
   messages: Message[]
@@ -147,6 +151,20 @@ export const aiApi = {
   async deleteThread(id: string): Promise<void> {
     const res = await apiFetch(`/api/ai/threads/${id}`, {
       method: 'DELETE',
+    })
+    return handleResponse(res)
+  },
+
+  async getChatSettings(): Promise<ChatSettings> {
+    const res = await apiFetch('/api/ai/chat-settings')
+    return handleResponse(res)
+  },
+
+  async saveChatSettings(settings: ChatSettings): Promise<ChatSettings> {
+    const res = await apiFetch('/api/ai/chat-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
     })
     return handleResponse(res)
   },

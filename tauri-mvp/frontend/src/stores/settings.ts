@@ -5,6 +5,8 @@ export type Theme = 'light' | 'dark'
 export type Language = 'zh' | 'en'
 export type CloseBehavior = 'ask' | 'tray' | 'exit'
 
+export const WELCOME_CHECKLIST_DISMISSED_KEY = 'living_to_tell_welcome_checklist_dismissed'
+
 export const useSettingsStore = defineStore('settings', () => {
   // 从 localStorage 读取保存的设置
   localStorage.setItem('theme', 'light')
@@ -14,6 +16,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const rightContextPaneCollapsed = ref(localStorage.getItem('right_context_pane_collapsed') === 'true')
   const closeBehavior = ref<CloseBehavior>('ask')
   const closeBehaviorLoaded = ref(false)
+  const welcomeChecklistDismissed = ref(localStorage.getItem(WELCOME_CHECKLIST_DISMISSED_KEY) === 'true')
 
   function toggleTheme() {
     theme.value = 'light'
@@ -61,6 +64,16 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  function dismissWelcomeChecklist() {
+    welcomeChecklistDismissed.value = true
+    localStorage.setItem(WELCOME_CHECKLIST_DISMISSED_KEY, 'true')
+  }
+
+  function resetWelcomeChecklist() {
+    welcomeChecklistDismissed.value = false
+    localStorage.removeItem(WELCOME_CHECKLIST_DISMISSED_KEY)
+  }
+
   function applyTheme() {
     theme.value = 'light'
     document.documentElement.classList.remove('dark')
@@ -90,11 +103,14 @@ export const useSettingsStore = defineStore('settings', () => {
     rightContextPaneCollapsed,
     closeBehavior,
     closeBehaviorLoaded,
+    welcomeChecklistDismissed,
     toggleTheme,
     toggleLanguage,
     toggleFocusMode,
     toggleRightContextPane,
     loadNativePreferences,
     saveCloseBehavior,
+    dismissWelcomeChecklist,
+    resetWelcomeChecklist,
   }
 })

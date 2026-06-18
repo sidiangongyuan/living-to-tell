@@ -10,6 +10,10 @@ Living to Tell is a local-first desktop writing app for writing articles, arrang
 
 By default, the app stores its SQLite database at `%APPDATA%\LivingToTell\LivingToTell\living-to-tell.sqlite3`.
 
+The Windows installer usually places app files under `%LOCALAPPDATA%\活着为了讲述`. App files and writing data are intentionally separate.
+
+Uninstalling the app does not delete the writing database, backups, or checkpoints. Use **Settings → Data and Storage** to open the current data folder, open backups, or migrate the data directory to another local folder. Migration copies data and keeps the old folder intact.
+
 If an old Writer database exists at `%APPDATA%\Writer\Writer\writer.sqlite3`, first launch copies it into the new location. The old database is kept unchanged.
 
 ## 2. Recommended first-run setup

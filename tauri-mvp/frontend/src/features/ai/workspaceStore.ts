@@ -73,7 +73,7 @@ export const useAiWorkspaceStore = defineStore('ai-workspace', () => {
   const activeTab = ref<AiTab>('tools')
   const taskType = ref<TaskType>('polish')
   const tasks = ref<Record<TaskType, AiTaskWorkspaceState>>(createTaskStates())
-  const chatScopeKind = ref<'global' | 'article' | 'collection'>('global')
+  const chatScopeKind = ref<'global' | 'article' | 'collection'>('article')
   const chatScopeId = ref<string | null>(null)
   const chatInput = ref('')
 
@@ -107,7 +107,7 @@ export const useAiWorkspaceStore = defineStore('ai-workspace', () => {
   function clearAllTools() {
     tasks.value = createTaskStates()
     taskType.value = 'polish'
-    chatScopeKind.value = 'global'
+    chatScopeKind.value = 'article'
     chatScopeId.value = null
     chatInput.value = ''
   }

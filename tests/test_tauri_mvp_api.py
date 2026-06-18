@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from types import SimpleNamespace
 import sys
 from pathlib import Path
@@ -20,6 +21,21 @@ def _tauri_client(monkeypatch):
             sys.path.remove(str(backend))
         except ValueError:
             pass
+
+
+def test_tauri_app_version_capabilities(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    response = client.get("/api/app/version")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["app_name"] == "Living to Tell"
+    assert payload["version"] == "0.1.7"
+    assert payload["api_version"] == "2.0.0"
+    assert {"data_location", "ai_chat_settings", "ai_task_presets"}.issubset(
+        set(payload["capabilities"])
+    )
 
 
 def test_tauri_ai_cards_seed_and_crud(monkeypatch):
@@ -312,6 +328,73 @@ def test_tauri_ai_current_thread_is_scope_aware(monkeypatch):
     assert restored_payload["messages"][0]["content"] == "讨论这个开头"
 
 
+def test_tauri_ai_chat_settings_are_injected_into_chat(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    saved = client.put(
+        "/api/ai/chat-settings",
+        json={"system_prompt": f"  {'要克制。' * 1000}  "},
+    )
+    assert saved.status_code == 200
+    assert len(saved.json()["system_prompt"]) == 4000
+
+    saved = client.put(
+        "/api/ai/chat-settings",
+        json={"system_prompt": "回答要具体、克制。"},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["system_prompt"] == "回答要具体、克制。"
+
+    restored = client.get("/api/ai/chat-settings")
+    assert restored.status_code == 200
+    assert restored.json()["system_prompt"] == "回答要具体、克制。"
+
+    entry = client.post(
+        "/api/articles",
+        json={"title": "AI 对话文章", "body": "文章正文。", "tags": []},
+    ).json()
+
+    from deps import get_container
+    from writer.services.ai.interfaces import ChatResponse
+
+    class FakeProvider:
+        name = "fake"
+
+        def __init__(self):
+            self.calls = []
+
+        def chat(self, messages, *, model=None):
+            self.calls.append({"messages": list(messages), "model": model})
+            return ChatResponse(
+                content="建议写成便签。",
+                model=model or "fake-model",
+                provider=self.name,
+                input_tokens=1,
+                output_tokens=1,
+            )
+
+    provider = FakeProvider()
+    get_container().ai_thread_service._provider_factory = lambda: provider  # noqa: SLF001
+
+    response = client.post(
+        "/api/ai/chat",
+        json={
+            "message": "这一段怎么改？",
+            "scope_kind": "article",
+            "scope_id": entry["id"],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["assistant_message"]["content"] == "建议写成便签。"
+    messages = provider.calls[-1]["messages"]
+    assert "回答要具体、克制。" in messages[0]["content"]
+    assert "文章正文。" in messages[-1]["content"]
+
+    cleared = client.put("/api/ai/chat-settings", json={"system_prompt": "  "})
+    assert cleared.status_code == 200
+    assert cleared.json()["system_prompt"] == ""
+
+
 def test_tauri_ai_task_accepts_controls_and_attachments(monkeypatch):
     client = _tauri_client(monkeypatch)
 
@@ -504,3 +587,70 @@ def test_tauri_ai_settings_import_failures_are_explicit(monkeypatch):
     assert gemini.status_code in {200, 400, 404}
     if gemini.status_code == 200:
         assert gemini.json()["config"]["provider_name"] == "gemini"
+
+
+def test_tauri_data_location_reports_current_paths(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    response = client.get("/api/settings/data-location")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["data_dir"]
+    assert data["database_path"].endswith("living-to-tell.sqlite3")
+    assert data["backup_dir"].endswith("backups")
+    assert data["checkpoint_dir"].endswith("checkpoints")
+    assert data["database_exists"] is True
+
+
+def test_tauri_data_location_migrate_copies_database_and_auxiliary_dirs(
+    monkeypatch, tmp_path
+):
+    client = _tauri_client(monkeypatch)
+    title = "迁移验证文章"
+    created = client.post(
+        "/api/articles",
+        json={"title": title, "body": "迁移正文", "tags": []},
+    )
+    assert created.status_code == 201
+
+    info = client.get("/api/settings/data-location").json()
+    backup_dir = Path(info["backup_dir"])
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    marker = backup_dir / "migration-marker.txt"
+    marker.write_text("keep", encoding="utf-8")
+
+    target = tmp_path / "living-to-tell-data"
+    migrated = client.post(
+        "/api/settings/data-location/migrate",
+        json={"target_dir": str(target)},
+    )
+
+    assert migrated.status_code == 200
+    result = migrated.json()
+    assert result["restart_required"] is True
+    target_db = target / "living-to-tell.sqlite3"
+    assert target_db.exists()
+    assert (target / "backups" / marker.name).read_text(encoding="utf-8") == "keep"
+
+    with sqlite3.connect(target_db) as conn:
+        row = conn.execute("SELECT title FROM entries WHERE title = ?", (title,)).fetchone()
+    assert row == (title,)
+    assert Path(info["database_path"]).exists()
+
+
+def test_tauri_data_location_migrate_rejects_existing_database_by_default(
+    monkeypatch, tmp_path
+):
+    client = _tauri_client(monkeypatch)
+    target = tmp_path / "existing"
+    target.mkdir()
+    (target / "living-to-tell.sqlite3").write_text("existing", encoding="utf-8")
+
+    response = client.post(
+        "/api/settings/data-location/migrate",
+        json={"target_dir": str(target)},
+    )
+
+    assert response.status_code == 400
+    assert "already exists" in response.json()["detail"]

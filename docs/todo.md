@@ -38,6 +38,7 @@ This list tracks product-facing work that would make Living to Tell more reliabl
 
 ## Packaging and platform
 
+- [ ] Add optional cloud sync for writers who want the same local-first workspace across devices.
 - [ ] Add signed Windows builds or published checksums for preview installers.
 - [ ] Evaluate macOS and Linux packaging after the Windows workflow is mature.
 - [ ] Add a clearer update path for public preview users.

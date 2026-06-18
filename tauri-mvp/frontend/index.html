@@ -5,9 +5,115 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>活着为了讲述 / Living to Tell</title>
+    <style>
+      html,
+      body,
+      #app {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        background: #f8fafc;
+      }
+
+      .startup-shell {
+        min-height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f8fafc;
+        color: #1f2937;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .startup-card {
+        width: min(560px, calc(100vw - 48px));
+      }
+
+      .startup-mark {
+        margin-bottom: 18px;
+        font-size: 42px;
+        line-height: 1;
+        font-weight: 800;
+        color: #111827;
+      }
+
+      .startup-title {
+        margin: 0;
+        font-size: 24px;
+        line-height: 1.35;
+        font-weight: 800;
+        color: #111827;
+      }
+
+      .startup-subtitle {
+        margin: 10px 0 0;
+        font-size: 14px;
+        line-height: 1.8;
+        color: #6b7280;
+      }
+
+      .startup-quote {
+        margin-top: 28px;
+        border-left: 3px solid #d1d5db;
+        padding-left: 16px;
+      }
+
+      .startup-quote[hidden] {
+        display: none;
+      }
+
+      .startup-quote-text {
+        margin: 0;
+        font-size: 15px;
+        line-height: 1.9;
+        color: #374151;
+      }
+
+      .startup-quote-source {
+        margin: 10px 0 0;
+        font-size: 12px;
+        color: #9ca3af;
+      }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div class="startup-shell">
+        <div class="startup-card">
+          <div class="startup-mark">讲</div>
+          <h1 class="startup-title">活着为了讲述 / Living to Tell</h1>
+          <p class="startup-subtitle">写作、拍照、唱歌、讲话，都是为了讲述。活着，就是为了讲述。</p>
+          <div id="startup-quote" class="startup-quote" hidden>
+            <p id="startup-quote-text" class="startup-quote-text"></p>
+            <p id="startup-quote-source" class="startup-quote-source"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      (() => {
+        const key = 'living_to_tell_daily_quote_cache'
+        const maxLength = 120
+        try {
+          const cached = JSON.parse(localStorage.getItem(key) || 'null')
+          const text = typeof cached?.text === 'string' ? cached.text.trim() : ''
+          if (!text) return
+          const quote = document.getElementById('startup-quote')
+          const quoteText = document.getElementById('startup-quote-text')
+          const quoteSource = document.getElementById('startup-quote-source')
+          if (!quote || !quoteText || !quoteSource) return
+          quoteText.textContent = text.length > maxLength ? `${text.slice(0, maxLength)}...` : text
+          const source = [cached.source_title ? `《${cached.source_title}》` : '', cached.source_author || '']
+            .filter(Boolean)
+            .join(' ')
+          quoteSource.textContent = source
+          quoteSource.hidden = !source
+          quote.hidden = false
+        } catch {
+          // Startup must never wait for or fail on optional local quote data.
+        }
+      })()
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

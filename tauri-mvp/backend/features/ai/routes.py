@@ -26,8 +26,10 @@ from writer.services.ai.task_types import AiTaskRequest as DomainAiTaskRequest
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
 KEY_TAURI_AI_TASK_PRESETS = "ai.tauri_task_presets"
+KEY_TAURI_AI_CHAT_SYSTEM_PROMPT = "ai.tauri_chat_system_prompt"
 MAX_PRESETS_PER_TASK = 50
 MAX_ATTACHMENT_CHARS = 40_000
+MAX_CHAT_SYSTEM_PROMPT_CHARS = 4_000
 
 TASK_TYPE_MAP = {
     "polish": AiTaskType.POLISH,
@@ -128,6 +130,10 @@ class ChatResponse(BaseModel):
     assistant_message: MessageOut
 
 
+class ChatSettings(BaseModel):
+    system_prompt: str = ""
+
+
 class AiTaskPreset(BaseModel):
     id: str = ""
     task_type: str
@@ -177,6 +183,16 @@ def _normalise_scope_kind(scope_kind: Optional[str]) -> str:
 
 def _storage_scope_kind(scope_kind: str) -> str:
     return "fragment" if scope_kind == "article" else scope_kind
+
+
+def _clean_chat_system_prompt(value: str) -> str:
+    return (value or "").strip()[:MAX_CHAT_SYSTEM_PROMPT_CHARS]
+
+
+def _chat_system_prompt(container: AppContainer) -> str:
+    return _clean_chat_system_prompt(
+        str(container.settings.get(KEY_TAURI_AI_CHAT_SYSTEM_PROMPT) or "")
+    )
 
 
 def _target_kind(value: str) -> AiTargetKind:
@@ -460,6 +476,26 @@ def save_task_presets(
     return cleaned
 
 
+@router.get("/chat-settings", response_model=ChatSettings)
+def get_chat_settings(
+    container: AppContainer = Depends(get_container),
+) -> ChatSettings:
+    return ChatSettings(system_prompt=_chat_system_prompt(container))
+
+
+@router.put("/chat-settings", response_model=ChatSettings)
+def save_chat_settings(
+    settings: ChatSettings,
+    container: AppContainer = Depends(get_container),
+) -> ChatSettings:
+    cleaned = _clean_chat_system_prompt(settings.system_prompt)
+    if cleaned:
+        container.settings.set(KEY_TAURI_AI_CHAT_SYSTEM_PROMPT, cleaned)
+    else:
+        container.settings_repository.delete(KEY_TAURI_AI_CHAT_SYSTEM_PROMPT)
+    return ChatSettings(system_prompt=cleaned)
+
+
 # ---- Thread management ----
 @router.get("/threads", response_model=list[ThreadOut])
 def list_threads(
@@ -566,6 +602,7 @@ def chat(
             thread_id=thread.id,
             user_text=request.message,
             scope_attachment=scope_attachment,
+            system_prompt=_chat_system_prompt(container),
         )
 
         return ChatResponse(

@@ -15,6 +15,29 @@ $NsisDir = Join-Path $Frontend "src-tauri\target\release\bundle\nsis"
 $MsiDir = Join-Path $Frontend "src-tauri\target\release\bundle\msi"
 $EnglishNsis = Join-Path $NsisDir ("LivingToTell_{0}_x64-setup.exe" -f $Version)
 $EnglishMsi = Join-Path $MsiDir ("LivingToTell_{0}_x64_zh-CN.msi" -f $Version)
+$InstalledBackend = Join-Path $env:LOCALAPPDATA "活着为了讲述\living-to-tell-backend.exe"
+
+function Get-ArtifactSummary {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        return [PSCustomObject]@{
+            FullName = $Path
+            Length = $null
+            LastWriteTime = $null
+            SHA256 = "<missing>"
+        }
+    }
+
+    $item = Get-Item -LiteralPath $Path
+    $hash = Get-FileHash -LiteralPath $Path -Algorithm SHA256
+    [PSCustomObject]@{
+        FullName = $item.FullName
+        Length = $item.Length
+        LastWriteTime = $item.LastWriteTime
+        SHA256 = $hash.Hash
+    }
+}
 
 foreach ($staleArtifact in @($EnglishNsis, $EnglishMsi)) {
     if (Test-Path $staleArtifact) {
@@ -37,6 +60,18 @@ if (-not (Test-Path $SidecarSource)) {
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $SidecarTarget) | Out-Null
 Copy-Item -LiteralPath $SidecarSource -Destination $SidecarTarget -Force
+
+$sourceHash = Get-FileHash -LiteralPath $SidecarSource -Algorithm SHA256
+$targetHash = Get-FileHash -LiteralPath $SidecarTarget -Algorithm SHA256
+if ($sourceHash.Hash -ne $targetHash.Hash) {
+    throw "Sidecar hash mismatch after copy. Source=$($sourceHash.Hash) Target=$($targetHash.Hash)"
+}
+
+Write-Host "Sidecar source/target:"
+@(
+    Get-ArtifactSummary $SidecarSource
+    Get-ArtifactSummary $SidecarTarget
+) | Format-Table -AutoSize
 
 Write-Host "Building Tauri installer..."
 Push-Location $Frontend
@@ -80,3 +115,10 @@ Get-Item `
     Sort-Object LastWriteTime -Descending |
     Select-Object -First 6 FullName, Length, LastWriteTime |
     Format-Table -AutoSize
+
+Write-Host "Backend artifact hashes:"
+@(
+    Get-ArtifactSummary $SidecarSource
+    Get-ArtifactSummary $SidecarTarget
+    Get-ArtifactSummary $InstalledBackend
+) | Format-Table -AutoSize

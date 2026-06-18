@@ -48,6 +48,30 @@ export interface AiTestResult {
   message: string
 }
 
+export interface DataLocationInfo {
+  data_dir: string
+  default_data_dir: string
+  database_path: string
+  default_database_path: string
+  backup_dir: string
+  checkpoint_dir: string
+  is_custom: boolean
+  database_exists: boolean
+  warning?: string | null
+}
+
+export interface DataLocationMigrationRequest {
+  target_dir: string
+  replace_existing?: boolean
+}
+
+export interface DataLocationMigrationResult {
+  target_dir: string
+  target_database_path: string
+  restart_required: boolean
+  message: string
+}
+
 export const settingsApi = {
   async getAiSettings(): Promise<AiSettings> {
     const res = await apiFetch('/api/settings/ai')
@@ -82,6 +106,20 @@ export const settingsApi = {
   async importGeminiSettings(): Promise<AiImportResult> {
     const res = await apiFetch('/api/settings/ai/import-gemini', {
       method: 'POST',
+    })
+    return handleResponse(res)
+  },
+
+  async getDataLocation(): Promise<DataLocationInfo> {
+    const res = await apiFetch('/api/settings/data-location')
+    return handleResponse(res)
+  },
+
+  async migrateDataLocation(data: DataLocationMigrationRequest): Promise<DataLocationMigrationResult> {
+    const res = await apiFetch('/api/settings/data-location/migrate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
     })
     return handleResponse(res)
   },

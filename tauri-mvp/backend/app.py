@@ -4,8 +4,6 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Importing deps triggers configure_data_dir() before any writer.* import.
-from deps import get_container
 from features.ai.routes import router as ai_router
 from features.ai_cards.routes import router as ai_cards_router
 from features.articles.routes import router as articles_router
@@ -29,9 +27,18 @@ _FEATURE_ROUTERS = (
     settings_router,
 )
 
+APP_DISPLAY_NAME = "Living to Tell"
+APP_VERSION = "0.1.7"
+API_VERSION = "2.0.0"
+API_CAPABILITIES = [
+    "data_location",
+    "ai_chat_settings",
+    "ai_task_presets",
+]
+
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Living to Tell API", version="2.0.0")
+    app = FastAPI(title="Living to Tell API", version=API_VERSION)
 
     app.add_middleware(
         CORSMiddleware,
@@ -45,13 +52,16 @@ def create_app() -> FastAPI:
     def health() -> dict:
         return {"status": "ok"}
 
-    _mount_feature_routers(app)
+    @app.get("/api/app/version")
+    def app_version() -> dict:
+        return {
+            "app_name": APP_DISPLAY_NAME,
+            "version": APP_VERSION,
+            "api_version": API_VERSION,
+            "capabilities": API_CAPABILITIES,
+        }
 
-    @app.on_event("startup")
-    def _warm_container() -> None:
-        # Build the container eagerly so the first real request is fast and
-        # any wiring error surfaces at startup, not mid-request.
-        get_container()
+    _mount_feature_routers(app)
 
     return app
 

@@ -10,6 +10,10 @@
 
 默认情况下，应用会把 SQLite 数据库保存在 `%APPDATA%\LivingToTell\LivingToTell\living-to-tell.sqlite3`。
 
+Windows 安装器通常把程序文件放在 `%LOCALAPPDATA%\活着为了讲述`。程序文件和写作数据是分开的。
+
+卸载应用不会删除文章数据库、备份或检查点。可在 **设置 → 数据与存储** 打开当前数据目录、打开备份目录，或把数据目录迁移到另一个本地文件夹。迁移只复制数据，旧目录会完整保留。
+
 如果存在旧 Writer 数据库 `%APPDATA%\Writer\Writer\writer.sqlite3`，首次启动会复制到新目录；旧数据库保留不删除。
 
 ## 2. 第一次使用建议

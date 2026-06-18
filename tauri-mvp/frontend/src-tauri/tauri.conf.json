@@ -10,6 +10,8 @@
   "app": {
     "windows": [
       {
+        "label": "main",
+        "url": "index.html",
         "title": "活着为了讲述",
         "width": 1400,
         "height": 900,
@@ -18,7 +20,9 @@
         "resizable": true,
         "fullscreen": false,
         "decorations": true,
-        "transparent": false
+        "transparent": false,
+        "visible": false,
+        "backgroundColor": "#f8fafc"
       }
     ],
     "security": {

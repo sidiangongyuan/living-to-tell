@@ -26,13 +26,21 @@ LEGACY_DATABASE_FILENAME = "writer.sqlite3"
 _SQLITE_SUFFIXES = ("", "-journal", "-wal", "-shm")
 
 
+def default_user_data_directory(*, create: bool = True) -> Path:
+    """Return the default branded user data directory."""
+    path = Path(user_data_dir(APP_NAME, APP_AUTHOR, roaming=True))
+    if create:
+        path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def user_data_directory() -> Path:
     """Return the directory holding user data, creating it if needed."""
     override = os.environ.get(ENV_DATA_DIR)
     if override:
         path = Path(override).expanduser()
     else:
-        path = Path(user_data_dir(APP_NAME, APP_AUTHOR, roaming=True))
+        path = default_user_data_directory(create=False)
     path.mkdir(parents=True, exist_ok=True)
     return path
 

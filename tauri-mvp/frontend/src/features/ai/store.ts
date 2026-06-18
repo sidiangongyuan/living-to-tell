@@ -95,8 +95,15 @@ export const useAiStore = defineStore('ai', () => {
     loading.value = true
     error.value = null
     try {
+      const currentThread = selectedThread.value
+      const threadMatchesScope = Boolean(
+        currentThread
+        && currentThread.scope_kind === scopeKind
+        && (currentThread.scope_id ?? null) === (scopeId ?? null),
+      )
+      const threadId = currentThread && threadMatchesScope ? currentThread.id : null
       const response = await aiApi.chat({
-        thread_id: selectedThreadId.value,
+        thread_id: threadId,
         message,
         scope_kind: scopeKind,
         scope_id: scopeId,

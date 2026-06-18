@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { aiApi, type AiContextAttachment, type AiTaskPreset, type AiTaskPresetMap } from '../../api/ai'
+import { appApi } from '../../api/app'
+import { aiApi, type AiContextAttachment, type AiTaskPreset, type AiTaskPresetMap, type Message } from '../../api/ai'
 import { articlesApi, type Entry } from '../../api/articles'
 import { aiCardApi, type AiCard } from '../../api/aiCards'
-import { collectionsApi, type Collection } from '../../api/collections'
+import { errorMessage, isHttpStatus } from '../../api/base'
 import { libraryApi, type Reference } from '../../api/library'
 import { notesApi } from '../../api/notes'
 import { useI18n } from '../../i18n'
+import { countParagraphs } from '../articles/articleList'
 import { applyArticleBodyEdit, selectArticleBodyText } from './applyArticleEdit'
 import { useAiStore } from './store'
 import {
@@ -55,10 +57,16 @@ const selectedReferenceIds = ref<string[]>([])
 const referenceLoading = ref(false)
 
 const articles = ref<Entry[]>([])
-const collections = ref<Collection[]>([])
-
 const taskPresets = ref<AiTaskPresetMap>({})
+const taskPresetsSupported = ref(true)
 const presetName = ref('')
+const CHAT_SYSTEM_PROMPT_LIMIT = 4000
+const chatSystemPrompt = ref('')
+const chatSystemPromptDraft = ref('')
+const chatSettingsSupported = ref(true)
+const savingChatSettings = ref(false)
+const chatNotice = ref('')
+const backendCapabilities = ref<string[] | null>(null)
 const activeTab = computed({
   get: () => workspace.activeTab,
   set: (value: AiTab) => {
@@ -191,9 +199,9 @@ const selectedChatArticle = computed(() =>
   articles.value.find((article) => article.id === chatScopeId.value) ?? null
 )
 
-const selectedChatCollection = computed(() =>
-  collections.value.find((collection) => collection.id === chatScopeId.value) ?? null
-)
+const selectedChatArticleChars = computed(() => selectedChatArticle.value?.body?.length ?? 0)
+
+const selectedChatArticleParagraphs = computed(() => countParagraphs(selectedChatArticle.value?.body ?? ''))
 
 const taskDescription = computed(() =>
   taskGroups.value.flatMap((group) => group.tasks).find((task) => task.value === taskType.value)?.desc ?? ''
@@ -240,13 +248,7 @@ const contextAttachments = computed<AiContextAttachment[]>(() =>
 const canAddArticleNotes = computed(() => scopeType.value === 'article' && Boolean(selectedArticleId.value))
 
 const chatScopeLabel = computed(() => {
-  if (chatScopeKind.value === 'article') {
-    return selectedChatArticle.value?.title || t('articles.untitled')
-  }
-  if (chatScopeKind.value === 'collection') {
-    return selectedChatCollection.value?.title || t('collections.untitled')
-  }
-  return t('ai.chatGlobal')
+  return selectedChatArticle.value?.title || t('ai.chatNoArticleSelected')
 })
 
 const cardTypeLabels = computed<Record<string, string>>(() => ({
@@ -256,7 +258,8 @@ const cardTypeLabels = computed<Record<string, string>>(() => ({
 }))
 
 onMounted(async () => {
-  await Promise.all([loadAiCards(), loadArticles(), loadCollections(), loadTaskPresets()])
+  await loadBackendCapabilities()
+  await Promise.all([loadAiCards(), loadArticles(), loadTaskPresets(), loadChatSettings()])
   applyRouteScope()
   await loadChatThread()
 })
@@ -270,6 +273,35 @@ watch(
 )
 
 watch([chatScopeKind, chatScopeId], async () => {
+  if (
+    activeTab.value === 'chat'
+    && chatScopeId.value
+    && (route.query.scope_kind !== 'article' || route.query.scope_id !== chatScopeId.value)
+  ) {
+    await router.replace({
+      name: 'ai',
+      query: {
+        ...route.query,
+        tab: 'chat',
+        scope_kind: 'article',
+        scope_id: chatScopeId.value,
+      },
+    })
+    return
+  }
+  if (activeTab.value === 'chat' && !chatScopeId.value && route.query.scope_id) {
+    const nextQuery = { ...route.query }
+    delete nextQuery.scope_kind
+    delete nextQuery.scope_id
+    await router.replace({
+      name: 'ai',
+      query: {
+        ...nextQuery,
+        tab: 'chat',
+      },
+    })
+    return
+  }
   await loadChatThread()
 })
 
@@ -293,19 +325,59 @@ async function loadArticles() {
   }
 }
 
-async function loadCollections() {
+async function loadBackendCapabilities() {
   try {
-    collections.value = await collectionsApi.listCollections()
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
+    const info = await appApi.getVersion()
+    backendCapabilities.value = info.capabilities
+  } catch {
+    backendCapabilities.value = null
   }
 }
 
+function backendCapabilityMissing(capability: string): boolean {
+  return Array.isArray(backendCapabilities.value)
+    && !backendCapabilities.value.includes(capability)
+}
+
 async function loadTaskPresets() {
+  if (backendCapabilityMissing('ai_task_presets')) {
+    taskPresetsSupported.value = false
+    taskPresets.value = {}
+    return
+  }
   try {
     taskPresets.value = await aiApi.listTaskPresets()
+    taskPresetsSupported.value = true
   } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
+    if (isHttpStatus(e, 404)) {
+      taskPresetsSupported.value = false
+      taskPresets.value = {}
+    } else {
+      error.value = errorMessage(e)
+    }
+  }
+}
+
+async function loadChatSettings() {
+  if (backendCapabilityMissing('ai_chat_settings')) {
+    chatSettingsSupported.value = false
+    chatSystemPrompt.value = ''
+    chatSystemPromptDraft.value = ''
+    return
+  }
+  try {
+    const settings = await aiApi.getChatSettings()
+    chatSystemPrompt.value = settings.system_prompt
+    chatSystemPromptDraft.value = settings.system_prompt
+    chatSettingsSupported.value = true
+  } catch (e) {
+    if (isHttpStatus(e, 404)) {
+      chatSettingsSupported.value = false
+      chatSystemPrompt.value = ''
+      chatSystemPromptDraft.value = ''
+    } else {
+      error.value = errorMessage(e)
+    }
   }
 }
 
@@ -328,8 +400,10 @@ function applyRouteScope() {
 
   const scopeKind = normalizeScopeKind(route.query.scope_kind)
   const scopeId = typeof route.query.scope_id === 'string' ? route.query.scope_id : null
-  chatScopeKind.value = scopeKind
-  chatScopeId.value = scopeKind === 'global' ? null : scopeId
+  if (activeTab.value === 'chat') {
+    chatScopeKind.value = 'article'
+    chatScopeId.value = scopeKind === 'article' ? scopeId : null
+  }
 
   if (activeTab.value === 'tools' && scopeKind === 'article' && scopeId) {
     scopeType.value = 'article'
@@ -345,16 +419,39 @@ function applyRouteScope() {
 
 async function loadChatThread() {
   if (activeTab.value !== 'chat') return
-  if (chatScopeKind.value !== 'global' && !chatScopeId.value) {
+  chatScopeKind.value = 'article'
+  if (!chatScopeId.value) {
     store.selectedThreadId = null
     store.messages = []
     return
   }
   try {
-    await store.loadCurrentThread(chatScopeKind.value, chatScopeId.value, true)
+    await store.loadCurrentThread('article', chatScopeId.value, true)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   }
+}
+
+async function openChatTab() {
+  activeTab.value = 'chat'
+  const scopeKind = normalizeScopeKind(route.query.scope_kind)
+  const scopeId = typeof route.query.scope_id === 'string' ? route.query.scope_id : null
+  if (scopeKind === 'article' && scopeId) {
+    chatScopeId.value = scopeId
+  }
+  if (chatScopeId.value) {
+    await router.replace({
+      name: 'ai',
+      query: {
+        ...route.query,
+        tab: 'chat',
+        scope_kind: 'article',
+        scope_id: chatScopeId.value,
+      },
+    })
+    return
+  }
+  await loadChatThread()
 }
 
 async function handleRunTask() {
@@ -390,12 +487,67 @@ async function handleRunTask() {
 async function sendChat() {
   const message = chatInput.value.trim()
   if (!message || store.loading) return
+  if (!chatScopeId.value) {
+    error.value = t('ai.chatSelectArticleFirst')
+    return
+  }
+  error.value = ''
+  chatNotice.value = ''
   chatInput.value = ''
   try {
-    await store.sendMessage(message, chatScopeKind.value, chatScopeId.value)
+    await store.sendMessage(message, 'article', chatScopeId.value)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   }
+}
+
+async function saveChatSettings() {
+  if (!chatSettingsSupported.value) {
+    chatNotice.value = ''
+    error.value = ''
+    return
+  }
+  savingChatSettings.value = true
+  error.value = ''
+  chatNotice.value = ''
+  try {
+    const saved = await aiApi.saveChatSettings({
+      system_prompt: chatSystemPromptDraft.value.slice(0, CHAT_SYSTEM_PROMPT_LIMIT),
+    })
+    chatSystemPrompt.value = saved.system_prompt
+    chatSystemPromptDraft.value = saved.system_prompt
+    chatNotice.value = t('ai.chatPromptSaved')
+  } catch (e) {
+    if (isHttpStatus(e, 404)) {
+      chatSettingsSupported.value = false
+    } else {
+      error.value = errorMessage(e)
+    }
+  } finally {
+    savingChatSettings.value = false
+  }
+}
+
+async function copyChatMessage(message: Message) {
+  await navigator.clipboard.writeText(message.content)
+  chatNotice.value = t('ai.chatCopied')
+}
+
+async function saveAssistantReplyAsNote(message: Message) {
+  if (message.role !== 'assistant' || !chatScopeId.value || !message.content.trim()) return
+  error.value = ''
+  chatNotice.value = ''
+  try {
+    await notesApi.createNote(chatScopeId.value, message.content.trim(), false)
+    chatNotice.value = t('ai.chatSavedAsNote')
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+function openChatArticle() {
+  if (!chatScopeId.value) return
+  router.push({ name: 'articles', query: { id: chatScopeId.value } })
 }
 
 async function copyResult() {
@@ -542,6 +694,11 @@ function addSelectedReferences() {
 }
 
 async function saveCurrentPreset() {
+  if (!taskPresetsSupported.value) {
+    notice.value = ''
+    error.value = ''
+    return
+  }
   const name = presetName.value.trim()
   if (!name) {
     error.value = t('ai.presetNameRequired')
@@ -561,10 +718,18 @@ async function saveCurrentPreset() {
       ...current.filter((preset) => preset.name.trim().toLowerCase() !== name.toLowerCase()),
     ],
   }
-  taskPresets.value = await aiApi.saveTaskPresets(next)
-  presetName.value = ''
-  selectedPresetId.value = nextPreset.id
-  notice.value = t('ai.presetSaved')
+  try {
+    taskPresets.value = await aiApi.saveTaskPresets(next)
+    presetName.value = ''
+    selectedPresetId.value = nextPreset.id
+    notice.value = t('ai.presetSaved')
+  } catch (e) {
+    if (isHttpStatus(e, 404)) {
+      taskPresetsSupported.value = false
+    } else {
+      error.value = errorMessage(e)
+    }
+  }
 }
 
 function applyPreset(presetId: string) {
@@ -576,12 +741,21 @@ function applyPreset(presetId: string) {
 }
 
 async function deletePreset(preset: AiTaskPreset) {
+  if (!taskPresetsSupported.value) return
   const next = {
     ...taskPresets.value,
     [taskType.value]: currentTaskPresets.value.filter((item) => item.id !== preset.id),
   }
-  taskPresets.value = await aiApi.saveTaskPresets(next)
-  if (selectedPresetId.value === preset.id) selectedPresetId.value = ''
+  try {
+    taskPresets.value = await aiApi.saveTaskPresets(next)
+    if (selectedPresetId.value === preset.id) selectedPresetId.value = ''
+  } catch (e) {
+    if (isHttpStatus(e, 404)) {
+      taskPresetsSupported.value = false
+    } else {
+      error.value = errorMessage(e)
+    }
+  }
 }
 
 function cardToContextItem(card: AiCard): ContextItem {
@@ -654,7 +828,7 @@ function makeId(): string {
           {{ t('ai.toolsTab') }}
         </button>
         <button
-          @click="activeTab = 'chat'; loadChatThread()"
+          @click="openChatTab"
           :class="[
             'rounded-lg px-4 py-2 text-sm font-semibold transition-colors',
             activeTab === 'chat' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900',
@@ -774,13 +948,21 @@ function makeId(): string {
               <h3 class="text-sm font-semibold text-gray-700">{{ t('ai.myPresets') }}</h3>
               <span class="text-xs text-gray-400">{{ currentTaskPresets.length }}</span>
             </div>
+            <div v-if="!taskPresetsSupported" class="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+              {{ t('ai.taskPresetsUnsupported') }}
+            </div>
             <div class="flex gap-2">
               <input
                 v-model="presetName"
+                :disabled="!taskPresetsSupported"
                 class="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm"
                 :placeholder="t('ai.presetNamePlaceholder')"
               />
-              <button @click="saveCurrentPreset" class="rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white">
+              <button
+                @click="saveCurrentPreset"
+                :disabled="!taskPresetsSupported"
+                class="rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+              >
                 {{ t('ai.savePreset') }}
               </button>
             </div>
@@ -793,7 +975,11 @@ function makeId(): string {
                 <button @click="applyPreset(preset.id)" class="min-w-0 flex-1 truncate text-left font-medium text-gray-700">
                   {{ preset.name }}
                 </button>
-                <button @click="deletePreset(preset)" class="text-xs text-red-500 hover:text-red-700">
+                <button
+                  @click="deletePreset(preset)"
+                  :disabled="!taskPresetsSupported"
+                  class="text-xs text-red-500 hover:text-red-700 disabled:opacity-40"
+                >
                   {{ t('common.delete') }}
                 </button>
               </div>
@@ -1006,20 +1192,12 @@ function makeId(): string {
     <div v-else class="flex min-h-0 flex-1 overflow-hidden">
       <aside class="w-80 shrink-0 overflow-y-auto border-r border-gray-200 bg-white p-4">
         <div v-if="error" class="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ error }}</div>
-        <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('ai.chatScope') }}</label>
-        <select
-          v-model="chatScopeKind"
-          class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="global">{{ t('ai.chatGlobal') }}</option>
-          <option value="article">{{ t('ai.chatArticle') }}</option>
-          <option value="collection">{{ t('ai.chatCollection') }}</option>
-        </select>
+        <div v-if="chatNotice" class="mb-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">{{ chatNotice }}</div>
 
+        <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('ai.chatArticle') }}</label>
         <select
-          v-if="chatScopeKind === 'article'"
           v-model="chatScopeId"
-          class="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+          class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option :value="null">{{ t('ai.selectArticle') }}</option>
           <option v-for="article in articles" :key="article.id" :value="article.id">
@@ -1027,32 +1205,60 @@ function makeId(): string {
           </option>
         </select>
 
-        <select
-          v-if="chatScopeKind === 'collection'"
-          v-model="chatScopeId"
-          class="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option :value="null">{{ t('collections.selectCollection') }}</option>
-          <option v-for="collection in collections" :key="collection.id" :value="collection.id">
-            {{ collection.title || t('collections.untitled') }}
-          </option>
-        </select>
-
         <div class="mt-5 rounded-2xl bg-blue-50 p-4 text-sm text-blue-900">
           <div class="font-semibold">{{ t('ai.currentChatScope') }}</div>
           <p class="mt-1">{{ chatScopeLabel }}</p>
-          <p class="mt-2 text-xs text-blue-700">{{ t('ai.chatScopeHint') }}</p>
+          <p v-if="selectedChatArticle" class="mt-2 text-xs text-blue-700">
+            {{ selectedChatArticleChars }} {{ t('ai.chars') }} · {{ selectedChatArticleParagraphs }} {{ t('ai.paragraphs') }}
+          </p>
+          <p class="mt-2 text-xs leading-5 text-blue-700">{{ t('ai.chatArticleContextHint') }}</p>
+          <button
+            v-if="selectedChatArticle"
+            @click="openChatArticle"
+            class="mt-3 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"
+          >
+            {{ t('ai.backToArticle') }}
+          </button>
         </div>
+
+        <section class="mt-5 rounded-2xl border border-gray-200 p-4">
+          <div class="mb-2 flex items-center justify-between">
+            <label class="text-sm font-semibold text-gray-700">{{ t('ai.chatSystemPrompt') }}</label>
+            <span class="text-xs text-gray-400">{{ chatSystemPromptDraft.length }}/{{ CHAT_SYSTEM_PROMPT_LIMIT }}</span>
+          </div>
+          <div v-if="!chatSettingsSupported" class="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+            {{ t('ai.chatSettingsUnsupported') }}
+          </div>
+          <textarea
+            v-model="chatSystemPromptDraft"
+            :maxlength="CHAT_SYSTEM_PROMPT_LIMIT"
+            :disabled="!chatSettingsSupported"
+            rows="7"
+            class="w-full resize-none rounded-xl border border-gray-300 px-3 py-2 text-sm leading-6 outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400"
+            :placeholder="t('ai.chatSystemPromptPlaceholder')"
+          />
+          <p class="mt-2 text-xs leading-5 text-gray-500">{{ t('ai.chatSystemPromptHint') }}</p>
+          <button
+            @click="saveChatSettings"
+            :disabled="!chatSettingsSupported || savingChatSettings || chatSystemPromptDraft === chatSystemPrompt"
+            class="mt-3 w-full rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-700 disabled:opacity-40"
+          >
+            {{ savingChatSettings ? t('common.saving') : t('ai.saveChatPrompt') }}
+          </button>
+        </section>
       </aside>
 
       <main class="flex min-w-0 flex-1 flex-col bg-[#fbfaf7]">
         <div class="border-b border-gray-200 bg-white px-6 py-4">
           <h2 class="text-lg font-bold">{{ t('ai.chatTitle') }}</h2>
-          <p class="text-sm text-gray-500">{{ chatScopeLabel }}</p>
+          <p class="text-sm text-gray-500">{{ selectedChatArticle ? chatScopeLabel : t('ai.chatSelectArticleFirst') }}</p>
         </div>
 
         <div class="flex-1 overflow-y-auto p-6">
-          <div v-if="store.loading && !store.messages.length" class="mt-20 text-center text-gray-400">
+          <div v-if="!selectedChatArticle" class="mt-20 text-center text-gray-400">
+            {{ t('ai.chatSelectArticleFirst') }}
+          </div>
+          <div v-else-if="store.loading && !store.messages.length" class="mt-20 text-center text-gray-400">
             {{ t('common.loading') }}
           </div>
           <div v-else-if="!store.messages.length" class="mt-20 text-center text-gray-400">
@@ -1073,6 +1279,20 @@ function makeId(): string {
                 {{ message.role === 'user' ? t('ai.chatYou') : t('ai.chatAssistant') }}
               </div>
               <p class="whitespace-pre-wrap leading-7">{{ message.content }}</p>
+              <div v-if="message.role === 'assistant'" class="mt-4 flex flex-wrap gap-2">
+                <button
+                  @click="copyChatMessage(message)"
+                  class="rounded-lg bg-stone-100 px-3 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-200"
+                >
+                  {{ t('ai.copyReply') }}
+                </button>
+                <button
+                  @click="saveAssistantReplyAsNote(message)"
+                  class="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-200"
+                >
+                  {{ t('ai.saveReplyAsNote') }}
+                </button>
+              </div>
             </article>
           </div>
         </div>
@@ -1089,7 +1309,7 @@ function makeId(): string {
             />
             <button
               @click="sendChat"
-              :disabled="store.loading || !chatInput.trim()"
+              :disabled="store.loading || !chatInput.trim() || !selectedChatArticle"
               class="self-end rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
             >
               {{ store.loading ? t('ai.running') : t('ai.chatSend') }}

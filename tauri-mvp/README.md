@@ -110,6 +110,9 @@ Long Gemini requests default to a 120 second wait. Advanced users can tune this 
 ## Data & Privacy
 
 - Writing data is stored locally in SQLite at `%APPDATA%\LivingToTell\LivingToTell\living-to-tell.sqlite3` by default.
+- The Windows installer usually places app files under `%LOCALAPPDATA%\活着为了讲述`; this is separate from your writing database.
+- Uninstalling the app does not delete the writing database, backups, or checkpoints.
+- Use **Settings → Data and Storage** to open or migrate the data directory. Migration copies data and keeps the old folder intact.
 - First launch copies old Writer data from `%APPDATA%\Writer\Writer\writer.sqlite3` into the new location if it exists. The old database is retained.
 - AI requests are sent only when you run an AI tool or send a chat message.
 - API keys are read from environment variables or local provider configuration at runtime.
@@ -171,6 +174,7 @@ cargo check --manifest-path src-tauri\Cargo.toml
 
 - Full dark theme pass before re-enabling the theme switcher.
 - First-run onboarding and sample project.
+- Optional cloud sync for writers who want the same local-first workspace across devices.
 - Signed Windows builds or published checksums for preview installers.
 - Richer reference-library views, AI report actions, and easier chat-to-note / chat-to-reference flows.
 - A future mind map / imagery collection space for visually organizing themes, symbols, motifs, character links, arguments, references, and AI-generated ideas.

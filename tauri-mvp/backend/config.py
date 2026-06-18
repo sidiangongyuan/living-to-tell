@@ -29,6 +29,13 @@ def configure_data_dir() -> Path:
         os.environ["WRITER_DATA_DIR"] = str(target)
         return target
 
+    explicit = os.environ.get("WRITER_DATA_DIR")
+    if explicit:
+        target = Path(explicit).expanduser()
+        target.mkdir(parents=True, exist_ok=True)
+        os.environ["WRITER_DATA_DIR"] = str(target)
+        return target
+
     # Default: branded production location with copy-only legacy migration.
     # Leave WRITER_DATA_DIR unset → writer.app.paths falls back to the
     # platformdirs production location.

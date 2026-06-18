@@ -5,8 +5,10 @@ import { articlesApi } from '../../api/articles'
 import { buildDailyQuoteLibraryQuery } from './quoteLink'
 import { formatDateKey, useDatesStore } from './store'
 import { useI18n } from '../../i18n'
+import { useSettingsStore } from '../../stores/settings'
 
 const store = useDatesStore()
+const settings = useSettingsStore()
 const router = useRouter()
 const { t } = useI18n()
 const calendarRef = ref<HTMLDivElement | null>(null)
@@ -87,6 +89,22 @@ function openArticle(entryId: string) {
 function openDailyQuoteInLibrary() {
   if (!store.dailyQuote) return
   router.push({ name: 'library', query: buildDailyQuoteLibraryQuery(store.dailyQuote) })
+}
+
+function openLibrary() {
+  router.push({ name: 'library' })
+}
+
+function openArticles() {
+  router.push({ name: 'articles' })
+}
+
+function openAiSettings() {
+  router.push({ name: 'settings' })
+}
+
+function openBackup() {
+  router.push({ name: 'backup' })
 }
 
 async function startWritingForSelectedDate() {
@@ -175,6 +193,56 @@ async function startWritingForSelectedDate() {
       </div>
 
       <div class="flex-1 overflow-y-auto p-6">
+        <section
+          v-if="!settings.welcomeChecklistDismissed"
+          class="mb-6 rounded-3xl border border-amber-200 bg-amber-50 p-5 shadow-sm"
+        >
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h3 class="text-lg font-bold text-amber-950">{{ t('welcome.title') }}</h3>
+              <p class="mt-1 text-sm leading-6 text-amber-800">{{ t('welcome.subtitle') }}</p>
+            </div>
+            <button
+              @click="settings.dismissWelcomeChecklist"
+              class="rounded-xl bg-white/80 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-white"
+            >
+              {{ t('common.close') }}
+            </button>
+          </div>
+          <div class="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            <button
+              @click="startWritingForSelectedDate"
+              class="rounded-2xl bg-white px-4 py-3 text-left text-sm font-semibold text-stone-800 shadow-sm hover:bg-amber-100"
+            >
+              {{ t('welcome.firstArticle') }}
+            </button>
+            <button
+              @click="openLibrary"
+              class="rounded-2xl bg-white px-4 py-3 text-left text-sm font-semibold text-stone-800 shadow-sm hover:bg-amber-100"
+            >
+              {{ t('welcome.firstReference') }}
+            </button>
+            <button
+              @click="openAiSettings"
+              class="rounded-2xl bg-white px-4 py-3 text-left text-sm font-semibold text-stone-800 shadow-sm hover:bg-amber-100"
+            >
+              {{ t('welcome.aiSetup') }}
+            </button>
+            <button
+              @click="openArticles"
+              class="rounded-2xl bg-white px-4 py-3 text-left text-sm font-semibold text-stone-800 shadow-sm hover:bg-amber-100"
+            >
+              {{ t('welcome.articleChat') }}
+            </button>
+            <button
+              @click="openBackup"
+              class="rounded-2xl bg-white px-4 py-3 text-left text-sm font-semibold text-stone-800 shadow-sm hover:bg-amber-100"
+            >
+              {{ t('welcome.backup') }}
+            </button>
+          </div>
+        </section>
+
         <div v-if="store.loading" class="mt-20 text-center text-gray-400">{{ t('common.loading') }}</div>
         <div v-else-if="store.error" class="mt-20 text-center text-red-500">{{ store.error }}</div>
         <div v-else-if="!store.entriesForSelectedDate.length" class="mt-20 text-center text-gray-400">

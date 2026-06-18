@@ -2,6 +2,7 @@
 
 ## Before beta
 
+- [ ] Optional cloud sync for writers who want the same local-first workspace across devices.
 - [ ] Add signed Windows builds or published checksums for preview installers.
 - [ ] Improve first-run onboarding with language, data location, backups, and AI provider setup.
 - [ ] Add a small sample project for new users.

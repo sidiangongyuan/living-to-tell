@@ -1,8 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { settingsApi, type AiProviderName, type AiSettings, type AiSettingsUpdate } from '../../api/settings'
+import { appApi } from '../../api/app'
+import { errorMessage, isHttpStatus } from '../../api/base'
+import { settingsApi, type AiProviderName, type AiSettings, type AiSettingsUpdate, type DataLocationInfo } from '../../api/settings'
 import { useI18n } from '../../i18n'
 import { useSettingsStore } from '../../stores/settings'
+
+interface DataDirectoryOverrideState {
+  override_path?: string | null
+  active_path?: string | null
+  warning?: string | null
+}
 
 const { t } = useI18n()
 const settings = useSettingsStore()
@@ -25,6 +33,14 @@ let applyingAiSettings = false
 const autoBackupEnabled = ref(false)
 const autoBackupInterval = ref('daily')
 const closeBehaviorNotice = ref('')
+const dataLocation = ref<DataLocationInfo | null>(null)
+const dataOverride = ref<DataDirectoryOverrideState | null>(null)
+const selectedDataDir = ref('')
+const loadingDataLocation = ref(false)
+const migratingDataLocation = ref(false)
+const dataLocationNotice = ref('')
+const dataLocationError = ref('')
+const dataLocationUnsupported = ref(false)
 
 const providerOptions = computed<Array<{ value: AiProviderName; label: string }>>(() => [
   { value: 'openai', label: t('settings.providers.openai') },
@@ -94,6 +110,7 @@ const statusDetail = computed(() => {
 
 onMounted(() => {
   void loadSettings()
+  void loadDataLocation()
   void settings.loadNativePreferences()
 })
 
@@ -231,6 +248,140 @@ async function importGemini() {
 function choosePreset(value: string) {
   if (value) model.value = value
 }
+
+function resetWelcomeChecklist() {
+  settings.resetWelcomeChecklist()
+  saveNotice.value = t('settings.welcomeChecklistReset')
+}
+
+async function invokeNative<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  return invoke<T>(command, args)
+}
+
+async function loadDataLocation() {
+  loadingDataLocation.value = true
+  dataLocationError.value = ''
+  dataLocationUnsupported.value = false
+  try {
+    const supportsDataLocation = await backendSupports('data_location')
+    if (supportsDataLocation === false) {
+      dataLocation.value = null
+      dataLocationUnsupported.value = true
+      return
+    }
+    const [info, native] = await Promise.all([
+      settingsApi.getDataLocation(),
+      invokeNative<DataDirectoryOverrideState>('get_data_directory_override').catch(() => null),
+    ])
+    dataLocation.value = info
+    dataOverride.value = native
+    selectedDataDir.value = native?.active_path || native?.override_path || ''
+  } catch (e) {
+    if (isHttpStatus(e, 404)) {
+      dataLocation.value = null
+      dataLocationUnsupported.value = true
+    } else {
+      dataLocationError.value = errorMessage(e)
+    }
+  } finally {
+    loadingDataLocation.value = false
+  }
+}
+
+async function backendSupports(capability: string): Promise<boolean | null> {
+  try {
+    const info = await appApi.getVersion()
+    return info.capabilities.includes(capability)
+  } catch (e) {
+    if (isHttpStatus(e, 404)) return false
+    return null
+  }
+}
+
+async function chooseDataDirectory() {
+  dataLocationError.value = ''
+  dataLocationNotice.value = ''
+  try {
+    const picked = await invokeNative<string | null>('choose_data_directory')
+    if (picked) selectedDataDir.value = picked
+  } catch (e) {
+    dataLocationError.value = errorMessage(e)
+  }
+}
+
+async function openDataPath(path?: string | null) {
+  if (!path) return
+  dataLocationError.value = ''
+  try {
+    await invokeNative<void>('open_path', { path })
+  } catch (e) {
+    dataLocationError.value = errorMessage(e)
+  }
+}
+
+async function restartAfterDataLocationChange() {
+  window.setTimeout(() => {
+    void invokeNative<void>('restart_app').catch((e) => {
+      dataLocationError.value = errorMessage(e)
+    })
+  }, 900)
+}
+
+async function restartAppNow() {
+  dataLocationError.value = ''
+  try {
+    await invokeNative<void>('restart_app')
+  } catch (e) {
+    dataLocationError.value = errorMessage(e)
+  }
+}
+
+async function migrateToSelectedDirectory() {
+  const target = selectedDataDir.value.trim()
+  if (!target) {
+    dataLocationError.value = t('settings.dataLocationChooseFirst')
+    return
+  }
+  migratingDataLocation.value = true
+  dataLocationNotice.value = ''
+  dataLocationError.value = ''
+  try {
+    const result = await settingsApi.migrateDataLocation({ target_dir: target })
+    await invokeNative<DataDirectoryOverrideState>('set_data_directory_override', { path: result.target_dir })
+    dataLocationNotice.value = t('settings.dataLocationMigrated')
+    await restartAfterDataLocationChange()
+  } catch (e) {
+    dataLocationError.value = errorMessage(e)
+  } finally {
+    migratingDataLocation.value = false
+  }
+}
+
+async function restoreDefaultDataDirectory() {
+  if (!dataLocation.value) return
+  if (!dataLocation.value.is_custom) {
+    dataLocationNotice.value = t('settings.dataLocationAlreadyDefault')
+    return
+  }
+  if (!window.confirm(t('settings.dataLocationRestoreConfirm'))) return
+  migratingDataLocation.value = true
+  dataLocationNotice.value = ''
+  dataLocationError.value = ''
+  try {
+    await settingsApi.migrateDataLocation({
+      target_dir: dataLocation.value.default_data_dir,
+      replace_existing: true,
+    })
+    await invokeNative<DataDirectoryOverrideState>('clear_data_directory_override')
+    dataLocationNotice.value = t('settings.dataLocationRestored')
+    await restartAfterDataLocationChange()
+  } catch (e) {
+    dataLocationError.value = errorMessage(e)
+  } finally {
+    migratingDataLocation.value = false
+  }
+}
 </script>
 
 <template>
@@ -367,6 +518,111 @@ function choosePreset(value: string) {
       </section>
 
       <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-bold text-gray-900">{{ t('settings.dataStorage') }}</h2>
+            <p class="mt-1 text-sm text-gray-500">{{ t('settings.dataStorageHelp') }}</p>
+          </div>
+          <span v-if="loadingDataLocation" class="text-sm text-gray-400">{{ t('common.loading') }}</span>
+        </div>
+
+        <div v-if="dataLocationUnsupported" class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div class="font-semibold">{{ t('settings.backendVersionMismatch') }}</div>
+          <p class="mt-1 leading-5">{{ t('settings.dataLocationUnsupported') }}</p>
+          <p class="mt-1 leading-5">{{ t('settings.reinstallLatestHint') }}</p>
+          <button
+            @click="restartAppNow"
+            class="mt-3 rounded-lg bg-amber-900 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-800"
+          >
+            {{ t('settings.restartApp') }}
+          </button>
+        </div>
+        <div v-else-if="dataLocationError" class="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ dataLocationError }}</div>
+        <div v-if="dataLocationNotice" class="mb-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">{{ dataLocationNotice }}</div>
+        <div v-if="dataOverride?.warning || dataLocation?.warning" class="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+          {{ dataOverride?.warning || dataLocation?.warning }}
+        </div>
+
+        <div v-if="dataLocation" class="space-y-4">
+          <div class="grid gap-3">
+            <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ t('settings.currentDataDirectory') }}</div>
+              <div class="mt-1 break-all text-sm text-gray-900">{{ dataLocation.data_dir }}</div>
+            </div>
+            <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ t('settings.databasePath') }}</div>
+              <div class="mt-1 break-all text-sm text-gray-900">{{ dataLocation.database_path }}</div>
+            </div>
+            <div class="grid gap-3 md:grid-cols-2">
+              <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ t('settings.backupDirectory') }}</div>
+                <div class="mt-1 break-all text-sm text-gray-900">{{ dataLocation.backup_dir }}</div>
+              </div>
+              <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ t('settings.checkpointDirectory') }}</div>
+                <div class="mt-1 break-all text-sm text-gray-900">{{ dataLocation.checkpoint_dir }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button
+              @click="openDataPath(dataLocation.data_dir)"
+              class="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-700"
+            >
+              {{ t('settings.openDataDirectory') }}
+            </button>
+            <button
+              @click="openDataPath(dataLocation.backup_dir)"
+              class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              {{ t('settings.openBackupDirectory') }}
+            </button>
+          </div>
+
+          <div class="rounded-lg border border-gray-200 p-4">
+            <div class="mb-2 flex items-center justify-between gap-3">
+              <label class="text-sm font-semibold text-gray-700">{{ t('settings.newDataDirectory') }}</label>
+              <span class="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600">
+                {{ dataLocation.is_custom ? t('settings.customDataDirectory') : t('settings.defaultDataDirectory') }}
+              </span>
+            </div>
+            <div class="grid gap-2 md:grid-cols-[1fr_auto]">
+              <input
+                v-model="selectedDataDir"
+                type="text"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                :placeholder="dataLocation.default_data_dir"
+              />
+              <button
+                @click="chooseDataDirectory"
+                class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                {{ t('settings.chooseDataDirectory') }}
+              </button>
+            </div>
+            <p class="mt-2 text-xs leading-5 text-gray-500">{{ t('settings.dataMigrationHelp') }}</p>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <button
+                @click="migrateToSelectedDirectory"
+                :disabled="migratingDataLocation"
+                class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
+              >
+                {{ migratingDataLocation ? t('settings.dataLocationMigrating') : t('settings.migrateAndSwitch') }}
+              </button>
+              <button
+                @click="restoreDefaultDataDirectory"
+                :disabled="migratingDataLocation || !dataLocation.is_custom"
+                class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+              >
+                {{ t('settings.restoreDefaultDataDirectory') }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <h2 class="mb-4 text-lg font-bold text-gray-900">{{ t('settings.autoBackup') }}</h2>
         <div class="space-y-4">
           <div class="flex items-center gap-3">
@@ -421,6 +677,21 @@ function choosePreset(value: string) {
             </select>
             <p class="mt-1 text-xs text-gray-500">{{ t('settings.closeBehaviorHelp') }}</p>
             <p v-if="closeBehaviorNotice" class="mt-2 text-xs text-amber-700">{{ closeBehaviorNotice }}</p>
+          </div>
+
+          <div class="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <div class="text-sm font-semibold text-gray-800">{{ t('settings.welcomeChecklist') }}</div>
+                <p class="mt-1 text-xs leading-5 text-gray-500">{{ t('settings.welcomeChecklistHelp') }}</p>
+              </div>
+              <button
+                @click="resetWelcomeChecklist"
+                class="shrink-0 rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-700"
+              >
+                {{ t('settings.showWelcomeChecklist') }}
+              </button>
+            </div>
           </div>
         </div>
       </section>
