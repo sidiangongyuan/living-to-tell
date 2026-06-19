@@ -299,17 +299,24 @@ async function chooseDataDirectory() {
   dataLocationNotice.value = ''
   try {
     const picked = await invokeNative<string | null>('choose_data_directory')
-    if (picked) selectedDataDir.value = picked
+    if (picked) {
+      selectedDataDir.value = picked
+      dataLocationNotice.value = t('settings.dataLocationSelected')
+    }
   } catch (e) {
     dataLocationError.value = errorMessage(e)
   }
 }
 
-async function openDataPath(path?: string | null) {
+async function openDataPath(path?: string | null, kind: 'data' | 'backup' = 'data') {
   if (!path) return
   dataLocationError.value = ''
+  dataLocationNotice.value = ''
   try {
     await invokeNative<void>('open_path', { path })
+    dataLocationNotice.value = kind === 'backup'
+      ? t('settings.backupDirectoryOpened')
+      : t('settings.dataDirectoryOpened')
   } catch (e) {
     dataLocationError.value = errorMessage(e)
   }
@@ -325,6 +332,7 @@ async function restartAfterDataLocationChange() {
 
 async function restartAppNow() {
   dataLocationError.value = ''
+  dataLocationNotice.value = t('settings.restartRequested')
   try {
     await invokeNative<void>('restart_app')
   } catch (e) {
@@ -338,6 +346,7 @@ async function migrateToSelectedDirectory() {
     dataLocationError.value = t('settings.dataLocationChooseFirst')
     return
   }
+  if (!window.confirm(t('settings.dataLocationMigrateConfirm'))) return
   migratingDataLocation.value = true
   dataLocationNotice.value = ''
   dataLocationError.value = ''
@@ -562,13 +571,13 @@ async function restoreDefaultDataDirectory() {
 
           <div class="flex flex-wrap gap-2">
             <button
-              @click="openDataPath(dataLocation.data_dir)"
+              @click="openDataPath(dataLocation.data_dir, 'data')"
               class="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-700"
             >
               {{ t('settings.openDataDirectory') }}
             </button>
             <button
-              @click="openDataPath(dataLocation.backup_dir)"
+              @click="openDataPath(dataLocation.backup_dir, 'backup')"
               class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
             >
               {{ t('settings.openBackupDirectory') }}

@@ -730,6 +730,10 @@ test('AI result write-back buttons confirm and update the selected article', asy
   await (await dismissDialog).dismiss()
   expect(updates).toEqual([])
 
+  await page.goto('/ai?tab=tools&scope_kind=article&scope_id=article-a')
+  await page.getByRole('button', { name: '运行任务' }).click()
+  await expect(page.getByText('AI 生成结果')).toBeVisible()
+
   const acceptDialog = page.waitForEvent('dialog')
   await page.getByRole('button', { name: '✏️ 替换原文' }).click()
   await (await acceptDialog).accept()
