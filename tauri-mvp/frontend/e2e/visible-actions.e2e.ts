@@ -413,6 +413,47 @@ test('article find and replace updates the editor and autosaves the change', asy
   await expect.poll(() => updates.at(-1)?.body).toBe(expectedBody)
 })
 
+test('article pending edits are flushed before switching, AI chat, and archive actions', async ({ page }) => {
+  const updates: Array<Record<string, unknown>> = []
+  const archiveRequests: string[] = []
+
+  await page.route('**/api/articles/article-a/archive', async (route) => {
+    archiveRequests.push(route.request().method())
+    await route.fulfill({ json: { ...article, archived_at: '2026-06-19T00:00:00Z' } })
+  })
+  await page.route('**/api/articles/article-a', async (route) => {
+    const request = route.request()
+    if (request.method() === 'PUT') {
+      const body = request.postDataJSON() as Record<string, unknown>
+      updates.push(body)
+      await route.fulfill({ json: { ...article, ...body } })
+      return
+    }
+    await route.fulfill({ json: article })
+  })
+
+  await page.goto('/articles?id=article-a')
+  await expect(page.getByTestId('article-body-editor')).toHaveValue(article.body)
+
+  await page.getByTestId('article-body-editor').fill('切换前未保存正文')
+  await page.getByTestId('article-entry-article-b').click()
+  await expect.poll(() => updates.some((body) => body.body === '切换前未保存正文')).toBe(true)
+  await expect(page.getByTestId('article-body-editor')).toHaveValue(articleB.body)
+
+  await page.goto('/articles?id=article-a')
+  await page.getByTestId('article-body-editor').fill('AI 对话前未保存正文')
+  await page.getByRole('button', { name: 'AI 对话', exact: true }).click()
+  await expect.poll(() => updates.some((body) => body.body === 'AI 对话前未保存正文')).toBe(true)
+  await expect(page).toHaveURL(/\/ai\?.*tab=chat/)
+  await expect(page).toHaveURL(/scope_id=article-a/)
+
+  await page.goto('/articles?id=article-a')
+  await page.getByTestId('article-body-editor').fill('归档前未保存正文')
+  await page.getByRole('button', { name: '归档', exact: true }).click()
+  await expect.poll(() => updates.some((body) => body.body === '归档前未保存正文')).toBe(true)
+  await expect.poll(() => archiveRequests).toEqual(['POST'])
+})
+
 test('article writing notes can be added, pinned, edited, completed, restored, and deleted', async ({ page }) => {
   const requests = {
     created: [] as Array<Record<string, unknown>>,
@@ -847,6 +888,40 @@ test('collection export buttons trigger downloads and article management actions
   await expect.poll(() => deleteCollectionRequests).toBe(1)
 })
 
+test('collection export flushes edited title before downloading', async ({ page }) => {
+  const updates: Array<Record<string, unknown>> = []
+  let currentCollection = { ...collection }
+
+  await page.route('**/api/collections/collection-a/export?**', async (route) => {
+    await route.fulfill({
+      body: 'collection md',
+      headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
+    })
+  })
+  await page.route('**/api/collections/collection-a', async (route) => {
+    const request = route.request()
+    if (request.method() === 'PUT') {
+      const body = request.postDataJSON() as Record<string, unknown>
+      updates.push(body)
+      currentCollection = { ...currentCollection, ...body }
+      await route.fulfill({ json: currentCollection })
+      return
+    }
+    await route.fulfill({ json: currentCollection })
+  })
+
+  await page.goto('/collections')
+  await expect(page.getByText('测试作品集')).toBeVisible()
+  await page.getByPlaceholder('作品集标题').fill('刚修改的作品集标题')
+
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Markdown' }).click()
+  const download = await downloadPromise
+
+  await expect.poll(() => updates.some((body) => body.title === '刚修改的作品集标题')).toBe(true)
+  expect(download.suggestedFilename()).toBe('刚修改的作品集标题.md')
+})
+
 test('collection actions show validation instead of acting like no-ops when the title is empty', async ({ page }) => {
   let exportRequests = 0
 
@@ -985,6 +1060,37 @@ test('library create, grouping, search, and autosave actions are real and visibl
   await expect.poll(() => updateBodies.length).toBe(1)
   expect(updateBodies[0]).toEqual(expect.objectContaining({ content: '改过的标本正文' }))
   await expect(page.getByText('修改已保存')).toBeVisible()
+})
+
+test('library pending edits are flushed before selecting another reference', async ({ page }) => {
+  const updateBodies: Array<Record<string, unknown>> = []
+
+  await page.route('**/api/library/stats', async (route) => {
+    await route.fulfill({ json: { total: 2, by_usage_kind: { style: 1, imagery: 1 } } })
+  })
+  await page.route('**/api/library/references?**', async (route) => route.fulfill({ json: [existingReference, imageryReference] }))
+  await page.route('**/api/library/references/ref-existing', async (route) => {
+    if (route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      updateBodies.push(body)
+      await route.fulfill({ json: { ...existingReference, ...body } })
+      return
+    }
+    await route.fulfill({ json: existingReference })
+  })
+  await page.route('**/api/library/references/ref-imagery', async (route) => {
+    await route.fulfill({ json: imageryReference })
+  })
+
+  await page.goto('/library')
+  await expect(page.getByText('已有标本正文')).toBeVisible()
+  await page.locator('textarea').first().fill('切换前未保存标本正文')
+  await page.getByRole('button', { name: '按用途' }).click()
+  await page.getByRole('button', { name: /意象/ }).click()
+  await page.getByText('意象标本正文').click()
+
+  await expect.poll(() => updateBodies.some((body) => body.content === '切换前未保存标本正文')).toBe(true)
+  await expect(page.locator('textarea').first()).toHaveValue('意象标本正文')
 })
 
 test('library autosave failures show a visible unsaved-state error', async ({ page }) => {
@@ -1210,6 +1316,20 @@ test('AI article chat can copy assistant replies and save them as article notes'
   await page.getByRole('button', { name: '保存为文章便签' }).click()
   await expect.poll(() => noteBodies).toEqual(['这是 AI 回复。'])
   await expect(page.getByText('已保存为文章便签')).toBeVisible()
+})
+
+test('AI article chat keeps the draft message when sending fails', async ({ page }) => {
+  await page.route('**/api/ai/chat', async (route) => {
+    await route.fulfill({ status: 503, json: { detail: '后台服务暂时不可用' } })
+  })
+
+  await page.goto('/ai?tab=chat&scope_kind=article&scope_id=article-a')
+  await expect(page.getByRole('main').getByText('导出测试文章')).toBeVisible()
+  await page.getByPlaceholder('输入你想讨论的问题，Ctrl/⌘ + Enter 发送...').fill('这段问题不能因为失败而丢失。')
+  await page.getByRole('button', { name: '发送' }).click()
+
+  await expect(page.getByPlaceholder('输入你想讨论的问题，Ctrl/⌘ + Enter 发送...')).toHaveValue('这段问题不能因为失败而丢失。')
+  await expect(page.getByText('后台服务暂时不可用')).toBeVisible()
 })
 
 test('AI chat standing instruction saves and back-to-article navigates to the scoped article', async ({ page }) => {
