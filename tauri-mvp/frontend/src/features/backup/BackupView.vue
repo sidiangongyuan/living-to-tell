@@ -10,6 +10,7 @@ const checkpoints = ref<CheckpointInfo[]>([])
 const stats = ref<BackupStats | null>(null)
 const loading = ref(false)
 const error = ref('')
+const notice = ref('')
 
 const showCheckpointDialog = ref(false)
 const checkpointName = ref('')
@@ -46,9 +47,11 @@ async function loadData() {
 async function createBackup() {
   loading.value = true
   error.value = ''
+  notice.value = ''
   try {
     await backupApi.createBackup()
     await loadData()
+    notice.value = t('backup.backupCreated')
   } catch (e) {
     error.value = e instanceof Error ? e.message : t('common.error')
   } finally {
@@ -63,6 +66,7 @@ async function createCheckpoint() {
   }
   creatingCheckpoint.value = true
   error.value = ''
+  notice.value = ''
   try {
     await backupApi.createCheckpoint({
       name: checkpointName.value.trim(),
@@ -72,6 +76,7 @@ async function createCheckpoint() {
     checkpointName.value = ''
     checkpointDescription.value = ''
     await loadData()
+    notice.value = t('backup.checkpointCreated')
   } catch (e) {
     error.value = e instanceof Error ? e.message : t('common.error')
   } finally {
@@ -89,15 +94,15 @@ async function restore(path: string) {
   showConfirmDialog.value = false
   loading.value = true
   error.value = ''
+  notice.value = ''
   try {
     await backupApi.restore(path)
-    alert(t('backup.restoreSuccess'))
-    try {
-      const { invoke } = await import('@tauri-apps/api/core')
-      await invoke<void>('restart_app')
-    } catch {
-      location.reload()
-    }
+    notice.value = t('backup.restoreSuccess')
+    window.setTimeout(() => {
+      void import('@tauri-apps/api/core')
+        .then(({ invoke }) => invoke<void>('restart_app'))
+        .catch(() => location.reload())
+    }, 900)
   } catch (e) {
     error.value = e instanceof Error ? e.message : t('common.error')
   } finally {
@@ -115,6 +120,7 @@ async function deleteItem(path: string, type: 'backup' | 'checkpoint') {
   showConfirmDialog.value = false
   loading.value = true
   error.value = ''
+  notice.value = ''
   try {
     if (type === 'backup') {
       await backupApi.deleteBackup(path)
@@ -122,6 +128,7 @@ async function deleteItem(path: string, type: 'backup' | 'checkpoint') {
       await backupApi.deleteCheckpoint(path)
     }
     await loadData()
+    notice.value = t('backup.deleted')
   } catch (e) {
     error.value = e instanceof Error ? e.message : t('common.error')
   } finally {
@@ -186,6 +193,9 @@ function formatDate(isoString: string): string {
 
       <div v-if="error" class="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
         {{ error }}
+      </div>
+      <div v-if="notice" class="mt-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+        {{ notice }}
       </div>
     </div>
 

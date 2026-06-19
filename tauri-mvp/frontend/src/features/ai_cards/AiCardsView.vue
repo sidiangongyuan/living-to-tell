@@ -15,6 +15,9 @@ const sortMode = ref<'recent' | 'title'>('recent')
 const searchQuery = ref('')
 const presetSignatures = ref(new Set<string>())
 const pendingCardSave = ref<AiCard | null>(null)
+const saveNotice = ref('')
+const saveFailed = ref(false)
+const presetWarning = ref('')
 
 const selectedCard = computed(() => cards.value.find(c => c.id === selectedCardId.value) || null)
 
@@ -75,6 +78,7 @@ async function loadCards() {
 }
 
 async function loadPresets() {
+  presetWarning.value = ''
   try {
     const presets = await aiCardApi.listPresets()
     presetSignatures.value = new Set(
@@ -82,6 +86,7 @@ async function loadPresets() {
     )
   } catch (e) {
     console.error('Load presets failed:', e)
+    presetWarning.value = t('aiCards.presetMetadataUnavailable')
   }
 }
 
@@ -96,6 +101,9 @@ function sourceLabel(card: AiCard): string {
 async function createCard() {
   const saved = await flushPendingCardSave()
   if (!saved) return
+  error.value = ''
+  notice.value = ''
+  saveNotice.value = ''
   try {
     const card = await aiCardApi.createCard({
       title: t('aiCards.untitled'),
@@ -116,6 +124,8 @@ function scheduleAutoSave() {
   const snapshot = snapshotSelectedCard()
   if (!snapshot) return
   pendingCardSave.value = snapshot
+  saveNotice.value = t('aiCards.savePending')
+  saveFailed.value = false
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = window.setTimeout(() => {
     void flushPendingCardSave()
@@ -139,6 +149,8 @@ async function flushPendingCardSave(): Promise<boolean> {
   const snapshot = pendingCardSave.value
   if (!snapshot) return true
   pendingCardSave.value = null
+  saveNotice.value = t('aiCards.savePending')
+  saveFailed.value = false
   try {
     const updated = await aiCardApi.updateCard(snapshot.id, {
       title: snapshot.title,
@@ -148,10 +160,16 @@ async function flushPendingCardSave(): Promise<boolean> {
     })
     const idx = cards.value.findIndex(c => c.id === updated.id)
     if (idx !== -1) cards.value[idx] = updated
+    error.value = ''
+    saveNotice.value = t('aiCards.saveSuccess')
+    saveFailed.value = false
     return true
   } catch (e) {
     console.error('Save card failed:', e)
-    error.value = e instanceof Error ? e.message : String(e)
+    const message = e instanceof Error ? e.message : String(e)
+    error.value = message
+    saveNotice.value = t('aiCards.saveFailed', { message })
+    saveFailed.value = true
     pendingCardSave.value = snapshot
     return false
   }
@@ -170,6 +188,8 @@ async function deleteCard(id: string) {
     if (!saved) return
   }
   try {
+    error.value = ''
+    notice.value = ''
     await aiCardApi.deleteCard(id)
     cards.value = cards.value.filter(c => c.id !== id)
     if (selectedCardId.value === id) {
@@ -184,7 +204,10 @@ async function deleteCard(id: string) {
 async function generatePresets() {
   const saved = await flushPendingCardSave()
   if (!saved) return
+  if (cards.value.length && !confirm(t('aiCards.confirmGenerate'))) return
   try {
+    error.value = ''
+    notice.value = ''
     const result = await aiCardApi.generateFromPresets()
     notice.value = t('aiCards.generateSuccess', { count: result.created })
     await loadCards()
@@ -267,6 +290,7 @@ async function selectCard(id: string) {
 
       <div class="flex-1 overflow-y-auto">
         <div v-if="notice" class="m-3 rounded-lg bg-green-50 p-3 text-sm text-green-700">{{ notice }}</div>
+        <div v-if="presetWarning" class="m-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{{ presetWarning }}</div>
         <div v-if="error" class="m-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ error }}</div>
         <div v-if="loading" class="p-4 text-sm text-gray-400">{{ t('common.loading') }}</div>
         <div v-else-if="!filteredCards.length" class="p-4 text-sm text-gray-400">
@@ -302,6 +326,15 @@ async function selectCard(id: string) {
     <!-- 右侧：编辑区 -->
     <div class="flex-1 min-w-0 flex flex-col bg-white overflow-y-auto">
       <div v-if="selectedCard" class="p-8 max-w-3xl mx-auto w-full">
+        <div
+          v-if="saveNotice"
+          :class="[
+            'mb-5 rounded-lg px-3 py-2 text-sm',
+            saveFailed ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700',
+          ]"
+        >
+          {{ saveNotice }}
+        </div>
         <!-- 标题 -->
         <div class="mb-6">
           <label class="block text-sm font-semibold text-gray-700 mb-2">{{ t('aiCards.fields.title') }}</label>
