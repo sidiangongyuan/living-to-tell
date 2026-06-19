@@ -189,6 +189,9 @@ const translations = {
       copyFull: '复制完整引用',
       copyContentDone: '正文已复制',
       copyFullDone: '完整引用已复制',
+      savePending: '正在保存修改...',
+      saveSuccess: '修改已保存',
+      saveFailed: '保存失败：{message}',
       placeholders: {
         content: '摘录的句子或段落...',
         sourceTitle: '书名 / 篇名',
@@ -805,6 +808,9 @@ const translations = {
       copyFull: 'Copy Full Citation',
       copyContentDone: 'Text copied',
       copyFullDone: 'Full citation copied',
+      savePending: 'Saving changes...',
+      saveSuccess: 'Changes saved',
+      saveFailed: 'Save failed: {message}',
       placeholders: {
         content: 'Excerpt a sentence or paragraph...',
         sourceTitle: 'Book / Article title',

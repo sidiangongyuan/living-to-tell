@@ -17,6 +17,8 @@ const initialized = ref(false)
 const applyingRouteState = ref(false)
 const copyNotice = ref('')
 const pendingReferenceSave = ref<Reference | null>(null)
+const saveNotice = ref('')
+const saveFailed = ref(false)
 
 onMounted(async () => {
   await Promise.all([store.loadReferences(), loadStats()])
@@ -79,6 +81,8 @@ function scheduleSave() {
   const snapshot = snapshotSelectedReference()
   if (!snapshot) return
   pendingReferenceSave.value = snapshot
+  saveNotice.value = t('library.savePending')
+  saveFailed.value = false
   if (saveTimer.value) window.clearTimeout(saveTimer.value)
   saveTimer.value = window.setTimeout(() => {
     void flushPendingReferenceSave()
@@ -93,12 +97,19 @@ async function flushPendingReferenceSave(): Promise<boolean> {
   const snapshot = pendingReferenceSave.value
   if (!snapshot) return true
   pendingReferenceSave.value = null
+  saveNotice.value = t('library.savePending')
+  saveFailed.value = false
   try {
     await store.updateReference(snapshot)
+    saveNotice.value = t('library.saveSuccess')
+    saveFailed.value = false
     return true
   } catch (e) {
     pendingReferenceSave.value = snapshot
-    store.error = e instanceof Error ? e.message : String(e)
+    const message = e instanceof Error ? e.message : String(e)
+    store.error = message
+    saveNotice.value = t('library.saveFailed', { message })
+    saveFailed.value = true
     return false
   }
 }
@@ -420,8 +431,13 @@ async function copyReferenceFull() {
     <section class="flex min-w-0 flex-1 flex-col overflow-y-auto bg-white">
       <div v-if="store.selectedReference" class="mx-auto w-full max-w-3xl p-8">
         <div class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-3">
-          <div class="text-sm text-gray-500">
-            {{ copyNotice || t('library.copyHint') }}
+          <div
+            :class="[
+              'text-sm',
+              saveFailed ? 'text-red-600' : saveNotice ? 'text-blue-700' : 'text-gray-500',
+            ]"
+          >
+            {{ copyNotice || saveNotice || t('library.copyHint') }}
           </div>
           <div class="flex gap-2">
             <button

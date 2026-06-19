@@ -64,6 +64,15 @@ const existingReference = {
   updated_at: null,
 }
 
+const imageryReference = {
+  ...existingReference,
+  id: 'ref-imagery',
+  source_title: '另一本书',
+  content: '意象标本正文',
+  source_author: '另一作者',
+  usage_kind: 'imagery',
+}
+
 const openNote = {
   id: 'note-a',
   entry_id: article.id,
@@ -247,7 +256,7 @@ async function mockVisibleActionApi(page: Page) {
   await page.route('**/api/ai-cards**', async (route) => route.fulfill({ json: [{
     id: 'card-a',
     title: '克制风格',
-    body: '少用夸张表达。',
+    content: '少用夸张表达。',
     card_type: 'style',
     tags: [],
     created_at: null,
@@ -354,7 +363,7 @@ test('welcome checklist creates a real reference and opens article chat with art
 
 test('command palette does not expose misleading search or unsafe reload commands', async ({ page }) => {
   await page.goto('/dates')
-  await expect(page.getByText('开始使用活着为了讲述')).toBeVisible()
+  await expect(page.getByRole('button', { name: '日期' })).toBeVisible()
   await page.locator('body').click()
   await page.keyboard.down('Control')
   await page.keyboard.press('KeyK')
@@ -521,6 +530,87 @@ test('library copy, create-in-book, and delete actions have visible effects and 
   await expect.poll(() => deleteRequests).toBe(1)
 })
 
+test('library create, grouping, search, and autosave actions are real and visible', async ({ page }) => {
+  const createBodies: Array<Record<string, unknown>> = []
+  const updateBodies: Array<Record<string, unknown>> = []
+  const searchQueries: string[] = []
+
+  await page.route('**/api/library/stats', async (route) => {
+    await route.fulfill({ json: { total: 2, by_usage_kind: { style: 1, imagery: 1 } } })
+  })
+  await page.route('**/api/library/references?**', async (route) => route.fulfill({ json: [existingReference, imageryReference] }))
+  await page.route('**/api/library/references/search?**', async (route) => {
+    const url = new URL(route.request().url())
+    searchQueries.push(url.searchParams.get('q') ?? '')
+    await route.fulfill({ json: [imageryReference] })
+  })
+  await page.route('**/api/library/references', async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      createBodies.push(body)
+      await route.fulfill({ status: 201, json: { ...reference, ...body, id: 'ref-new-from-top' } })
+      return
+    }
+    await route.fallback()
+  })
+  await page.route('**/api/library/references/ref-existing', async (route) => {
+    if (route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      updateBodies.push(body)
+      await route.fulfill({ json: { ...existingReference, ...body } })
+      return
+    }
+    await route.fulfill({ json: existingReference })
+  })
+
+  await page.goto('/library')
+  await expect(page.getByText('已有标本正文')).toBeVisible()
+
+  await page.getByRole('button', { name: '按用途' }).click()
+  await page.getByRole('button', { name: /意象/ }).click()
+  await expect(page.getByText('意象标本正文')).toBeVisible()
+
+  await page.getByRole('button', { name: '按书籍' }).click()
+  await page.getByRole('button', { name: /测试书/ }).click()
+  await expect(page.getByText('已有标本正文')).toBeVisible()
+
+  await page.getByRole('button', { name: '+ 新建' }).click()
+  await expect.poll(() => createBodies).toEqual([
+    expect.objectContaining({
+      source_title: '',
+      content: '新标本',
+    }),
+  ])
+
+  await page.getByPlaceholder('搜索标本...').fill('意象')
+  await expect.poll(() => searchQueries).toEqual(['意象'])
+  await expect(page.getByText('意象标本正文')).toBeVisible()
+
+  await page.getByPlaceholder('搜索标本...').fill('')
+  await page.getByRole('button', { name: '按书籍' }).click()
+  await page.getByRole('button', { name: /测试书/ }).click()
+  await expect(page.getByText('已有标本正文')).toBeVisible()
+  await page.locator('textarea').first().fill('改过的标本正文')
+  await expect.poll(() => updateBodies.length).toBe(1)
+  expect(updateBodies[0]).toEqual(expect.objectContaining({ content: '改过的标本正文' }))
+  await expect(page.getByText('修改已保存')).toBeVisible()
+})
+
+test('library autosave failures show a visible unsaved-state error', async ({ page }) => {
+  await page.route('**/api/library/references/ref-existing', async (route) => {
+    if (route.request().method() === 'PUT') {
+      await route.fulfill({ status: 500, json: { detail: '磁盘不可写' } })
+      return
+    }
+    await route.fulfill({ json: existingReference })
+  })
+
+  await page.goto('/library')
+  await expect(page.getByText('已有标本正文')).toBeVisible()
+  await page.locator('textarea').first().fill('无法保存的内容')
+  await expect(page.getByText('保存失败：磁盘不可写')).toBeVisible()
+})
+
 test('AI tools run tasks, attach contexts, and keep generated outputs actionable', async ({ page }) => {
   const taskBodies: Array<Record<string, unknown>> = []
 
@@ -560,6 +650,102 @@ test('AI tools run tasks, attach contexts, and keep generated outputs actionable
   await expect(page.getByText('已复制到剪贴板')).toBeVisible()
 })
 
+test('AI presets, card contexts, and clear controls update the workspace visibly', async ({ page }) => {
+  let savedPresets: Record<string, unknown[]> = {}
+
+  await page.route('**/api/ai/task-presets', async (route) => {
+    if (route.request().method() === 'PUT') {
+      savedPresets = route.request().postDataJSON() as Record<string, unknown[]>
+      await route.fulfill({ json: savedPresets })
+      return
+    }
+    await route.fulfill({ json: savedPresets })
+  })
+
+  await page.goto('/ai?tab=tools')
+  await page.getByPlaceholder('预设名称').fill('测试预设')
+  await page.getByRole('button', { name: '保存' }).click()
+  await expect.poll(() => savedPresets.polish?.length ?? 0).toBe(1)
+  await expect(page.getByText('预设已保存')).toBeVisible()
+  await expect(page.getByRole('button', { name: '测试预设' })).toBeVisible()
+
+  await page.getByRole('button', { name: '测试预设' }).click()
+  await expect(page.getByText('预设已应用')).toBeVisible()
+  await page.getByRole('button', { name: '删除' }).click()
+  await expect.poll(() => savedPresets.polish?.length ?? 0).toBe(0)
+  await expect(page.getByRole('button', { name: '测试预设' })).toHaveCount(0)
+
+  await page.getByRole('button', { name: '添加 AI 卡片' }).click()
+  await page.getByRole('button', { name: /克制风格/ }).click()
+  await expect(page.locator('article').filter({ hasText: '克制风格' })).toBeVisible()
+  await page.getByRole('button', { name: '清空上下文' }).click()
+  await expect(page.getByText('克制风格')).toHaveCount(1)
+  await expect(page.getByText('尚未添加上下文。AI 只会处理原文，除非你手动加入卡片、便签或文脉标本。')).toBeVisible()
+
+  await page.getByRole('button', { name: '粘贴文本' }).click()
+  await page.getByPlaceholder('粘贴需要处理的文本...').fill('需要润色的文本')
+  await page.getByRole('button', { name: '运行任务' }).click()
+  await expect(page.getByText('AI 生成结果')).toBeVisible()
+
+  await page.getByRole('button', { name: '清空结果' }).click()
+  await expect(page.getByText('当前结果已清空')).toBeVisible()
+  await expect(page.getByText('AI 生成结果')).toHaveCount(0)
+
+  await page.getByPlaceholder('粘贴需要处理的文本...').fill('临时输入')
+  await page.getByRole('button', { name: '清空任务' }).click()
+  await expect(page.getByText('当前任务状态已清空')).toBeVisible()
+  await expect(page.getByPlaceholder('粘贴需要处理的文本...')).toHaveValue('')
+
+  await page.getByPlaceholder('粘贴需要处理的文本...').fill('准备清空全部')
+  page.once('dialog', async (dialog) => dialog.dismiss())
+  await page.getByRole('button', { name: '清空全部' }).click()
+  await expect(page.getByPlaceholder('粘贴需要处理的文本...')).toHaveValue('准备清空全部')
+
+  page.once('dialog', async (dialog) => dialog.accept())
+  await page.getByRole('button', { name: '清空全部' }).click()
+  await expect(page.getByText('全部 AI 工作区状态已清空')).toBeVisible()
+  await expect(page.getByRole('button', { name: '粘贴文本' })).toBeVisible()
+})
+
+test('AI result write-back buttons confirm and update the selected article', async ({ page }) => {
+  const updates: Array<{ title?: string; body?: string; tags?: string[] }> = []
+
+  await page.route('**/api/articles/article-a', async (route) => {
+    const request = route.request()
+    if (request.method() === 'PUT') {
+      const body = request.postDataJSON() as { title?: string; body?: string; tags?: string[] }
+      updates.push(body)
+      await route.fulfill({ json: { ...article, ...body } })
+      return
+    }
+    await route.fulfill({ json: article })
+  })
+
+  await page.goto('/ai?tab=tools&scope_kind=article&scope_id=article-a')
+  await page.getByRole('button', { name: '运行任务' }).click()
+  await expect(page.getByText('AI 生成结果')).toBeVisible()
+
+  const dismissDialog = page.waitForEvent('dialog')
+  await page.getByRole('button', { name: '✏️ 替换原文' }).click()
+  await (await dismissDialog).dismiss()
+  expect(updates).toEqual([])
+
+  const acceptDialog = page.waitForEvent('dialog')
+  await page.getByRole('button', { name: '✏️ 替换原文' }).click()
+  await (await acceptDialog).accept()
+  await expect.poll(() => updates.length).toBe(1)
+  expect(updates[0]).toEqual(expect.objectContaining({ body: 'AI 生成结果' }))
+  await expect(page).toHaveURL(/\/articles\?.*id=article-a/)
+  await expect(page).toHaveURL(/focus_start=/)
+
+  await page.goto('/ai?tab=tools&scope_kind=article&scope_id=article-a')
+  await page.getByRole('button', { name: '运行任务' }).click()
+  await page.getByRole('button', { name: '插入到文末' }).click()
+  await expect.poll(() => updates.length).toBe(2)
+  expect(updates[1].body).toContain(article.body)
+  expect(updates[1].body).toContain('AI 生成结果')
+})
+
 test('AI article chat can copy assistant replies and save them as article notes', async ({ page }) => {
   const noteBodies: string[] = []
 
@@ -586,6 +772,29 @@ test('AI article chat can copy assistant replies and save them as article notes'
   await page.getByRole('button', { name: '保存为文章便签' }).click()
   await expect.poll(() => noteBodies).toEqual(['这是 AI 回复。'])
   await expect(page.getByText('已保存为文章便签')).toBeVisible()
+})
+
+test('AI chat standing instruction saves and back-to-article navigates to the scoped article', async ({ page }) => {
+  const prompts: string[] = []
+
+  await page.route('**/api/ai/chat-settings', async (route) => {
+    if (route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON() as { system_prompt?: string }
+      prompts.push(body.system_prompt ?? '')
+      await route.fulfill({ json: { system_prompt: body.system_prompt ?? '' } })
+      return
+    }
+    await route.fulfill({ json: { system_prompt: '' } })
+  })
+
+  await page.goto('/ai?tab=chat&scope_kind=article&scope_id=article-a')
+  await page.getByPlaceholder('例如：回答要具体、克制，不要替作者做过度判断；可以提出修改建议，但不要直接覆盖原文。').fill('回答要具体、克制。')
+  await page.getByRole('button', { name: '保存常驻指令' }).click()
+  await expect.poll(() => prompts).toEqual(['回答要具体、克制。'])
+  await expect(page.getByText('常驻指令已保存')).toBeVisible()
+
+  await page.getByRole('button', { name: '返回文章' }).click()
+  await expect(page).toHaveURL(/\/articles\?.*id=article-a/)
 })
 
 test('AI chat clears old article messages during scope switches so replies cannot save to the wrong note list', async ({ page }) => {
