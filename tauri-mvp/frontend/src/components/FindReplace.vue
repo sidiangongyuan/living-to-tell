@@ -9,7 +9,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  replace: [findText: string, replaceText: string, replaceAll: boolean]
+  replace: [findText: string, replaceText: string, replaceAll: boolean, caseSensitive: boolean]
   navigate: [direction: 'prev' | 'next', query: string, caseSensitive: boolean]
   queryChange: [query: string, caseSensitive: boolean]
 }>()
@@ -44,17 +44,23 @@ const counter = computed(() =>
 
 function go(direction: 'prev' | 'next') {
   if (!findText.value.trim()) return
+  if (matches.value.length) {
+    currentIndex.value =
+      direction === 'next'
+        ? (currentIndex.value + 1) % matches.value.length
+        : (currentIndex.value - 1 + matches.value.length) % matches.value.length
+  }
   emit('navigate', direction, findText.value, caseSensitive.value)
 }
 
 function handleReplace() {
   if (!findText.value.trim()) return
-  emit('replace', findText.value, replaceText.value, false)
+  emit('replace', findText.value, replaceText.value, false, caseSensitive.value)
 }
 
 function handleReplaceAll() {
   if (!findText.value.trim()) return
-  emit('replace', findText.value, replaceText.value, true)
+  emit('replace', findText.value, replaceText.value, true, caseSensitive.value)
 }
 
 function handleClose() {

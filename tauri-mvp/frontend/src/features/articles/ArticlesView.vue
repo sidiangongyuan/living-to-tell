@@ -277,13 +277,53 @@ async function selectEntryFromList(entryId: string) {
   router.push({ name: 'articles', query: { id: entryId } })
 }
 
-function handleReplace(findText: string, replaceText: string, replaceAll: boolean) {
+function escapedFindPattern(findText: string): string {
+  return findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function selectedRangeMatches(findText: string, caseSensitive: boolean): boolean {
+  if (!bodyRef.value) return false
+  const start = bodyRef.value.selectionStart
+  const end = bodyRef.value.selectionEnd
+  if (end - start !== findText.length) return false
+  const selected = bodyDraft.value.slice(start, end)
+  return caseSensitive
+    ? selected === findText
+    : selected.toLowerCase() === findText.toLowerCase()
+}
+
+async function selectActiveFindMatch(findText: string) {
+  await nextTick()
+  if (!bodyRef.value || !findMatches.value.length) return
+  const start = findMatches.value[Math.min(activeMatchIndex.value, findMatches.value.length - 1)]
+  const end = start + findText.length
+  bodyRef.value.focus()
+  bodyRef.value.setSelectionRange(start, end)
+  scrollEditorTo(scrollTopForCaretPosition(bodyRef.value, start, 0.5))
+}
+
+function handleReplace(findText: string, replaceText: string, replaceAll: boolean, caseSensitive: boolean) {
   if (!store.selectedEntry) return
-  const flags = replaceAll ? 'g' : ''
-  const regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags)
-  bodyDraft.value = bodyDraft.value.replace(regex, replaceText)
+  findQuery.value = findText
+  findCaseSensitive.value = caseSensitive
+  refreshMatches(findText, caseSensitive)
+  if (!findMatches.value.length) return
+
+  if (replaceAll) {
+    const regex = new RegExp(escapedFindPattern(findText), caseSensitive ? 'g' : 'gi')
+    bodyDraft.value = bodyDraft.value.replace(regex, replaceText)
+    activeMatchIndex.value = 0
+  } else {
+    let start = findMatches.value[Math.min(activeMatchIndex.value, findMatches.value.length - 1)]
+    if (selectedRangeMatches(findText, caseSensitive) && bodyRef.value) {
+      start = bodyRef.value.selectionStart
+    }
+    bodyDraft.value = `${bodyDraft.value.slice(0, start)}${replaceText}${bodyDraft.value.slice(start + findText.length)}`
+    activeMatchIndex.value = Math.min(activeMatchIndex.value, Math.max(0, findMatches.value.length - 2))
+  }
   scheduleSave()
-  refreshMatches(findText, false)
+  refreshMatches(findText, caseSensitive)
+  void selectActiveFindMatch(findText)
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -320,7 +360,7 @@ function refreshMatches(query = findQuery.value, caseSensitive = findCaseSensiti
     activeMatchIndex.value = 0
     return
   }
-  const pattern = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const pattern = escapedFindPattern(query)
   const flags = caseSensitive ? 'g' : 'gi'
   const regex = new RegExp(pattern, flags)
   const matches: number[] = []

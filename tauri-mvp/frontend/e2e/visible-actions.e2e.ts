@@ -478,6 +478,50 @@ test('article find and replace updates the editor and autosaves the change', asy
   await expect.poll(() => updates.at(-1)?.body).toBe(expectedBody)
 })
 
+test('article find replace respects case sensitivity and replaces the active match', async ({ page }) => {
+  const updates: Array<{ body?: string }> = []
+  const latinArticle = {
+    ...article,
+    body: 'Alpha Alpha alpha',
+  }
+
+  await page.route('**/api/articles?**', async (route) => {
+    await route.fulfill({ json: [latinArticle, articleB] })
+  })
+  await page.route('**/api/articles/article-a', async (route) => {
+    const request = route.request()
+    if (request.method() === 'PUT') {
+      const body = request.postDataJSON() as { body?: string }
+      updates.push(body)
+      await route.fulfill({ json: { ...latinArticle, ...body } })
+      return
+    }
+    await route.fulfill({ json: latinArticle })
+  })
+
+  await page.goto('/articles?id=article-a')
+  const editor = page.getByTestId('article-body-editor')
+  await expect(editor).toHaveValue('Alpha Alpha alpha')
+
+  await page.getByTitle('查找与替换 (Ctrl+F)').click()
+  await page.getByPlaceholder('查找').fill('Alpha')
+  await page.getByRole('button', { name: '下一处' }).click()
+  await expect.poll(() => editor.evaluate((textarea: HTMLTextAreaElement) => textarea.selectionStart)).toBe(6)
+  await page.getByRole('button', { name: '显示替换' }).click()
+  await page.getByPlaceholder('替换为').fill('Beta')
+  await page.getByRole('button', { name: '替换', exact: true }).click()
+  await expect(editor).toHaveValue('Alpha Beta alpha')
+
+  await page.getByPlaceholder('查找').fill('alpha')
+  await page.getByLabel('区分大小写').check()
+  await page.getByPlaceholder('替换为').fill('gamma')
+  await page.getByRole('button', { name: '全部替换' }).click()
+
+  const expectedBody = 'Alpha Beta gamma'
+  await expect(editor).toHaveValue(expectedBody)
+  await expect.poll(() => updates.at(-1)?.body).toBe(expectedBody)
+})
+
 test('article pending edits are flushed before switching, AI chat, and archive actions', async ({ page }) => {
   const updates: Array<Record<string, unknown>> = []
   const archiveRequests: string[] = []
@@ -986,6 +1030,11 @@ test('collection export buttons trigger downloads and article management actions
   await page.goto('/collections')
   await expect(page.getByText('测试作品集')).toBeVisible()
 
+  await page.getByRole('complementary').getByRole('button', { name: '+ 新建', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '新建作品集' })).toBeVisible()
+  await page.getByRole('button', { name: '取消' }).click()
+  await expect(page.getByRole('heading', { name: '新建作品集' })).toHaveCount(0)
+
   for (const [buttonName, extension] of [
     ['Markdown', 'md'],
     ['TXT', 'txt'],
@@ -996,6 +1045,12 @@ test('collection export buttons trigger downloads and article management actions
     const download = await downloadPromise
     expect(download.suggestedFilename()).toBe(`测试作品集.${extension}`)
   }
+
+  await page.getByRole('button', { name: '添加文章' }).first().click()
+  await expect(page.getByRole('heading', { name: '添加文章到作品集' })).toBeVisible()
+  await page.getByRole('button', { name: '取消' }).click()
+  await expect(page.getByRole('heading', { name: '添加文章到作品集' })).toHaveCount(0)
+  expect(addedRequests).toEqual([])
 
   await page.getByRole('button', { name: '添加文章' }).first().click()
   await page.getByRole('button', { name: /备选文章/ }).click()
@@ -1337,6 +1392,9 @@ test('AI tools run tasks, attach contexts, and keep generated outputs actionable
   await page.getByRole('button', { name: '复制结果' }).click()
   await expect.poll(() => page.evaluate(() => window.__copiedText)).toBe('AI 生成结果')
   await expect(page.getByText('已复制到剪贴板')).toBeVisible()
+
+  await page.getByRole('button', { name: '返回' }).click()
+  await expect(page.getByText('选择任务类型和输入内容，点击"运行任务"')).toBeVisible()
 })
 
 test('AI presets, card contexts, and clear controls update the workspace visibly', async ({ page }) => {
