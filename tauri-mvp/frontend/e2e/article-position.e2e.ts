@@ -104,6 +104,22 @@ test('keeps an incomplete epigraph draft when switching articles', async ({ page
   await expect(page.getByTestId('article-body-editor')).toHaveValue(longBodyA)
 })
 
+test('moves an epigraph back into the article body and saves it', async ({ page }) => {
+  const mockedPage = page as MockedPage
+  await page.goto('/articles?id=article-a')
+  await expect(page.getByTestId('article-body-editor')).toHaveValue(longBodyA)
+
+  await page.getByTestId('article-add-epigraph').click()
+  await page.getByTestId('article-epigraph-quote').fill('题记会回到正文')
+  await page.getByTestId('article-epigraph-attribution').fill('《测试书》 作者')
+  await page.getByRole('button', { name: '转回正文' }).click()
+
+  const expectedBody = `题记会回到正文\n——《测试书》 作者\n\n${longBodyA}`
+  await expect(page.getByTestId('article-epigraph-quote')).toHaveCount(0)
+  await expect(page.getByTestId('article-body-editor')).toHaveValue(expectedBody)
+  await expect.poll(() => mockedPage.__writerArticles?.find((article) => article.id === 'article-a')?.body).toBe(expectedBody)
+})
+
 test('flushes pending article edits before switching articles', async ({ page }) => {
   const mockedPage = page as MockedPage
   await page.goto('/articles?id=article-a')

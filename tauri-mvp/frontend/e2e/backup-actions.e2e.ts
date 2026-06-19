@@ -155,9 +155,14 @@ test('backup page create, delete, and restore actions call real APIs with confir
   await expect(page.getByText('auto_backup_20260619')).toBeVisible()
 
   await page.getByRole('button', { name: '创建检查点' }).click()
+  const createCheckpointButton = page.getByRole('button', { name: '创建', exact: true })
+  await expect(createCheckpointButton).toBeDisabled()
+  await page.getByPlaceholder('例如：完成第三章').fill('   ')
+  await expect(createCheckpointButton).toBeDisabled()
   await page.getByPlaceholder('例如：完成第三章').fill('新检查点')
+  await expect(createCheckpointButton).toBeEnabled()
   await page.getByPlaceholder('添加一些说明...').fill('保留当前进度')
-  await page.getByRole('button', { name: '创建', exact: true }).click()
+  await createCheckpointButton.click()
   await expect.poll(() => checkpointCreates).toEqual([
     { name: '新检查点', description: '保留当前进度' },
   ])

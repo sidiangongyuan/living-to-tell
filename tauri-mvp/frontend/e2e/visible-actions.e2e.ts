@@ -4,6 +4,8 @@ declare global {
   interface Window {
     __copiedText?: string
     __confirmMessages?: string[]
+    __closeInvokes?: Array<{ command: string; args?: Record<string, unknown> }>
+    __tauriEventHandlers?: Record<number, (event: { event: string; id: number; payload: unknown }) => void>
   }
 }
 
@@ -463,6 +465,10 @@ test('article find and replace updates the editor and autosaves the change', asy
   await page.getByTitle('查找与替换 (Ctrl+F)').click()
   await page.getByPlaceholder('查找').fill('正文')
   await expect(page.getByText('1/2')).toBeVisible()
+  await page.getByRole('button', { name: '下一处' }).click()
+  await expect.poll(() => page.getByTestId('article-body-editor').evaluate((textarea: HTMLTextAreaElement) => textarea.selectionStart)).toBe(11)
+  await page.getByRole('button', { name: '上一处' }).click()
+  await expect.poll(() => page.getByTestId('article-body-editor').evaluate((textarea: HTMLTextAreaElement) => textarea.selectionStart)).toBe(3)
   await page.getByRole('button', { name: '显示替换' }).click()
   await page.getByPlaceholder('替换为').fill('文本')
   await page.getByRole('button', { name: '全部替换' }).click()
@@ -766,6 +772,10 @@ test('dates calendar buttons, daily quote, welcome close, and start writing acti
   await expect.poll(() => statsQueries.length).toBeGreaterThanOrEqual(4)
 
   const welcomePanel = page.locator('section').filter({ hasText: '开始使用活着为了讲述' }).first()
+  await welcomePanel.getByRole('button', { name: '查看备份与数据说明' }).click()
+  await expect(page).toHaveURL(/\/backup/)
+
+  await page.goto('/dates')
   await welcomePanel.getByRole('button', { name: '关闭' }).click()
   await expect(page.getByText('开始使用活着为了讲述')).toHaveCount(0)
 
@@ -777,6 +787,15 @@ test('dates calendar buttons, daily quote, welcome close, and start writing acti
   }))
   expect(String(createdArticles[0].title)).toContain('记录')
   await expect(page).toHaveURL(/\/articles\?.*id=article-from-date/)
+})
+
+test('date article cards open the selected article from the calendar', async ({ page }) => {
+  await page.goto('/dates')
+
+  await page.locator('article').filter({ hasText: '导出测试文章' }).click()
+
+  await expect(page).toHaveURL(/\/articles\?.*id=article-a/)
+  await expect(page.getByTestId('article-body-editor')).toHaveValue(article.body)
 })
 
 test('welcome checklist creates a real reference and opens article chat with article scope', async ({ page }) => {
@@ -794,6 +813,66 @@ test('welcome checklist creates a real reference and opens article chat with art
   await expect(page).toHaveURL(/\/ai\?.*tab=chat/)
   await expect(page).toHaveURL(/scope_kind=article/)
   await expect(page).toHaveURL(/scope_id=article-a/)
+})
+
+test('runtime close dialog controls call the native close action', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__closeInvokes = []
+    window.__tauriEventHandlers = {}
+    let nextEventId = 0
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      value: {
+        metadata: { currentWindow: { label: 'main' } },
+        invoke: async (command: string, args?: Record<string, unknown>) => {
+          window.__closeInvokes?.push({ command, args })
+          if (command === 'get_api_base_url') return 'http://backend.test'
+          if (command === 'get_close_preference') return 'ask'
+          if (command === 'set_close_preference') return args?.preference
+          if (command === 'plugin:event|listen') return args?.handler
+          if (command === 'plugin:event|unlisten') return null
+          if (command === 'resolve_close_action') return args?.action
+          return null
+        },
+        transformCallback: (callback: (event: { event: string; id: number; payload: unknown }) => void) => {
+          nextEventId += 1
+          window.__tauriEventHandlers![nextEventId] = callback
+          return nextEventId
+        },
+        unregisterCallback: () => undefined,
+      },
+      configurable: true,
+    })
+  })
+
+  const triggerCloseDialog = async () => {
+    await page.evaluate(() => {
+      const handlers = Object.values(window.__tauriEventHandlers ?? {})
+      for (const [index, handler] of handlers.entries()) {
+        handler({ event: 'writer-confirm-close', id: index + 1, payload: null })
+      }
+    })
+  }
+
+  await page.goto('/dates')
+  await expect.poll(async () => page.evaluate(() => Object.keys(window.__tauriEventHandlers ?? {}).length)).toBeGreaterThan(0)
+
+  await triggerCloseDialog()
+  await expect(page.getByRole('heading', { name: '关闭活着为了讲述' })).toBeVisible()
+  await page.getByRole('button', { name: '取消' }).click()
+  await expect(page.getByRole('heading', { name: '关闭活着为了讲述' })).toHaveCount(0)
+
+  await triggerCloseDialog()
+  await page.getByRole('button', { name: '直接退出' }).click()
+  await page.getByLabel('记住我的选择').check()
+  await page.getByRole('button', { name: '确认' }).click()
+
+  await expect.poll(async () => page.evaluate(() =>
+    window.__closeInvokes?.some((item) =>
+      item.command === 'resolve_close_action'
+      && item.args?.action === 'exit'
+      && item.args?.remember === true
+    ) ?? false
+  )).toBe(true)
 })
 
 test('command palette does not expose misleading search or unsafe reload commands', async ({ page }) => {
@@ -1218,6 +1297,24 @@ test('AI tools run tasks, attach contexts, and keep generated outputs actionable
   await page.getByRole('button', { name: '添加文章便签' }).click()
   await expect(page.getByText('上下文已添加')).toBeVisible()
   await expect(page.getByText('文章便签 · 1 条')).toBeVisible()
+
+  await page.getByRole('button', { name: '添加文脉标本' }).click()
+  await expect(page.getByRole('heading', { name: '添加文脉标本' })).toBeVisible()
+  await page.getByRole('button', { name: '取消' }).click()
+  await expect(page.getByRole('heading', { name: '添加文脉标本' })).toHaveCount(0)
+
+  await page.getByRole('button', { name: '添加文脉标本' }).click()
+  await page.getByPlaceholder('搜索标本...').fill('不存在的标本')
+  await page.getByRole('button', { name: '搜索' }).click()
+  await expect(page.getByText('暂无标本。点击"新建"添加。')).toBeVisible()
+  await page.getByPlaceholder('搜索标本...').fill('')
+  await page.getByRole('button', { name: '搜索' }).click()
+  await page.getByRole('button', { name: /已有标本正文/ }).click()
+  await page.getByRole('button', { name: /添加所选上下文/ }).click()
+  await expect(page.getByText('测试书')).toBeVisible()
+  const referenceContext = page.locator('article').filter({ hasText: '测试书' })
+  await referenceContext.getByRole('button', { name: '×' }).click()
+  await expect(referenceContext).toHaveCount(0)
 
   await page.getByRole('button', { name: '添加文脉标本' }).click()
   await page.getByRole('button', { name: /已有标本正文/ }).click()
