@@ -7,6 +7,7 @@ const show = ref(false)
 const title = ref('')
 const body = ref('')
 const saving = ref(false)
+const error = ref('')
 const { t } = useI18n()
 
 const wordCount = ref(0)
@@ -21,6 +22,7 @@ async function save() {
   if (!body.value.trim()) return
 
   saving.value = true
+  error.value = ''
   try {
     // Derive title from first line or first few words
     const derivedTitle = title.value.trim() || body.value.trim().split('\n')[0].slice(0, 50) || 'Quick Note'
@@ -34,10 +36,11 @@ async function save() {
     // Clear and close
     title.value = ''
     body.value = ''
+    error.value = ''
     show.value = false
   } catch (e) {
     console.error('Quick capture save failed:', e)
-    alert(t('quickCapture.saveError'))
+    error.value = e instanceof Error ? e.message : t('quickCapture.saveError')
   } finally {
     saving.value = false
   }
@@ -47,6 +50,7 @@ function cancel() {
   if (body.value.trim() && !confirm(t('quickCapture.discardConfirm'))) return
   title.value = ''
   body.value = ''
+  error.value = ''
   show.value = false
 }
 
@@ -72,6 +76,9 @@ defineExpose({ open: () => show.value = true, close: () => show.value = false })
 
         <!-- Body -->
         <div class="p-6">
+          <div v-if="error" class="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+            {{ error }}
+          </div>
           <input
             v-model="title"
             :placeholder="t('quickCapture.titlePlaceholder')"

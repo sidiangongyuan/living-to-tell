@@ -384,6 +384,33 @@ test('quick capture can save a real article and protects dirty cancel', async ({
   await expect(page.getByRole('heading', { name: '快速捕获' })).toHaveCount(0)
 })
 
+test('quick capture save failures stay in the dialog and keep the draft', async ({ page }) => {
+  await page.route('**/api/articles', async (route) => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({ status: 500, json: { detail: '磁盘已满' } })
+      return
+    }
+    await route.fulfill({ json: [article, articleB] })
+  })
+
+  await page.goto('/dates')
+  await page.keyboard.down('Control')
+  await page.keyboard.down('Shift')
+  await page.keyboard.press('KeyN')
+  await page.keyboard.up('Shift')
+  await page.keyboard.up('Control')
+
+  await expect(page.getByRole('heading', { name: '快速捕获' })).toBeVisible()
+  await page.getByPlaceholder('标题（可选）').fill('失败标题')
+  await page.getByPlaceholder('开始输入你的想法...').fill('失败后仍应保留的正文')
+  await page.getByRole('button', { name: '保存' }).click()
+
+  await expect(page.getByText('磁盘已满')).toBeVisible()
+  await expect(page.getByPlaceholder('标题（可选）')).toHaveValue('失败标题')
+  await expect(page.getByPlaceholder('开始输入你的想法...')).toHaveValue('失败后仍应保留的正文')
+  await expect(page.getByRole('heading', { name: '快速捕获' })).toBeVisible()
+})
+
 test('article find and replace updates the editor and autosaves the change', async ({ page }) => {
   const updates: Array<{ body?: string }> = []
 
