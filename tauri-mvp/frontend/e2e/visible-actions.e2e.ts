@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 declare global {
   interface Window {
     __copiedText?: string
+    __confirmMessages?: string[]
   }
 }
 
@@ -342,6 +343,262 @@ test('article delete asks for confirmation before calling the destructive API', 
   page.once('dialog', async (dialog) => dialog.accept())
   await page.getByRole('button', { name: '删除' }).last().click()
   await expect.poll(() => deleteRequests).toBe(1)
+})
+
+test('quick capture can save a real article and protects dirty cancel', async ({ page }) => {
+  const createdArticles: Array<Record<string, unknown>> = []
+
+  await page.route('**/api/articles', async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      createdArticles.push(body)
+      await route.fulfill({ status: 201, json: { ...article, ...body, id: 'quick-capture-created' } })
+      return
+    }
+    await route.fulfill({ json: [article, articleB] })
+  })
+
+  await page.goto('/dates')
+  await page.keyboard.down('Control')
+  await page.keyboard.down('Shift')
+  await page.keyboard.press('KeyN')
+  await page.keyboard.up('Shift')
+  await page.keyboard.up('Control')
+  await expect(page.getByRole('heading', { name: '快速捕获' })).toBeVisible()
+
+  await page.getByPlaceholder('开始输入你的想法...').fill('未保存的灵感')
+  page.once('dialog', async (dialog) => dialog.dismiss())
+  await page.getByRole('button', { name: '取消' }).click()
+  await expect(page.getByRole('heading', { name: '快速捕获' })).toBeVisible()
+
+  await page.getByPlaceholder('标题（可选）').fill('快速标题')
+  await page.getByPlaceholder('开始输入你的想法...').fill('快速正文第一行\n第二行')
+  await page.getByRole('button', { name: '保存' }).click()
+  await expect.poll(() => createdArticles).toEqual([
+    {
+      title: '快速标题',
+      body: '快速正文第一行\n第二行',
+      tags: ['quick-capture'],
+    },
+  ])
+  await expect(page.getByRole('heading', { name: '快速捕获' })).toHaveCount(0)
+})
+
+test('article find and replace updates the editor and autosaves the change', async ({ page }) => {
+  const updates: Array<{ body?: string }> = []
+
+  await page.route('**/api/articles/article-a', async (route) => {
+    const request = route.request()
+    if (request.method() === 'PUT') {
+      const body = request.postDataJSON() as { body?: string }
+      updates.push(body)
+      await route.fulfill({ json: { ...article, ...body } })
+      return
+    }
+    await route.fulfill({ json: article })
+  })
+
+  await page.goto('/articles?id=article-a')
+  await expect(page.getByTestId('article-body-editor')).toHaveValue(article.body)
+
+  await page.getByTitle('查找与替换 (Ctrl+F)').click()
+  await page.getByPlaceholder('查找').fill('正文')
+  await expect(page.getByText('1/2')).toBeVisible()
+  await page.getByRole('button', { name: '显示替换' }).click()
+  await page.getByPlaceholder('替换为').fill('文本')
+  await page.getByRole('button', { name: '全部替换' }).click()
+
+  const expectedBody = '第一段文本。\n\n第二段文本。'
+  await expect(page.getByTestId('article-body-editor')).toHaveValue(expectedBody)
+  await expect.poll(() => updates.at(-1)?.body).toBe(expectedBody)
+})
+
+test('article writing notes can be added, pinned, edited, completed, restored, and deleted', async ({ page }) => {
+  const requests = {
+    created: [] as Array<Record<string, unknown>>,
+    updated: [] as Array<Record<string, unknown>>,
+    pinned: [] as Array<Record<string, unknown>>,
+    done: [] as Array<Record<string, unknown>>,
+    deleted: 0,
+  }
+  let notes = [
+    { ...openNote },
+    {
+      ...openNote,
+      id: 'note-done',
+      body: '已经完成的便签',
+      status: 'done',
+      pinned: false,
+      sort_order: 1,
+      completed_at: '2026-06-19T00:00:00Z',
+    },
+  ]
+
+  await page.route('**/api/articles/article-a/notes**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const parts = url.pathname.split('/')
+    const noteId = parts[5]
+
+    if (url.pathname === '/api/articles/article-a/notes') {
+      if (request.method() === 'POST') {
+        const body = request.postDataJSON() as { body?: string; pinned?: boolean }
+        requests.created.push(body)
+        const created = {
+          ...openNote,
+          id: 'note-created',
+          body: body.body ?? '',
+          pinned: body.pinned ?? false,
+          sort_order: 0,
+        }
+        notes = [created, ...notes]
+        await route.fulfill({ status: 201, json: created })
+        return
+      }
+      await route.fulfill({ json: notes })
+      return
+    }
+
+    const existing = notes.find((note) => note.id === noteId) ?? notes[0]
+    if (url.pathname.endsWith('/pinned') && request.method() === 'PUT') {
+      const body = request.postDataJSON() as { pinned?: boolean }
+      requests.pinned.push(body)
+      const updated = { ...existing, pinned: Boolean(body.pinned) }
+      notes = notes.map((note) => note.id === noteId ? updated : note)
+      await route.fulfill({ json: updated })
+      return
+    }
+    if (url.pathname.endsWith('/done') && request.method() === 'PUT') {
+      const body = request.postDataJSON() as { done?: boolean }
+      requests.done.push(body)
+      const updated = {
+        ...existing,
+        status: body.done ? 'done' : 'open',
+        completed_at: body.done ? '2026-06-19T01:00:00Z' : null,
+      }
+      notes = notes.map((note) => note.id === noteId ? updated : note)
+      await route.fulfill({ json: updated })
+      return
+    }
+    if (request.method() === 'PUT') {
+      const body = request.postDataJSON() as { body?: string }
+      requests.updated.push(body)
+      const updated = { ...existing, body: body.body ?? existing.body }
+      notes = notes.map((note) => note.id === noteId ? updated : note)
+      await route.fulfill({ json: updated })
+      return
+    }
+    if (request.method() === 'DELETE') {
+      requests.deleted += 1
+      notes = notes.filter((note) => note.id !== noteId)
+      await route.fulfill({ status: 204 })
+      return
+    }
+    await route.fulfill({ json: existing })
+  })
+
+  await page.goto('/articles?id=article-a')
+  await expect(page.getByText('文章便签')).toBeVisible()
+
+  await page.getByPlaceholder('记下接下来怎么写、要保留的意象或需要提醒自己的想法…').fill('新的写作提醒')
+  await page.getByRole('button', { name: '添加便签' }).click()
+  await expect.poll(() => requests.created).toEqual([{ body: '新的写作提醒', pinned: false }])
+  await expect(page.getByText('新的写作提醒')).toBeVisible()
+
+  const createdCard = page.locator('article').filter({ hasText: '新的写作提醒' }).first()
+  await createdCard.getByRole('button', { name: '置顶' }).click()
+  await expect.poll(() => requests.pinned.at(-1)).toEqual({ pinned: true })
+  await expect(createdCard.getByRole('button', { name: '取消置顶' })).toBeVisible()
+
+  await createdCard.getByRole('button', { name: '编辑' }).click()
+  const editingCard = page.locator('article').filter({ has: page.locator('textarea') }).first()
+  await editingCard.locator('textarea').fill('修改后的写作提醒')
+  await editingCard.getByRole('button', { name: '保存' }).click()
+  await expect.poll(() => requests.updated).toEqual([{ body: '修改后的写作提醒' }])
+  await expect(page.getByText('修改后的写作提醒')).toBeVisible()
+
+  const updatedCard = page.locator('article').filter({ hasText: '修改后的写作提醒' }).first()
+  await updatedCard.getByRole('button', { name: '完成' }).click()
+  await expect.poll(() => requests.done.at(-1)).toEqual({ done: true })
+  await expect(page.getByRole('button', { name: /显示已完成/ })).toBeVisible()
+
+  await page.getByRole('button', { name: /显示已完成/ }).click()
+  await expect(page.getByText('修改后的写作提醒')).toBeVisible()
+  const completedCard = page.locator('article').filter({ hasText: '修改后的写作提醒' }).first()
+  await completedCard.getByRole('button', { name: '恢复' }).click()
+  await expect.poll(() => requests.done.at(-1)).toEqual({ done: false })
+
+  const restoredCard = page.locator('article').filter({ hasText: '修改后的写作提醒' }).first()
+  page.once('dialog', async (dialog) => dialog.dismiss())
+  await restoredCard.getByRole('button', { name: '删除' }).click()
+  expect(requests.deleted).toBe(0)
+
+  page.once('dialog', async (dialog) => dialog.accept())
+  await restoredCard.getByRole('button', { name: '删除' }).click()
+  await expect.poll(() => requests.deleted).toBe(1)
+})
+
+test('dates calendar buttons, daily quote, welcome close, and start writing actions work', async ({ page }) => {
+  const statsQueries: Array<{ year: string | null; month: string | null }> = []
+  const createdArticles: Array<Record<string, unknown>> = []
+
+  await page.route('**/api/dates/stats?**', async (route) => {
+    const url = new URL(route.request().url())
+    statsQueries.push({
+      year: url.searchParams.get('year'),
+      month: url.searchParams.get('month'),
+    })
+    await route.fulfill({ json: [] })
+  })
+  await page.route('**/api/dates/entries?**', async (route) => {
+    await route.fulfill({ json: [] })
+  })
+  await page.route('**/api/dates/quote?**', async (route) => {
+    await route.fulfill({
+      json: {
+        id: 'quote-a',
+        reference_id: 'ref-existing',
+        text: '今天的精句',
+        source_title: '测试书',
+        source_author: '测试作者',
+      },
+    })
+  })
+  await page.route('**/api/articles', async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      createdArticles.push(body)
+      await route.fulfill({ status: 201, json: { ...article, ...body, id: 'article-from-date' } })
+      return
+    }
+    await route.fulfill({ json: [] })
+  })
+
+  await page.goto('/dates')
+  await expect(page.getByText('今天的精句')).toBeVisible()
+
+  await page.locator('aside').getByRole('button', { name: '文脉库' }).click()
+  await expect(page).toHaveURL(/\/library\?.*ref=ref-existing/)
+  await expect(page).toHaveURL(/group=source/)
+
+  await page.goto('/dates')
+  await page.getByRole('button', { name: '›' }).click()
+  await page.getByRole('button', { name: '‹' }).click()
+  await page.getByRole('button', { name: '今天' }).click()
+  await expect.poll(() => statsQueries.length).toBeGreaterThanOrEqual(4)
+
+  const welcomePanel = page.locator('section').filter({ hasText: '开始使用活着为了讲述' }).first()
+  await welcomePanel.getByRole('button', { name: '关闭' }).click()
+  await expect(page.getByText('开始使用活着为了讲述')).toHaveCount(0)
+
+  await page.getByRole('button', { name: '开始写作' }).click()
+  await expect.poll(() => createdArticles.length).toBe(1)
+  expect(createdArticles[0]).toEqual(expect.objectContaining({
+    body: '',
+    tags: [],
+  }))
+  expect(String(createdArticles[0].title)).toContain('记录')
+  await expect(page).toHaveURL(/\/articles\?.*id=article-from-date/)
 })
 
 test('welcome checklist creates a real reference and opens article chat with article scope', async ({ page }) => {
@@ -707,7 +964,7 @@ test('AI presets, card contexts, and clear controls update the workspace visibly
   await expect(page.getByRole('button', { name: '粘贴文本' })).toBeVisible()
 })
 
-test('AI result write-back buttons confirm and update the selected article', async ({ page }) => {
+test('AI result replace cancel does not update the selected article', async ({ page }) => {
   const updates: Array<{ title?: string; body?: string; tags?: string[] }> = []
 
   await page.route('**/api/articles/article-a', async (route) => {
@@ -725,29 +982,72 @@ test('AI result write-back buttons confirm and update the selected article', asy
   await page.getByRole('button', { name: '运行任务' }).click()
   await expect(page.getByText('AI 生成结果')).toBeVisible()
 
-  const dismissDialog = page.waitForEvent('dialog')
+  await page.evaluate(() => {
+    window.__confirmMessages = []
+    window.confirm = (message?: string) => {
+      window.__confirmMessages?.push(String(message ?? ''))
+      return false
+    }
+  })
   await page.getByRole('button', { name: '✏️ 替换原文' }).click()
-  await (await dismissDialog).dismiss()
+  await expect.poll(() => page.evaluate(() => window.__confirmMessages?.length ?? 0)).toBe(1)
+  await expect.poll(() => page.evaluate(() => window.__confirmMessages?.[0] ?? '')).toContain('确定要替换原文章内容吗')
   expect(updates).toEqual([])
+})
+
+test('AI result replace updates the selected article after confirmation', async ({ page }) => {
+  const updates: Array<{ title?: string; body?: string; tags?: string[] }> = []
+
+  await page.route('**/api/articles/article-a', async (route) => {
+    const request = route.request()
+    if (request.method() === 'PUT') {
+      const body = request.postDataJSON() as { title?: string; body?: string; tags?: string[] }
+      updates.push(body)
+      await route.fulfill({ json: { ...article, ...body } })
+      return
+    }
+    await route.fulfill({ json: article })
+  })
 
   await page.goto('/ai?tab=tools&scope_kind=article&scope_id=article-a')
   await page.getByRole('button', { name: '运行任务' }).click()
   await expect(page.getByText('AI 生成结果')).toBeVisible()
 
-  const acceptDialog = page.waitForEvent('dialog')
+  await page.evaluate(() => {
+    window.__confirmMessages = []
+    window.confirm = (message?: string) => {
+      window.__confirmMessages?.push(String(message ?? ''))
+      return true
+    }
+  })
   await page.getByRole('button', { name: '✏️ 替换原文' }).click()
-  await (await acceptDialog).accept()
+  await expect.poll(() => page.evaluate(() => window.__confirmMessages?.length ?? 0)).toBe(1)
   await expect.poll(() => updates.length).toBe(1)
   expect(updates[0]).toEqual(expect.objectContaining({ body: 'AI 生成结果' }))
   await expect(page).toHaveURL(/\/articles\?.*id=article-a/)
   await expect(page).toHaveURL(/focus_start=/)
+})
+
+test('AI result insert appends to the selected article', async ({ page }) => {
+  const updates: Array<{ title?: string; body?: string; tags?: string[] }> = []
+
+  await page.route('**/api/articles/article-a', async (route) => {
+    const request = route.request()
+    if (request.method() === 'PUT') {
+      const body = request.postDataJSON() as { title?: string; body?: string; tags?: string[] }
+      updates.push(body)
+      await route.fulfill({ json: { ...article, ...body } })
+      return
+    }
+    await route.fulfill({ json: article })
+  })
 
   await page.goto('/ai?tab=tools&scope_kind=article&scope_id=article-a')
   await page.getByRole('button', { name: '运行任务' }).click()
   await page.getByRole('button', { name: '插入到文末' }).click()
-  await expect.poll(() => updates.length).toBe(2)
-  expect(updates[1].body).toContain(article.body)
-  expect(updates[1].body).toContain('AI 生成结果')
+  await expect.poll(() => updates.length).toBe(1)
+  expect(updates[0].body).toContain(article.body)
+  expect(updates[0].body).toContain('AI 生成结果')
 })
 
 test('AI article chat can copy assistant replies and save them as article notes', async ({ page }) => {
