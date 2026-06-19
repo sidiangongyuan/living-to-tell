@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import shutil
 import sqlite3
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -21,9 +22,9 @@ class BackupService:
     """数据库备份与检查点服务。"""
 
     def __init__(self, db_path: str):
-        self.db_path = db_path
-        self.backup_dir = Path(user_data_directory()) / "backups"
-        self.checkpoint_dir = Path(user_data_directory()) / "checkpoints"
+        self.db_path = str(Path(db_path).expanduser().resolve())
+        self.backup_dir = (Path(user_data_directory()) / "backups").expanduser().resolve()
+        self.checkpoint_dir = (Path(user_data_directory()) / "checkpoints").expanduser().resolve()
 
         # 确保备份目录存在
         self.backup_dir.mkdir(parents=True, exist_ok=True)
@@ -37,7 +38,7 @@ class BackupService:
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_name = f"auto_backup_{timestamp}.sqlite3"
-        backup_path = self.backup_dir / backup_name
+        backup_path = self._unique_path(self.backup_dir / backup_name)
 
         self._vacuum_into(backup_path)
 
@@ -60,7 +61,7 @@ class BackupService:
         # 清理文件名（移除特殊字符）
         safe_name = "".join(c if c.isalnum() or c in (' ', '_', '-') else '_' for c in name)
         checkpoint_name = f"checkpoint_{timestamp}_{safe_name}.sqlite3"
-        checkpoint_path = self.checkpoint_dir / checkpoint_name
+        checkpoint_path = self._unique_path(self.checkpoint_dir / checkpoint_name)
 
         self._vacuum_into(checkpoint_path)
 
@@ -128,19 +129,69 @@ class BackupService:
         Returns:
             是否成功
         """
-        source = Path(backup_path)
-        if not source.exists() or not source.is_file():
-            return False
+        source = self._managed_restore_source(backup_path)
+        self._validate_sqlite_database(source)
 
         # 先备份当前数据库
         self.create_auto_backup()
 
-        # 替换数据库。调用方应先关闭长期 SQLite 连接；这里同时清理
-        # WAL/SHM sidecar，避免恢复后旧 WAL 被重新 replay。
-        self._remove_sqlite_sidecars(Path(self.db_path))
-        shutil.copy2(source, self.db_path)
-        self._remove_sqlite_sidecars(Path(self.db_path))
+        # 替换数据库。调用方应先关闭长期 SQLite 连接；这里先复制到同目录
+        # 临时文件并完成完整性校验，再原子替换 live DB，避免半拷贝破坏主库。
+        db_path = Path(self.db_path)
+        restore_tmp = db_path.with_name(f"{db_path.name}.restore-{uuid.uuid4().hex}.tmp")
+        try:
+            shutil.copy2(source, restore_tmp)
+            self._validate_sqlite_database(restore_tmp)
+            self._remove_sqlite_sidecars(db_path)
+            restore_tmp.replace(db_path)
+            self._remove_sqlite_sidecars(db_path)
+        finally:
+            self._remove_sqlite_sidecars(restore_tmp)
+            try:
+                restore_tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
         return True
+
+    def _managed_restore_source(self, backup_path: str) -> Path:
+        source = Path(backup_path).expanduser()
+        try:
+            source = source.resolve(strict=True)
+        except OSError as exc:
+            raise ValueError("Backup file not found") from exc
+        if not source.is_file():
+            raise ValueError("Backup path is not a file")
+
+        allowed_paths = {
+            Path(item["path"]).expanduser().resolve()
+            for item in [*self.list_backups(), *self.list_checkpoints()]
+        }
+        if source not in allowed_paths:
+            raise ValueError("Backup file is not managed by Living to Tell")
+        return source
+
+    @staticmethod
+    def _validate_sqlite_database(path: Path) -> None:
+        uri = path.resolve().as_uri()
+        conn = sqlite3.connect(f"{uri}?mode=ro", uri=True)
+        try:
+            row = conn.execute("PRAGMA integrity_check").fetchone()
+        except sqlite3.DatabaseError as exc:
+            raise ValueError("Backup file is not a valid SQLite database") from exc
+        finally:
+            conn.close()
+        if not row or row[0] != "ok":
+            raise ValueError("Backup database failed integrity_check")
+
+    @staticmethod
+    def _unique_path(path: Path) -> Path:
+        if not path.exists():
+            return path
+        for index in range(1, 1000):
+            candidate = path.with_name(f"{path.stem}_{index}{path.suffix}")
+            if not candidate.exists():
+                return candidate
+        raise RuntimeError(f"Unable to allocate unique backup path for {path.name}")
 
     def _vacuum_into(self, target_path: Path) -> None:
         """Create a consistent SQLite copy without interpolating file paths."""

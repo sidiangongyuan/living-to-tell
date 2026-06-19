@@ -289,10 +289,14 @@ def export_collection(
         return Response(content, media_type="text/markdown; charset=utf-8")
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
     tmp.close()
-    output = container.collection_export_service.export_collection_docx(
-        collection_id,
-        tmp.name,
-    )
+    try:
+        output = container.collection_export_service.export_collection_docx(
+            collection_id,
+            tmp.name,
+        )
+    except Exception:
+        _cleanup_temp_file(tmp.name)
+        raise
     filename = f"{_collection_or_404(collection_id, container).name or 'collection'}.docx"
     return FileResponse(
         output,

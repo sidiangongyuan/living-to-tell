@@ -152,7 +152,10 @@ def restore_from_backup(
         except sqlite3.Error:
             pass
         container.close()
-        success = container.backup_service.restore_from_backup(data.backup_path)
+        try:
+            success = container.backup_service.restore_from_backup(data.backup_path)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         if not success:
             raise HTTPException(500, "Failed to restore from backup")
     finally:

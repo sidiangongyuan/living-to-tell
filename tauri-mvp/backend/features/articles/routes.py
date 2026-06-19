@@ -165,7 +165,11 @@ def export_entry(
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
     tmp.close()
-    output = _export_entry_docx(entry, tmp.name)
+    try:
+        output = _export_entry_docx(entry, tmp.name)
+    except Exception:
+        _cleanup_temp_file(tmp.name)
+        raise
     return FileResponse(
         output,
         filename=_entry_export_filename(entry, "docx"),

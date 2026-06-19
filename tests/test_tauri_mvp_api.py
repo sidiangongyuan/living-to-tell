@@ -28,7 +28,7 @@ def test_tauri_app_version_capabilities(monkeypatch):
 
     response = client.get("/api/app/version")
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["app_name"] == "Living to Tell"
     assert payload["version"] == "0.1.7"
@@ -384,7 +384,7 @@ def test_tauri_ai_chat_settings_are_injected_into_chat(monkeypatch):
             "scope_id": entry["id"],
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     assert response.json()["assistant_message"]["content"] == "建议写成便签。"
     messages = provider.calls[-1]["messages"]
     assert "回答要具体、克制。" in messages[0]["content"]
@@ -674,6 +674,69 @@ def test_tauri_data_location_migrate_rejects_existing_auxiliary_dirs(
     assert "backups already exists" in response.json()["detail"]
 
 
+def test_tauri_data_location_migrate_replace_existing_backups_auxiliary_dirs(
+    monkeypatch, tmp_path
+):
+    client = _tauri_client(monkeypatch)
+    client.post(
+        "/api/articles",
+        json={"title": "替换迁移文章", "body": "正文", "tags": []},
+    )
+    info = client.get("/api/settings/data-location").json()
+    source_backup_dir = Path(info["backup_dir"])
+    source_backup_dir.mkdir(parents=True, exist_ok=True)
+    (source_backup_dir / "source.sqlite3").write_text("source", encoding="utf-8")
+
+    target = tmp_path / "replace-existing"
+    target.mkdir()
+    conn = sqlite3.connect(target / "living-to-tell.sqlite3")
+    conn.execute("CREATE TABLE old_data (id INTEGER)")
+    conn.close()
+    existing_backups = target / "backups"
+    existing_backups.mkdir()
+    (existing_backups / "old.sqlite3").write_text("old", encoding="utf-8")
+
+    response = client.post(
+        "/api/settings/data-location/migrate",
+        json={"target_dir": str(target), "replace_existing": True},
+    )
+
+    assert response.status_code == 200, response.text
+    assert (target / "living-to-tell.sqlite3").exists()
+    assert (target / "backups" / "source.sqlite3").read_text(encoding="utf-8") == "source"
+    assert list(target.glob("living-to-tell.sqlite3.before-migration-*"))
+    assert list(target.glob("backups.before-migration-*"))
+
+
+def test_tauri_data_location_copy_database_cleans_tmp_on_failure(monkeypatch, tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    backend = root / "tauri-mvp" / "backend"
+    sys.path.insert(0, str(backend))
+    try:
+        from features.settings.routes import _copy_database
+
+        class BrokenConnection:
+            def backup(self, destination):
+                destination.execute("CREATE TABLE partial (id INTEGER)")
+                raise sqlite3.Error("copy failed")
+
+        target_db = tmp_path / "living-to-tell.sqlite3"
+        try:
+            _copy_database(SimpleNamespace(connection=BrokenConnection()), target_db)
+        except sqlite3.Error:
+            pass
+        else:  # pragma: no cover - defensive
+            raise AssertionError("copy failure was not raised")
+
+        assert not target_db.exists()
+        assert not (tmp_path / "living-to-tell.sqlite3.tmp").exists()
+    finally:
+        try:
+            sys.path.remove(str(backend))
+        except ValueError:
+            pass
+
+
 def test_tauri_backup_service_handles_single_quote_paths(monkeypatch, tmp_path):
     root = Path(__file__).resolve().parents[1]
     backend = root / "tauri-mvp" / "backend"
@@ -704,3 +767,184 @@ def test_tauri_backup_service_handles_single_quote_paths(monkeypatch, tmp_path):
             sys.path.remove(str(backend))
         except ValueError:
             pass
+
+
+def test_tauri_backup_restore_rejects_unmanaged_source(monkeypatch, tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    backend = root / "tauri-mvp" / "backend"
+    data_dir = tmp_path / "restore-data"
+    monkeypatch.setenv("WRITER_DATA_DIR", str(data_dir))
+    sys.path.insert(0, str(backend))
+    try:
+        from features.backup.service import BackupService
+        from writer.app.paths import DATABASE_FILENAME
+        from writer.storage.database import open_and_initialize
+
+        db_path = data_dir / DATABASE_FILENAME
+        conn = open_and_initialize(db_path)
+        conn.execute(
+            "INSERT INTO entries (title, body, entry_type) VALUES (?, ?, ?)",
+            ("current", "body", "fragment"),
+        )
+        conn.commit()
+        conn.close()
+
+        unmanaged = tmp_path / "unmanaged.sqlite3"
+        with sqlite3.connect(unmanaged) as conn:
+            conn.execute("CREATE TABLE unrelated (id INTEGER)")
+
+        service = BackupService(str(db_path))
+        try:
+            service.restore_from_backup(str(unmanaged))
+        except ValueError as exc:
+            assert "not managed" in str(exc)
+        else:  # pragma: no cover - defensive
+            raise AssertionError("unmanaged restore source was accepted")
+
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute("SELECT title FROM entries WHERE title = ?", ("current",)).fetchone()
+        assert row == ("current",)
+    finally:
+        try:
+            sys.path.remove(str(backend))
+        except ValueError:
+            pass
+
+
+def test_tauri_backup_restore_api_rejects_unmanaged_file(monkeypatch, tmp_path):
+    client = _tauri_client(monkeypatch)
+    unmanaged = tmp_path / "outside.txt"
+    unmanaged.write_text("not a backup", encoding="utf-8")
+
+    response = client.post(
+        "/api/backup/restore",
+        json={"backup_path": str(unmanaged)},
+    )
+
+    assert response.status_code == 400
+    assert "not managed" in response.json()["detail"]
+
+
+def test_tauri_backup_restore_copy_failure_keeps_current_database(
+    monkeypatch, tmp_path
+):
+    root = Path(__file__).resolve().parents[1]
+    backend = root / "tauri-mvp" / "backend"
+    data_dir = tmp_path / "restore-copy-failure"
+    monkeypatch.setenv("WRITER_DATA_DIR", str(data_dir))
+    sys.path.insert(0, str(backend))
+    try:
+        from features.backup import service as backup_module
+        from features.backup.service import BackupService
+        from writer.app.paths import DATABASE_FILENAME
+        from writer.storage.database import open_and_initialize
+
+        db_path = data_dir / DATABASE_FILENAME
+        conn = open_and_initialize(db_path)
+        conn.execute(
+            "INSERT INTO entries (title, body, entry_type) VALUES (?, ?, ?)",
+            ("backup version", "body", "fragment"),
+        )
+        conn.commit()
+        conn.close()
+
+        service = BackupService(str(db_path))
+        backup_path = service.create_auto_backup()
+
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("UPDATE entries SET title = ?", ("current version",))
+            conn.commit()
+
+        def broken_copy(_source, destination):
+            Path(destination).write_text("partial", encoding="utf-8")
+            raise OSError("disk full")
+
+        monkeypatch.setattr(backup_module.shutil, "copy2", broken_copy)
+        try:
+            service.restore_from_backup(backup_path)
+        except OSError:
+            pass
+        else:  # pragma: no cover - defensive
+            raise AssertionError("copy failure was not raised")
+
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT title FROM entries WHERE title = ?",
+                ("current version",),
+            ).fetchone()
+        assert row == ("current version",)
+        assert not list(data_dir.glob("*.restore-*.tmp"))
+    finally:
+        try:
+            sys.path.remove(str(backend))
+        except ValueError:
+            pass
+
+
+def test_tauri_docx_export_cleans_temp_file_on_generation_failure(
+    monkeypatch, tmp_path
+):
+    client = _tauri_client(monkeypatch)
+    entry = client.post(
+        "/api/articles",
+        json={"title": "失败导出", "body": "正文", "tags": []},
+    ).json()
+
+    import features.articles.routes as article_routes
+
+    original_named_temp = article_routes.tempfile.NamedTemporaryFile
+
+    def named_temp_in_tmp(*args, **kwargs):
+        kwargs["dir"] = tmp_path
+        return original_named_temp(*args, **kwargs)
+
+    def fail_export(_entry, output_path):
+        Path(output_path).write_text("partial", encoding="utf-8")
+        raise RuntimeError("docx failed")
+
+    monkeypatch.setattr(article_routes.tempfile, "NamedTemporaryFile", named_temp_in_tmp)
+    monkeypatch.setattr(article_routes, "_export_entry_docx", fail_export)
+
+    try:
+        client.get(f"/api/articles/{entry['id']}/export?format=docx")
+    except RuntimeError:
+        pass
+    else:  # pragma: no cover - defensive
+        raise AssertionError("docx export failure was not raised")
+
+    assert not list(tmp_path.glob("*.docx"))
+
+
+def test_tauri_collection_docx_export_cleans_temp_file_on_generation_failure(
+    monkeypatch, tmp_path
+):
+    client = _tauri_client(monkeypatch)
+    collection = client.post(
+        "/api/collections",
+        json={"title": "失败作品集", "description": ""},
+    ).json()
+
+    import features.collections.routes as collection_routes
+    from writer.services.export.collection_exporter import CollectionExportService
+
+    original_named_temp = collection_routes.tempfile.NamedTemporaryFile
+
+    def named_temp_in_tmp(*args, **kwargs):
+        kwargs["dir"] = tmp_path
+        return original_named_temp(*args, **kwargs)
+
+    def fail_export(self, collection_id, output_path):
+        Path(output_path).write_text("partial", encoding="utf-8")
+        raise RuntimeError("collection docx failed")
+
+    monkeypatch.setattr(collection_routes.tempfile, "NamedTemporaryFile", named_temp_in_tmp)
+    monkeypatch.setattr(CollectionExportService, "export_collection_docx", fail_export)
+
+    try:
+        client.get(f"/api/collections/{collection['id']}/export?format=docx")
+    except RuntimeError:
+        pass
+    else:  # pragma: no cover - defensive
+        raise AssertionError("collection docx export failure was not raised")
+
+    assert not list(tmp_path.glob("*.docx"))

@@ -192,9 +192,19 @@ def _prepare_target_dir(raw_target: str, current_dir: Path) -> Path:
     return target
 
 
-def _backup_existing_database(target_db: Path) -> None:
+def _migration_backup_path(path: Path) -> Path:
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    backup_db = target_db.with_name(f"{target_db.stem}.before-migration-{timestamp}{target_db.suffix}")
+    base = path.with_name(f"{path.name}.before-migration-{timestamp}")
+    candidate = base
+    index = 1
+    while candidate.exists():
+        candidate = path.with_name(f"{base.name}-{index}")
+        index += 1
+    return candidate
+
+
+def _backup_existing_database(target_db: Path) -> None:
+    backup_db = _migration_backup_path(target_db)
     target_db.replace(backup_db)
     for suffix in ("-wal", "-shm", "-journal"):
         sidecar = Path(f"{target_db}{suffix}")
@@ -202,29 +212,49 @@ def _backup_existing_database(target_db: Path) -> None:
             sidecar.replace(Path(f"{backup_db}{suffix}"))
 
 
-def _copy_auxiliary_dir(source: Path, target: Path) -> None:
+def _preflight_auxiliary_dir(source: Path, target: Path, replace_existing: bool) -> None:
     if not source.exists() or not source.is_dir():
         return
-    if target.exists() and any(target.iterdir()):
+    if target.exists() and any(target.iterdir()) and not replace_existing:
         raise HTTPException(
             400,
             f"{target.name} already exists in target_dir and is not empty",
         )
-    shutil.copytree(source, target, dirs_exist_ok=True)
 
 
-def _copy_database(container: AppContainer, target_db: Path) -> None:
+def _copy_auxiliary_dir(source: Path, target: Path, replace_existing: bool = False) -> None:
+    if not source.exists() or not source.is_dir():
+        return
+    if target.exists() and any(target.iterdir()):
+        if not replace_existing:
+            raise HTTPException(
+                400,
+                f"{target.name} already exists in target_dir and is not empty",
+            )
+        target.rename(_migration_backup_path(target))
+    shutil.copytree(source, target, dirs_exist_ok=target.exists())
+
+
+def _copy_database(container: AppContainer, target_db: Path, replace_existing: bool = False) -> None:
     tmp_db = target_db.with_suffix(f"{target_db.suffix}.tmp")
     tmp_db.unlink(missing_ok=True)
-    destination = sqlite3.connect(tmp_db)
     try:
-        container.connection.backup(destination)
-        integrity = destination.execute("PRAGMA integrity_check").fetchone()
-        if not integrity or integrity[0] != "ok":
-            raise HTTPException(500, "Migrated database failed integrity_check")
-    finally:
-        destination.close()
-    tmp_db.replace(target_db)
+        destination = sqlite3.connect(tmp_db)
+        try:
+            container.connection.backup(destination)
+            integrity = destination.execute("PRAGMA integrity_check").fetchone()
+            if not integrity or integrity[0] != "ok":
+                raise HTTPException(500, "Migrated database failed integrity_check")
+        finally:
+            destination.close()
+        if target_db.exists():
+            if not replace_existing:
+                raise HTTPException(400, f"{DATABASE_FILENAME} already exists in target_dir")
+            _backup_existing_database(target_db)
+        tmp_db.replace(target_db)
+    except Exception:
+        tmp_db.unlink(missing_ok=True)
+        raise
 
 
 def _env_status(source: str) -> AiCredentialStatus:
@@ -342,14 +372,14 @@ def migrate_data_location(
     current_dir = current_db.parent
     target_dir = _prepare_target_dir(data.target_dir, current_dir)
     target_db = target_dir / DATABASE_FILENAME
-    if target_db.exists():
-        if not data.replace_existing:
-            raise HTTPException(400, f"{DATABASE_FILENAME} already exists in target_dir")
-        _backup_existing_database(target_db)
+    _preflight_auxiliary_dir(current_dir / "backups", target_dir / "backups", data.replace_existing)
+    _preflight_auxiliary_dir(current_dir / "checkpoints", target_dir / "checkpoints", data.replace_existing)
+    if target_db.exists() and not data.replace_existing:
+        raise HTTPException(400, f"{DATABASE_FILENAME} already exists in target_dir")
     try:
-        _copy_database(container, target_db)
-        _copy_auxiliary_dir(current_dir / "backups", target_dir / "backups")
-        _copy_auxiliary_dir(current_dir / "checkpoints", target_dir / "checkpoints")
+        _copy_database(container, target_db, data.replace_existing)
+        _copy_auxiliary_dir(current_dir / "backups", target_dir / "backups", data.replace_existing)
+        _copy_auxiliary_dir(current_dir / "checkpoints", target_dir / "checkpoints", data.replace_existing)
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001
