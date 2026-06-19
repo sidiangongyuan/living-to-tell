@@ -2,10 +2,15 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { aiApi, type Thread, type Message, type AiTaskRequest } from '../../api/ai'
 
+type ScopedMessage = Message & {
+  __scope_kind?: 'global' | 'article' | 'collection'
+  __scope_id?: string | null
+}
+
 export const useAiStore = defineStore('ai', () => {
   const threads = ref<Thread[]>([])
   const selectedThreadId = ref<string | null>(null)
-  const messages = ref<Message[]>([])
+  const messages = ref<ScopedMessage[]>([])
   const loading = ref(false)
   const taskRunning = ref(false)
   const error = ref<string | null>(null)
@@ -77,7 +82,11 @@ export const useAiStore = defineStore('ai', () => {
         threads.value[existingIndex] = current.thread
       }
       selectedThreadId.value = current.thread.id
-      messages.value = current.messages
+      messages.value = current.messages.map((message) => ({
+        ...message,
+        __scope_kind: scopeKind,
+        __scope_id: scopeId,
+      }))
       return current.thread
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
@@ -111,8 +120,16 @@ export const useAiStore = defineStore('ai', () => {
       if (!selectedThreadId.value) {
         selectedThreadId.value = response.thread_id
       }
-      messages.value.push(response.user_message)
-      messages.value.push(response.assistant_message)
+      messages.value.push({
+        ...response.user_message,
+        __scope_kind: scopeKind,
+        __scope_id: scopeId,
+      })
+      messages.value.push({
+        ...response.assistant_message,
+        __scope_kind: scopeKind,
+        __scope_id: scopeId,
+      })
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
       throw e

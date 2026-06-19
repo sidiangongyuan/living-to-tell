@@ -426,6 +426,8 @@ async function loadChatThread() {
     return
   }
   try {
+    store.selectedThreadId = null
+    store.messages = []
     await store.loadCurrentThread('article', chatScopeId.value, true)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -541,15 +543,23 @@ async function copyChatMessage(message: Message) {
 }
 
 async function saveAssistantReplyAsNote(message: Message) {
-  if (message.role !== 'assistant' || !chatScopeId.value || !message.content.trim()) return
+  const messageScopeId = typeof message.__scope_id === 'string' ? message.__scope_id : chatScopeId.value
+  if (message.role !== 'assistant' || !messageScopeId || !message.content.trim()) return
   error.value = ''
   chatNotice.value = ''
   try {
-    await notesApi.createNote(chatScopeId.value, message.content.trim(), false)
+    await notesApi.createNote(messageScopeId, message.content.trim(), false)
     chatNotice.value = t('ai.chatSavedAsNote')
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   }
+}
+
+function canSaveAssistantReply(message: Message): boolean {
+  return message.role === 'assistant'
+    && message.__scope_kind === 'article'
+    && typeof message.__scope_id === 'string'
+    && message.__scope_id.length > 0
 }
 
 function openChatArticle() {
@@ -1298,6 +1308,7 @@ function makeId(): string {
                   {{ t('ai.copyReply') }}
                 </button>
                 <button
+                  v-if="canSaveAssistantReply(message)"
                   @click="saveAssistantReplyAsNote(message)"
                   class="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-200"
                 >

@@ -17,6 +17,7 @@ const draftTitle = ref('')
 const draftDescription = ref('')
 const savingMeta = ref(false)
 const dragArticleId = ref<string | null>(null)
+const actionError = ref<string | null>(null)
 
 const currentArticleIds = computed(() => new Set(store.articles.map((article) => article.id)))
 const previewArticle = computed(() => store.selectedArticle)
@@ -53,6 +54,7 @@ async function openCreateDialog() {
 
 async function createCollection() {
   if (!newTitle.value.trim()) return
+  actionError.value = null
   await store.createCollection(newTitle.value.trim(), newDescription.value.trim())
   createDialogOpen.value = false
 }
@@ -62,7 +64,12 @@ async function saveCollectionMeta() {
 }
 
 async function saveCollectionMetaIfNeeded(): Promise<boolean> {
-  if (!store.selectedCollection || !draftTitle.value.trim()) return true
+  actionError.value = null
+  if (!store.selectedCollection) return true
+  if (!draftTitle.value.trim()) {
+    actionError.value = t('collections.titleRequired')
+    return false
+  }
   if (
     draftTitle.value.trim() === store.selectedCollection.title
     && draftDescription.value.trim() === store.selectedCollection.description
@@ -77,7 +84,8 @@ async function saveCollectionMetaIfNeeded(): Promise<boolean> {
       draftDescription.value.trim()
     )
     return true
-  } catch {
+  } catch (e) {
+    actionError.value = e instanceof Error ? e.message : String(e)
     return false
   } finally {
     savingMeta.value = false
@@ -88,15 +96,26 @@ async function openArticlePicker() {
   if (!store.selectedCollection) return
   const saved = await saveCollectionMetaIfNeeded()
   if (!saved) return
-  allArticles.value = await articlesApi.listArticles(500)
+  try {
+    actionError.value = null
+    allArticles.value = await articlesApi.listArticles(500)
+  } catch (e) {
+    actionError.value = e instanceof Error ? e.message : String(e)
+    return
+  }
   selectedArticleIds.value = []
   articlePickerOpen.value = true
 }
 
 async function addSelectedArticles() {
   if (!selectedArticleIds.value.length) return
-  await store.addArticles(selectedArticleIds.value)
-  articlePickerOpen.value = false
+  try {
+    actionError.value = null
+    await store.addArticles(selectedArticleIds.value)
+    articlePickerOpen.value = false
+  } catch (e) {
+    actionError.value = e instanceof Error ? e.message : String(e)
+  }
 }
 
 async function deleteSelectedCollection() {
@@ -266,8 +285,8 @@ async function onDrop(targetId: string) {
           <p v-if="store.exportMessage" class="mt-3 text-sm text-emerald-700">
             {{ store.exportMessage }}
           </p>
-          <p v-if="store.error" class="mt-3 text-sm text-red-700">
-            {{ store.error }}
+          <p v-if="actionError || store.error" class="mt-3 text-sm text-red-700">
+            {{ actionError || store.error }}
           </p>
         </template>
         <div v-else class="flex items-center justify-between">
@@ -431,6 +450,9 @@ async function onDrop(targetId: string) {
           <p class="mt-1 text-sm text-stone-500">{{ t('collections.pickHint') }}</p>
         </div>
         <div class="flex-1 overflow-y-auto p-4">
+          <div v-if="actionError || store.error" class="mb-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {{ actionError || store.error }}
+          </div>
           <div v-if="!allArticles.length" class="p-8 text-center text-stone-400">
             {{ t('collections.noArticlesAvailable') }}
           </div>

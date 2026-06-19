@@ -65,6 +65,8 @@ export interface Message {
   content: string
   timestamp: string | null
   meta?: Record<string, unknown>
+  __scope_kind?: 'global' | 'article' | 'collection'
+  __scope_id?: string | null
 }
 
 export interface ChatRequest {
