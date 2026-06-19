@@ -538,6 +538,84 @@ test('article writing notes can be added, pinned, edited, completed, restored, a
   await expect.poll(() => requests.deleted).toBe(1)
 })
 
+test('article list filters, context pane, save, AI navigation, archive, and collection picker actions work', async ({ page }) => {
+  const updates: Array<Record<string, unknown>> = []
+  const archiveRequests: string[] = []
+  const addedToCollections: string[][] = []
+
+  await page.route('**/api/articles/search?**', async (route) => {
+    const query = new URL(route.request().url()).searchParams.get('q')
+    await route.fulfill({ json: query === '备选' ? [articleB] : [] })
+  })
+  await page.route('**/api/articles/article-a/archive', async (route) => {
+    archiveRequests.push(route.request().method())
+    await route.fulfill({ json: { ...article, archived_at: '2026-06-19T00:00:00Z' } })
+  })
+  await page.route('**/api/articles/article-a', async (route) => {
+    const request = route.request()
+    if (request.method() === 'PUT') {
+      const body = request.postDataJSON() as Record<string, unknown>
+      updates.push(body)
+      await route.fulfill({ json: { ...article, ...body } })
+      return
+    }
+    await route.fulfill({ json: article })
+  })
+  await page.route('**/api/collections/for-entry/article-a', async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as { collection_ids?: string[] }
+      addedToCollections.push(body.collection_ids ?? [])
+      await route.fulfill({ json: [collection] })
+      return
+    }
+    await route.fulfill({ json: [] })
+  })
+
+  await page.goto('/articles?id=article-a')
+  await expect(page.getByTestId('article-body-editor')).toHaveValue(article.body)
+
+  await page.getByPlaceholder('搜索文章...').fill('备选')
+  await expect(page.getByText('备选文章')).toBeVisible()
+  await expect(page.getByText('导出测试文章')).toHaveCount(0)
+  await page.locator('div').filter({ has: page.getByPlaceholder('搜索文章...') }).getByRole('button', { name: '×' }).click()
+  await expect(page.getByPlaceholder('搜索文章...')).toHaveValue('')
+  await expect(page.getByText('导出测试文章')).toBeVisible()
+
+  await page.getByRole('button', { name: '备选' }).first().click()
+  await expect(page.getByText('备选文章')).toBeVisible()
+  await expect(page.getByText('导出测试文章')).toHaveCount(0)
+  await page.getByRole('button', { name: '全部标签' }).click()
+  await expect(page.getByText('导出测试文章')).toBeVisible()
+
+  await page.getByRole('button', { name: '收起上下文' }).click()
+  await expect(page.getByRole('button', { name: '显示上下文' })).toBeVisible()
+  await page.getByRole('button', { name: '显示上下文' }).click()
+  await expect(page.getByRole('button', { name: '收起上下文' })).toBeVisible()
+
+  await page.getByTestId('article-body-editor').fill('手动保存正文')
+  await page.getByRole('button', { name: '立即保存' }).click()
+  await expect.poll(() => updates.at(-1)?.body).toBe('手动保存正文')
+
+  await page.getByRole('button', { name: 'AI 对话' }).click()
+  await expect(page).toHaveURL(/\/ai\?.*tab=chat/)
+  await expect(page).toHaveURL(/scope_id=article-a/)
+
+  await page.goto('/articles?id=article-a')
+  await page.getByRole('button', { name: 'AI 工具' }).click()
+  await expect(page).toHaveURL(/\/ai\?.*tab=tools/)
+  await expect(page).toHaveURL(/scope_id=article-a/)
+
+  await page.goto('/articles?id=article-a')
+  await page.getByRole('button', { name: '归档' }).click()
+  await expect.poll(() => archiveRequests).toEqual(['POST'])
+
+  await page.goto('/articles?id=article-a')
+  await page.getByRole('button', { name: '加入作品集' }).click()
+  await page.getByRole('button', { name: /测试作品集/ }).click()
+  await page.getByRole('button', { name: '确认' }).click()
+  await expect.poll(() => addedToCollections).toEqual([[collection.id]])
+})
+
 test('dates calendar buttons, daily quote, welcome close, and start writing actions work', async ({ page }) => {
   const statsQueries: Array<{ year: string | null; month: string | null }> = []
   const createdArticles: Array<Record<string, unknown>> = []
@@ -630,6 +708,62 @@ test('command palette does not expose misleading search or unsafe reload command
   await expect(page.getByText('新建文章')).toBeVisible()
   await expect(page.getByText('搜索文章')).toHaveCount(0)
   await expect(page.getByText('重新加载应用')).toHaveCount(0)
+})
+
+test('app shell navigation, language, focus mode, and command palette actions work', async ({ page }) => {
+  const createdArticles: Array<Record<string, unknown>> = []
+  const createdCollections: Array<Record<string, unknown>> = []
+
+  await page.route('**/api/articles', async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      createdArticles.push(body)
+      await route.fulfill({ status: 201, json: { ...article, ...body, id: 'article-shell-created' } })
+      return
+    }
+    await route.fulfill({ json: [article, articleB] })
+  })
+  await page.route('**/api/collections', async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      createdCollections.push(body)
+      await route.fulfill({ status: 201, json: { ...collection, ...body, id: 'collection-shell-created', article_count: 0 } })
+      return
+    }
+    await route.fulfill({ json: [collection] })
+  })
+
+  await page.goto('/dates')
+  await page.getByRole('button', { name: '文章' }).click()
+  await expect(page).toHaveURL(/\/articles/)
+  await page.getByRole('button', { name: '设置' }).click()
+  await expect(page).toHaveURL(/\/settings/)
+
+  await page.getByRole('button', { name: '中' }).click()
+  await expect(page.getByRole('button', { name: 'Articles' })).toBeVisible()
+  await page.getByRole('button', { name: 'EN' }).click()
+  await expect(page.getByRole('button', { name: '文章' })).toBeVisible()
+
+  await page.getByTitle('专注模式 (F11)').click()
+  await expect(page.getByRole('button', { name: '退出专注模式 (F11)' })).toBeVisible()
+  await page.getByRole('button', { name: '退出专注模式 (F11)' }).click()
+  await expect(page.getByRole('button', { name: '日期' })).toBeVisible()
+
+  await page.locator('body').click()
+  await page.keyboard.down('Control')
+  await page.keyboard.press('KeyK')
+  await page.keyboard.up('Control')
+  await page.getByText('新建文章').click()
+  await expect.poll(() => createdArticles.length).toBe(1)
+  await expect(page).toHaveURL(/\/articles/)
+
+  await page.locator('body').click()
+  await page.keyboard.down('Control')
+  await page.keyboard.press('KeyK')
+  await page.keyboard.up('Control')
+  await page.getByText('新建作品集').click()
+  await expect.poll(() => createdCollections.length).toBe(1)
+  await expect(page).toHaveURL(/\/collections/)
 })
 
 test('collection export buttons trigger downloads and article management actions call real APIs', async ({ page }) => {
