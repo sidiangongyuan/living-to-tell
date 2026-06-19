@@ -345,6 +345,38 @@ test('article delete asks for confirmation before calling the destructive API', 
   await expect.poll(() => deleteRequests).toBe(1)
 })
 
+test('article delete failures show a visible error', async ({ page }) => {
+  await page.route('**/api/articles/article-a', async (route) => {
+    if (route.request().method() === 'DELETE') {
+      await route.fulfill({ status: 500, json: { detail: '删除文章失败' } })
+      return
+    }
+    await route.fulfill({ json: article })
+  })
+
+  await page.goto('/articles?id=article-a')
+  page.once('dialog', async (dialog) => dialog.accept())
+  await page.getByRole('button', { name: '删除' }).last().click()
+
+  await expect(page.getByText('删除文章失败')).toBeVisible()
+  await expect(page.getByTestId('article-body-editor')).toHaveValue(article.body)
+})
+
+test('article sidebar new button shows a visible error when creation fails', async ({ page }) => {
+  await page.route('**/api/articles', async (route) => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({ status: 500, json: { detail: '磁盘不可写' } })
+      return
+    }
+    await route.fulfill({ json: [article, articleB] })
+  })
+
+  await page.goto('/articles?id=article-a')
+  await page.getByRole('button', { name: '+ 新建', exact: true }).click()
+
+  await expect(page.getByText('磁盘不可写')).toBeVisible()
+})
+
 test('quick capture can save a real article and protects dirty cancel', async ({ page }) => {
   const createdArticles: Array<Record<string, unknown>> = []
 
@@ -947,6 +979,42 @@ test('collection export flushes edited title before downloading', async ({ page 
 
   await expect.poll(() => updates.some((body) => body.title === '刚修改的作品集标题')).toBe(true)
   expect(download.suggestedFilename()).toBe('刚修改的作品集标题.md')
+})
+
+test('collection reorder failures show a visible error', async ({ page }) => {
+  await page.route('**/api/collections/collection-a/articles', async (route) => {
+    await route.fulfill({ json: [collectionArticle, collectionArticleB] })
+  })
+  await page.route('**/api/collections/collection-a/articles/order', async (route) => {
+    await route.fulfill({ status: 500, json: { detail: '排序保存失败' } })
+  })
+
+  await page.goto('/collections')
+  await expect(page.getByText('测试作品集')).toBeVisible()
+
+  const firstCard = page.locator('article').filter({ hasText: '导出测试文章' }).first()
+  await firstCard.hover()
+  await firstCard.getByRole('button', { name: '↓' }).click()
+
+  await expect(page.getByRole('main').getByText('排序保存失败')).toBeVisible()
+})
+
+test('collection create failures show a visible dialog error', async ({ page }) => {
+  await page.route('**/api/collections', async (route) => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({ status: 500, json: { detail: '作品集目录不可写' } })
+      return
+    }
+    await route.fulfill({ json: [collection] })
+  })
+
+  await page.goto('/collections')
+  await page.getByRole('complementary').getByRole('button', { name: '+ 新建', exact: true }).click()
+  await page.getByPlaceholder('作品集标题').last().fill('无法创建的作品集')
+  await page.getByRole('button', { name: '创建', exact: true }).click()
+
+  await expect(page.getByText('作品集目录不可写').last()).toBeVisible()
+  await expect(page.getByPlaceholder('作品集标题').last()).toHaveValue('无法创建的作品集')
 })
 
 test('collection actions show validation instead of acting like no-ops when the title is empty', async ({ page }) => {

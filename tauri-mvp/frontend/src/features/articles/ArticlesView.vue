@@ -247,6 +247,14 @@ function clearSearch() {
   store.searchResults = []
 }
 
+async function createEntryFromSidebar() {
+  try {
+    await store.createEntry(t('articles.untitled'))
+  } catch {
+    // The store owns the visible error state; keep the click handler settled.
+  }
+}
+
 function selectTag(tag: string) {
   selectedTag.value = selectedTag.value === tag ? '' : tag
 }
@@ -603,7 +611,11 @@ async function deleteSelectedEntry() {
   if (pendingArticleSave.value?.id === entryId) {
     pendingArticleSave.value = null
   }
-  await store.deleteEntry(entryId)
+  try {
+    await store.deleteEntry(entryId)
+  } catch {
+    // The store owns the visible error state; keep the click handler settled.
+  }
 }
 
 async function applyRouteFocusRange() {
@@ -1231,7 +1243,7 @@ watch(
         <div class="flex items-center justify-between mb-3">
           <h2 class="text-xl font-bold">{{ t('articles.title') }}</h2>
           <button
-            @click="store.createEntry(t('articles.untitled'))"
+            @click="createEntryFromSidebar"
             class="px-3 py-2 bg-stone-900 hover:bg-stone-700 text-white rounded-lg text-sm transition-colors"
           >
             {{ t('articles.newArticle') }}

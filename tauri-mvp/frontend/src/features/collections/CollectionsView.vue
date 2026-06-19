@@ -55,8 +55,12 @@ async function openCreateDialog() {
 async function createCollection() {
   if (!newTitle.value.trim()) return
   actionError.value = null
-  await store.createCollection(newTitle.value.trim(), newDescription.value.trim())
-  createDialogOpen.value = false
+  try {
+    await store.createCollection(newTitle.value.trim(), newDescription.value.trim())
+    createDialogOpen.value = false
+  } catch (e) {
+    actionError.value = e instanceof Error ? e.message : String(e)
+  }
 }
 
 async function saveCollectionMeta() {
@@ -121,7 +125,11 @@ async function addSelectedArticles() {
 async function deleteSelectedCollection() {
   if (!store.selectedCollection) return
   if (!confirm(t('collections.confirmDeleteCollection'))) return
-  await store.deleteCollection(store.selectedCollection.id)
+  try {
+    await store.deleteCollection(store.selectedCollection.id)
+  } catch (e) {
+    actionError.value = e instanceof Error ? e.message : String(e)
+  }
 }
 
 async function selectCollection(id: string) {
@@ -138,7 +146,19 @@ async function exportSelected(format: 'md' | 'txt' | 'docx') {
 
 async function removeArticle(entryId: string) {
   if (!confirm(t('collections.confirmRemoveArticle'))) return
-  await store.removeArticle(entryId)
+  try {
+    await store.removeArticle(entryId)
+  } catch (e) {
+    actionError.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function moveArticleSafely(entryId: string, direction: -1 | 1) {
+  try {
+    await store.moveArticle(entryId, direction)
+  } catch {
+    // The store owns the visible error state; keep the click handler settled.
+  }
 }
 
 function togglePickArticle(entryId: string) {
@@ -163,7 +183,11 @@ async function onDrop(targetId: string) {
   const [moving] = reordered.splice(from, 1)
   reordered.splice(to, 0, moving)
   dragArticleId.value = null
-  await store.reorderArticles(reordered.map((article) => article.id))
+  try {
+    await store.reorderArticles(reordered.map((article) => article.id))
+  } catch {
+    // The store owns the visible error state; keep the drop handler settled.
+  }
 }
 </script>
 
@@ -362,14 +386,14 @@ async function onDrop(targetId: string) {
                 </div>
                 <div class="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                   <button
-                    @click.stop="store.moveArticle(article.id, -1)"
+                    @click.stop="moveArticleSafely(article.id, -1)"
                     :disabled="index === 0"
                     class="rounded-lg px-2 py-1 text-xs text-stone-500 hover:bg-stone-100 disabled:opacity-30"
                   >
                     ↑
                   </button>
                   <button
-                    @click.stop="store.moveArticle(article.id, 1)"
+                    @click.stop="moveArticleSafely(article.id, 1)"
                     :disabled="index === store.articles.length - 1"
                     class="rounded-lg px-2 py-1 text-xs text-stone-500 hover:bg-stone-100 disabled:opacity-30"
                   >
@@ -428,6 +452,9 @@ async function onDrop(targetId: string) {
           class="mt-3 w-full resize-none rounded-xl border border-stone-200 px-4 py-3 outline-none focus:ring-2 focus:ring-amber-300"
           :placeholder="t('collections.descriptionPlaceholder')"
         />
+        <div v-if="actionError || store.error" class="mt-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+          {{ actionError || store.error }}
+        </div>
         <div class="mt-6 flex justify-end gap-3">
           <button @click="createDialogOpen = false" class="rounded-xl bg-stone-100 px-4 py-2 text-sm">
             {{ t('common.cancel') }}
