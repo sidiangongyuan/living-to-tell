@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useLibraryStore } from './store'
 import { libraryApi, type LibraryStats, type Reference } from '../../api/library'
 import { motifsApi, type MotifExcerpt, type MotifNode } from '../../api/motifs'
+import { errorMessage, isHttpStatus } from '../../api/base'
 import { type LibraryGroupMode, EMPTY_SOURCE_GROUP_KEY } from './grouping'
 import { useI18n } from '../../i18n'
 import {
@@ -57,6 +58,7 @@ const motifSourceError = ref('')
 const motifHighlightActive = ref(false)
 const motifJumpMessage = ref('')
 let motifAttachLookupToken = 0
+let motifSourceRefreshToken = 0
 let motifAttachDragState: {
   pointerId: number
   startClientX: number
@@ -135,6 +137,15 @@ const resolvedMotifSourceExcerpts = computed(() =>
     range: resolveMotifExcerptRange(store.selectedReference?.content ?? '', excerpt),
   }))
 )
+
+function isStaleReferenceRequest(referenceId: string, token: number): boolean {
+  return token !== motifSourceRefreshToken || store.selectedReference?.id !== referenceId
+}
+
+function friendlyReferenceMotifError(e: unknown): string {
+  if (isHttpStatus(e, 404)) return t('motifs.sourceMissing')
+  return errorMessage(e)
+}
 
 let searchTimer: number | null = null
 watch(searchInput, (value) => {
@@ -417,7 +428,7 @@ async function loadExistingMotifAttachmentForSelection() {
       before_context: selection.beforeContext,
       after_context: selection.afterContext,
     })
-    if (token !== motifAttachLookupToken) return
+    if (token !== motifAttachLookupToken || store.selectedReference?.id !== reference.id) return
     motifAttachExistingExcerptId.value = existing?.id ?? null
     if (existing) {
       motifAttachNames.value = existing.motif_names
@@ -427,27 +438,36 @@ async function loadExistingMotifAttachmentForSelection() {
       void refreshMotifSourceExcerpts()
     }
   } catch (e) {
-    if (token === motifAttachLookupToken) {
-      motifAttachError.value = e instanceof Error ? e.message : String(e)
+    if (token === motifAttachLookupToken && store.selectedReference?.id === reference.id) {
+      motifAttachError.value = friendlyReferenceMotifError(e)
     }
   }
 }
 
 async function refreshMotifSourceExcerpts() {
   const referenceId = store.selectedReference?.id
+  const token = ++motifSourceRefreshToken
   motifSourceError.value = ''
   if (!referenceId) {
     motifSourceExcerpts.value = []
+    motifSourceLoading.value = false
     return
   }
   motifSourceLoading.value = true
   try {
-    motifSourceExcerpts.value = await motifsApi.listExcerptsForSource('reference', referenceId)
+    const excerpts = await motifsApi.listExcerptsForSource('reference', referenceId)
+    if (isStaleReferenceRequest(referenceId, token)) return
+    motifSourceExcerpts.value = excerpts
   } catch (e) {
-    motifSourceError.value = e instanceof Error ? e.message : String(e)
-    motifSourceExcerpts.value = []
+    if (isStaleReferenceRequest(referenceId, token)) return
+    motifSourceError.value = friendlyReferenceMotifError(e)
+    if (isHttpStatus(e, 404)) {
+      motifSourceExcerpts.value = []
+    }
   } finally {
-    motifSourceLoading.value = false
+    if (!isStaleReferenceRequest(referenceId, token)) {
+      motifSourceLoading.value = false
+    }
   }
 }
 

@@ -14,8 +14,11 @@ from writer.services.ai.prompt_builder import PromptBuilder
 
 
 class _FakeHttpResponse:
-    def __init__(self, payload: dict):
-        self._raw = json.dumps(payload).encode("utf-8")
+    def __init__(self, payload: dict | str):
+        if isinstance(payload, str):
+            self._raw = payload.encode("utf-8")
+        else:
+            self._raw = json.dumps(payload).encode("utf-8")
 
     def read(self):
         return self._raw
@@ -44,9 +47,7 @@ def _headers(req) -> dict[str, str]:
     return {key.lower(): value for key, value in req.header_items()}
 
 
-def test_chat_uses_native_gemini_route_and_headers(tmp_path):
-    env_file = tmp_path / ".env"
-    env_file.write_text("GEMINI_API_KEY=gm-test\n", encoding="utf-8")
+def test_chat_uses_native_gemini_route_and_headers(monkeypatch):
     opener = _RecordingOpener(
         {
             "candidates": [
@@ -61,14 +62,14 @@ def test_chat_uses_native_gemini_route_and_headers(tmp_path):
             },
         }
     )
+    monkeypatch.setenv("GEMINI_API_KEY", "gm-test")
     provider = GeminiProvider(
         AiConfig(
             base_url="https://example.test/gemini",
             model="gemini-3.1-pro",
-            api_key_source="gemini",
+            api_key_source="env:GEMINI_API_KEY",
         ),
         PromptBuilder(),
-        gemini_auth=GeminiAuthResolver(path=env_file),
         opener=opener,
     )
 
@@ -101,6 +102,94 @@ def test_chat_uses_native_gemini_route_and_headers(tmp_path):
     assert body["contents"][1]["role"] == "model"
 
 
+def test_gemini_cli_custom_base_uses_stream_gateway_route(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("GEMINI_API_KEY=sk-test-proxy-key\n", encoding="utf-8")
+    opener = _RecordingOpener(
+        'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"片段一"}]}}]}\n\n'
+        'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"片段二"}]'
+        '},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":11,'
+        '"candidatesTokenCount":5}}\n\n'
+    )
+    provider = GeminiProvider(
+        AiConfig(
+            base_url="https://proxy.example",
+            model="gemini-3-flash-preview",
+            api_key_source="gemini",
+        ),
+        PromptBuilder(),
+        gemini_auth=GeminiAuthResolver(path=env_file),
+        opener=opener,
+    )
+
+    response = provider.chat([{"role": "user", "content": "hi"}])
+
+    assert response.content == "片段一片段二"
+    assert response.input_tokens == 11
+    assert response.output_tokens == 5
+    assert response.finish_reason == "STOP"
+    req, _ = opener.requests[0]
+    assert req.full_url == (
+        "https://proxy.example/v1beta/models/"
+        "gemini-3-flash-preview:streamGenerateContent?alt=sse"
+    )
+    headers = _headers(req)
+    assert headers["x-goog-api-key"] == "sk-test-proxy-key"
+    assert headers["x-goog-api-client"] == "google-genai-sdk/1.30.0 gl-node/v25.7.0"
+    assert headers["user-agent"].startswith("GeminiCLI-tui/")
+    assert "authorization" not in headers
+
+
+def test_sk_style_env_config_uses_openai_compatible_chat_route(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "sk-test-proxy-key")
+    opener = _RecordingOpener(
+        {
+            "choices": [
+                {
+                    "message": {"content": "代理返回"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 21,
+                "completion_tokens": 4,
+            },
+        }
+    )
+    provider = GeminiProvider(
+        AiConfig(
+            base_url="https://proxy.example",
+            model="gemini-3-flash-preview",
+            api_key_source="env:GEMINI_API_KEY",
+        ),
+        PromptBuilder(),
+        opener=opener,
+    )
+
+    response = provider.chat(
+        [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "hi"},
+        ]
+    )
+
+    assert response.content == "代理返回"
+    assert response.input_tokens == 21
+    assert response.output_tokens == 4
+    assert response.finish_reason == "stop"
+    req, _ = opener.requests[0]
+    assert req.full_url == "https://proxy.example/v1/chat/completions"
+    headers = _headers(req)
+    assert headers["authorization"] == "Bearer sk-test-proxy-key"
+    assert "x-goog-api-key" not in headers
+    body = json.loads(req.data.decode("utf-8"))
+    assert body["model"] == "gemini-3-flash-preview"
+    assert body["messages"] == [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "hi"},
+    ]
+
+
 def test_timeout_can_be_configured_by_environment(tmp_path, monkeypatch):
     env_file = tmp_path / ".env"
     env_file.write_text("GEMINI_API_KEY=gm-test\n", encoding="utf-8")
@@ -120,9 +209,8 @@ def test_timeout_can_be_configured_by_environment(tmp_path, monkeypatch):
     assert opener.requests[0][1] == 9
 
 
-def test_rewrite_strips_openai_suffix_from_base_url(tmp_path):
-    env_file = tmp_path / ".env"
-    env_file.write_text("GEMINI_API_KEY=gm-test\n", encoding="utf-8")
+def test_rewrite_strips_openai_suffix_from_base_url(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "gm-test")
     opener = _RecordingOpener(
         {
             "candidates": [{"content": {"parts": [{"text": "done"}]}}],
@@ -132,10 +220,9 @@ def test_rewrite_strips_openai_suffix_from_base_url(tmp_path):
         AiConfig(
             base_url="https://example.test/v1beta/openai",
             model="gemini-3.1-pro",
-            api_key_source="gemini",
+            api_key_source="env:GEMINI_API_KEY",
         ),
         PromptBuilder(),
-        gemini_auth=GeminiAuthResolver(path=env_file),
         opener=opener,
     )
 
@@ -178,6 +265,39 @@ def test_http_error_surfaces_provider_message(tmp_path):
 
     with pytest.raises(AiError, match="401 授权信息无效，请检查"):
         provider.chat([{"role": "user", "content": "hi"}])
+
+
+def test_http_html_error_is_sanitized(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("GEMINI_API_KEY=sk-test-proxy-key\n", encoding="utf-8")
+    err = HTTPError(
+        url="https://proxy.example",
+        code=403,
+        msg="Forbidden",
+        hdrs=None,
+        fp=io.BytesIO(
+            b'<!doctype html><html><head><title>403 | Forbidden</title></head>'
+            b"<body>Access is forbidden to the requested page.</body></html>"
+        ),
+    )
+    provider = GeminiProvider(
+        AiConfig(
+            base_url="https://proxy.example",
+            model="gemini-3-flash-preview",
+            api_key_source="gemini",
+        ),
+        PromptBuilder(),
+        gemini_auth=GeminiAuthResolver(path=env_file),
+        opener=_RecordingOpener(error_to_raise=err),
+    )
+
+    with pytest.raises(AiError) as excinfo:
+        provider.chat([{"role": "user", "content": "hi"}])
+
+    message = str(excinfo.value)
+    assert "HTTP 403: 403 | Forbidden" in message
+    assert "<!doctype html>" not in message
+    assert "<html" not in message
 
 
 def test_container_uses_gemini_provider_for_gemini_source(isolated_data_dir):

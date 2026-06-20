@@ -111,6 +111,8 @@ const translations = {
       showDoneNotes: '显示已完成（{count}）',
       hideDoneNotes: '隐藏已完成',
       notesDeleteConfirm: '确定删除这条文章便签吗？',
+      articleMissingRefreshed: '这篇文章已不存在，已刷新文章列表。',
+      writingNoteMissing: '这条便签已不存在，已刷新便签列表。',
     },
     // 作品集模块
     collections: {
@@ -554,7 +556,7 @@ const translations = {
       aiConfig: 'AI 配置',
       provider: '提供商',
       baseUrl: '自定义 API 地址（可选）',
-      baseUrlHelp: '用于代理或自托管 API',
+      baseUrlHelp: '用于代理或自托管 API。复用 Gemini 本地配置时会按 Gemini CLI 的流式网关请求；显式 env: 的 sk- 中转 Key 会尝试 OpenAI 兼容 /v1/chat/completions。',
       model: '模型',
       customModel: '自定义模型',
       credentialSource: '凭据来源',
@@ -615,7 +617,7 @@ const translations = {
       about: '关于',
       providers: {
         openai: 'OpenAI 兼容接口',
-        gemini: 'Gemini 接口',
+        gemini: 'Gemini 接口 / 中转',
         geminiCli: 'Gemini CLI / OAuth',
       },
       themes: {
@@ -810,6 +812,8 @@ const translations = {
       showDoneNotes: 'Show completed ({count})',
       hideDoneNotes: 'Hide completed',
       notesDeleteConfirm: 'Delete this article note?',
+      articleMissingRefreshed: 'This article no longer exists. The article list has been refreshed.',
+      writingNoteMissing: 'This note no longer exists. The notes list has been refreshed.',
     },
     // Collections module
     collections: {
@@ -1253,7 +1257,7 @@ const translations = {
       aiConfig: 'AI Configuration',
       provider: 'Provider',
       baseUrl: 'Custom API Base URL (Optional)',
-      baseUrlHelp: 'Use this for proxies or self-hosted endpoints',
+      baseUrlHelp: 'Use this for proxies or self-hosted endpoints. Reused local Gemini config follows Gemini CLI streaming gateway requests; explicit env: sk- proxy keys try OpenAI-compatible /v1/chat/completions.',
       model: 'Model',
       customModel: 'Custom model',
       credentialSource: 'Credential source',
@@ -1314,7 +1318,7 @@ const translations = {
       about: 'About',
       providers: {
         openai: 'OpenAI-compatible API',
-        gemini: 'Gemini API',
+        gemini: 'Gemini API / Proxy',
         geminiCli: 'Gemini CLI / OAuth',
       },
       themes: {

@@ -1,14 +1,19 @@
-"""Native Gemini API provider adapter.
+"""Gemini provider adapter.
 
-Uses the Gemini generateContent API directly instead of the OpenAI-compatible
-Responses API. This matches the configuration shape used by the official
-Gemini CLI, where ``GOOGLE_GEMINI_BASE_URL`` points at the service root and
-the client appends the API version and native model routes.
+Native Gemini API keys use the ``generateContent`` route. Gemini CLI configs
+with a custom ``GOOGLE_GEMINI_BASE_URL`` often route through gateway services
+that mirror the CLI's streaming SDK request instead of the non-streaming
+``generateContent`` endpoint, so imported CLI settings use that compatible
+transport. Explicit ``env:`` configs with ``sk-...`` keys still keep the
+OpenAI-compatible fallback for proxies that expose ``/v1/chat/completions``.
 """
 from __future__ import annotations
 
+import html
 import json
 import os
+import re
+import sys
 from typing import List, Optional
 from urllib import error, request
 
@@ -25,6 +30,9 @@ from writer.services.ai.prompt_builder import PromptBuilder
 
 GEMINI_TIMEOUT_ENV = "WRITER_GEMINI_TIMEOUT_SECONDS"
 GEMINI_DEFAULT_TIMEOUT_SECONDS = 120
+GEMINI_CLI_GATEWAY_USER_AGENT_ENV = "WRITER_GEMINI_GATEWAY_USER_AGENT"
+GEMINI_CLI_GATEWAY_API_CLIENT = "google-genai-sdk/1.30.0 gl-node/v25.7.0"
+GEMINI_CLI_GATEWAY_VERSION = "0.47.0"
 
 
 class GeminiProvider(AiProvider):
@@ -49,8 +57,7 @@ class GeminiProvider(AiProvider):
 
     def rewrite(self, request_obj: RewriteRequest) -> RewriteResponse:
         messages = self._prompts.build_messages(request_obj)
-        payload = self._build_payload(messages)
-        result = self._send_request(self._config.model, payload)
+        result = self._send_request(self._config.model, messages)
         return RewriteResponse(
             content=result.content,
             model=self._config.model,
@@ -62,8 +69,7 @@ class GeminiProvider(AiProvider):
 
     def chat(self, messages, *, model=None) -> ChatResponse:
         used_model = model or self._config.model
-        payload = self._build_payload(list(messages))
-        result = self._send_request(used_model, payload)
+        result = self._send_request(used_model, list(messages))
         return ChatResponse(
             content=result.content,
             model=used_model,
@@ -73,9 +79,16 @@ class GeminiProvider(AiProvider):
             finish_reason=result.finish_reason,
         )
 
-    def _send_request(self, model: str, payload: dict) -> ChatResponse:
+    def _send_request(self, model: str, messages: List[dict]) -> ChatResponse:
         api_key = self._resolve_api_key()
+        if _should_use_gemini_cli_gateway_transport(self._config):
+            return self._send_gemini_cli_gateway_request(model, messages, api_key)
+
+        if _should_use_openai_compatible_transport(api_key, self._config.base_url):
+            return self._send_openai_compatible_request(model, messages, api_key)
+
         url = self._request_url(model)
+        payload = self._build_payload(messages)
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers = {
             "Content-Type": "application/json",
@@ -112,6 +125,103 @@ class GeminiProvider(AiProvider):
             input_tokens=_as_int(usage, "promptTokenCount"),
             output_tokens=_as_int(usage, "candidatesTokenCount"),
             finish_reason=_as_str(candidate, "finishReason"),
+        )
+
+    def _send_gemini_cli_gateway_request(
+        self,
+        model: str,
+        messages: List[dict],
+        api_key: str,
+    ) -> ChatResponse:
+        url = _gemini_cli_gateway_stream_url(self._config.base_url, model)
+        payload = self._build_payload(messages)
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = request.Request(
+            url,
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": _gemini_cli_gateway_user_agent(model),
+                "x-goog-api-client": GEMINI_CLI_GATEWAY_API_CLIENT,
+                "x-goog-api-key": api_key,
+            },
+            method="POST",
+        )
+        try:
+            with self._opener(req, timeout=self._timeout_seconds) as resp:
+                raw = resp.read().decode("utf-8")
+        except error.HTTPError as exc:
+            message = _extract_http_error(exc)
+            raise AiError(f"AI request failed: {message}") from exc
+        except error.URLError as exc:
+            raise AiError(f"AI request failed: {exc.reason}") from exc
+        except Exception as exc:  # noqa: BLE001
+            raise AiError(f"AI request failed: {exc}") from exc
+
+        chunks = _parse_sse_json_objects(raw)
+        text = "".join(_extract_text(chunk) for chunk in chunks).strip()
+        if not text:
+            raise AiError("AI response contained no text output.")
+        last = chunks[-1] if chunks else {}
+        usage = last.get("usageMetadata") if isinstance(last, dict) else None
+        candidate = _first_candidate(last) if isinstance(last, dict) else {}
+        return ChatResponse(
+            content=text,
+            model=model,
+            provider=self.name,
+            input_tokens=_as_int(usage, "promptTokenCount"),
+            output_tokens=_as_int(usage, "candidatesTokenCount"),
+            finish_reason=_as_str(candidate, "finishReason"),
+        )
+
+    def _send_openai_compatible_request(
+        self,
+        model: str,
+        messages: List[dict],
+        api_key: str,
+    ) -> ChatResponse:
+        url = _openai_compatible_chat_url(self._config.base_url)
+        body = json.dumps(
+            {
+                "model": model,
+                "messages": _openai_messages(messages),
+            },
+            ensure_ascii=False,
+        ).encode("utf-8")
+        req = request.Request(
+            url,
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+                "User-Agent": "Writer/0.2",
+            },
+            method="POST",
+        )
+        try:
+            with self._opener(req, timeout=self._timeout_seconds) as resp:
+                raw = resp.read().decode("utf-8")
+        except error.HTTPError as exc:
+            message = _extract_http_error(exc)
+            raise AiError(f"AI request failed: {message}") from exc
+        except error.URLError as exc:
+            raise AiError(f"AI request failed: {exc.reason}") from exc
+        except Exception as exc:  # noqa: BLE001
+            raise AiError(f"AI request failed: {exc}") from exc
+
+        parsed = _parse_response_json(raw)
+        text = _extract_openai_compatible_text(parsed)
+        if not text:
+            raise AiError("AI response contained no text output.")
+        usage = parsed.get("usage") if isinstance(parsed, dict) else None
+        choice = _first_openai_choice(parsed)
+        return ChatResponse(
+            content=text,
+            model=model,
+            provider=self.name,
+            input_tokens=_as_int(usage, "prompt_tokens"),
+            output_tokens=_as_int(usage, "completion_tokens"),
+            finish_reason=_as_str(choice, "finish_reason"),
         )
 
     def _resolve_api_key(self) -> str:
@@ -158,6 +268,58 @@ def _normalize_base_url(base_url: Optional[str]) -> str:
     if base.endswith("/v1") or base.endswith("/v1beta") or base.endswith("/v1beta1"):
         return base
     return base + "/v1beta"
+
+
+def _openai_compatible_chat_url(base_url: Optional[str]) -> str:
+    base = (base_url or "").strip().rstrip("/")
+    if not base:
+        raise AiError(
+            "OpenAI-compatible Gemini transport requires a custom API base URL."
+        )
+    if base.endswith("/chat/completions"):
+        return base
+    if base.endswith("/v1") or base.endswith("/v1beta") or base.endswith("/openai"):
+        return base + "/chat/completions"
+    return base + "/v1/chat/completions"
+
+
+def _gemini_cli_gateway_stream_url(base_url: Optional[str], model: str) -> str:
+    base = _normalize_base_url(base_url)
+    return f"{base}/models/{model}:streamGenerateContent?alt=sse"
+
+
+def _should_use_gemini_cli_gateway_transport(config: AiConfig) -> bool:
+    if not config.uses_gemini_auth():
+        return False
+    base = (config.base_url or "").strip().lower()
+    if not base:
+        return False
+    return "generativelanguage.googleapis.com" not in base
+
+
+def _should_use_openai_compatible_transport(
+    api_key: str,
+    base_url: Optional[str],
+) -> bool:
+    key = (api_key or "").strip()
+    if not key.lower().startswith("sk-"):
+        return False
+    base = (base_url or "").strip().lower()
+    # Google-native endpoints do not use sk-style keys. When a local Gemini
+    # config contains one, it is almost always an OpenAI-compatible proxy.
+    return bool(base and "generativelanguage.googleapis.com" not in base)
+
+
+def _gemini_cli_gateway_user_agent(model: str) -> str:
+    override = os.environ.get(GEMINI_CLI_GATEWAY_USER_AGENT_ENV, "").strip()
+    if override:
+        return override
+    platform = "win32" if sys.platform.startswith("win") else sys.platform
+    arch = "x64" if sys.maxsize > 2**32 else "ia32"
+    return (
+        f"GeminiCLI-tui/{GEMINI_CLI_GATEWAY_VERSION}/{model} "
+        f"({platform}; {arch}; terminal)"
+    )
 
 
 def _resolve_timeout_seconds(explicit: Optional[int]) -> int:
@@ -210,6 +372,20 @@ def _message_text(content) -> str:
     return ""
 
 
+def _openai_messages(messages: List[dict]) -> List[dict]:
+    out: List[dict] = []
+    for message in messages:
+        role = str(message.get("role", "user") or "user").strip().lower()
+        if role not in {"system", "user", "assistant"}:
+            role = "user"
+        text = _message_text(message.get("content"))
+        if text:
+            out.append({"role": role, "content": text})
+    if not out:
+        out.append({"role": "user", "content": ""})
+    return out
+
+
 def _extract_http_error(exc: error.HTTPError) -> str:
     try:
         body = exc.read().decode("utf-8")
@@ -219,12 +395,30 @@ def _extract_http_error(exc: error.HTTPError) -> str:
         try:
             parsed = json.loads(body)
         except json.JSONDecodeError:
-            return body.strip() or f"HTTP {exc.code}"
+            return _clean_http_error_body(body, exc.code, exc.reason)
         err = parsed.get("error") if isinstance(parsed, dict) else None
         if isinstance(err, dict) and isinstance(err.get("message"), str):
             return err["message"]
-        return body.strip()
+        return _clean_http_error_body(body, exc.code, exc.reason)
     return f"HTTP {exc.code}"
+
+
+def _clean_http_error_body(body: str, code: int, reason: str) -> str:
+    text = body.strip()
+    if not text:
+        return f"HTTP {code} {reason}".strip()
+    if "<html" in text[:500].lower() or "<!doctype html" in text[:500].lower():
+        title_match = re.search(
+            r"<title[^>]*>(.*?)</title>", text, flags=re.IGNORECASE | re.DOTALL
+        )
+        if title_match:
+            title = html.unescape(re.sub(r"\s+", " ", title_match.group(1))).strip()
+            return f"HTTP {code}: {title}"
+        text = re.sub(r"<[^>]+>", " ", text)
+    text = html.unescape(re.sub(r"\s+", " ", text)).strip()
+    if len(text) > 500:
+        text = text[:500].rstrip() + "..."
+    return text or f"HTTP {code} {reason}".strip()
 
 
 def _parse_response_json(raw: str) -> dict:
@@ -237,10 +431,56 @@ def _parse_response_json(raw: str) -> dict:
     return loaded
 
 
+def _parse_sse_json_objects(raw: str) -> List[dict]:
+    events: List[dict] = []
+    data_lines: List[str] = []
+
+    def flush() -> None:
+        if not data_lines:
+            return
+        data = "\n".join(data_lines).strip()
+        data_lines.clear()
+        if not data or data == "[DONE]":
+            return
+        try:
+            parsed = json.loads(data)
+        except json.JSONDecodeError as exc:
+            raise AiError(f"AI stream response was not valid JSON: {exc}") from exc
+        if isinstance(parsed, dict):
+            if isinstance(parsed.get("error"), dict):
+                message = parsed["error"].get("message")
+                raise AiError(str(message or parsed["error"]))
+            events.append(parsed)
+
+    for raw_line in raw.splitlines():
+        line = raw_line.rstrip("\r")
+        if not line:
+            flush()
+            continue
+        if line.startswith(":"):
+            continue
+        if line.startswith("data:"):
+            data_lines.append(line[5:].lstrip())
+    flush()
+    if events:
+        return events
+
+    # Some gateways return one JSON object instead of a formal SSE stream even
+    # on the streaming route.
+    return [_parse_response_json(raw)]
+
+
 def _first_candidate(data: dict) -> dict:
     candidates = data.get("candidates")
     if isinstance(candidates, list) and candidates and isinstance(candidates[0], dict):
         return candidates[0]
+    return {}
+
+
+def _first_openai_choice(data: dict) -> dict:
+    choices = data.get("choices")
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        return choices[0]
     return {}
 
 
@@ -257,6 +497,28 @@ def _extract_text(data: dict) -> str:
         if isinstance(part, dict) and isinstance(part.get("text"), str):
             out.append(part["text"])
     return "".join(out).strip()
+
+
+def _extract_openai_compatible_text(data: dict) -> str:
+    choice = _first_openai_choice(data)
+    message = choice.get("message") if isinstance(choice, dict) else None
+    if isinstance(message, dict):
+        content = message.get("content")
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            parts: List[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict):
+                    if isinstance(item.get("text"), str):
+                        parts.append(item["text"])
+                    elif isinstance(item.get("content"), str):
+                        parts.append(item["content"])
+            return "".join(parts).strip()
+    text = choice.get("text") if isinstance(choice, dict) else None
+    return text.strip() if isinstance(text, str) else ""
 
 
 def _as_int(obj, name: str) -> Optional[int]:

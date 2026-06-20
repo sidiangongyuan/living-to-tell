@@ -37,6 +37,9 @@ const formNote = ref('')
 const formPinned = ref(false)
 
 let searchTimer: number | null = null
+let motifsLoadToken = 0
+let homeGraphToken = 0
+let motifDetailToken = 0
 
 const selectedMotif = computed(() =>
   motifs.value.find((motif) => motif.id === selectedMotifId.value) ?? null
@@ -110,11 +113,14 @@ function friendlyMotifError(e: unknown): string {
 }
 
 async function loadMotifs() {
+  const token = ++motifsLoadToken
   loading.value = true
   error.value = ''
   detailError.value = ''
   try {
-    motifs.value = await motifsApi.listMotifs(query.value, 1000)
+    const nextMotifs = await motifsApi.listMotifs(query.value, 1000)
+    if (token !== motifsLoadToken) return
+    motifs.value = nextMotifs
     if (!selectedMotifId.value || !motifs.value.some((motif) => motif.id === selectedMotifId.value)) {
       selectedMotifId.value = motifs.value[0]?.id ?? null
     } else {
@@ -122,25 +128,34 @@ async function loadMotifs() {
     }
     await Promise.all([loadHomeGraph(), loadSelectedMotifDetail()])
   } catch (e) {
+    if (token !== motifsLoadToken) return
     error.value = friendlyMotifError(e)
   } finally {
-    loading.value = false
+    if (token === motifsLoadToken) {
+      loading.value = false
+    }
   }
 }
 
 async function loadHomeGraph() {
+  const token = ++homeGraphToken
   try {
-    homeGraph.value = await motifsApi.graph(query.value, Math.max(1, motifs.value.length || 80))
+    const graph = await motifsApi.graph(query.value, Math.max(1, motifs.value.length || 80))
+    if (token !== homeGraphToken) return
+    homeGraph.value = graph
   } catch (e) {
+    if (token !== homeGraphToken) return
     error.value = friendlyMotifError(e)
   }
 }
 
 async function loadSelectedMotifDetail() {
   const motifId = selectedMotifId.value
+  const token = ++motifDetailToken
   if (!motifId) {
     excerpts.value = []
     localGraph.value = { nodes: [], edges: [] }
+    detailLoading.value = false
     return
   }
   detailLoading.value = true
@@ -150,9 +165,11 @@ async function loadSelectedMotifDetail() {
       motifsApi.listExcerpts(motifId),
       motifsApi.localGraph(motifId),
     ])
+    if (token !== motifDetailToken || selectedMotifId.value !== motifId) return
     excerpts.value = nextExcerpts
     localGraph.value = nextGraph
   } catch (e) {
+    if (token !== motifDetailToken || selectedMotifId.value !== motifId) return
     excerpts.value = []
     localGraph.value = { nodes: [], edges: [] }
     if (isHttpStatus(e, 404)) {
@@ -167,7 +184,9 @@ async function loadSelectedMotifDetail() {
       detailError.value = friendlyMotifError(e)
     }
   } finally {
-    detailLoading.value = false
+    if (token === motifDetailToken && selectedMotifId.value === motifId) {
+      detailLoading.value = false
+    }
   }
 }
 

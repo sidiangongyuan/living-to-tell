@@ -7,6 +7,7 @@ import { collectionsApi, type Collection } from '../../api/collections'
 import { articlesApi, type ArticleExportFormat } from '../../api/articles'
 import { notesApi, type WritingNote } from '../../api/notes'
 import { motifsApi, type MotifExcerpt, type MotifNode } from '../../api/motifs'
+import { errorMessage, isHttpStatus } from '../../api/base'
 import {
   addUniqueMotifName,
   buildMotifSelectionSnapshot,
@@ -54,6 +55,7 @@ const selectedCollectionIds = ref<string[]>([])
 const existingCollectionIds = computed(() => new Set(collectionsForEntry.value.map((collection) => collection.id)))
 const collectionLoading = ref(false)
 const collectionError = ref('')
+const articleSideNotice = ref('')
 const bodyDraft = ref('')
 const draftArticleId = ref<string | null>(null)
 const epigraphActive = ref(false)
@@ -110,6 +112,7 @@ const lastEditorInteraction = ref<ArticleEditorInteraction | null>(null)
 const hasSavedEditInteraction = ref(false)
 let restoreToken = 0
 let motifAttachLookupToken = 0
+let articleSideDataToken = 0
 let motifAttachDragState: {
   pointerId: number
   startClientX: number
@@ -216,6 +219,69 @@ const resolvedMotifSourceExcerpts = computed(() =>
   }))
 )
 
+function isStaleArticleRequest(articleId: string, token: number): boolean {
+  return token !== articleSideDataToken || store.selectedEntry?.id !== articleId
+}
+
+function nextArticleSideDataToken(): number {
+  return ++articleSideDataToken
+}
+
+function resetArticleSideData() {
+  collectionsForEntry.value = []
+  writingNotes.value = []
+  motifSourceExcerpts.value = []
+  collectionError.value = ''
+  notesError.value = ''
+  motifSourceError.value = ''
+  collectionLoading.value = false
+  notesLoading.value = false
+  motifSourceLoading.value = false
+}
+
+function friendlyArticleSideError(e: unknown): string {
+  if (isHttpStatus(e, 404)) return t('articles.articleMissingRefreshed')
+  return errorMessage(e)
+}
+
+async function handleCurrentArticleMissing(articleId: string, token: number): Promise<boolean> {
+  if (isStaleArticleRequest(articleId, token)) return true
+  articleSideNotice.value = t('articles.articleMissingRefreshed')
+  collectionError.value = ''
+  notesError.value = ''
+  motifSourceError.value = ''
+  try {
+    await store.loadEntries()
+    if (token !== articleSideDataToken) return true
+    if (!store.entries.some((entry) => entry.id === articleId)) {
+      const fallbackId = store.entries[0]?.id ?? null
+      if (fallbackId) {
+        store.selectEntry(fallbackId)
+        if (route.name === 'articles') {
+          void router.replace({ name: 'articles', query: { id: fallbackId } })
+        }
+      } else {
+        store.selectedId = null
+        if (route.name === 'articles') {
+          void router.replace({ name: 'articles', query: {} })
+        }
+      }
+    }
+  } catch {
+    // Keep the user-facing missing-article notice; the store owns load errors.
+  }
+  return true
+}
+
+async function handleArticleSideError(e: unknown, articleId: string, token: number): Promise<string | null> {
+  if (isStaleArticleRequest(articleId, token)) return null
+  if (isHttpStatus(e, 404)) {
+    await handleCurrentArticleMissing(articleId, token)
+    return null
+  }
+  return friendlyArticleSideError(e)
+}
+
 function motifAttachPanelSize() {
   const rect = motifAttachPanelRef.value?.getBoundingClientRect()
   return {
@@ -267,37 +333,47 @@ async function loadExistingMotifAttachmentForSelection() {
       before_context: selection.beforeContext,
       after_context: selection.afterContext,
     })
-    if (token !== motifAttachLookupToken) return
+    if (token !== motifAttachLookupToken || store.selectedEntry?.id !== entry.id) return
     motifAttachExistingExcerptId.value = existing?.id ?? null
     if (existing) {
       motifAttachNames.value = existing.motif_names
       if (!motifAttachNote.value.trim()) {
         motifAttachNote.value = existing.note
       }
-      void refreshMotifSourceExcerpts()
+      void refreshMotifSourceExcerpts(entry.id, articleSideDataToken)
     }
   } catch (e) {
-    if (token === motifAttachLookupToken) {
-      motifAttachError.value = e instanceof Error ? e.message : String(e)
+    if (token === motifAttachLookupToken && store.selectedEntry?.id === entry.id) {
+      motifAttachError.value = isHttpStatus(e, 404) ? t('motifs.sourceMissing') : errorMessage(e)
     }
   }
 }
 
-async function refreshMotifSourceExcerpts() {
-  const entryId = store.selectedEntry?.id
+async function refreshMotifSourceExcerpts(
+  entryId = store.selectedEntry?.id,
+  token = nextArticleSideDataToken(),
+) {
   motifSourceError.value = ''
   if (!entryId) {
     motifSourceExcerpts.value = []
+    motifSourceLoading.value = false
     return
   }
   motifSourceLoading.value = true
   try {
-    motifSourceExcerpts.value = await motifsApi.listExcerptsForSource('article', entryId)
+    const excerpts = await motifsApi.listExcerptsForSource('article', entryId)
+    if (isStaleArticleRequest(entryId, token)) return
+    motifSourceExcerpts.value = excerpts
   } catch (e) {
-    motifSourceError.value = e instanceof Error ? e.message : String(e)
-    motifSourceExcerpts.value = []
+    const message = await handleArticleSideError(e, entryId, token)
+    if (message) motifSourceError.value = message
+    if (!isStaleArticleRequest(entryId, token)) {
+      motifSourceExcerpts.value = []
+    }
   } finally {
-    motifSourceLoading.value = false
+    if (!isStaleArticleRequest(entryId, token)) {
+      motifSourceLoading.value = false
+    }
   }
 }
 
@@ -428,6 +504,7 @@ async function saveMotifAttachSelection() {
         motif_names: motifAttachNames.value,
         note: motifAttachNote.value,
       })
+      if (store.selectedEntry?.id !== entry.id) return
       motifAttachExistingExcerptId.value = result.excerpt?.id ?? null
     } else {
       await motifsApi.createExcerpt({
@@ -442,8 +519,10 @@ async function saveMotifAttachSelection() {
         after_context: selection.afterContext,
         motif_names: motifAttachNames.value,
       })
+      if (store.selectedEntry?.id !== entry.id) return
     }
-    await refreshMotifSourceExcerpts()
+    await refreshMotifSourceExcerpts(entry.id, articleSideDataToken)
+    if (store.selectedEntry?.id !== entry.id) return
     motifAttachOpen.value = false
     motifAttachNotice.value = t(wasExistingExcerpt ? 'motifs.selectionUpdated' : 'motifs.selectionAdded')
     await nextTick()
@@ -454,7 +533,9 @@ async function saveMotifAttachSelection() {
       motifAttachNotice.value = ''
     }, 1800)
   } catch (e) {
-    motifAttachError.value = e instanceof Error ? e.message : String(e)
+    if (store.selectedEntry?.id === entry.id) {
+      motifAttachError.value = isHttpStatus(e, 404) ? t('motifs.sourceMissing') : errorMessage(e)
+    }
   } finally {
     motifAttachSaving.value = false
   }
@@ -1442,45 +1523,83 @@ function keepCaretNearComfortLine(force = false) {
   scrollEditorTo(nextScrollTop)
 }
 
-async function refreshEntryCollections() {
+async function refreshEntryCollections(
+  entryId = store.selectedEntry?.id,
+  token = nextArticleSideDataToken(),
+) {
   collectionError.value = ''
-  if (!store.selectedEntry) {
+  if (!entryId) {
     collectionsForEntry.value = []
+    collectionLoading.value = false
     return
   }
+  collectionLoading.value = true
   try {
-    collectionsForEntry.value = await collectionsApi.listCollectionsForEntry(store.selectedEntry.id)
+    const collections = await collectionsApi.listCollectionsForEntry(entryId)
+    if (isStaleArticleRequest(entryId, token)) return
+    collectionsForEntry.value = collections
   } catch (e) {
-    collectionError.value = e instanceof Error ? e.message : String(e)
+    const message = await handleArticleSideError(e, entryId, token)
+    if (message) collectionError.value = message
+  } finally {
+    if (!isStaleArticleRequest(entryId, token)) {
+      collectionLoading.value = false
+    }
   }
 }
 
-async function refreshWritingNotes() {
+async function refreshWritingNotes(
+  entryId = store.selectedEntry?.id,
+  token = nextArticleSideDataToken(),
+) {
   notesError.value = ''
-  if (!store.selectedEntry) {
+  if (!entryId) {
     writingNotes.value = []
+    notesLoading.value = false
     return
   }
   notesLoading.value = true
   try {
-    writingNotes.value = await notesApi.listNotes(store.selectedEntry.id, true)
+    const notes = await notesApi.listNotes(entryId, true)
+    if (isStaleArticleRequest(entryId, token)) return
+    writingNotes.value = notes
   } catch (e) {
-    notesError.value = e instanceof Error ? e.message : String(e)
+    const message = await handleArticleSideError(e, entryId, token)
+    if (message) notesError.value = message
   } finally {
-    notesLoading.value = false
+    if (!isStaleArticleRequest(entryId, token)) {
+      notesLoading.value = false
+    }
   }
+}
+
+async function refreshArticleSideData(entryId = store.selectedEntry?.id) {
+  articleSideNotice.value = ''
+  const token = nextArticleSideDataToken()
+  if (!entryId) {
+    resetArticleSideData()
+    return
+  }
+  await Promise.all([
+    refreshEntryCollections(entryId, token),
+    refreshWritingNotes(entryId, token),
+    refreshMotifSourceExcerpts(entryId, token),
+  ])
 }
 
 async function addWritingNote() {
   const body = newNoteBody.value.trim()
-  if (!store.selectedEntry || !body) return
+  const entryId = store.selectedEntry?.id
+  if (!entryId || !body) return
   notesError.value = ''
   try {
-    const note = await notesApi.createNote(store.selectedEntry.id, body)
+    const note = await notesApi.createNote(entryId, body)
+    if (store.selectedEntry?.id !== entryId) return
     writingNotes.value = sortWritingNotes([note, ...writingNotes.value.filter((item) => item.id !== note.id)])
     newNoteBody.value = ''
   } catch (e) {
-    notesError.value = e instanceof Error ? e.message : String(e)
+    if (store.selectedEntry?.id !== entryId) return
+    notesError.value = isHttpStatus(e, 404) ? t('articles.articleMissingRefreshed') : errorMessage(e)
   }
 }
 
@@ -1495,50 +1614,62 @@ function cancelEditNote() {
 }
 
 async function saveEditNote(note: WritingNote) {
-  if (!store.selectedEntry) return
+  const entryId = store.selectedEntry?.id
+  if (!entryId) return
   const body = editingNoteBody.value.trim()
   if (!body) return
   notesError.value = ''
   try {
-    const updated = await notesApi.updateNote(store.selectedEntry.id, note.id, body)
+    const updated = await notesApi.updateNote(entryId, note.id, body)
+    if (store.selectedEntry?.id !== entryId) return
     replaceWritingNote(updated)
     cancelEditNote()
   } catch (e) {
-    notesError.value = e instanceof Error ? e.message : String(e)
+    if (store.selectedEntry?.id !== entryId) return
+    notesError.value = isHttpStatus(e, 404) ? t('articles.writingNoteMissing') : errorMessage(e)
   }
 }
 
 async function toggleNotePinned(note: WritingNote) {
-  if (!store.selectedEntry) return
+  const entryId = store.selectedEntry?.id
+  if (!entryId) return
   notesError.value = ''
   try {
-    const updated = await notesApi.setPinned(store.selectedEntry.id, note.id, !note.pinned)
+    const updated = await notesApi.setPinned(entryId, note.id, !note.pinned)
+    if (store.selectedEntry?.id !== entryId) return
     replaceWritingNote(updated)
   } catch (e) {
-    notesError.value = e instanceof Error ? e.message : String(e)
+    if (store.selectedEntry?.id !== entryId) return
+    notesError.value = isHttpStatus(e, 404) ? t('articles.writingNoteMissing') : errorMessage(e)
   }
 }
 
 async function toggleNoteDone(note: WritingNote) {
-  if (!store.selectedEntry) return
+  const entryId = store.selectedEntry?.id
+  if (!entryId) return
   notesError.value = ''
   try {
-    const updated = await notesApi.setDone(store.selectedEntry.id, note.id, note.status !== 'done')
+    const updated = await notesApi.setDone(entryId, note.id, note.status !== 'done')
+    if (store.selectedEntry?.id !== entryId) return
     replaceWritingNote(updated)
   } catch (e) {
-    notesError.value = e instanceof Error ? e.message : String(e)
+    if (store.selectedEntry?.id !== entryId) return
+    notesError.value = isHttpStatus(e, 404) ? t('articles.writingNoteMissing') : errorMessage(e)
   }
 }
 
 async function deleteWritingNote(note: WritingNote) {
-  if (!store.selectedEntry) return
+  const entryId = store.selectedEntry?.id
+  if (!entryId) return
   if (!confirm(t('articles.notesDeleteConfirm'))) return
   notesError.value = ''
   try {
-    await notesApi.deleteNote(store.selectedEntry.id, note.id)
+    await notesApi.deleteNote(entryId, note.id)
+    if (store.selectedEntry?.id !== entryId) return
     writingNotes.value = writingNotes.value.filter((item) => item.id !== note.id)
   } catch (e) {
-    notesError.value = e instanceof Error ? e.message : String(e)
+    if (store.selectedEntry?.id !== entryId) return
+    notesError.value = isHttpStatus(e, 404) ? t('articles.writingNoteMissing') : errorMessage(e)
   }
 }
 
@@ -1557,22 +1688,27 @@ function sortWritingNotes(notes: WritingNote[]): WritingNote[] {
 }
 
 async function openCollectionPicker() {
-  if (!store.selectedEntry) return
+  const entryId = store.selectedEntry?.id
+  if (!entryId) return
   collectionLoading.value = true
   collectionError.value = ''
   try {
     const [collections, current] = await Promise.all([
       collectionsApi.listCollections(),
-      collectionsApi.listCollectionsForEntry(store.selectedEntry.id),
+      collectionsApi.listCollectionsForEntry(entryId),
     ])
+    if (store.selectedEntry?.id !== entryId) return
     allCollections.value = collections
     collectionsForEntry.value = current
     selectedCollectionIds.value = []
     collectionPickerOpen.value = true
   } catch (e) {
-    collectionError.value = e instanceof Error ? e.message : String(e)
+    if (store.selectedEntry?.id !== entryId) return
+    collectionError.value = isHttpStatus(e, 404) ? t('articles.articleMissingRefreshed') : errorMessage(e)
   } finally {
-    collectionLoading.value = false
+    if (store.selectedEntry?.id === entryId) {
+      collectionLoading.value = false
+    }
   }
 }
 
@@ -1586,20 +1722,26 @@ function toggleCollection(id: string) {
 }
 
 async function addToSelectedCollections() {
-  if (!store.selectedEntry) return
+  const entryId = store.selectedEntry?.id
+  if (!entryId) return
   const idsToAdd = selectedCollectionIds.value.filter((id) => !existingCollectionIds.value.has(id))
   if (!idsToAdd.length) return
   collectionLoading.value = true
   try {
-    collectionsForEntry.value = await collectionsApi.addEntryToCollections(
-      store.selectedEntry.id,
+    const collections = await collectionsApi.addEntryToCollections(
+      entryId,
       idsToAdd
     )
+    if (store.selectedEntry?.id !== entryId) return
+    collectionsForEntry.value = collections
     collectionPickerOpen.value = false
   } catch (e) {
-    collectionError.value = e instanceof Error ? e.message : String(e)
+    if (store.selectedEntry?.id !== entryId) return
+    collectionError.value = isHttpStatus(e, 404) ? t('articles.articleMissingRefreshed') : errorMessage(e)
   } finally {
-    collectionLoading.value = false
+    if (store.selectedEntry?.id === entryId) {
+      collectionLoading.value = false
+    }
   }
 }
 
@@ -1610,7 +1752,7 @@ onMounted(async () => {
     router.replace({ name: 'articles', query: { id: store.selectedEntry.id } })
   }
   syncDraftFromSelected()
-  await Promise.all([refreshEntryCollections(), refreshWritingNotes(), refreshMotifSourceExcerpts()])
+  await refreshArticleSideData()
   await restoreEditorPositionIfNeeded()
   updateTailSpace()
   window.addEventListener('resize', updateTailSpace)
@@ -1636,9 +1778,7 @@ watch(
     const saved = await flushPendingArticleSave()
     if (!saved) return
     syncDraftFromSelected()
-    refreshEntryCollections()
-    refreshWritingNotes()
-    refreshMotifSourceExcerpts()
+    void refreshArticleSideData(_newId ?? undefined)
     await restoreEditorPositionIfNeeded(_newId ?? undefined)
     updateTailSpace()
   }
@@ -1657,7 +1797,6 @@ watch(
     if (!saved) return
     await applyRouteArticle()
     syncDraftFromSelected()
-    await refreshMotifSourceExcerpts()
     await restoreEditorPositionIfNeeded()
     updateTailSpace()
   }
@@ -2026,6 +2165,9 @@ watch(
       </div>
       <div class="flex-1 overflow-y-auto p-4 space-y-6">
         <template v-if="store.selectedEntry">
+          <div v-if="articleSideNotice" class="rounded-lg bg-amber-50 p-2 text-xs text-amber-700">
+            {{ articleSideNotice }}
+          </div>
           <section>
             <h3 class="text-sm font-semibold text-stone-700 mb-2">{{ t('articles.statistics') }}</h3>
             <div class="space-y-2 text-sm text-stone-600">

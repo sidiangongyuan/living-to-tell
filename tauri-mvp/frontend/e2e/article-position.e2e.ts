@@ -66,6 +66,13 @@ async function mockWriterApi(page: MockedPage) {
   await page.route('**/api/collections', async (route) => {
     await route.fulfill({ json: [] })
   })
+  await page.route('**/api/motifs/excerpts/source/article/*', async (route) => {
+    await route.fulfill({ json: [] })
+  })
+}
+
+async function expectArticleBody(page: Page, body: string) {
+  await expect(page.getByTestId('article-body-editor')).toHaveValue(body, { timeout: 20000 })
 }
 
 test.beforeEach(async ({ page }) => {
@@ -74,7 +81,7 @@ test.beforeEach(async ({ page }) => {
 
 test('keeps epigraph editor open while typing and autosaving', async ({ page }) => {
   await page.goto('/articles?id=article-a')
-  await expect(page.getByTestId('article-body-editor')).toHaveValue(longBodyA)
+  await expectArticleBody(page, longBodyA)
 
   await page.getByTestId('article-add-epigraph').click()
   const quote = page.getByTestId('article-epigraph-quote')
@@ -107,7 +114,7 @@ test('keeps an incomplete epigraph draft when switching articles', async ({ page
 test('moves an epigraph back into the article body and saves it', async ({ page }) => {
   const mockedPage = page as MockedPage
   await page.goto('/articles?id=article-a')
-  await expect(page.getByTestId('article-body-editor')).toHaveValue(longBodyA)
+  await expectArticleBody(page, longBodyA)
 
   await page.getByTestId('article-add-epigraph').click()
   await page.getByTestId('article-epigraph-quote').fill('题记会回到正文')
@@ -124,7 +131,7 @@ test('flushes pending article edits before switching articles', async ({ page })
   const mockedPage = page as MockedPage
   await page.goto('/articles?id=article-a')
   const editor = page.getByTestId('article-body-editor')
-  await expect(editor).toHaveValue(longBodyA)
+  await expectArticleBody(page, longBodyA)
 
   const changedBody = `${longBodyA}\n快速切换前新增的一句。`
   await editor.fill(changedBody)
@@ -132,6 +139,65 @@ test('flushes pending article edits before switching articles', async ({ page })
   await expect(editor).toHaveValue(longBodyB)
 
   expect(mockedPage.__writerArticles?.find((article) => article.id === 'article-a')?.body).toBe(changedBody)
+})
+
+test('ignores stale side-panel not found responses after switching articles', async ({ page }) => {
+  await page.unroute('**/api/articles/*/notes?**')
+  await page.unroute('**/api/collections/for-entry/*')
+  await page.unroute('**/api/motifs/excerpts/source/article/*')
+
+  const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+  const noteForB = {
+    id: 'note-b',
+    entry_id: 'article-b',
+    body: 'B 的便签',
+    status: 'open',
+    pinned: false,
+    sort_order: 0,
+    created_at: null,
+    updated_at: null,
+    completed_at: null,
+  }
+
+  await page.route('**/api/articles/*/notes?**', async (route) => {
+    const parts = new URL(route.request().url()).pathname.split('/')
+    const articleId = parts.at(-2)
+    if (articleId === 'article-a') {
+      await delay(450)
+      await route.fulfill({ status: 404, json: { detail: 'Article not found' } })
+      return
+    }
+    await route.fulfill({ json: articleId === 'article-b' ? [noteForB] : [] })
+  })
+  await page.route('**/api/collections/for-entry/*', async (route) => {
+    const articleId = new URL(route.request().url()).pathname.split('/').pop()
+    if (articleId === 'article-a') {
+      await delay(420)
+      await route.fulfill({ status: 404, json: { detail: 'Article not found' } })
+      return
+    }
+    await route.fulfill({ json: [] })
+  })
+  await page.route('**/api/motifs/excerpts/source/article/*', async (route) => {
+    const articleId = new URL(route.request().url()).pathname.split('/').pop()
+    if (articleId === 'article-a') {
+      await delay(400)
+      await route.fulfill({ status: 404, json: { detail: 'Source not found' } })
+      return
+    }
+    await route.fulfill({ json: [] })
+  })
+
+  await page.goto('/articles?id=article-a')
+  await page.getByTestId('article-entry-article-b').click()
+  await expect(page.getByTestId('article-body-editor')).toHaveValue(longBodyB)
+  await expect(page.getByText('B 的便签')).toBeVisible()
+
+  await page.waitForTimeout(700)
+  await expect(page.getByText('Article not found')).toHaveCount(0)
+  await expect(page.getByText('Source not found')).toHaveCount(0)
+  await expect(page.getByText('这篇文章已不存在，已刷新文章列表。')).toHaveCount(0)
+  await expect(page.getByText('B 的便签')).toBeVisible()
 })
 
 test('restores editor scroll position after switching articles', async ({ page }) => {

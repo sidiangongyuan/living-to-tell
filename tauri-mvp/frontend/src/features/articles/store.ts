@@ -20,8 +20,13 @@ export const useArticlesStore = defineStore('articles', () => {
     error.value = null
     try {
       entries.value = await articlesApi.list()
-      if (entries.value.length && !selectedId.value) {
+      const selectedStillExists = Boolean(
+        selectedId.value && entries.value.some((entry) => entry.id === selectedId.value)
+      )
+      if (entries.value.length && !selectedStillExists) {
         selectedId.value = entries.value[0].id
+      } else if (!entries.value.length) {
+        selectedId.value = null
       }
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
