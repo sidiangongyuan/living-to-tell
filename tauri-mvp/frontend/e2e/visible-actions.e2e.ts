@@ -1262,7 +1262,7 @@ test('library create, grouping, search, and autosave actions are real and visibl
   await expect(page.getByText('已有标本正文')).toBeVisible()
 
   await page.getByRole('button', { name: '按用途' }).click()
-  await page.getByRole('button', { name: /意象/ }).click()
+  await page.getByRole('button', { name: /意象\s+共 1 条/ }).click()
   await expect(page.getByText('意象标本正文')).toBeVisible()
 
   await page.getByRole('button', { name: '按书籍' }).click()
@@ -1289,6 +1289,13 @@ test('library create, grouping, search, and autosave actions are real and visibl
   await expect.poll(() => updateBodies.length).toBe(1)
   expect(updateBodies[0]).toEqual(expect.objectContaining({ content: '改过的标本正文' }))
   await expect(page.getByText('修改已保存')).toBeVisible()
+
+  await page.locator('select').selectOption('rhetoric')
+  await expect.poll(() => updateBodies.some((body) => body.usage_kind === 'rhetoric')).toBe(true)
+  await expect(page.locator('select')).toHaveValue('rhetoric')
+  await page.getByRole('button', { name: '按用途' }).click()
+  await expect(page.getByRole('button', { name: /修辞/ })).toBeVisible()
+  await expect(page.getByText('改过的标本正文')).toBeVisible()
 })
 
 test('library pending edits are flushed before selecting another reference', async ({ page }) => {
@@ -1315,7 +1322,7 @@ test('library pending edits are flushed before selecting another reference', asy
   await expect(page.getByText('已有标本正文')).toBeVisible()
   await page.locator('textarea').first().fill('切换前未保存标本正文')
   await page.getByRole('button', { name: '按用途' }).click()
-  await page.getByRole('button', { name: /意象/ }).click()
+  await page.getByRole('button', { name: /意象\s+共 1 条/ }).click()
   await page.getByText('意象标本正文').click()
 
   await expect.poll(() => updateBodies.some((body) => body.content === '切换前未保存标本正文')).toBe(true)

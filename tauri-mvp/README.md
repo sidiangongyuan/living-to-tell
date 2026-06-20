@@ -57,12 +57,21 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 - Jump from the daily quote card to the matching reference passage.
 - Copy just the passage body, or copy a complete citation with title and author.
 
+### Motif Star Map
+
+- Save selected article or reference text into one or more motifs from a right-click menu.
+- Reopen existing selections without creating duplicate excerpts, even when the saved range has drifted after editing.
+- Use source anchors to return from the article context pane to the marked sentence.
+- Explore motif co-occurrence through a visual star map with weighted nodes and links.
+- Unlink an excerpt from the current motif without deleting the same excerpt from other motifs.
+
 ### AI
 
 - Focused AI tools for polishing, rewriting, expanding, and continuing.
 - Per-tool personal presets.
 - AI results are reviewed before writing back, with explicit replace, insert, and copy actions.
-- Free chat tab with one ongoing conversation per global scope, article, or collection.
+- Article-scoped chat with one ongoing conversation per article.
+- Standing chat instructions, copy actions, and save-reply-as-article-note actions.
 - AI Cards for style, character, and setting context, with type/source filters and keyword search.
 - Supports OpenAI-compatible APIs, Codex local auth, Gemini API/local config, and Gemini CLI / OAuth.
 - Raw API keys are not stored in app settings; only the selected credential source is saved.
@@ -71,7 +80,10 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 - Windows installer builds with a bundled Python backend sidecar.
 - Release builds discover the sidecar port automatically, so users do not need to run a backend manually.
+- Startup uses a light splash window so users see progress while the backend sidecar starts.
 - Close behavior can be set to ask every time, minimize to tray, or exit directly.
+- Settings show the current data directory, database, backup folder, checkpoint folder, and custom-directory status.
+- Data-directory migration copies data and preserves the previous folder.
 - Public preview uses light mode only; dark mode code remains available for a later full theme pass.
 
 ## Download
@@ -177,7 +189,7 @@ cargo check --manifest-path src-tauri\Cargo.toml
 - Optional cloud sync for writers who want the same local-first workspace across devices.
 - Signed Windows builds or published checksums for preview installers.
 - Richer reference-library views, AI report actions, and easier chat-to-note / chat-to-reference flows.
-- A future mind map / imagery collection space for visually organizing themes, symbols, motifs, character links, arguments, references, and AI-generated ideas.
+- Richer graph views for themes, character links, arguments, references, and AI-generated ideas.
 - macOS and Linux packages after the Windows workflow is mature.
 
 ## License

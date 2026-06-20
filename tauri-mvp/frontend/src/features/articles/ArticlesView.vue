@@ -6,6 +6,14 @@ import { useSettingsStore } from '../../stores/settings'
 import { collectionsApi, type Collection } from '../../api/collections'
 import { articlesApi, type ArticleExportFormat } from '../../api/articles'
 import { notesApi, type WritingNote } from '../../api/notes'
+import { motifsApi, type MotifExcerpt, type MotifNode } from '../../api/motifs'
+import {
+  addUniqueMotifName,
+  buildMotifSelectionSnapshot,
+  findMotifTextPosition,
+  readMotifJumpSnapshot,
+  resolveMotifExcerptRange,
+} from '../motifs/selection'
 import FindReplace from '../../components/FindReplace.vue'
 import { useI18n } from '../../i18n'
 import { saveBlobWithDialog } from '../../utils/exportFile'
@@ -63,6 +71,33 @@ const editingNoteBody = ref('')
 const notesError = ref('')
 const notesLoading = ref(false)
 const showDoneNotes = ref(false)
+const motifAttachOpen = ref(false)
+const motifAttachX = ref(0)
+const motifAttachY = ref(0)
+const motifAttachPanelRef = ref<HTMLDivElement | null>(null)
+const motifContextMenuOpen = ref(false)
+const motifContextMenuX = ref(0)
+const motifContextMenuY = ref(0)
+const motifAttachQuery = ref('')
+const motifAttachNote = ref('')
+const motifAttachSaving = ref(false)
+const motifAttachError = ref('')
+const motifAttachNotice = ref('')
+const motifAttachExistingExcerptId = ref<string | null>(null)
+const motifAttachSelection = ref<{
+  text: string
+  start: number
+  end: number
+  beforeContext: string
+  afterContext: string
+} | null>(null)
+const motifAttachNames = ref<string[]>([])
+const motifCandidates = ref<MotifNode[]>([])
+const motifSourceExcerpts = ref<MotifExcerpt[]>([])
+const motifSourceLoading = ref(false)
+const motifSourceError = ref('')
+const motifHighlightActive = ref(false)
+const motifJumpMessage = ref('')
 const positionSaveTimer = ref<number | null>(null)
 const pendingPositionArticleId = ref<string | null>(null)
 const pendingPositionInteraction = ref<ArticleEditorInteraction>('edit')
@@ -74,6 +109,14 @@ const userScrollIntentUntil = ref(0)
 const lastEditorInteraction = ref<ArticleEditorInteraction | null>(null)
 const hasSavedEditInteraction = ref(false)
 let restoreToken = 0
+let motifAttachLookupToken = 0
+let motifAttachDragState: {
+  pointerId: number
+  startClientX: number
+  startClientY: number
+  startX: number
+  startY: number
+} | null = null
 
 interface ArticleSaveSnapshot {
   id: string
@@ -144,6 +187,278 @@ const listStatusLabel = computed(() =>
 const emptyListLabel = computed(() =>
   hasSearchQuery.value || selectedTag.value ? t('articles.noResults') : t('articles.noArticles')
 )
+const motifSuggestions = computed(() => {
+  const query = motifAttachQuery.value.trim().toLowerCase()
+  return motifCandidates.value
+    .filter((motif) => {
+      if (motifAttachNames.value.includes(motif.name)) return false
+      if (!query) return true
+      return motif.name.toLowerCase().includes(query) ||
+        motif.aliases.some((alias) => alias.toLowerCase().includes(query))
+    })
+    .slice(0, 6)
+})
+const sortedMotifSourceExcerpts = computed(() =>
+  [...motifSourceExcerpts.value].sort((a, b) => {
+    const aStart = a.selection_start ?? Number.MAX_SAFE_INTEGER
+    const bStart = b.selection_start ?? Number.MAX_SAFE_INTEGER
+    if (aStart !== bStart) return aStart - bStart
+    return a.excerpt_text.localeCompare(b.excerpt_text)
+  })
+)
+const activeMotifExcerptId = computed(() =>
+  typeof route.query.motif_excerpt === 'string' ? route.query.motif_excerpt : ''
+)
+const resolvedMotifSourceExcerpts = computed(() =>
+  sortedMotifSourceExcerpts.value.map((excerpt) => ({
+    excerpt,
+    range: resolveMotifExcerptRange(bodyDraft.value, excerpt),
+  }))
+)
+
+function motifAttachPanelSize() {
+  const rect = motifAttachPanelRef.value?.getBoundingClientRect()
+  return {
+    width: rect?.width ?? Math.min(380, window.innerWidth - 32),
+    height: rect?.height ?? Math.min(560, window.innerHeight * 0.8),
+  }
+}
+
+function clampMotifPanelTopLeft(x: number, y: number) {
+  const { width, height } = motifAttachPanelSize()
+  motifAttachX.value = Math.max(16, Math.min(x, window.innerWidth - width - 16))
+  motifAttachY.value = Math.max(16, Math.min(y, window.innerHeight - height - 16))
+}
+
+function clampMotifPanelPosition(x: number, y: number) {
+  const { height } = motifAttachPanelSize()
+  const preferredX = x + 12
+  const preferredY = y + 12 + height > window.innerHeight - 16 ? y - height - 12 : y + 12
+  clampMotifPanelTopLeft(preferredX, preferredY)
+}
+
+function clampMotifContextMenuPosition(x: number, y: number) {
+  const width = 180
+  const height = 48
+  motifContextMenuX.value = Math.max(16, Math.min(x + 8, window.innerWidth - width - 16))
+  motifContextMenuY.value = Math.max(16, Math.min(y + 8, window.innerHeight - height - 16))
+}
+
+async function loadMotifCandidates() {
+  try {
+    motifCandidates.value = await motifsApi.listMotifs('', 500)
+  } catch (e) {
+    motifAttachError.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function loadExistingMotifAttachmentForSelection() {
+  const selection = motifAttachSelection.value
+  const entry = store.selectedEntry
+  if (!selection || !entry) return
+  const token = ++motifAttachLookupToken
+  try {
+    const existing = await motifsApi.lookupExcerpt({
+      source_kind: 'article',
+      source_id: entry.id,
+      excerpt_text: selection.text,
+      selection_start: selection.start,
+      selection_end: selection.end,
+      before_context: selection.beforeContext,
+      after_context: selection.afterContext,
+    })
+    if (token !== motifAttachLookupToken) return
+    motifAttachExistingExcerptId.value = existing?.id ?? null
+    if (existing) {
+      motifAttachNames.value = existing.motif_names
+      if (!motifAttachNote.value.trim()) {
+        motifAttachNote.value = existing.note
+      }
+      void refreshMotifSourceExcerpts()
+    }
+  } catch (e) {
+    if (token === motifAttachLookupToken) {
+      motifAttachError.value = e instanceof Error ? e.message : String(e)
+    }
+  }
+}
+
+async function refreshMotifSourceExcerpts() {
+  const entryId = store.selectedEntry?.id
+  motifSourceError.value = ''
+  if (!entryId) {
+    motifSourceExcerpts.value = []
+    return
+  }
+  motifSourceLoading.value = true
+  try {
+    motifSourceExcerpts.value = await motifsApi.listExcerptsForSource('article', entryId)
+  } catch (e) {
+    motifSourceError.value = e instanceof Error ? e.message : String(e)
+    motifSourceExcerpts.value = []
+  } finally {
+    motifSourceLoading.value = false
+  }
+}
+
+function prepareMotifSelection() {
+  if (!bodyRef.value || !store.selectedEntry) return false
+  const snapshot = buildMotifSelectionSnapshot(
+    bodyDraft.value,
+    bodyRef.value.selectionStart,
+    bodyRef.value.selectionEnd,
+  )
+  if (!snapshot) return false
+  motifAttachSelection.value = snapshot
+  motifAttachNames.value = []
+  motifAttachNote.value = ''
+  motifAttachQuery.value = ''
+  motifAttachExistingExcerptId.value = null
+  motifAttachError.value = ''
+  motifAttachNotice.value = ''
+  return true
+}
+
+function openMotifAttachPanelAt(x: number, y: number) {
+  motifAttachOpen.value = true
+  motifContextMenuOpen.value = false
+  clampMotifPanelPosition(x, y)
+  void loadMotifCandidates()
+  void loadExistingMotifAttachmentForSelection()
+}
+
+function openMotifContextMenuFromSelection(event: MouseEvent) {
+  if (!prepareMotifSelection()) return false
+  motifContextMenuOpen.value = true
+  motifAttachOpen.value = false
+  clampMotifContextMenuPosition(event.clientX, event.clientY)
+  return true
+}
+
+function openMotifAttachFromContextMenu() {
+  if (!motifAttachSelection.value) return
+  openMotifAttachPanelAt(motifContextMenuX.value, motifContextMenuY.value)
+}
+
+function closeMotifContextMenu() {
+  motifContextMenuOpen.value = false
+}
+
+function handleBodyContextMenu(event: MouseEvent) {
+  if (openMotifContextMenuFromSelection(event)) {
+    event.preventDefault()
+  }
+}
+
+function closeMotifAttach() {
+  motifAttachOpen.value = false
+  motifAttachError.value = ''
+}
+
+function startMotifAttachDrag(event: PointerEvent) {
+  if (event.button !== 0) return
+  event.preventDefault()
+  motifAttachDragState = {
+    pointerId: event.pointerId,
+    startClientX: event.clientX,
+    startClientY: event.clientY,
+    startX: motifAttachX.value,
+    startY: motifAttachY.value,
+  }
+  motifAttachPanelRef.value?.setPointerCapture?.(event.pointerId)
+  window.addEventListener('pointermove', handleMotifAttachDrag)
+  window.addEventListener('pointerup', stopMotifAttachDrag)
+  window.addEventListener('pointercancel', stopMotifAttachDrag)
+}
+
+function handleMotifAttachDrag(event: PointerEvent) {
+  if (!motifAttachDragState || event.pointerId !== motifAttachDragState.pointerId) return
+  clampMotifPanelTopLeft(
+    motifAttachDragState.startX + event.clientX - motifAttachDragState.startClientX,
+    motifAttachDragState.startY + event.clientY - motifAttachDragState.startClientY,
+  )
+}
+
+function stopMotifAttachDrag(event?: PointerEvent) {
+  if (event && motifAttachDragState && event.pointerId !== motifAttachDragState.pointerId) return
+  if (event && motifAttachDragState) {
+    motifAttachPanelRef.value?.releasePointerCapture?.(motifAttachDragState.pointerId)
+  }
+  motifAttachDragState = null
+  window.removeEventListener('pointermove', handleMotifAttachDrag)
+  window.removeEventListener('pointerup', stopMotifAttachDrag)
+  window.removeEventListener('pointercancel', stopMotifAttachDrag)
+}
+
+function addMotifAttachName(name = motifAttachQuery.value) {
+  motifAttachNames.value = addUniqueMotifName(motifAttachNames.value, name)
+  motifAttachQuery.value = ''
+}
+
+function removeMotifAttachName(name: string) {
+  motifAttachNames.value = motifAttachNames.value.filter((item) => item !== name)
+}
+
+function handleMotifAttachQueryKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter') return
+  event.preventDefault()
+  const firstSuggestion = motifSuggestions.value[0]
+  addMotifAttachName(firstSuggestion?.name ?? motifAttachQuery.value)
+}
+
+async function saveMotifAttachSelection() {
+  const entry = store.selectedEntry
+  const selection = motifAttachSelection.value
+  if (!entry || !selection) return
+  if (!motifAttachNames.value.length && motifAttachQuery.value.trim()) {
+    addMotifAttachName()
+  }
+  if (!motifAttachNames.value.length && !motifAttachExistingExcerptId.value) {
+    motifAttachError.value = t('motifs.selectionNoMotif')
+    return
+  }
+  motifAttachSaving.value = true
+  motifAttachError.value = ''
+  try {
+    const saved = await saveNow()
+    if (!saved) return
+    const wasExistingExcerpt = Boolean(motifAttachExistingExcerptId.value)
+    if (motifAttachExistingExcerptId.value) {
+      const result = await motifsApi.setMotifsForExcerpt(motifAttachExistingExcerptId.value, {
+        motif_names: motifAttachNames.value,
+        note: motifAttachNote.value,
+      })
+      motifAttachExistingExcerptId.value = result.excerpt?.id ?? null
+    } else {
+      await motifsApi.createExcerpt({
+        source_kind: 'article',
+        source_id: entry.id,
+        source_title_snapshot: entry.title || t('articles.untitled'),
+        excerpt_text: selection.text,
+        note: motifAttachNote.value,
+        selection_start: selection.start,
+        selection_end: selection.end,
+        before_context: selection.beforeContext,
+        after_context: selection.afterContext,
+        motif_names: motifAttachNames.value,
+      })
+    }
+    await refreshMotifSourceExcerpts()
+    motifAttachOpen.value = false
+    motifAttachNotice.value = t(wasExistingExcerpt ? 'motifs.selectionUpdated' : 'motifs.selectionAdded')
+    await nextTick()
+    bodyRef.value?.focus({ preventScroll: true })
+    bodyRef.value?.setSelectionRange(selection.start, selection.end)
+    saveCurrentEditorEditPositionNow()
+    window.setTimeout(() => {
+      motifAttachNotice.value = ''
+    }, 1800)
+  } catch (e) {
+    motifAttachError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    motifAttachSaving.value = false
+  }
+}
 
 function countWords(body: string): number {
   if (!body) return 0
@@ -160,6 +475,18 @@ function countWords(body: string): number {
   }
   if (buffer.trim()) total += buffer.trim().split(/\s+/).length
   return total
+}
+
+function previewMotifExcerptText(text: string, limit = 64): string {
+  const compact = text.replace(/\s+/g, ' ').trim()
+  const chars = Array.from(compact)
+  return chars.length > limit ? `${chars.slice(0, limit).join('')}...` : compact
+}
+
+function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string {
+  if (status === 'matched') return t('motifs.rangeMatched')
+  if (status === 'moved') return t('motifs.rangeMoved')
+  return t('motifs.rangeMissing')
 }
 
 function preview(body: string): string {
@@ -190,8 +517,9 @@ function handleBodyInput() {
   })
 }
 
-function handleBodyPointerSettled() {
+function handleBodyPointerSettled(event?: MouseEvent | PointerEvent) {
   if (restoringEditorPosition.value) return
+  if (event && 'button' in event && event.button === 0) closeMotifContextMenu()
   lastEditorInteraction.value = 'edit'
   hasSavedEditInteraction.value = true
   saveCurrentEditorEditPositionNow()
@@ -461,7 +789,7 @@ function composeCurrentBody(includeIncompleteEpigraph = false): string {
       epigraphQuote.value.trim(),
       epigraphAttribution.value.trim() ? `——${epigraphAttribution.value.trim()}` : '',
     ].filter(Boolean).join('\n')
-    return prefix ? `${prefix}\n\n${bodyDraft.value.trimStart()}` : bodyDraft.value
+    return prefix ? `${prefix}\n\n${bodyDraft.value}` : bodyDraft.value
   }
   const parts: EpigraphParts = {
     quote: epigraphQuote.value,
@@ -658,6 +986,78 @@ async function deleteSelectedEntry() {
   }
 }
 
+function activateMotifJumpHighlight(message: string) {
+  motifHighlightActive.value = true
+  motifJumpMessage.value = message
+  window.setTimeout(() => {
+    motifHighlightActive.value = false
+  }, 1900)
+  window.setTimeout(() => {
+    motifJumpMessage.value = ''
+  }, 3600)
+}
+
+async function focusBodyRange(start: number, end: number, highlight = false) {
+  if (!bodyRef.value) return false
+  await nextTick()
+  const safeStart = Math.max(0, Math.min(start, bodyDraft.value.length))
+  const safeEnd = Math.max(safeStart, Math.min(end, bodyDraft.value.length))
+  resizeBodyEditor()
+  bodyRef.value.focus({ preventScroll: true })
+  bodyRef.value.setSelectionRange(safeStart, safeEnd)
+  scrollEditorTo(scrollTopForCaretPosition(bodyRef.value, safeStart, 0.5))
+  lastEditorInteraction.value = 'edit'
+  saveEditorPositionForArticle(store.selectedEntry?.id, 'edit')
+  if (highlight) {
+    activateMotifJumpHighlight(t('motifs.jumpHighlighted'))
+  }
+  return true
+}
+
+async function applyMotifRouteFocus() {
+  if (typeof route.query.motif_excerpt !== 'string') return false
+  if (typeof route.query.id === 'string' && store.selectedEntry?.id && route.query.id !== store.selectedEntry.id) {
+    return false
+  }
+  const jump = readMotifJumpSnapshot(window.sessionStorage)
+  const jumpText = jump?.text ?? ''
+  const start = parseNumberQuery(route.query.focus_start)
+  const end = parseNumberQuery(route.query.focus_end)
+  if (start !== null && end !== null) {
+    const safeStart = Math.max(0, Math.min(start, bodyDraft.value.length))
+    const safeEnd = Math.max(safeStart, Math.min(end, bodyDraft.value.length))
+    const currentText = bodyDraft.value.slice(safeStart, safeEnd).trim()
+    if (!jumpText.trim() || currentText === jumpText.trim()) {
+      return focusBodyRange(safeStart, safeEnd, true)
+    }
+  }
+  const found = findMotifTextPosition(bodyDraft.value, jumpText)
+  if (found) {
+    return focusBodyRange(found.start, found.end, true)
+  }
+  activateMotifJumpHighlight(t('motifs.sourceChanged'))
+  return true
+}
+
+async function jumpToMotifSourceExcerpt(excerpt: MotifExcerpt) {
+  const range = resolveMotifExcerptRange(bodyDraft.value, excerpt)
+  if (range.start !== null && range.end !== null) {
+    await router.replace({
+      name: 'articles',
+      query: {
+        ...route.query,
+        id: store.selectedEntry?.id ?? route.query.id,
+        motif_excerpt: excerpt.id,
+        focus_start: String(range.start),
+        focus_end: String(range.end),
+      },
+    })
+    return focusBodyRange(range.start, range.end, true)
+  }
+  activateMotifJumpHighlight(t('motifs.sourceChanged'))
+  return false
+}
+
 async function applyRouteFocusRange() {
   if (typeof route.query.id === 'string' && store.selectedEntry?.id && route.query.id !== store.selectedEntry.id) {
     return false
@@ -665,16 +1065,7 @@ async function applyRouteFocusRange() {
   const start = parseNumberQuery(route.query.focus_start)
   const end = parseNumberQuery(route.query.focus_end)
   if (start === null || end === null || !bodyRef.value) return false
-  await nextTick()
-  const safeStart = Math.max(0, Math.min(start, bodyDraft.value.length))
-  const safeEnd = Math.max(safeStart, Math.min(end, bodyDraft.value.length))
-  resizeBodyEditor()
-  bodyRef.value.focus()
-  bodyRef.value.setSelectionRange(safeStart, safeEnd)
-  scrollEditorTo(scrollTopForCaretPosition(bodyRef.value, safeStart, 0.5))
-  lastEditorInteraction.value = 'edit'
-  saveEditorPositionForArticle(store.selectedEntry?.id, 'edit')
-  return true
+  return focusBodyRange(start, end)
 }
 
 function parseNumberQuery(value: unknown): number | null {
@@ -933,6 +1324,8 @@ async function restoreSavedEditorPosition(articleId = store.selectedEntry?.id) {
 }
 
 async function restoreEditorPositionIfNeeded(articleId = store.selectedEntry?.id) {
+  const appliedMotifFocus = await applyMotifRouteFocus()
+  if (appliedMotifFocus) return
   const appliedRouteFocus = await applyRouteFocusRange()
   if (!appliedRouteFocus) {
     await restoreSavedEditorPosition(articleId)
@@ -1217,7 +1610,7 @@ onMounted(async () => {
     router.replace({ name: 'articles', query: { id: store.selectedEntry.id } })
   }
   syncDraftFromSelected()
-  await Promise.all([refreshEntryCollections(), refreshWritingNotes()])
+  await Promise.all([refreshEntryCollections(), refreshWritingNotes(), refreshMotifSourceExcerpts()])
   await restoreEditorPositionIfNeeded()
   updateTailSpace()
   window.addEventListener('resize', updateTailSpace)
@@ -1226,6 +1619,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  stopMotifAttachDrag()
   flushPendingEditorPosition()
   saveCurrentEditorPositionNow()
   void flushPendingArticleSave()
@@ -1244,6 +1638,7 @@ watch(
     syncDraftFromSelected()
     refreshEntryCollections()
     refreshWritingNotes()
+    refreshMotifSourceExcerpts()
     await restoreEditorPositionIfNeeded(_newId ?? undefined)
     updateTailSpace()
   }
@@ -1262,15 +1657,16 @@ watch(
     if (!saved) return
     await applyRouteArticle()
     syncDraftFromSelected()
+    await refreshMotifSourceExcerpts()
     await restoreEditorPositionIfNeeded()
     updateTailSpace()
   }
 )
 
 watch(
-  () => [route.query.focus_start, route.query.focus_end],
+  () => [route.query.focus_start, route.query.focus_end, route.query.motif_excerpt],
   () => {
-    void applyRouteFocusRange()
+    void restoreEditorPositionIfNeeded()
   }
 )
 
@@ -1440,6 +1836,12 @@ watch(
       >
         {{ exportError || exportMessage }}
       </div>
+      <div
+        v-if="motifJumpMessage || motifAttachNotice"
+        class="border-b border-amber-100 bg-amber-50 px-6 py-2 text-sm text-amber-800"
+      >
+        {{ motifJumpMessage || motifAttachNotice }}
+      </div>
 
       <div
         ref="editorScrollRef"
@@ -1498,11 +1900,13 @@ watch(
             @click="scheduleCurrentEditorPositionSave"
             @pointerup="handleBodyPointerSettled"
             @mouseup="handleBodyPointerSettled"
+            @contextmenu="handleBodyContextMenu"
             @focusout="handleBodyFocusOut"
             @select="scheduleCurrentEditorPositionSave"
             :style="{ paddingBottom: `${tailSpace}px` }"
             :class="[
               'w-full block overflow-hidden bg-[#fffdf8] focus:outline-none resize-none leading-relaxed',
+              motifHighlightActive ? 'motif-source-highlight' : '',
               settings.focusMode
                 ? 'min-h-[calc(100vh-5rem)] border-0 px-6 py-8 md:px-10 text-lg shadow-none focus:ring-0'
                 : 'min-h-[520px] rounded-[1.5rem] border border-stone-200 p-6 shadow-sm focus:ring-2 focus:ring-amber-300'
@@ -1512,6 +1916,103 @@ watch(
         </div>
         <div v-else class="text-center text-stone-400 mt-20">
           {{ t('articles.selectOrCreate') }}
+        </div>
+      </div>
+
+      <div
+        v-if="motifContextMenuOpen && motifAttachSelection"
+        class="fixed z-[65] w-[180px] rounded-2xl border border-amber-100 bg-[#fffdf8] p-1.5 shadow-xl shadow-stone-900/15"
+        :style="{ left: `${motifContextMenuX}px`, top: `${motifContextMenuY}px` }"
+        data-testid="motif-context-menu"
+      >
+        <button
+          class="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-stone-800 transition hover:bg-amber-50"
+          @mousedown.prevent
+          @click="openMotifAttachFromContextMenu"
+        >
+          {{ t('motifs.contextMenuAdd') }}
+        </button>
+      </div>
+
+      <div
+        v-if="motifAttachOpen && motifAttachSelection"
+        ref="motifAttachPanelRef"
+        class="fixed z-[60] flex max-h-[min(80vh,560px)] w-[min(380px,calc(100vw-32px))] flex-col overflow-hidden rounded-3xl border border-amber-100 bg-[#fffdf8]/95 shadow-2xl shadow-stone-900/15 backdrop-blur"
+        :style="{ left: `${motifAttachX}px`, top: `${motifAttachY}px` }"
+        data-testid="motif-attach-panel"
+      >
+        <div
+          class="flex cursor-move select-none items-start justify-between gap-3 border-b border-amber-100/70 px-4 py-3"
+          data-testid="motif-attach-drag-handle"
+          @pointerdown="startMotifAttachDrag"
+        >
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-teal-700">{{ t('motifs.attachTitle') }}</p>
+            <p class="mt-1 text-xs text-stone-400">{{ t('motifs.attachSourceArticle') }}</p>
+          </div>
+          <button @pointerdown.stop @click="closeMotifAttach" class="rounded-full px-2 py-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700">×</button>
+        </div>
+        <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+          <blockquote class="max-h-28 overflow-y-auto rounded-2xl bg-amber-50/70 px-3 py-2 text-sm leading-6 text-stone-700">
+            {{ motifAttachSelection.text }}
+          </blockquote>
+          <div v-if="motifAttachExistingExcerptId" class="mt-2 rounded-xl bg-teal-50 px-3 py-2 text-xs text-teal-800">
+            {{ t('motifs.attachExistingHint') }}
+          </div>
+          <div class="mt-3">
+            <input
+              v-model="motifAttachQuery"
+              data-testid="motif-attach-input"
+              class="w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-300 focus:ring-2 focus:ring-teal-100"
+              :placeholder="t('motifs.attachPlaceholder')"
+              @keydown="handleMotifAttachQueryKeydown"
+            />
+            <div v-if="motifSuggestions.length" class="mt-2 flex flex-wrap gap-1.5">
+              <button
+                v-for="motif in motifSuggestions"
+                :key="motif.id"
+                @click="addMotifAttachName(motif.name)"
+                class="rounded-full bg-white px-2.5 py-1 text-xs text-stone-600 ring-1 ring-stone-200 transition hover:bg-teal-50 hover:text-teal-800"
+              >
+                {{ motif.name }}
+              </button>
+            </div>
+          </div>
+          <div v-if="motifAttachNames.length" class="mt-3" data-testid="motif-attach-selected-list">
+            <div class="mb-1 text-xs font-semibold text-stone-500">{{ t('motifs.selectedMotifs') }}</div>
+            <div class="flex flex-wrap gap-1.5">
+              <button
+                v-for="name in motifAttachNames"
+                :key="name"
+                data-testid="motif-attach-selected-chip"
+                @click="removeMotifAttachName(name)"
+                class="rounded-full bg-teal-700 px-2.5 py-1 text-xs text-white transition hover:bg-teal-800"
+              >
+                {{ name }} ×
+              </button>
+            </div>
+          </div>
+          <textarea
+            v-model="motifAttachNote"
+            rows="3"
+            class="mt-3 w-full resize-none rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm leading-6 outline-none focus:border-teal-300 focus:ring-2 focus:ring-teal-100"
+            :placeholder="t('motifs.attachNotePlaceholder')"
+          />
+          <div v-if="motifAttachError" class="mt-2 rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-700">
+            {{ motifAttachError }}
+          </div>
+        </div>
+        <div class="flex shrink-0 justify-end gap-2 border-t border-amber-100/70 bg-[#fffdf8]/95 px-4 py-3">
+          <button @click="closeMotifAttach" class="rounded-xl bg-stone-100 px-3 py-2 text-sm text-stone-600 hover:bg-stone-200">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            @click="saveMotifAttachSelection"
+            :disabled="motifAttachSaving || (!motifAttachExistingExcerptId && !motifAttachNames.length && !motifAttachQuery.trim())"
+            class="rounded-xl bg-stone-900 px-3 py-2 text-sm font-semibold text-white hover:bg-stone-700 disabled:opacity-40"
+          >
+            {{ motifAttachSaving ? t('common.saving') : t('motifs.saveSelection') }}
+          </button>
         </div>
       </div>
     </main>
@@ -1537,6 +2038,58 @@ watch(
               <div class="flex justify-between">
                 <span>{{ t('articles.paragraphCount') }}</span><span class="font-medium">{{ paragraphCount }}</span>
               </div>
+            </div>
+          </section>
+
+          <section data-testid="article-motif-anchors">
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <h3 class="text-sm font-semibold text-stone-700">{{ t('motifs.sourceAnchors') }}</h3>
+              <span class="rounded-full bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-700">
+                {{ sortedMotifSourceExcerpts.length }}
+              </span>
+            </div>
+            <p class="mb-3 text-xs leading-5 text-stone-500">{{ t('motifs.sourceAnchorsHint') }}</p>
+            <div v-if="motifSourceError" class="mb-2 rounded-lg bg-red-50 p-2 text-xs text-red-700">
+              {{ motifSourceError }}
+            </div>
+            <div v-if="motifSourceLoading" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-400">
+              {{ t('common.loading') }}
+            </div>
+            <div v-else-if="!resolvedMotifSourceExcerpts.length" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-400">
+              {{ t('motifs.noSourceAnchors') }}
+            </div>
+            <div v-else class="space-y-2">
+              <button
+                v-for="item in resolvedMotifSourceExcerpts"
+                :key="item.excerpt.id"
+                type="button"
+                :disabled="item.range.status === 'missing'"
+                @click="jumpToMotifSourceExcerpt(item.excerpt)"
+                :class="[
+                  'w-full rounded-2xl border p-3 text-left transition',
+                  activeMotifExcerptId === item.excerpt.id
+                    ? 'border-teal-300 bg-teal-50/80 shadow-sm'
+                    : 'border-stone-200 bg-white hover:border-teal-200 hover:bg-teal-50/40',
+                  item.range.status === 'missing' ? 'cursor-not-allowed opacity-70' : '',
+                ]"
+              >
+                <p class="motif-anchor-preview text-sm leading-6 text-stone-800">
+                  {{ previewMotifExcerptText(item.excerpt.excerpt_text) }}
+                </p>
+                <div class="mt-2 flex flex-wrap gap-1.5">
+                  <span
+                    v-for="name in item.excerpt.motif_names"
+                    :key="`${item.excerpt.id}-${name}`"
+                    class="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-medium text-teal-800 ring-1 ring-teal-100"
+                  >
+                    {{ name }}
+                  </span>
+                </div>
+                <div class="mt-2 flex items-center justify-between gap-2 text-[11px] text-stone-400">
+                  <span>{{ motifRangeStatusLabel(item.range.status) }}</span>
+                  <span v-if="item.range.status !== 'missing'" class="font-semibold text-teal-700">{{ t('motifs.locateAnchor') }}</span>
+                </div>
+              </button>
             </div>
           </section>
 
@@ -1800,5 +2353,18 @@ watch(
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.motif-source-highlight::selection {
+  background: rgba(252, 211, 77, 0.68);
+  color: inherit;
+}
+
+.motif-anchor-preview {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-color: rgba(13, 148, 136, 0.65);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
 }
 </style>

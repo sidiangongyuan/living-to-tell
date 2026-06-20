@@ -36,6 +36,9 @@ UNKNOWN_DATE_KEY = "__unknown_date__"
 _USAGE_LABEL_KEYS = {
     "style": "reflib.usage_kind_style",
     "imagery": "reflib.usage_kind_imagery",
+    "structure": "reflib.usage_kind_structure",
+    "rhetoric": "reflib.usage_kind_rhetoric",
+    "diction": "reflib.usage_kind_diction",
     "technique": "reflib.usage_kind_technique",
     "character": "reflib.usage_kind_character",
     "setting": "reflib.usage_kind_setting",

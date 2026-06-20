@@ -32,6 +32,9 @@ def normalise_kind(value: Optional[str]) -> str:
 # Usage kinds for style specimens (文脉标本用途).
 USAGE_KIND_STYLE = "style"
 USAGE_KIND_IMAGERY = "imagery"
+USAGE_KIND_STRUCTURE = "structure"
+USAGE_KIND_RHETORIC = "rhetoric"
+USAGE_KIND_DICTION = "diction"
 USAGE_KIND_TECHNIQUE = "technique"
 USAGE_KIND_CHARACTER = "character"
 USAGE_KIND_SETTING = "setting"
@@ -43,12 +46,15 @@ USAGE_KIND_OTHER = "other"
 USAGE_KINDS: tuple[str, ...] = (
     USAGE_KIND_STYLE,
     USAGE_KIND_IMAGERY,
+    USAGE_KIND_STRUCTURE,
+    USAGE_KIND_RHETORIC,
+    USAGE_KIND_DICTION,
+    USAGE_KIND_REFLECTION,
+    USAGE_KIND_SETTING,
     USAGE_KIND_TECHNIQUE,
     USAGE_KIND_CHARACTER,
-    USAGE_KIND_SETTING,
     USAGE_KIND_PSYCHOLOGY,
     USAGE_KIND_PHILOSOPHY,
-    USAGE_KIND_REFLECTION,
     USAGE_KIND_OTHER,
 )
 

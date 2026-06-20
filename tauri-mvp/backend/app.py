@@ -11,6 +11,7 @@ from features.backup.routes import router as backup_router
 from features.collections.routes import router as collections_router
 from features.dates.routes import router as dates_router
 from features.library.routes import router as library_router
+from features.motifs.routes import router as motifs_router
 from features.notes.routes import router as notes_router
 from features.settings.routes import router as settings_router
 
@@ -22,6 +23,7 @@ _FEATURE_ROUTERS = (
     ai_cards_router,
     dates_router,
     library_router,
+    motifs_router,
     notes_router,
     backup_router,
     settings_router,
@@ -34,6 +36,7 @@ API_CAPABILITIES = [
     "data_location",
     "ai_chat_settings",
     "ai_task_presets",
+    "motif_star_map",
 ]
 
 

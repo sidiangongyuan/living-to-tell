@@ -100,6 +100,37 @@ def test_unknown_usage_kind_normalised_to_style(repo):
     assert normalise_usage_kind(None) == "style"
 
 
+def test_tauri_frontend_usage_kinds_round_trip(repo):
+    frontend_usage_kinds = [
+        "style",
+        "imagery",
+        "structure",
+        "rhetoric",
+        "diction",
+        "reflection",
+        "setting",
+        "technique",
+        "other",
+    ]
+
+    for usage_kind in frontend_usage_kinds:
+        passage = repo.create(
+            source_title=f"title-{usage_kind}",
+            content=f"body-{usage_kind}",
+            usage_kind=usage_kind,
+        )
+        assert passage.usage_kind == usage_kind
+
+        updated = repo.update(
+            passage.id,
+            source_title=passage.source_title,
+            content=passage.content,
+            usage_kind=usage_kind,
+        )
+        assert updated is not None
+        assert updated.usage_kind == usage_kind
+
+
 def test_reference_grouping_helper_groups_unlabeled_source_and_tag(repo):
     from writer.domain.models.reference_passage import ReferencePassage
     from writer.ui.reference_grouping import (

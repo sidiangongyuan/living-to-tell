@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::{env, fs};
+#[cfg(all(target_os = "windows", not(debug_assertions)))]
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 use tauri::State;
@@ -11,7 +13,7 @@ use tauri::{
     menu::MenuBuilder,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     webview::PageLoadEvent,
-    AppHandle, Emitter, Listener, Manager, WindowEvent,
+    AppHandle, Emitter, Listener, Manager, RunEvent, WindowEvent,
 };
 use tauri::utils::config::Color;
 #[cfg(not(debug_assertions))]
@@ -50,12 +52,16 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     MessageBoxW, IDNO, IDYES, MB_ICONQUESTION, MB_TASKMODAL, MB_YESNOCANCEL,
 };
 
+#[cfg(all(target_os = "windows", not(debug_assertions)))]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[derive(Clone)]
 struct AppState {
     backend_child: Arc<Mutex<Option<tauri_plugin_shell::process::CommandChild>>>,
     api_base_url: Arc<Mutex<Option<String>>>,
     close_preference: Arc<Mutex<ClosePreference>>,
     data_directory: Arc<Mutex<DataDirectoryOverrideState>>,
+    shutdown_requested: Arc<AtomicBool>,
     tray_available: bool,
 }
 
@@ -895,19 +901,25 @@ fn main() {
                     load_close_preference(app.handle(), tray_available),
                 )),
                 data_directory: Arc::new(Mutex::new(data_directory_state)),
+                shutdown_requested: Arc::new(AtomicBool::new(false)),
                 tray_available,
             };
 
             // Start backend sidecar
             #[cfg(not(debug_assertions))]
             {
+                kill_stale_backend_processes();
                 let backend_child_clone = app_state.backend_child.clone();
+                let shutdown_requested = app_state.shutdown_requested.clone();
                 let api_base_url_clone = app_state.api_base_url.clone();
                 let app_handle = app.handle().clone();
                 let backend_data_dir = active_data_dir.clone();
                 let backend_startup_at = startup_at;
 
                 tauri::async_runtime::spawn(async move {
+                    if shutdown_requested.load(Ordering::SeqCst) {
+                        return;
+                    }
                     match app_handle.shell().sidecar("living-to-tell-backend") {
                         Ok(cmd) => {
                             let cmd = match backend_data_dir {
@@ -916,8 +928,18 @@ fn main() {
                             };
                             match cmd.spawn() {
                                 Ok((mut rx, child)) => {
+                                    let child_pid = child.pid();
+                                    {
+                                        let mut slot = backend_child_clone.lock().unwrap();
+                                        if shutdown_requested.load(Ordering::SeqCst) {
+                                            drop(slot);
+                                            kill_backend_process_tree_by_pid(child_pid);
+                                            let _ = child.kill();
+                                            return;
+                                        }
+                                        *slot = Some(child);
+                                    }
                                     println!("Backend started");
-                                    *backend_child_clone.lock().unwrap() = Some(child);
                                     let mut logged_port_ready = false;
                                     while let Some(event) = rx.recv().await {
                                         if let CommandEvent::Stdout(bytes) = event {
@@ -995,8 +1017,13 @@ fn main() {
                 }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
+                kill_backend_for_app(app_handle);
+            }
+        });
 }
 
 impl ClosePreference {
@@ -1153,12 +1180,59 @@ fn show_main_window(app: &AppHandle) -> Result<(), String> {
 }
 
 fn kill_backend_child(state: &AppState) {
+    state.shutdown_requested.store(true, Ordering::SeqCst);
     if let Ok(mut child) = state.backend_child.lock() {
         if let Some(backend) = child.take() {
+            kill_backend_process_tree_by_pid(backend.pid());
             let _ = backend.kill();
             println!("Backend terminated");
         }
     }
+    kill_backend_processes_by_name();
+}
+
+fn kill_backend_for_app(app: &AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        kill_backend_child(&state);
+    } else {
+        kill_backend_processes_by_name();
+    }
+}
+
+#[cfg(all(target_os = "windows", not(debug_assertions)))]
+fn kill_backend_process_tree_by_pid(pid: u32) {
+    let result = StdCommand::new("taskkill")
+        .args(["/F", "/T", "/PID", &pid.to_string()])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+    if matches!(result, Ok(status) if status.success()) {
+        println!("Backend process tree terminated: {pid}");
+    }
+}
+
+#[cfg(any(not(target_os = "windows"), debug_assertions))]
+fn kill_backend_process_tree_by_pid(_pid: u32) {}
+
+#[cfg(not(debug_assertions))]
+fn kill_stale_backend_processes() {
+    kill_backend_processes_by_name();
+}
+
+#[cfg(all(target_os = "windows", not(debug_assertions)))]
+fn kill_backend_processes_by_name() {
+    for process_name in ["living-to-tell-backend.exe", "writer-backend.exe"] {
+        let result = StdCommand::new("taskkill")
+            .args(["/F", "/T", "/IM", process_name])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+        if matches!(result, Ok(status) if status.success()) {
+            println!("Backend process terminated: {process_name}");
+        }
+    }
+}
+
+#[cfg(any(not(target_os = "windows"), debug_assertions))]
+fn kill_backend_processes_by_name() {
 }
 
 fn build_tray(app: &AppHandle) -> Result<bool, tauri::Error> {

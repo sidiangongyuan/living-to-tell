@@ -37,6 +37,7 @@ from writer.storage.repositories.entry_repository import EntryRepository
 from writer.storage.repositories.entry_writing_note_repository import (
     EntryWritingNoteRepository,
 )
+from writer.storage.repositories.motif_repository import MotifRepository
 from writer.storage.repositories.project_repository import ProjectRepository
 from writer.storage.repositories.reference_repository import ReferenceRepository
 from writer.storage.repositories.settings_repository import SettingsRepository
@@ -62,6 +63,7 @@ class AppContainer:
     settings: Settings
     entry_repository: EntryRepository
     entry_writing_note_repository: EntryWritingNoteRepository
+    motif_repository: MotifRepository
     version_repository: VersionRepository
     reference_repository: ReferenceRepository
     project_repository: ProjectRepository
@@ -112,6 +114,7 @@ def build_container(db_path: Optional[Path] = None) -> AppContainer:
 
     entry_repo = EntryRepository(conn)
     entry_note_repo = EntryWritingNoteRepository(conn)
+    motif_repo = MotifRepository(conn)
     version_repo = VersionRepository(conn)
     reference_repo = ReferenceRepository(conn)
     project_repo = ProjectRepository(conn)
@@ -204,6 +207,7 @@ def build_container(db_path: Optional[Path] = None) -> AppContainer:
         settings=settings,
         entry_repository=entry_repo,
         entry_writing_note_repository=entry_note_repo,
+        motif_repository=motif_repo,
         version_repository=version_repo,
         reference_repository=reference_repo,
         project_repository=project_repo,

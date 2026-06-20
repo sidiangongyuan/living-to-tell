@@ -58,7 +58,11 @@ export function composeArticleBody(parts: EpigraphParts | null, body: string): s
   if (!parts || !parts.quote.trim() || !parts.attribution.trim()) {
     return body
   }
-  return `${parts.quote.trim()}\n——${parts.attribution.trim()}\n\n${body.trimStart()}`
+  return `${parts.quote.trim()}\n——${parts.attribution.trim()}\n\n${body}`
+}
+
+function stripEpigraphBodySeparator(text: string): string {
+  return text.replace(/^(?:\r\n|\r|\n)+/, '')
 }
 
 function makeEpigraph(text: string, quoteLines: string[], attribution: string, endOffset: number): EpigraphParts | null {
@@ -80,7 +84,7 @@ function makeEpigraph(text: string, quoteLines: string[], attribution: string, e
     quote,
     attribution: normalizedAttribution,
     raw,
-    body: text.slice(endOffset).trimStart(),
+    body: stripEpigraphBodySeparator(text.slice(endOffset)),
   }
 }
 

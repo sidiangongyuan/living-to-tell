@@ -300,6 +300,59 @@ CREATE INDEX IF NOT EXISTS idx_collection_entries_collection_order
 CREATE INDEX IF NOT EXISTS idx_collection_entries_entry
     ON collection_entries (entry_id);
 
+-- ---------------------------------------------------------------------------
+-- Motif star map: imagery nodes, saved excerpts, and multi-motif links.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS motif_nodes (
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL,
+    aliases_text TEXT NOT NULL DEFAULT '',
+    note         TEXT NOT NULL DEFAULT '',
+    tags_text    TEXT NOT NULL DEFAULT '',
+    pinned       INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_motif_nodes_name_ci
+    ON motif_nodes (lower(name));
+CREATE INDEX IF NOT EXISTS idx_motif_nodes_updated_at
+    ON motif_nodes (updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS motif_excerpts (
+    id                    TEXT PRIMARY KEY,
+    source_kind           TEXT NOT NULL CHECK (source_kind IN ('article', 'reference')),
+    source_id             TEXT NOT NULL,
+    source_title_snapshot TEXT NOT NULL DEFAULT '',
+    excerpt_text          TEXT NOT NULL,
+    note                  TEXT NOT NULL DEFAULT '',
+    selection_start       INTEGER,
+    selection_end         INTEGER,
+    before_context        TEXT NOT NULL DEFAULT '',
+    after_context         TEXT NOT NULL DEFAULT '',
+    created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_motif_excerpts_source
+    ON motif_excerpts (source_kind, source_id);
+CREATE INDEX IF NOT EXISTS idx_motif_excerpts_updated_at
+    ON motif_excerpts (updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS motif_excerpt_links (
+    id         TEXT PRIMARY KEY,
+    motif_id   TEXT NOT NULL REFERENCES motif_nodes(id) ON DELETE CASCADE,
+    excerpt_id TEXT NOT NULL REFERENCES motif_excerpts(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE(motif_id, excerpt_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_motif_excerpt_links_motif
+    ON motif_excerpt_links (motif_id);
+CREATE INDEX IF NOT EXISTS idx_motif_excerpt_links_excerpt
+    ON motif_excerpt_links (excerpt_id);
+
 CREATE TABLE IF NOT EXISTS work_fragment_refs (
     id            TEXT PRIMARY KEY,
     work_id       TEXT NOT NULL REFERENCES works(id) ON DELETE CASCADE,

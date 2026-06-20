@@ -29,8 +29,9 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 | **Article Studio** | Draft long-form writing with autosave, tags, search, epigraphs, focus mode, notes, and export. |
 | **Collections** | Arrange multiple articles into a reading order and export them as a collected manuscript. |
 | **Reference Library** | Keep quotes, source titles, authors, usage notes, and citation-ready snippets in one place. |
-| **Scoped AI** | Use task tools or persistent chat for an article, a collection, or the whole workspace. |
+| **Article AI** | Use focused AI tools and article-scoped chat while keeping every write-back explicit. |
 | **AI Cards** | Save reusable style, character, and setting context for later prompts. |
+| **Motif Star Map** | Mark selected text as motifs, revisit source anchors, and explore how motifs co-occur. |
 | **Local First** | Store writing data locally and send text to AI only when you explicitly run an AI action. |
 
 ## Current Preview Status
@@ -41,7 +42,9 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 | Article writing | Usable |
 | Collections | Usable |
 | Reference library | Usable |
-| AI tools and scoped chat | Usable after provider setup |
+| Article AI tools and chat | Usable after provider setup |
+| Motif star map | Usable preview |
+| Data directory migration | Usable from Settings |
 | Dark mode | Hidden until the theme pass is complete |
 | macOS / Linux packages | Planned after Windows stabilizes |
 
@@ -83,10 +86,20 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 - Jump from the daily quote card to the matching reference passage.
 - Copy the passage body, or copy a complete citation with title and author.
 
+### Motif Star Map
+
+- Select text in an article or reference passage, right-click, and save it to one or more motifs.
+- Reopen an existing source selection without creating duplicate excerpts.
+- Use source anchors to jump from the article context pane back to the marked sentence.
+- Explore a literary star map where node size, color, and links reflect excerpt usage and co-occurrence.
+- Remove an excerpt from the current motif without deleting the same excerpt from other motifs.
+
 ### AI Workspace
 
 - Focused task tools for polish, rewrite, expand, and continue, each with its own controls.
-- Free chat with one ongoing conversation per global scope, article, or collection.
+- Article-scoped chat keeps one ongoing conversation per article.
+- AI replies in article chat can be copied or saved as article notes.
+- Standing chat instructions let you keep long-term style preferences without rewriting them in every message.
 - AI results are previewed before writing back, with explicit replace, insert, and copy actions.
 - Personal presets for each writing tool.
 - AI Cards for reusable style, character, and setting context, with type/source filters and keyword search.
@@ -95,7 +108,10 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 ### Desktop Experience
 
 - Windows desktop preview with a simple installer.
+- Light startup splash gives immediate feedback while the bundled backend is starting.
 - Close behavior can be set to ask every time, minimize to tray, or exit directly.
+- Data and Storage settings show the active SQLite database, backup folder, checkpoint folder, and custom data-directory status.
+- Data-directory migration copies data to the new location and leaves the previous folder untouched.
 - Public preview uses light mode only while the dark theme is being polished.
 
 ## Download
@@ -145,6 +161,11 @@ Long Gemini requests default to a 120 second wait. Advanced users can tune this 
 ## Recently Completed
 
 - Renamed the public app to Living to Tell / 活着为了讲述.
+- Added a motif star map with right-click text capture, source anchors, co-occurrence links, deduplication, and safer unlink behavior.
+- Added article-scoped AI chat, standing instructions, copy actions, and save-as-note actions.
+- Added Data and Storage settings with directory display, open-folder actions, and copy-based migration.
+- Added a Tauri startup splash so cold starts show immediate progress instead of a blank window.
+- Hid the uninstall-time app-data deletion option and clarified that uninstalling does not delete writing data.
 - Added article notes, focused AI writing controls, per-tool presets, and explicit AI apply actions.
 - Added reliable article-position restore, wider writing layout, and typewriter-style end-of-document spacing.
 - Added daily writing view with reference quote links and one-click start writing.
@@ -176,16 +197,20 @@ The public TODO list is kept visible but folded so the README stays readable.
 - [x] Make AI results safer to apply with clearer original-vs-result comparison and explicit replace / insert / copy actions.
 - [x] Give polish, rewrite, expand, and continue their own focused controls.
 - [x] Let users save personal prompt presets for each writing tool.
+- [x] Add article-scoped AI chat with standing instructions and save-reply-as-note.
 - [ ] Add clearer long-text request size, wait-time, and timeout feedback.
 - [ ] Make it easier to turn AI chat ideas into articles, notes, or reference material.
 
 ### Knowledge & Planning
 
-- [ ] Add a future mind map / imagery collection space for organizing themes, symbols, motifs, character links, arguments, references, and AI-generated ideas visually.
+- [x] Add a motif star map for organizing recurring images, symbols, and source excerpts visually.
+- [ ] Add richer graph views for themes, character links, arguments, references, and AI-generated ideas.
 - [ ] Add richer reference-library views for large reading collections.
 
 ### Platform
 
+- [x] Add visible Data and Storage settings with copy-based data-directory migration.
+- [x] Keep uninstall from deleting writing data by default.
 - [ ] Add optional cloud sync for writers who want the same local-first workspace across devices.
 - [ ] Add signed Windows builds or published checksums for preview installers.
 - [ ] Evaluate macOS and Linux packaging after the Windows workflow is mature.

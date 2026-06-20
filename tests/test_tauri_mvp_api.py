@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from types import SimpleNamespace
 import sys
+import uuid
 from pathlib import Path
 
 
@@ -33,7 +34,12 @@ def test_tauri_app_version_capabilities(monkeypatch):
     assert payload["app_name"] == "Living to Tell"
     assert payload["version"] == "0.1.7"
     assert payload["api_version"] == "2.0.0"
-    assert {"data_location", "ai_chat_settings", "ai_task_presets"}.issubset(
+    assert {
+        "data_location",
+        "ai_chat_settings",
+        "ai_task_presets",
+        "motif_star_map",
+    }.issubset(
         set(payload["capabilities"])
     )
 
@@ -245,6 +251,530 @@ def test_tauri_library_allows_draft_reference_without_source(monkeypatch):
     )
     assert empty_body.status_code == 400
     assert "content is required" in empty_body.json()["detail"]
+
+
+def test_tauri_library_round_trips_frontend_usage_kinds(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    frontend_usage_kinds = [
+        "style",
+        "imagery",
+        "structure",
+        "rhetoric",
+        "diction",
+        "reflection",
+        "setting",
+        "technique",
+        "other",
+    ]
+
+    created = client.post(
+        "/api/library/references",
+        json={
+            "source_title": "用途测试",
+            "content": "标本正文",
+            "source_author": "",
+            "tags": [],
+            "kind": "excerpt",
+            "usage_kind": "style",
+            "personal_note": "",
+        },
+    )
+    assert created.status_code == 201
+    ref_id = created.json()["id"]
+
+    for usage_kind in frontend_usage_kinds:
+        updated = client.put(
+            f"/api/library/references/{ref_id}",
+            json={
+                "source_title": "用途测试",
+                "content": "标本正文",
+                "source_author": "",
+                "tags": [],
+                "kind": "excerpt",
+                "usage_kind": usage_kind,
+                "personal_note": "",
+            },
+        )
+        assert updated.status_code == 200
+        assert updated.json()["usage_kind"] == usage_kind
+
+
+def test_tauri_motifs_create_excerpt_and_graph(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    entry = client.post(
+        "/api/articles",
+        json={"title": "花园", "body": "玫瑰在夜里像血一样醒着。", "tags": []},
+    ).json()
+
+    created = client.post(
+        "/api/motifs/excerpts",
+        json={
+            "source_kind": "article",
+            "source_id": entry["id"],
+            "excerpt_text": "玫瑰在夜里像血一样醒着。",
+            "selection_start": 0,
+            "selection_end": 13,
+            "motif_names": ["玫瑰", "血"],
+        },
+    )
+    assert created.status_code == 201, created.text
+    excerpt = created.json()
+    assert excerpt["source_exists"] is True
+    assert excerpt["source_current_title"] == "花园"
+    assert excerpt["motif_names"] == ["玫瑰", "血"]
+
+    motifs = client.get("/api/motifs").json()
+    by_name = {motif["name"]: motif for motif in motifs}
+    assert set(by_name) >= {"玫瑰", "血"}
+    assert by_name["玫瑰"]["excerpt_count"] == 1
+
+    graph = client.get("/api/motifs/graph?limit=20").json()
+    assert {node["name"] for node in graph["nodes"]} >= {"玫瑰", "血"}
+    assert graph["edges"][0]["shared_excerpts"] == 1
+    assert graph["edges"][0]["shared_sources"] == 1
+
+    rose_id = by_name["玫瑰"]["id"]
+    listed = client.get(f"/api/motifs/{rose_id}/excerpts").json()
+    assert [item["id"] for item in listed] == [excerpt["id"]]
+
+    local_graph = client.get(f"/api/motifs/{rose_id}/graph").json()
+    assert local_graph["nodes"][0]["id"] == rose_id
+    assert local_graph["nodes"][0]["is_center"] is True
+
+
+def test_tauri_motifs_excerpt_lookup_merge_and_unlink(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    sentence = "岁月穿过城市。"
+    entry = client.post(
+        "/api/articles",
+        json={"title": "城市", "body": f"{sentence}{sentence}", "tags": []},
+    ).json()
+
+    first = client.post(
+        "/api/motifs/excerpts",
+        json={
+            "source_kind": "article",
+            "source_id": entry["id"],
+            "excerpt_text": sentence,
+            "selection_start": 0,
+            "selection_end": len(sentence),
+            "motif_names": ["岁月"],
+        },
+    )
+    assert first.status_code == 201, first.text
+    first_excerpt = first.json()
+
+    lookup = client.post(
+        "/api/motifs/excerpts/lookup",
+        json={
+            "source_kind": "article",
+            "source_id": entry["id"],
+            "excerpt_text": sentence,
+            "selection_start": 0,
+            "selection_end": len(sentence),
+        },
+    )
+    assert lookup.status_code == 200, lookup.text
+    assert lookup.json()["id"] == first_excerpt["id"]
+
+    merged = client.post(
+        "/api/motifs/excerpts",
+        json={
+            "source_kind": "article",
+            "source_id": entry["id"],
+            "excerpt_text": sentence,
+            "selection_start": 0,
+            "selection_end": len(sentence),
+            "motif_names": ["城市"],
+        },
+    )
+    assert merged.status_code == 201, merged.text
+    assert merged.json()["id"] == first_excerpt["id"]
+    assert set(merged.json()["motif_names"]) == {"岁月", "城市"}
+
+    linked = client.post(
+        f"/api/motifs/excerpts/{first_excerpt['id']}/motifs",
+        json={"motif_names": ["消息"]},
+    )
+    assert linked.status_code == 200, linked.text
+    assert set(linked.json()["motif_names"]) == {"岁月", "城市", "消息"}
+
+    motif_by_name = {motif["name"]: motif for motif in client.get("/api/motifs").json()}
+    years_id = motif_by_name["岁月"]["id"]
+    city_id = motif_by_name["城市"]["id"]
+    message_id = motif_by_name["消息"]["id"]
+
+    unlink_years = client.delete(f"/api/motifs/excerpts/{first_excerpt['id']}/motifs/{years_id}")
+    assert unlink_years.status_code == 204
+    assert client.get(f"/api/motifs/{years_id}/excerpts").json() == []
+    assert [item["id"] for item in client.get(f"/api/motifs/{city_id}/excerpts").json()] == [first_excerpt["id"]]
+
+    assert client.delete(f"/api/motifs/excerpts/{first_excerpt['id']}/motifs/{city_id}").status_code == 204
+    assert client.delete(f"/api/motifs/excerpts/{first_excerpt['id']}/motifs/{message_id}").status_code == 204
+    missing = client.post(
+        "/api/motifs/excerpts/lookup",
+        json={
+            "source_kind": "article",
+            "source_id": entry["id"],
+            "excerpt_text": sentence,
+            "selection_start": 0,
+            "selection_end": len(sentence),
+        },
+    )
+    assert missing.status_code == 404
+
+
+def test_tauri_motifs_lookup_and_create_reuse_excerpt_after_position_drift(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    sentence = "裙摆在移动间带起一阵微弱的风，那股苦杏仁的味道随之变得浓郁，又迅速在空气中稀释。"
+    entry = client.post(
+        "/api/articles",
+        json={"title": "苦杏仁、凉面与那一阵风", "body": sentence, "tags": []},
+    ).json()
+    created = client.post(
+        "/api/motifs/excerpts",
+        json={
+            "source_kind": "article",
+            "source_id": entry["id"],
+            "excerpt_text": sentence,
+            "selection_start": 0,
+            "selection_end": len(sentence),
+            "motif_names": ["测试意象｜往事"],
+        },
+    )
+    assert created.status_code == 201, created.text
+    excerpt_id = created.json()["id"]
+
+    new_body = f"前面新增了一些文字。\n\n{sentence}\n\n后文。"
+    current_start = new_body.index(sentence)
+    current_end = current_start + len(sentence)
+    updated = client.put(
+        f"/api/articles/{entry['id']}",
+        json={"title": entry["title"], "body": new_body, "tags": []},
+    )
+    assert updated.status_code == 200, updated.text
+
+    lookup = client.post(
+        "/api/motifs/excerpts/lookup",
+        json={
+            "source_kind": "article",
+            "source_id": entry["id"],
+            "excerpt_text": sentence,
+            "selection_start": current_start,
+            "selection_end": current_end,
+            "before_context": new_body[max(0, current_start - 90):current_start],
+            "after_context": new_body[current_end:current_end + 90],
+        },
+    )
+    assert lookup.status_code == 200, lookup.text
+    assert lookup.json()["id"] == excerpt_id
+    assert lookup.json()["selection_start"] == current_start
+    assert lookup.json()["selection_end"] == current_end
+
+    merged = client.post(
+        "/api/motifs/excerpts",
+        json={
+            "source_kind": "article",
+            "source_id": entry["id"],
+            "excerpt_text": sentence,
+            "selection_start": current_start,
+            "selection_end": current_end,
+            "before_context": new_body[max(0, current_start - 90):current_start],
+            "after_context": new_body[current_end:current_end + 90],
+            "motif_names": ["测试意象｜风"],
+        },
+    )
+    assert merged.status_code == 201, merged.text
+    assert merged.json()["id"] == excerpt_id
+    assert set(merged.json()["motif_names"]) == {"测试意象｜往事", "测试意象｜风"}
+    source_excerpts = client.get(f"/api/motifs/excerpts/source/article/{entry['id']}")
+    assert source_excerpts.status_code == 200, source_excerpts.text
+    assert [item["id"] for item in source_excerpts.json()] == [excerpt_id]
+
+
+def test_tauri_motifs_source_list_merges_historical_duplicate_rows(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    sentence = "裙摆在移动间带起一阵微弱的风，那股苦杏仁的味道随之变得浓郁，又迅速在空气中稀释。"
+    body = f"前文。\n\n{sentence}\n\n后文。"
+    entry = client.post(
+        "/api/articles",
+        json={"title": "苦杏仁、凉面与那一阵风", "body": body, "tags": []},
+    ).json()
+    current_start = body.index(sentence)
+    current_end = current_start + len(sentence)
+    first = client.post(
+        "/api/motifs/excerpts",
+        json={
+            "source_kind": "article",
+            "source_id": entry["id"],
+            "excerpt_text": sentence,
+            "selection_start": current_start,
+            "selection_end": current_end,
+            "motif_names": ["测试意象｜往事"],
+            "note": "第一条备注",
+        },
+    )
+    assert first.status_code == 201, first.text
+    first_excerpt = first.json()
+
+    container = sys.modules["deps"].get_container()
+    wind = (
+        container.motif_repository.find_node_by_name("测试意象｜风")
+        or container.motif_repository.create_node(name="测试意象｜风")
+    )
+    duplicate_id = str(uuid.uuid4())
+    container.connection.execute(
+        """
+        INSERT INTO motif_excerpts
+            (id, source_kind, source_id, source_title_snapshot, excerpt_text, note,
+             selection_start, selection_end, before_context, after_context)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            duplicate_id,
+            "article",
+            entry["id"],
+            entry["title"],
+            sentence,
+            "第二条备注",
+            current_start + 40,
+            current_end + 40,
+            "",
+            "",
+        ),
+    )
+    container.connection.execute(
+        "INSERT INTO motif_excerpt_links (id, motif_id, excerpt_id) VALUES (?, ?, ?)",
+        (str(uuid.uuid4()), wind.id, duplicate_id),
+    )
+    container.connection.commit()
+
+    source_excerpts = client.get(f"/api/motifs/excerpts/source/article/{entry['id']}")
+    assert source_excerpts.status_code == 200, source_excerpts.text
+    payload = source_excerpts.json()
+    assert len(payload) == 1
+    assert payload[0]["id"] == first_excerpt["id"]
+    assert payload[0]["selection_start"] == current_start
+    assert payload[0]["selection_end"] == current_end
+    assert set(payload[0]["motif_names"]) == {"测试意象｜往事", "测试意象｜风"}
+    assert "第一条备注" in payload[0]["note"]
+    assert "第二条备注" in payload[0]["note"]
+
+
+def test_tauri_motifs_set_excerpt_motifs_and_list_by_source(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    sentence = "城市有一封没有寄出的消息。"
+    entry = client.post(
+        "/api/articles",
+        json={"title": "消息", "body": sentence, "tags": []},
+    ).json()
+    created = client.post(
+        "/api/motifs/excerpts",
+        json={
+            "source_kind": "article",
+            "source_id": entry["id"],
+            "excerpt_text": sentence,
+            "selection_start": 0,
+            "selection_end": len(sentence),
+            "motif_names": ["城市", "消息"],
+        },
+    )
+    assert created.status_code == 201, created.text
+    excerpt = created.json()
+
+    source_excerpts = client.get(
+        f"/api/motifs/excerpts/source/article/{entry['id']}"
+    )
+    assert source_excerpts.status_code == 200
+    assert [item["id"] for item in source_excerpts.json()] == [excerpt["id"]]
+
+    updated = client.put(
+        f"/api/motifs/excerpts/{excerpt['id']}/motifs",
+        json={"motif_names": ["消息"], "note": "只保留消息"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["deleted"] is False
+    assert updated.json()["excerpt"]["motif_names"] == ["消息"]
+    motif_by_name = {motif["name"]: motif for motif in client.get("/api/motifs").json()}
+    assert client.get(f"/api/motifs/{motif_by_name['城市']['id']}/excerpts").json() == []
+    assert [item["id"] for item in client.get(f"/api/motifs/{motif_by_name['消息']['id']}/excerpts").json()] == [excerpt["id"]]
+
+    deleted = client.put(
+        f"/api/motifs/excerpts/{excerpt['id']}/motifs",
+        json={"motif_names": []},
+    )
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json() == {"excerpt": None, "deleted": True}
+    assert client.get(f"/api/motifs/excerpts/source/article/{entry['id']}").json() == []
+
+
+def test_tauri_motifs_crud_reference_source_density_and_delete(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    created_node = client.post(
+        "/api/motifs",
+        json={
+            "name": "月亮",
+            "aliases": ["月"],
+            "note": "冷光。",
+            "tags": ["天体"],
+            "pinned": True,
+        },
+    )
+    assert created_node.status_code == 201, created_node.text
+    node = created_node.json()
+    assert node["name"] == "月亮"
+    assert node["aliases"] == ["月"]
+    assert node["pinned"] is True
+
+    updated_node = client.put(
+        f"/api/motifs/{node['id']}",
+        json={
+            "name": "月光",
+            "aliases": ["月亮"],
+            "note": "更偏向照明和凝视。",
+            "tags": ["光"],
+            "pinned": False,
+        },
+    )
+    assert updated_node.status_code == 200, updated_node.text
+    node = updated_node.json()
+    assert node["name"] == "月光"
+    assert node["tags"] == ["光"]
+
+    reference = client.post(
+        "/api/library/references",
+        json={
+            "source_title": "",
+            "content": "井口收着一点月光。",
+            "source_author": "",
+            "tags": [],
+            "kind": "excerpt",
+            "usage_kind": "imagery",
+            "personal_note": "",
+        },
+    ).json()
+    excerpt_response = client.post(
+        "/api/motifs/excerpts",
+        json={
+            "source_kind": "reference",
+            "source_id": reference["id"],
+            "excerpt_text": "井口收着一点月光。",
+            "motif_ids": [node["id"]],
+            "motif_names": ["井"],
+            "selection_start": 0,
+            "selection_end": 9,
+        },
+    )
+    assert excerpt_response.status_code == 201, excerpt_response.text
+    excerpt = excerpt_response.json()
+    assert excerpt["source_kind"] == "reference"
+    assert excerpt["source_exists"] is True
+    assert set(excerpt["motif_names"]) == {"月光", "井"}
+
+    dense_graph = client.get("/api/motifs/graph?limit=2&density=0")
+    assert dense_graph.status_code == 200
+    assert len(dense_graph.json()["nodes"]) <= 2
+
+    delete_excerpt = client.delete(f"/api/motifs/excerpts/{excerpt['id']}")
+    assert delete_excerpt.status_code == 204
+    assert client.get(f"/api/motifs/{node['id']}/excerpts").json() == []
+
+    delete_node = client.delete(f"/api/motifs/{node['id']}")
+    assert delete_node.status_code == 204
+    assert client.get(f"/api/library/references/{reference['id']}").status_code == 200
+
+
+def test_tauri_motifs_list_search_limit_and_pinned_order(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    suffix = uuid.uuid4().hex[:8]
+    rose = f"排序玫瑰-{suffix}"
+    pinned_rose = f"排序血玫瑰-{suffix}"
+    moon = f"排序月亮-{suffix}"
+
+    for name, pinned in [(rose, False), (pinned_rose, True), (moon, False)]:
+        response = client.post(
+            "/api/motifs",
+            json={
+                "name": name,
+                "aliases": [],
+                "note": "花园线索" if "玫瑰" in name else "",
+                "tags": ["植物"] if "玫瑰" in name else ["天体"],
+                "pinned": pinned,
+            },
+        )
+        assert response.status_code == 201
+
+    searched = client.get(f"/api/motifs?q={suffix}&limit=1")
+    assert searched.status_code == 200
+    data = searched.json()
+    assert [item["name"] for item in data] == [pinned_rose]
+    assert data[0]["pinned"] is True
+
+
+def test_tauri_motifs_reject_invalid_excerpt_payloads(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    entry = client.post(
+        "/api/articles",
+        json={"title": "风", "body": "一阵风。", "tags": []},
+    ).json()
+
+    empty_text = client.post(
+        "/api/motifs/excerpts",
+        json={
+            "source_kind": "article",
+            "source_id": entry["id"],
+            "excerpt_text": " ",
+            "motif_names": ["风"],
+        },
+    )
+    assert empty_text.status_code == 400
+    assert "Excerpt text is required" in empty_text.json()["detail"]
+
+    empty_motifs = client.post(
+        "/api/motifs/excerpts",
+        json={
+            "source_kind": "article",
+            "source_id": entry["id"],
+            "excerpt_text": "一阵风。",
+            "motif_names": [],
+        },
+    )
+    assert empty_motifs.status_code == 400
+    assert "At least one motif is required" in empty_motifs.json()["detail"]
+
+    invalid_source_kind = client.post(
+        "/api/motifs/excerpts",
+        json={
+            "source_kind": "collection",
+            "source_id": entry["id"],
+            "excerpt_text": "一阵风。",
+            "motif_names": ["风"],
+        },
+    )
+    assert invalid_source_kind.status_code == 422
+
+
+def test_tauri_motifs_reject_missing_source(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    response = client.post(
+        "/api/motifs/excerpts",
+        json={
+            "source_kind": "article",
+            "source_id": "missing",
+            "excerpt_text": "失去来源的句子。",
+            "motif_names": ["失踪"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Source not found" in response.json()["detail"]
 
 
 def test_tauri_daily_quote_returns_full_reference_and_id(monkeypatch):

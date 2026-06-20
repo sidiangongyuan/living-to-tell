@@ -33,6 +33,11 @@ const router = createRouter({
       component: () => import('./features/library/LibraryView.vue')
     },
     {
+      path: '/motifs',
+      name: 'motifs',
+      component: () => import('./features/motifs/MotifsView.vue')
+    },
+    {
       path: '/ai-cards',
       name: 'ai-cards',
       component: () => import('./features/ai_cards/AiCardsView.vue')

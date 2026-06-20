@@ -1,6 +1,6 @@
 # Living to Tell Tauri Preview Changelog
 
-## 0.1.7 - Living to Tell Brand Preview (2026-06-18)
+## 0.1.7 - Living to Tell Major Preview (2026-06-20)
 
 ### Added
 
@@ -8,6 +8,13 @@
 - Added copy-only migration from the old Writer data directory to `%APPDATA%\LivingToTell\LivingToTell\living-to-tell.sqlite3`.
 - Added safe demo-data screenshot capture so public screenshots do not include private writing, account paths, or local credential files.
 - Added migration tests for the new app data path.
+- Added Data and Storage settings that show the current data directory, SQLite database, backup folder, checkpoint folder, and custom-directory status.
+- Added copy-based data-directory migration so users can switch storage locations without deleting the old folder.
+- Added a light Tauri startup splash window so cold starts show progress instead of a blank window.
+- Added article-scoped AI chat with standing instructions, copy actions, and save-reply-as-article-note actions.
+- Added first-run welcome checklist entries for creating articles, saving references, configuring AI, opening article chat, and reading data/backup notes.
+- Added the Motif Star Map for saving selected article/reference text into motifs, exploring co-occurrence, and jumping back to source anchors.
+- Added motif excerpt deduplication and repair for position drift after article edits.
 
 ### Changed
 
@@ -15,11 +22,25 @@
 - Updated release assets to use English filenames: `LivingToTell_0.1.7_x64-setup.exe` and `LivingToTell_0.1.7_x64_zh-CN.msi`.
 - Renamed the packaged backend sidecar to `living-to-tell-backend`.
 - Kept old Writer data and preferences as compatibility sources; no old user data is deleted.
+- Public AI chat UI now focuses on article context instead of exposing unfinished global or collection chat entry points.
+- Reference-library line statistics now use non-empty paragraph counts where appropriate.
+- Article list filtering now supports single-tag filtering combined with keyword search.
+- The motif attach flow now uses right-click selection instead of opening automatically after a left-click selection.
 
 ### Fixed
 
 - Removed the bad tracked `app-icon.png` file that contained HTML instead of image bytes.
 - Updated installer process cleanup so upgrades can close both old Writer processes and new Living to Tell processes before copying files.
+- Hid the installer/uninstaller app-data deletion option so uninstalling does not offer a dangerous one-click path to writing data.
+- Fixed old backend sidecar leftovers by tightening process cleanup and adding backend capability/version checks.
+- Replaced raw `Not Found` and `Failed to fetch` surfaces with user-facing backend connection/version messages.
+- Fixed article position restore by using a reliable outer-scroll writing surface and separate read/edit position records.
+- Fixed article epigraph saving so leading full-width indentation in the first body paragraph is preserved.
+- Fixed context tag switching in the reference library.
+- Fixed backend processes lingering after app exit.
+- Fixed motif star map density controls, local graph label overlap, duplicate bottom index, and English `Motif not found` errors.
+- Fixed motif excerpt deletion semantics so removing from one motif does not delete the same excerpt from other motifs.
+- Fixed motif lookup after source-position drift so the same sentence reopens existing motif chips and historical duplicate anchors merge automatically.
 
 ### Verification
 
