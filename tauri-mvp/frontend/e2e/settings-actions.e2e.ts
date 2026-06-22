@@ -25,11 +25,20 @@ const baseAiSettings = {
       account: 'writer@example.com',
       proxy: null,
     },
+    opencode: {
+      available: true,
+      path: 'C:\\Users\\Test\\.local\\share\\opencode\\auth.json',
+      reason: '',
+      command: 'opencode',
+      account: null,
+      proxy: null,
+    },
   },
   model_presets: {
     openai: ['gpt-4o-mini', 'gpt-4.1'],
     gemini: ['gemini-2.5-flash', 'gemini-2.5-pro'],
     gemini_cli: ['gemini-cli-default'],
+    opencode: ['opencode/deepseek-v4-flash-free'],
   },
 }
 
@@ -66,6 +75,7 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
     aiLiveTests: [] as Array<Record<string, unknown>>,
     codexImports: 0,
     geminiImports: 0,
+    modelFetches: [] as Array<string>,
     migrations: [] as Array<Record<string, unknown>>,
   }
 
@@ -139,6 +149,34 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
         transport: 'gateway_compatible',
         elapsed_ms: 120,
         preview: '雨夜车站，两个人就此告别。',
+      },
+    })
+  })
+
+  await page.route('http://backend.test/api/settings/ai/models?*', async (route) => {
+    const url = new URL(route.request().url())
+    const provider = url.searchParams.get('provider') ?? ''
+    state.modelFetches.push(provider)
+    if (provider === 'opencode') {
+      await route.fulfill({
+        json: {
+          provider,
+          models: [
+            'opencode/deepseek-v4-flash-free',
+            'opencode/mimo-v2.5-free',
+          ],
+          source: 'live',
+          message: '已从 OpenCode 真实拉取模型列表。',
+        },
+      })
+      return
+    }
+    await route.fulfill({
+      json: {
+        provider,
+        models: aiSettings.model_presets[provider as keyof typeof aiSettings.model_presets] ?? [],
+        source: 'preset',
+        message: '当前 provider 暂未启用真实模型拉取，已显示内置预设。',
       },
     })
   })
@@ -231,6 +269,34 @@ test('settings AI buttons import, test, save, and reset with visible feedback', 
 
   await page.getByRole('button', { name: '重新显示' }).click()
   await expect(page.getByText('欢迎清单会在日期页重新显示。')).toBeVisible()
+})
+
+test('settings supports OpenCode model refresh and local login config', async ({ page }) => {
+  const state = await mockSettingsPage(page)
+
+  await page.goto('/settings')
+  await page.locator('section').filter({ hasText: 'AI 配置' }).locator('select').first().selectOption('opencode')
+  const aiSection = page.locator('section').filter({ hasText: 'AI 配置' })
+  const modelInput = aiSection.locator('input').first()
+
+  await expect(page.getByText('OpenCode 使用本机 opencode auth login 的登录状态')).toBeVisible()
+  await expect(page.getByText(/命令: opencode/)).toBeVisible()
+  await expect(modelInput).toHaveValue('opencode/deepseek-v4-flash-free')
+
+  await page.getByRole('button', { name: '获取模型' }).click()
+  await expect.poll(() => state.modelFetches).toContain('opencode')
+  await expect(page.getByText('已从 OpenCode 真实拉取模型列表。')).toBeVisible()
+  await aiSection.locator('select').nth(1).selectOption('opencode/mimo-v2.5-free')
+  await expect(modelInput).toHaveValue('opencode/mimo-v2.5-free')
+
+  await page.getByRole('button', { name: '保存设置' }).click()
+  await expect.poll(() => state.aiSaves.at(-1)).toEqual(expect.objectContaining({
+    provider_name: 'opencode',
+    base_url: null,
+    model: 'opencode/mimo-v2.5-free',
+    api_key_source: 'opencode',
+    gemini_cli_proxy: null,
+  }))
 })
 
 test('settings data storage buttons call native commands and protect migration with confirmation', async ({ page }) => {

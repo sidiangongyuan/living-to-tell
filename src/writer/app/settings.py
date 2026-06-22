@@ -27,10 +27,11 @@ KEY_AI_GEMINI_CLI_PROXY = "ai.gemini_cli_proxy"
 KEY_AI_CUSTOM_TASK_PRESETS = "ai.custom_task_presets"
 
 DEFAULT_GEMINI_CLI_MODEL = "gemini-cli-default"
+DEFAULT_OPENCODE_MODEL = "opencode/deepseek-v4-flash-free"
 OPENAI_DEFAULT_MODELS = ("gpt-4o-mini",)
 
-RUNTIME_AUTH_SOURCES = ("codex", "gemini", "gemini-cli")
-SUPPORTED_AI_PROVIDERS = ("openai", "gemini", "gemini_cli")
+RUNTIME_AUTH_SOURCES = ("codex", "gemini", "gemini-cli", "opencode")
+SUPPORTED_AI_PROVIDERS = ("openai", "gemini", "gemini_cli", "opencode")
 
 KEY_LANGUAGE = "ui.language"
 DEFAULT_LANGUAGE = "en"
@@ -174,6 +175,11 @@ class Settings:
         model = self._repo.get(KEY_AI_MODEL) or defaults.model
         if provider_name == "gemini_cli" and model.strip().lower() in OPENAI_DEFAULT_MODELS:
             model = DEFAULT_GEMINI_CLI_MODEL
+        if provider_name == "opencode" and (
+            not model.strip()
+            or model.strip().lower() in {"default", "auto", *OPENAI_DEFAULT_MODELS}
+        ):
+            model = DEFAULT_OPENCODE_MODEL
         return AiConfig(
             provider_name=provider_name,
             base_url=self._repo.get(KEY_AI_BASE_URL) or defaults.base_url,
@@ -219,7 +225,8 @@ class Settings:
                 "(for example env:OPENAI_API_KEY), the literal string "
                 "'codex' (to reuse ~/.codex/auth.json), 'gemini' "
                 "(to reuse ~/.gemini/.env), or 'gemini-cli' "
-                "(to reuse Gemini CLI OAuth)."
+                "(to reuse Gemini CLI OAuth), or 'opencode' "
+                "(to reuse OpenCode CLI local auth)."
             )
 
         provider_name = _normalize_provider_name(
@@ -528,6 +535,8 @@ def _normalize_provider_name(
         return "gemini_cli"
     if source == "gemini":
         return "gemini"
+    if source == "opencode":
+        return "opencode"
     return default
 
 

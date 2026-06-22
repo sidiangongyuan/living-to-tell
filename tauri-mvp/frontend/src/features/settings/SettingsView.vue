@@ -14,6 +14,7 @@ interface DataDirectoryOverrideState {
 
 const { t } = useI18n()
 const settings = useSettingsStore()
+const OPENCODE_DEFAULT_MODEL = 'opencode/deepseek-v4-flash-free'
 
 const aiProvider = ref<AiProviderName>('openai')
 const model = ref('gpt-4o-mini')
@@ -25,11 +26,14 @@ const loadingAiSettings = ref(false)
 const savingSettings = ref(false)
 const testingConnection = ref(false)
 const testingLiveConnection = ref(false)
+const fetchingModels = ref(false)
 const importing = ref<'codex' | 'gemini' | null>(null)
 const testResult = ref<{ success: boolean; message: string } | null>(null)
-const liveTestResult = ref<{ success: boolean; message: string; preview?: string } | null>(null)
+const liveTestResult = ref<{ success: boolean; message: string; preview?: string; cost?: number | null } | null>(null)
+const modelFetchResult = ref<{ success: boolean; message: string } | null>(null)
 const saveNotice = ref('')
 const saveError = ref('')
+const fetchedModelPresets = ref<Partial<Record<AiProviderName, string[]>>>({})
 let applyingAiSettings = false
 
 const closeBehaviorNotice = ref('')
@@ -46,6 +50,7 @@ const providerOptions = computed<Array<{ value: AiProviderName; label: string }>
   { value: 'openai', label: t('settings.providers.openai') },
   { value: 'gemini', label: t('settings.providers.gemini') },
   { value: 'gemini_cli', label: t('settings.providers.geminiCli') },
+  { value: 'opencode', label: t('settings.providers.opencode') },
 ])
 
 const credentialOptions = computed<Array<{ value: string; label: string }>>(() => {
@@ -58,6 +63,9 @@ const credentialOptions = computed<Array<{ value: string; label: string }>>(() =
   if (aiProvider.value === 'gemini_cli') {
     return [{ value: 'gemini-cli', label: t('settings.credentialGeminiCli') }]
   }
+  if (aiProvider.value === 'opencode') {
+    return [{ value: 'opencode', label: t('settings.credentialOpenCode') }]
+  }
   return [
     { value: 'env:OPENAI_API_KEY', label: 'env:OPENAI_API_KEY' },
     { value: 'codex', label: t('settings.credentialCodex') },
@@ -65,11 +73,14 @@ const credentialOptions = computed<Array<{ value: string; label: string }>>(() =
 })
 
 const modelPresets = computed(() =>
-  aiSettings.value?.model_presets?.[aiProvider.value] ?? []
+  fetchedModelPresets.value[aiProvider.value]
+  ?? aiSettings.value?.model_presets?.[aiProvider.value]
+  ?? []
 )
 
 const activeStatus = computed(() => {
   if (!aiSettings.value) return null
+  if (aiProvider.value === 'opencode') return aiSettings.value.status.opencode
   if (aiProvider.value === 'gemini_cli') return aiSettings.value.status.gemini_cli
   if (apiKeySource.value === 'codex') return aiSettings.value.status.codex
   if (apiKeySource.value === 'gemini') return aiSettings.value.status.gemini
@@ -78,6 +89,7 @@ const activeStatus = computed(() => {
 
 const statusMatchesSavedConfig = computed(() => {
   if (!aiSettings.value) return false
+  if (aiProvider.value === 'opencode') return true
   if (aiSettings.value.provider_name !== aiProvider.value) return false
   if (aiProvider.value === 'gemini_cli') {
     return (aiSettings.value.gemini_cli_proxy ?? '') === (geminiCliProxy.value.trim() || '')
@@ -97,6 +109,13 @@ const statusDetail = computed(() => {
   if (!statusMatchesSavedConfig.value) return ''
   const status = activeStatus.value
   if (!status) return ''
+  if (aiProvider.value === 'opencode') {
+    const parts = [
+      status.command ? `${t('settings.openCodeCommand')}: ${status.command}` : '',
+      status.path ? `${t('settings.credentialPath')}: ${status.path}` : '',
+    ].filter(Boolean)
+    return parts.join('\n')
+  }
   if (aiProvider.value === 'gemini_cli') {
     const parts = [
       status.command ? `${t('settings.geminiCliCommand')}: ${status.command}` : '',
@@ -119,6 +138,7 @@ watch(aiProvider, (provider, previous) => {
   if (provider === previous) return
   testResult.value = null
   liveTestResult.value = null
+  modelFetchResult.value = null
   saveNotice.value = ''
   saveError.value = ''
   if (provider === 'openai') {
@@ -126,11 +146,15 @@ watch(aiProvider, (provider, previous) => {
     if (!model.value || model.value.startsWith('gemini')) model.value = 'gpt-4o-mini'
   } else if (provider === 'gemini') {
     apiKeySource.value = 'env:GEMINI_API_KEY'
-    if (!model.value || model.value.startsWith('gpt-')) model.value = 'gemini-2.5-flash'
-  } else {
+    if (!model.value || model.value.startsWith('gpt-') || model.value.startsWith('opencode/')) model.value = 'gemini-2.5-flash'
+  } else if (provider === 'gemini_cli') {
     apiKeySource.value = 'gemini-cli'
     baseUrl.value = ''
-    if (!model.value || model.value.startsWith('gpt-')) model.value = 'gemini-cli-default'
+    if (!model.value || model.value.startsWith('gpt-') || model.value.startsWith('opencode/')) model.value = 'gemini-cli-default'
+  } else {
+    apiKeySource.value = 'opencode'
+    baseUrl.value = ''
+    if (!model.value || model.value.startsWith('gpt-') || model.value.startsWith('gemini')) model.value = OPENCODE_DEFAULT_MODEL
   }
 })
 
@@ -153,7 +177,11 @@ function applyAiSettings(loaded: AiSettings) {
   aiProvider.value = loaded.provider_name
   model.value = loaded.model
   baseUrl.value = loaded.base_url ?? ''
-  apiKeySource.value = loaded.provider_name === 'gemini_cli' ? 'gemini-cli' : loaded.api_key_source
+  apiKeySource.value = loaded.provider_name === 'gemini_cli'
+    ? 'gemini-cli'
+    : loaded.provider_name === 'opencode'
+      ? 'opencode'
+      : loaded.api_key_source
   geminiCliProxy.value = loaded.gemini_cli_proxy ?? loaded.status.gemini_cli.proxy ?? ''
   window.setTimeout(() => {
     applyingAiSettings = false
@@ -163,10 +191,10 @@ function applyAiSettings(loaded: AiSettings) {
 function buildAiSettingsUpdate(): AiSettingsUpdate {
   return {
     provider_name: aiProvider.value,
-    base_url: aiProvider.value === 'gemini_cli' ? null : baseUrl.value.trim() || null,
+    base_url: aiProvider.value === 'gemini_cli' || aiProvider.value === 'opencode' ? null : baseUrl.value.trim() || null,
     wire_api: 'responses',
-    model: model.value.trim() || (aiProvider.value === 'gemini_cli' ? 'gemini-cli-default' : ''),
-    api_key_source: aiProvider.value === 'gemini_cli' ? 'gemini-cli' : apiKeySource.value.trim(),
+    model: model.value.trim() || (aiProvider.value === 'gemini_cli' ? 'gemini-cli-default' : aiProvider.value === 'opencode' ? OPENCODE_DEFAULT_MODEL : ''),
+    api_key_source: aiProvider.value === 'gemini_cli' ? 'gemini-cli' : aiProvider.value === 'opencode' ? 'opencode' : apiKeySource.value.trim(),
     gemini_cli_proxy: aiProvider.value === 'gemini_cli' ? geminiCliProxy.value.trim() || null : null,
   }
 }
@@ -177,6 +205,7 @@ async function saveSettings() {
   saveError.value = ''
   testResult.value = null
   liveTestResult.value = null
+  modelFetchResult.value = null
   try {
     const saved = await settingsApi.saveAiSettings(buildAiSettingsUpdate())
     applyAiSettings(saved)
@@ -198,6 +227,7 @@ async function testConnection() {
   testingConnection.value = true
   testResult.value = null
   liveTestResult.value = null
+  modelFetchResult.value = null
   saveNotice.value = ''
   saveError.value = ''
   try {
@@ -227,6 +257,7 @@ async function testLiveConnection() {
       success: result.ok,
       message: result.message,
       preview: result.preview,
+      cost: result.cost,
     }
   } catch (e) {
     liveTestResult.value = { success: false, message: errorMessage(e) }
@@ -267,6 +298,31 @@ async function importGemini() {
 
 function choosePreset(value: string) {
   if (value) model.value = value
+}
+
+async function fetchModels() {
+  fetchingModels.value = true
+  modelFetchResult.value = null
+  saveNotice.value = ''
+  saveError.value = ''
+  try {
+    const result = await settingsApi.getAiModels(aiProvider.value, true)
+    fetchedModelPresets.value = {
+      ...fetchedModelPresets.value,
+      [aiProvider.value]: result.models,
+    }
+    modelFetchResult.value = {
+      success: result.source === 'live',
+      message: result.message,
+    }
+    if (!model.value.trim() && result.models.length > 0) {
+      model.value = result.models[0]
+    }
+  } catch (e) {
+    modelFetchResult.value = { success: false, message: errorMessage(e) }
+  } finally {
+    fetchingModels.value = false
+  }
 }
 
 function resetWelcomeChecklist() {
@@ -443,7 +499,7 @@ async function restoreDefaultDataDirectory() {
             </select>
           </div>
 
-          <div v-if="aiProvider !== 'gemini_cli'">
+          <div v-if="aiProvider !== 'gemini_cli' && aiProvider !== 'opencode'">
             <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.baseUrl') }}</label>
             <input
               v-model="baseUrl"
@@ -456,12 +512,12 @@ async function restoreDefaultDataDirectory() {
 
           <div>
             <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.model') }}</label>
-            <div class="grid gap-3 md:grid-cols-[1fr_220px]">
+            <div class="grid gap-3 md:grid-cols-[1fr_220px_auto]">
               <input
                 v-model="model"
                 type="text"
                 class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                :placeholder="aiProvider === 'openai' ? 'gpt-4o-mini' : aiProvider === 'gemini' ? 'gemini-2.5-flash' : 'gemini-cli-default'"
+                :placeholder="aiProvider === 'openai' ? 'gpt-4o-mini' : aiProvider === 'gemini' ? 'gemini-2.5-flash' : aiProvider === 'opencode' ? OPENCODE_DEFAULT_MODEL : 'gemini-cli-default'"
               />
               <select
                 :value="modelPresets.includes(model) ? model : ''"
@@ -471,10 +527,26 @@ async function restoreDefaultDataDirectory() {
                 <option value="">{{ t('settings.customModel') }}</option>
                 <option v-for="preset in modelPresets" :key="preset" :value="preset">{{ preset }}</option>
               </select>
+              <button
+                @click="fetchModels"
+                :disabled="fetchingModels"
+                class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+              >
+                {{ fetchingModels ? t('settings.fetchingModels') : t('settings.fetchModels') }}
+              </button>
+            </div>
+            <div
+              v-if="modelFetchResult"
+              :class="[
+                'mt-2 rounded-lg p-3 text-sm',
+                modelFetchResult.success ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800',
+              ]"
+            >
+              {{ modelFetchResult.message }}
             </div>
           </div>
 
-          <div v-if="aiProvider !== 'gemini_cli'">
+          <div v-if="aiProvider !== 'gemini_cli' && aiProvider !== 'opencode'">
             <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.credentialSource') }}</label>
             <select
               v-model="apiKeySource"
@@ -487,7 +559,7 @@ async function restoreDefaultDataDirectory() {
             <p class="mt-1 text-xs text-gray-500">{{ t('settings.credentialHelp') }}</p>
           </div>
 
-          <div v-else>
+          <div v-else-if="aiProvider === 'gemini_cli'">
             <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.geminiCliProxy') }}</label>
             <input
               v-model="geminiCliProxy"
@@ -496,6 +568,10 @@ async function restoreDefaultDataDirectory() {
               placeholder="http://127.0.0.1:7890"
             />
             <p class="mt-1 text-xs text-gray-500">{{ t('settings.geminiCliHelp') }}</p>
+          </div>
+
+          <div v-else class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm leading-6 text-gray-600">
+            {{ t('settings.openCodeHelp') }}
           </div>
 
           <div class="rounded-xl border border-gray-200 bg-gray-50 p-4">
@@ -559,6 +635,9 @@ async function restoreDefaultDataDirectory() {
               <div>{{ liveTestResult.message }}</div>
               <div v-if="liveTestResult.preview" class="mt-1 text-xs opacity-80">
                 {{ t('settings.liveTestPreview') }}：{{ liveTestResult.preview }}
+              </div>
+              <div v-if="liveTestResult.cost !== undefined && liveTestResult.cost !== null" class="mt-1 text-xs opacity-80">
+                {{ t('settings.liveTestCost') }}：{{ liveTestResult.cost }}
               </div>
             </div>
           </div>

@@ -25,6 +25,7 @@ If an old Writer database exists at `%APPDATA%\Writer\Writer\writer.sqlite3`, fi
    - `env:OPENAI_API_KEY` for OpenAI-compatible providers.
    - `env:GEMINI_API_KEY` or local Gemini configuration for Gemini.
    - Gemini CLI / OAuth if you already use Gemini CLI locally.
+   - OpenCode if you already ran `opencode auth login` locally. Settings can fetch live OpenCode models such as `opencode/deepseek-v4-flash-free`, `opencode/mimo-v2.5-free`, `opencode/nemotron-3-ultra-free`, `opencode/north-mini-code-free`, and `opencode/big-pickle`.
 5. Use **Check Local Config** to confirm the credential source exists, then use **Send Real Test Request** to verify the provider, model, base URL, key, and transport with a short sample request.
 6. Before using AI with private writing, still run your first real task on non-sensitive sample text.
 

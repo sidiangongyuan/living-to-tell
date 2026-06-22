@@ -28,6 +28,7 @@ This list tracks product-facing work that would make Living to Tell more reliabl
 - [x] Add style / character / scene AI Cards with fixed templates and AI-assisted draft generation.
 - [x] Add scene-module search and manual attachment for AI tasks.
 - [x] Add a real AI connectivity test that separates local config checks from real provider requests.
+- [x] Add OpenCode local-auth support with live model fetching for OpenCode models.
 - [ ] Add clearer long-text request size, wait-time, and timeout feedback.
 - [ ] Make it easier to turn AI chat ideas into articles or reference material.
 - [ ] Improve quota, model availability, network, and proxy error messages.
@@ -59,6 +60,7 @@ This list tracks product-facing work that would make Living to Tell more reliabl
 - Renamed the public app to Living to Tell / 活着为了讲述.
 - Added a motif star map with right-click capture, source anchors, co-occurrence links, deduplication, and safer unlink behavior.
 - Upgraded AI Cards into style / character / scene templates, added AI draft generation, and added manual scene-module attachment.
+- Added OpenCode local-auth support, live OpenCode model fetching, and real OpenCode test requests through the unified AI provider path.
 - Added a real AI connectivity test and fixed Gemini proxy transport selection for custom-base `sk-...` keys.
 - Added Data and Storage settings with visible paths, open-folder actions, and copy-based directory migration.
 - Added article notes, focused AI writing controls, per-tool presets, and explicit AI writeback actions.

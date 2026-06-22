@@ -16,6 +16,8 @@
 - Added AI-assisted card draft generation with preview-before-save behavior.
 - Added manual scene-module search and attachment in the AI workspace.
 - Added a real AI provider test request in Settings, separate from the local credential/configuration check.
+- Added OpenCode local-auth support through the local `opencode auth login` session.
+- Added live OpenCode model fetching in Settings. Current OpenCode models include `opencode/big-pickle`, `opencode/deepseek-v4-flash-free`, `opencode/mimo-v2.5-free`, `opencode/nemotron-3-ultra-free`, and `opencode/north-mini-code-free`.
 - Added first-run welcome checklist entries for creating articles, saving references, configuring AI, opening article chat, and reading data/backup notes.
 - Added the Motif Star Map for saving selected article/reference text into motifs, exploring co-occurrence, and jumping back to source anchors.
 - Added motif excerpt deduplication and repair for position drift after article edits.
@@ -29,6 +31,7 @@
 - Public AI chat UI now focuses on article context instead of exposing unfinished global or collection chat entry points.
 - AI card types now focus on `style`, `character`, and `scene`; the old public `setting` card type is removed.
 - Gemini configurations that use `sk-...` proxy keys with a custom base URL now automatically use the gateway-compatible `/v1/chat/completions` transport while staying configured as Gemini.
+- OpenCode requests run through the same AI provider path as polish, chat, and AI Card generation, and report provider/model/transport/cost diagnostics.
 - Reference-library line statistics now use non-empty paragraph counts where appropriate.
 - Article list filtering now supports single-tag filtering combined with keyword search.
 - The motif attach flow now uses right-click selection instead of opening automatically after a left-click selection.
@@ -58,15 +61,16 @@
 - `npm run test:e2e`
 - `npm run build`
 - `cargo check --manifest-path tauri-mvp\frontend\src-tauri\Cargo.toml`
+- Real OpenCode probe through the app settings API with `opencode/deepseek-v4-flash-free`.
 - Real gated Gemini probe with local configuration: `WRITER_RUN_LIVE_AI_TEST=1 python -m pytest tests\services\ai\test_gemini_provider.py::test_live_gemini_config_can_answer_minimal_probe -q`
 - `.\tauri-mvp\build-release.ps1 -PythonExe python`
 
 ### Release artifacts
 
 - `LivingToTell_0.1.7_x64-setup.exe`
-  - SHA256: `569B968FA96E1A68D3CBD3407DF389B7A3E0DB9D7FDA1191352CE204872AF2D1`
+  - SHA256: `FF6A5E37F45E0CACD07E6E41EB3AF54A1B1CC4BB803029944269DC8C1F20E78F`
 - `LivingToTell_0.1.7_x64_zh-CN.msi`
-  - SHA256: `E28623CDCFFA104B3DF61A059248CA32C0C08331760155085064DF5F183EDB34`
+  - SHA256: `BD1DB35B44477C8BF81DA4ED021D8F2EAAA78EC4F471FC5038A61C7D0EF1A4F5`
 
 ## 0.1.6 - Public Preview Final Fixes (2026-06-16)
 

@@ -104,7 +104,7 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 - Personal presets for each writing tool.
 - AI Cards for reusable style, character, and scene modules, with fixed templates, AI-assisted draft generation, type/source filters, and keyword search.
 - Scene modules can be searched and manually attached to AI tasks, so narrative structure is sent only when you choose it.
-- Supports OpenAI-compatible APIs, Codex local auth, Gemini API/local config, and Gemini CLI / OAuth.
+- Supports OpenAI-compatible APIs, Codex local auth, Gemini API/local config, Gemini CLI / OAuth, and OpenCode local auth.
 
 ### Desktop Experience
 
@@ -144,6 +144,15 @@ Open Settings and choose one provider:
 - OpenAI-compatible: set a base URL/model and use `env:OPENAI_API_KEY` or Codex local auth.
 - Gemini API: use `env:GEMINI_API_KEY` or import local Gemini configuration.
 - Gemini CLI / OAuth: reuse a local Gemini CLI login. No API key field is required.
+- OpenCode: reuse a local `opencode auth login` session. No API key field is required, and Settings can fetch the current OpenCode model list.
+
+OpenCode model fetching is live. On the current local OpenCode setup, the available models include:
+
+- `opencode/big-pickle`
+- `opencode/deepseek-v4-flash-free`
+- `opencode/mimo-v2.5-free`
+- `opencode/nemotron-3-ultra-free`
+- `opencode/north-mini-code-free`
 
 Settings separates **Check Local Config** from **Send Real Test Request**. The first only checks local credential sources; the second sends a short sample request to verify the provider, model, base URL, key, and internal transport.
 
@@ -169,6 +178,7 @@ Long Gemini requests default to a 120 second wait. Advanced users can tune this 
 - Added a motif star map with right-click text capture, source anchors, co-occurrence links, deduplication, and safer unlink behavior.
 - Added article-scoped AI chat, standing instructions, copy actions, and save-as-note actions.
 - Upgraded AI Cards into style / character / scene templates, added AI draft generation, and added manual scene-module attachment for AI tasks.
+- Added OpenCode local-auth support, live OpenCode model fetching, and real OpenCode test requests through the unified AI provider path.
 - Added a real AI connectivity test and fixed Gemini proxy transport selection for `sk-...` keys behind custom base URLs.
 - Added Data and Storage settings with directory display, open-folder actions, and copy-based migration.
 - Added a Tauri startup splash so cold starts show immediate progress instead of a blank window.
@@ -208,6 +218,7 @@ The public TODO list is kept visible but folded so the README stays readable.
 - [x] Add style / character / scene AI Cards with structured templates and AI-assisted draft generation.
 - [x] Add manual scene-module search and attachment for AI tasks.
 - [x] Add a real AI connectivity test that reports provider, model, transport, and response preview.
+- [x] Add OpenCode local-auth support with live model fetching for OpenCode models.
 - [ ] Add clearer long-text request size, wait-time, and timeout feedback.
 - [ ] Make it easier to turn AI chat ideas into articles, notes, or reference material.
 

@@ -15,6 +15,7 @@ from typing import Optional
 from writer.app.settings import Settings
 from writer.services.ai.gemini_cli_provider import GeminiCliProvider
 from writer.services.ai.gemini_provider import GeminiProvider
+from writer.services.ai.opencode_cli_provider import OpenCodeCliProvider
 from writer.services.ai.openai_provider import OpenAiProvider
 from writer.services.ai.prompt_builder import PromptBuilder
 from writer.services.ai.rewrite_service import RewriteService
@@ -124,6 +125,8 @@ def build_container(db_path: Optional[Path] = None) -> AppContainer:
 
     def _provider_factory():
         config = settings.load_ai_config()
+        if config.provider_key() == "opencode" or config.uses_opencode_auth():
+            return OpenCodeCliProvider(config, prompt_builder)
         if config.provider_key() == "gemini_cli":
             return GeminiCliProvider(config, prompt_builder)
         if config.provider_key() == "gemini" or config.uses_gemini_auth():

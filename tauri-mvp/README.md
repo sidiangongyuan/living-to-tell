@@ -72,8 +72,8 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 - AI results are reviewed before writing back, with explicit replace, insert, and copy actions.
 - Article-scoped chat with one ongoing conversation per article.
 - Standing chat instructions, copy actions, and save-reply-as-article-note actions.
-- AI Cards for style, character, and setting context, with type/source filters and keyword search.
-- Supports OpenAI-compatible APIs, Codex local auth, Gemini API/local config, and Gemini CLI / OAuth.
+- AI Cards for style, character, and scene context, with type/source filters and keyword search.
+- Supports OpenAI-compatible APIs, Codex local auth, Gemini API/local config, Gemini CLI / OAuth, and OpenCode local auth.
 - Raw API keys are not stored in app settings; only the selected credential source is saved.
 
 ### Desktop
@@ -116,6 +116,15 @@ Open Settings and choose one provider:
 - OpenAI-compatible: set a base URL/model and use `env:OPENAI_API_KEY` or Codex local auth.
 - Gemini API: use `env:GEMINI_API_KEY` or import local Gemini configuration.
 - Gemini CLI / OAuth: reuse a local Gemini CLI login. No API key field is required.
+- OpenCode: reuse a local `opencode auth login` session. No API key field is required, and Settings can fetch the current OpenCode model list.
+
+OpenCode model fetching is live. On the current local OpenCode setup, the available models include:
+
+- `opencode/big-pickle`
+- `opencode/deepseek-v4-flash-free`
+- `opencode/mimo-v2.5-free`
+- `opencode/nemotron-3-ultra-free`
+- `opencode/north-mini-code-free`
 
 Long Gemini requests default to a 120 second wait. Advanced users can tune this with `WRITER_GEMINI_TIMEOUT_SECONDS` or `WRITER_GEMINI_CLI_TIMEOUT_SECONDS`.
 

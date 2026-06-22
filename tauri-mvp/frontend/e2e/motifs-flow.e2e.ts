@@ -702,7 +702,7 @@ test('article selection can be saved to multiple motifs and reopened from the st
   await page.getByTestId('motif-attach-input').fill('血')
   await page.keyboard.press('Enter')
   await page.getByRole('button', { name: '保存摘录' }).click()
-  await expect(page.getByText('已加入意象')).toBeVisible()
+  await expect(page.getByText('已加入意象', { exact: true })).toBeVisible()
   const anchors = page.getByTestId('article-motif-anchors')
   await expect(anchors.getByText('玫瑰在夜里像血一样醒着。')).toBeVisible()
   await anchors.getByRole('button', { name: /玫瑰在夜里/ }).click()
@@ -744,7 +744,7 @@ test('same selection reopens existing motifs and unlink only removes the current
   await page.getByTestId('motif-attach-input').fill('岁月')
   await page.keyboard.press('Enter')
   await page.getByRole('button', { name: '保存摘录' }).click()
-  await expect(page.getByText('已加入意象')).toBeVisible()
+  await expect(page.getByText('已加入意象', { exact: true })).toBeVisible()
 
   await editor.evaluate((textarea: HTMLTextAreaElement, range) => {
     textarea.focus()
@@ -872,7 +872,7 @@ test('source jump warns when the original article text changed', async ({ page }
   await page.getByTestId('motif-attach-input').fill('改动')
   await page.keyboard.press('Enter')
   await page.getByRole('button', { name: '保存摘录' }).click()
-  await expect(page.getByText('已加入意象')).toBeVisible()
+  await expect(page.getByText('已加入意象', { exact: true })).toBeVisible()
 
   const changedArticle = { ...article, body: '原文已经改写成另一段，旧句子不在这里。' }
   await page.route(/\/api\/articles(?:\/|\?|$)/, async (route) => {
@@ -923,7 +923,7 @@ test('reference selection can be saved as a motif excerpt', async ({ page }) => 
   await page.getByTestId('motif-attach-input').fill('天空')
   await page.keyboard.press('Enter')
   await page.getByRole('button', { name: '保存摘录' }).click()
-  await expect(page.getByText('已加入意象')).toBeVisible()
+  await expect(page.getByText('已加入意象', { exact: true })).toBeVisible()
   const anchors = page.getByTestId('library-motif-anchors')
   await expect(anchors.getByText('天空像一块被擦亮的黑石。')).toBeVisible()
   await anchors.getByRole('button', { name: /天空像/ }).click()

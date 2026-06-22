@@ -1,6 +1,6 @@
 import { apiFetch, handleResponse } from './base'
 
-export type AiProviderName = 'openai' | 'gemini' | 'gemini_cli'
+export type AiProviderName = 'openai' | 'gemini' | 'gemini_cli' | 'opencode'
 
 export interface AiCredentialStatus {
   available: boolean
@@ -16,6 +16,7 @@ export interface AiSettingsStatus {
   codex: AiCredentialStatus
   gemini: AiCredentialStatus
   gemini_cli: AiCredentialStatus
+  opencode: AiCredentialStatus
 }
 
 export interface AiSettings {
@@ -56,6 +57,14 @@ export interface AiLiveTestResult {
   transport?: string | null
   elapsed_ms?: number | null
   preview: string
+  cost?: number | null
+}
+
+export interface AiModelListResult {
+  provider: string
+  models: string[]
+  source: 'live' | 'preset'
+  message: string
 }
 
 export interface DataLocationInfo {
@@ -112,6 +121,12 @@ export const settingsApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     })
+    return handleResponse(res)
+  },
+
+  async getAiModels(provider: AiProviderName, refresh = true): Promise<AiModelListResult> {
+    const params = new URLSearchParams({ provider, refresh: String(refresh) })
+    const res = await apiFetch(`/api/settings/ai/models?${params.toString()}`)
     return handleResponse(res)
   },
 

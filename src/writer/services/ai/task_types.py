@@ -90,6 +90,7 @@ class AiTaskResponse:
     output_tokens: Optional[int] = None
     finish_reason: Optional[str] = None
     transport: Optional[str] = None
+    cost: Optional[float] = None
 
 
 @dataclass
@@ -103,4 +104,5 @@ class AiRunMetadata:
     model: Optional[str] = None
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
+    cost: Optional[float] = None
     citations: List[Dict[str, str]] = field(default_factory=list)

@@ -1160,9 +1160,11 @@ def test_tauri_ai_settings_read_save_and_validate(monkeypatch):
     initial = client.get("/api/settings/ai")
     assert initial.status_code == 200
     initial_payload = initial.json()
-    assert initial_payload["provider_name"] in {"openai", "gemini", "gemini_cli"}
+    assert initial_payload["provider_name"] in {"openai", "gemini", "gemini_cli", "opencode"}
     assert "status" in initial_payload
+    assert "opencode" in initial_payload["status"]
     assert "model_presets" in initial_payload
+    assert "opencode/deepseek-v4-flash-free" in initial_payload["model_presets"]["opencode"]
 
     saved = client.put(
         "/api/settings/ai",
@@ -1198,6 +1200,24 @@ def test_tauri_ai_settings_read_save_and_validate(monkeypatch):
     assert cli_payload["api_key_source"] == "gemini-cli"
     assert cli_payload["model"] == "gemini-cli-default"
 
+    opencode = client.put(
+        "/api/settings/ai",
+        json={
+            "provider_name": "opencode",
+            "base_url": "https://should-be-cleared.example",
+            "wire_api": "responses",
+            "model": "",
+            "api_key_source": "env:IGNORED",
+            "gemini_cli_proxy": "http://127.0.0.1:7890",
+        },
+    )
+    assert opencode.status_code == 200
+    opencode_payload = opencode.json()
+    assert opencode_payload["provider_name"] == "opencode"
+    assert opencode_payload["api_key_source"] == "opencode"
+    assert opencode_payload["model"] == "opencode/deepseek-v4-flash-free"
+    assert opencode_payload["base_url"] is None
+
     invalid = client.put(
         "/api/settings/ai",
         json={
@@ -1209,6 +1229,43 @@ def test_tauri_ai_settings_read_save_and_validate(monkeypatch):
         },
     )
     assert invalid.status_code == 400
+
+
+def test_tauri_ai_settings_models_endpoint_fetches_opencode_live(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.settings import routes as settings_routes
+
+    monkeypatch.setattr(
+        settings_routes,
+        "list_opencode_models",
+        lambda refresh=True: [
+            "opencode/deepseek-v4-flash-free",
+            "opencode/mimo-v2.5-free",
+        ],
+    )
+
+    response = client.get("/api/settings/ai/models?provider=opencode&refresh=true")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["provider"] == "opencode"
+    assert payload["source"] == "live"
+    assert payload["models"] == [
+        "opencode/deepseek-v4-flash-free",
+        "opencode/mimo-v2.5-free",
+    ]
+
+
+def test_tauri_ai_settings_models_endpoint_uses_presets_for_non_opencode(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    response = client.get("/api/settings/ai/models?provider=gemini")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider"] == "gemini"
+    assert payload["source"] == "preset"
+    assert "暂未启用真实模型拉取" in payload["message"]
 
 
 def test_tauri_ai_settings_test_endpoint_uses_preflight(monkeypatch):

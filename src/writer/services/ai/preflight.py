@@ -7,7 +7,7 @@ Checks, in order:
   1. Target text is non-empty.
   2. Model is configured.
   3. wire_api is supported.
-    4. api_key_source is supported (env:VAR / codex / gemini).
+    4. api_key_source is supported (env:VAR / codex / gemini / opencode).
     5. The selected runtime credential source is available.
 
 Each failure carries a short user-facing message describing *what* is
@@ -28,6 +28,12 @@ from writer.services.ai.gemini_cli_provider import (
     find_gemini_cli,
 )
 from writer.services.ai.gemini_auth import GEMINI_AUTH_SOURCE, GeminiAuthResolver
+from writer.services.ai.opencode_cli_provider import (
+    OPENCODE_AUTH_SOURCE,
+    OPENCODE_PROVIDER,
+    find_opencode_cli,
+    opencode_auth_status,
+)
 
 
 @dataclass(frozen=True)
@@ -166,15 +172,35 @@ def preflight_rewrite(
                     "using the Gemini CLI / OAuth provider.",
                 )
             )
+    elif source.lower() == OPENCODE_AUTH_SOURCE or config.provider_key() == OPENCODE_PROVIDER:
+        configured = (env.get("WRITER_OPENCODE_COMMAND", "") or "").strip()
+        found = configured or find_opencode_cli()
+        if not found:
+            issues.append(
+                PreflightIssue(
+                    "missing_opencode_cli",
+                    "未检测到 opencode 命令。请先安装 OpenCode，并确认 opencode 在 PATH 中。",
+                )
+            )
+        else:
+            status = opencode_auth_status(command=found)
+            if not status.available:
+                issues.append(
+                    PreflightIssue(
+                        "missing_opencode_auth",
+                        "OpenCode 尚未登录或登录状态不可用。请先在终端运行 opencode auth login。",
+                    )
+                )
     elif not source.startswith("env:"):
         issues.append(
             PreflightIssue(
                 "bad_key_source",
                 "API key source must be either env:VARNAME or the literal "
-                "string 'codex', 'gemini', or 'gemini-cli'. Open AI → Settings and set, for example, "
+                "string 'codex', 'gemini', 'gemini-cli', or 'opencode'. Open AI → Settings and set, for example, "
                 "env:OPENAI_API_KEY, or switch to 'codex' to reuse "
                 "~/.codex/auth.json, 'gemini' to reuse ~/.gemini/.env, "
-                "or 'gemini-cli' to reuse Gemini CLI OAuth. "
+                "'gemini-cli' to reuse Gemini CLI OAuth, or 'opencode' "
+                "to reuse OpenCode CLI local auth. "
                 "The key itself is never stored on disk.",
             )
         )

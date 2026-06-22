@@ -67,6 +67,13 @@ from writer.services.ai.gemini_cli_provider import (
     gemini_cli_quota_status,
     gemini_cli_oauth_status,
 )
+from writer.services.ai.opencode_cli_provider import (
+    OPENCODE_AUTH_SOURCE,
+    OPENCODE_DEFAULT_MODEL,
+    OPENCODE_MODEL_PRESETS,
+    find_opencode_cli,
+    opencode_auth_status,
+)
 from writer.ui.i18n import TR
 from writer.ui.widgets.controls import (
     NoWheelComboBox,
@@ -88,6 +95,7 @@ def _provider_options():
         ("openai", TR("settings.provider_openai")),
         ("gemini", TR("settings.provider_gemini")),
         ("gemini_cli", TR("settings.provider_gemini_cli")),
+        ("opencode", TR("settings.provider_opencode")),
     ]
 
 
@@ -106,6 +114,7 @@ _MODEL_PRESETS = {
         "gemini-2.5-flash-lite",
     ),
     "gemini_cli": GEMINI_CLI_MODEL_PRESETS,
+    "opencode": OPENCODE_MODEL_PRESETS,
 }
 
 _EDITOR_FONT_PRESETS = (
@@ -398,8 +407,8 @@ class SettingsDialog(QDialog):
 
     def _refresh_provider_ui(self, *, adjust_defaults: bool = False) -> None:
         provider = self._current_provider_key()
-        self._base_url.setEnabled(provider != "gemini_cli")
-        self._api_key_source.setEnabled(provider != "gemini_cli")
+        self._base_url.setEnabled(provider not in {"gemini_cli", "opencode"})
+        self._api_key_source.setEnabled(provider not in {"gemini_cli", "opencode"})
         show_gemini_cli = provider == "gemini_cli"
         self._gemini_cli_proxy.setVisible(show_gemini_cli)
         self._gemini_quota_button.setVisible(show_gemini_cli)
@@ -417,6 +426,14 @@ class SettingsDialog(QDialog):
                 self._base_url.clear()
                 self._api_key_source.setText(GEMINI_CLI_AUTH_SOURCE)
                 self._model.setText(GEMINI_CLI_DEFAULT_MODEL)
+        elif provider == "opencode":
+            self._base_url.setPlaceholderText(TR("settings.opencode_base_url_hint"))
+            self._api_key_source.setPlaceholderText(OPENCODE_AUTH_SOURCE)
+            self._model.setPlaceholderText(OPENCODE_DEFAULT_MODEL)
+            if adjust_defaults:
+                self._base_url.clear()
+                self._api_key_source.setText(OPENCODE_AUTH_SOURCE)
+                self._model.setText(OPENCODE_DEFAULT_MODEL)
         elif provider == "gemini":
             self._base_url.setPlaceholderText("https://generativelanguage.googleapis.com")
             self._api_key_source.setPlaceholderText("env:GEMINI_API_KEY / gemini")
@@ -485,6 +502,23 @@ class SettingsDialog(QDialog):
                 self._font_preset_combo.blockSignals(False)
 
     def _refresh_key_status(self) -> None:
+        if self._current_provider_key() == "opencode":
+            found = find_opencode_cli()
+            if not found:
+                self._key_status.setText(TR("settings.opencode_missing"))
+                return
+            status = opencode_auth_status(command=found)
+            if status.available:
+                self._key_status.setText(
+                    TR("settings.opencode_ready").format(path=found)
+                )
+            else:
+                self._key_status.setText(
+                    TR("settings.opencode_auth_missing").format(
+                        path=status.path or ""
+                    )
+                )
+            return
         if self._current_provider_key() == "gemini_cli":
             found = find_gemini_cli()
             if not found:
@@ -686,14 +720,24 @@ class SettingsDialog(QDialog):
         wire_api = self._wire_api.currentText().strip() or "responses"
         provider_name = self._current_provider_key()
         model = self._model.text().strip() or (
-            GEMINI_CLI_DEFAULT_MODEL if provider_name == "gemini_cli" else ""
+            GEMINI_CLI_DEFAULT_MODEL
+            if provider_name == "gemini_cli"
+            else OPENCODE_DEFAULT_MODEL
+            if provider_name == "opencode"
+            else ""
         )
         api_key_source = (
             GEMINI_CLI_AUTH_SOURCE
             if provider_name == "gemini_cli"
+            else OPENCODE_AUTH_SOURCE
+            if provider_name == "opencode"
             else self._api_key_source.text().strip() or "env:OPENAI_API_KEY"
         )
-        raw_base_url = "" if provider_name == "gemini_cli" else self._base_url.text().strip()
+        raw_base_url = (
+            ""
+            if provider_name in {"gemini_cli", "opencode"}
+            else self._base_url.text().strip()
+        )
 
         candidate = AiConfig(
             provider_name=provider_name,
@@ -733,17 +777,25 @@ class SettingsDialog(QDialog):
         wire_api = self._wire_api.currentText().strip() or "responses"
         provider_name = self._current_provider_key()
         model = self._model.text().strip() or (
-            GEMINI_CLI_DEFAULT_MODEL if provider_name == "gemini_cli" else ""
+            GEMINI_CLI_DEFAULT_MODEL
+            if provider_name == "gemini_cli"
+            else OPENCODE_DEFAULT_MODEL
+            if provider_name == "opencode"
+            else ""
         )
         if provider_name == "gemini_cli" and model.strip().lower() == "gpt-4o-mini":
             model = GEMINI_CLI_DEFAULT_MODEL
+        if provider_name == "opencode" and model.strip().lower() in {"gpt-4o-mini", "default", "auto"}:
+            model = OPENCODE_DEFAULT_MODEL
         api_key_source = (
             GEMINI_CLI_AUTH_SOURCE
             if provider_name == "gemini_cli"
+            else OPENCODE_AUTH_SOURCE
+            if provider_name == "opencode"
             else self._api_key_source.text().strip() or "env:OPENAI_API_KEY"
         )
         raw_base_url = self._base_url.text().strip()
-        base_url = None if provider_name == "gemini_cli" else raw_base_url or None
+        base_url = None if provider_name in {"gemini_cli", "opencode"} else raw_base_url or None
 
         if not model:
             QMessageBox.warning(

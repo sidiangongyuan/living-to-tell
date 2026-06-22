@@ -37,6 +37,14 @@ from writer.services.ai.gemini_cli_provider import (
 )
 from writer.services.ai.gemini_provider import GeminiProvider
 from writer.services.ai.interfaces import AiError, AiProvider
+from writer.services.ai.opencode_cli_provider import (
+    OPENCODE_AUTH_SOURCE,
+    OPENCODE_DEFAULT_MODEL,
+    OPENCODE_MODEL_PRESETS,
+    OpenCodeCliProvider,
+    list_opencode_models,
+    opencode_auth_status,
+)
 from writer.services.ai.openai_provider import OpenAiProvider
 from writer.services.ai.preflight import format_issues, preflight_rewrite
 from writer.services.ai.prompt_builder import PromptBuilder
@@ -56,7 +64,7 @@ GEMINI_CLI_MODEL_PRESETS = (
     GEMINI_CLI_DEFAULT_MODEL,
     *GEMINI_MODEL_PRESETS,
 )
-PUBLIC_AI_PROVIDERS = {"openai", "gemini", "gemini_cli"}
+PUBLIC_AI_PROVIDERS = {"openai", "gemini", "gemini_cli", "opencode"}
 
 
 class AiCredentialStatus(BaseModel):
@@ -73,6 +81,7 @@ class AiSettingsStatus(BaseModel):
     codex: AiCredentialStatus
     gemini: AiCredentialStatus
     gemini_cli: AiCredentialStatus
+    opencode: AiCredentialStatus
 
 
 class AiSettingsOut(BaseModel):
@@ -119,6 +128,14 @@ class AiLiveTestOut(BaseModel):
     transport: Optional[str] = None
     elapsed_ms: Optional[int] = None
     preview: str = ""
+    cost: Optional[float] = None
+
+
+class AiModelListOut(BaseModel):
+    provider: str
+    models: list[str]
+    source: str
+    message: str = ""
 
 
 class DataLocationInfo(BaseModel):
@@ -316,13 +333,33 @@ def _gemini_cli_status(proxy: Optional[str]) -> AiCredentialStatus:
     )
 
 
+def _opencode_status() -> AiCredentialStatus:
+    status = opencode_auth_status()
+    return AiCredentialStatus(
+        available=status.available,
+        path=str(status.path) if status.path else None,
+        reason=status.reason,
+        command=status.command,
+    )
+
+
 def _status_for(config: AiConfig) -> AiSettingsStatus:
     return AiSettingsStatus(
         env=_env_status(config.api_key_source or ""),
         codex=_codex_status(),
         gemini=_gemini_status(),
         gemini_cli=_gemini_cli_status(config.gemini_cli_proxy),
+        opencode=_opencode_status(),
     )
+
+
+def _model_presets() -> dict[str, list[str]]:
+    return {
+        "openai": list(OPENAI_MODEL_PRESETS),
+        "gemini": list(GEMINI_MODEL_PRESETS),
+        "gemini_cli": list(GEMINI_CLI_MODEL_PRESETS),
+        "opencode": list(OPENCODE_MODEL_PRESETS),
+    }
 
 
 def _config_to_out(config: AiConfig) -> AiSettingsOut:
@@ -334,11 +371,7 @@ def _config_to_out(config: AiConfig) -> AiSettingsOut:
         api_key_source=config.api_key_source,
         gemini_cli_proxy=config.gemini_cli_proxy,
         status=_status_for(config),
-        model_presets={
-            "openai": list(OPENAI_MODEL_PRESETS),
-            "gemini": list(GEMINI_MODEL_PRESETS),
-            "gemini_cli": list(GEMINI_CLI_MODEL_PRESETS),
-        },
+        model_presets=_model_presets(),
     )
 
 
@@ -354,6 +387,11 @@ def _request_to_config(data: AiSettingsUpdate) -> AiConfig:
         base_url = None
         if not model or model.lower() in {"gpt-4o-mini", "default", "auto"}:
             model = GEMINI_CLI_DEFAULT_MODEL
+    if provider == "opencode":
+        api_key_source = OPENCODE_AUTH_SOURCE
+        base_url = None
+        if not model or model.lower() in {"gpt-4o-mini", "default", "auto"}:
+            model = OPENCODE_DEFAULT_MODEL
     return AiConfig(
         provider_name=provider,
         base_url=base_url,
@@ -366,6 +404,8 @@ def _request_to_config(data: AiSettingsUpdate) -> AiConfig:
 
 def _provider_for_config(config: AiConfig) -> AiProvider:
     prompt_builder = PromptBuilder()
+    if config.provider_key() == "opencode" or config.uses_opencode_auth():
+        return OpenCodeCliProvider(config, prompt_builder)
     if config.provider_key() == "gemini_cli":
         return GeminiCliProvider(config, prompt_builder)
     if config.provider_key() == "gemini" or config.uses_gemini_auth():
@@ -399,6 +439,19 @@ def _preview_text(value: str) -> str:
     return cleaned[:160]
 
 
+def _preset_model_list(provider: str, message: str = "") -> AiModelListOut:
+    provider_key = provider.strip().lower()
+    presets = _model_presets().get(provider_key)
+    if presets is None:
+        raise HTTPException(400, f"Unsupported provider: {provider}")
+    return AiModelListOut(
+        provider=provider_key,
+        models=presets,
+        source="preset",
+        message=message or "当前 provider 暂未启用真实模型拉取，已显示内置预设。",
+    )
+
+
 def _live_test_messages() -> list[dict[str, str]]:
     return [
         {
@@ -413,6 +466,28 @@ def get_ai_settings(
     container: AppContainer = Depends(get_container),
 ) -> AiSettingsOut:
     return _config_to_out(container.settings.load_ai_config())
+
+
+@router.get("/ai/models", response_model=AiModelListOut)
+def get_ai_models(provider: str, refresh: bool = True) -> AiModelListOut:
+    provider_key = provider.strip().lower()
+    if provider_key not in PUBLIC_AI_PROVIDERS:
+        raise HTTPException(400, f"Unsupported provider: {provider}")
+    if provider_key != "opencode":
+        return _preset_model_list(provider_key)
+    try:
+        models = list_opencode_models(refresh=refresh)
+    except AiError as exc:
+        return _preset_model_list(
+            provider_key,
+            message=f"OpenCode 模型列表真实拉取失败，已显示内置预设：{_friendly_ai_test_error(exc)}",
+        )
+    return AiModelListOut(
+        provider=provider_key,
+        models=models,
+        source="live",
+        message="已从 OpenCode 真实拉取模型列表。",
+    )
 
 
 @router.get("/data-location", response_model=DataLocationInfo)
@@ -597,4 +672,5 @@ def test_ai_settings_live(data: AiTestRequest) -> AiLiveTestOut:
         transport=response.transport,
         elapsed_ms=elapsed_ms,
         preview=_preview_text(response.content),
+        cost=response.cost,
     )

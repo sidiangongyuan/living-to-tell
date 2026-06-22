@@ -35,6 +35,7 @@ class RewriteResponse:
     output_tokens: Optional[int] = None
     finish_reason: Optional[str] = None
     transport: Optional[str] = None
+    cost: Optional[float] = None
 
 
 class AiProvider(ABC):
@@ -69,3 +70,4 @@ class ChatResponse:
     output_tokens: Optional[int] = None
     finish_reason: Optional[str] = None
     transport: Optional[str] = None
+    cost: Optional[float] = None

@@ -124,6 +124,7 @@ class AiTaskService:
             input_tokens=response.input_tokens,
             output_tokens=response.output_tokens,
             finish_reason=response.finish_reason,
+            cost=response.cost,
         )
 
     def generate_from_messages(
@@ -148,6 +149,7 @@ class AiTaskService:
             input_tokens=response.input_tokens,
             output_tokens=response.output_tokens,
             finish_reason=response.finish_reason,
+            cost=response.cost,
         )
 
 

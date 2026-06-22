@@ -104,7 +104,7 @@
 - 支持为每个写作工具保存个人 prompt 预设。
 - AI Card 支持风格、人物、场景卡片，提供固定模板、AI 草稿生成、类型筛选和关键词搜索。
 - 场景模块可在 AI 工具中手动搜索并勾选调用，只有确认选择后才会进入本轮上下文。
-- 支持 OpenAI 兼容接口、Codex 本地登录、Gemini API / 本地配置、Gemini CLI / OAuth。
+- 支持 OpenAI 兼容接口、Codex 本地登录、Gemini API / 本地配置、Gemini CLI / OAuth 和 OpenCode 本地登录。
 
 ### 桌面体验
 
@@ -144,6 +144,15 @@
 - OpenAI 兼容接口：设置 Base URL / 模型，并使用 `env:OPENAI_API_KEY` 或 Codex 本地登录。
 - Gemini API：使用 `env:GEMINI_API_KEY` 或导入本地 Gemini 配置。
 - Gemini CLI / OAuth：复用本机 Gemini CLI 登录，不需要 API Key 输入框。
+- OpenCode：复用本机 `opencode auth login` 登录状态，不需要 API Key 输入框；设置页可以真实获取当前 OpenCode 模型列表。
+
+OpenCode 的模型获取是实时调用。本机当前 OpenCode 可拉取的模型包括：
+
+- `opencode/big-pickle`
+- `opencode/deepseek-v4-flash-free`
+- `opencode/mimo-v2.5-free`
+- `opencode/nemotron-3-ultra-free`
+- `opencode/north-mini-code-free`
 
 设置页把 **检查本地配置** 和 **发送真实测试请求** 分开。前者只检查本地凭据来源是否可用；后者会发送一条短示例请求，真实验证 provider、model、base URL、key 和内部 transport。
 
@@ -169,6 +178,7 @@
 - 增加意象星图：右键选文加入意象、原文锚点、共现关系、重复摘录合并和安全解绑。
 - 增加文章级 AI 对话、常驻指令、复制回复和保存为文章便签。
 - 升级 AI Cards 为风格 / 人物 / 场景三类模板，增加 AI 草稿生成和 AI 工具中的场景模块手动调用。
+- 增加 OpenCode 本地登录支持、OpenCode 模型实时获取和统一 AI provider 链路下的 OpenCode 真实测试请求。
 - 增加真实 AI 连通测试，并修复 Gemini 中转 key 在自定义 Base URL 下的 transport 选择。
 - 增加“数据与存储”设置，可查看数据路径、打开目录并用复制迁移方式切换位置。
 - 增加 Tauri 启动反馈窗口，冷启动时不再是黑屏等待。
@@ -208,6 +218,7 @@
 - [x] 增加风格 / 人物 / 场景 AI Cards 固定模板与 AI 草稿生成。
 - [x] 增加场景模块搜索和手动勾选调用。
 - [x] 增加真实 AI 连通测试，显示 provider、model、transport 和响应预览。
+- [x] 增加 OpenCode 本地登录支持，并支持实时获取 OpenCode 模型列表。
 - [ ] 为长文本请求增加更清晰的请求大小、等待时间和超时反馈。
 - [ ] 更容易把 AI 对话里的灵感转成文章、便签或文脉材料。
 

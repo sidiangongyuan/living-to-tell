@@ -129,11 +129,20 @@ const aiSettings = {
       command: 'gemini',
       proxy: null,
     },
+    opencode: {
+      available: false,
+      path: null,
+      reason: 'Not configured in this demo',
+      account: null,
+      command: 'opencode',
+      proxy: null,
+    },
   },
   model_presets: {
     openai: ['gpt-4o-mini', 'gpt-4.1-mini'],
     gemini: ['gemini-2.5-flash', 'gemini-2.5-pro'],
     gemini_cli: ['gemini-cli-default'],
+    opencode: ['opencode/deepseek-v4-flash-free'],
   },
 }
 
@@ -225,6 +234,15 @@ async function installDemoApi(page) {
     }
     if (pathname === '/api/ai/threads') return json(route, [])
     if (pathname === '/api/settings/ai') return json(route, aiSettings)
+    if (pathname === '/api/settings/ai/models') {
+      const provider = url.searchParams.get('provider') || 'openai'
+      return json(route, {
+        provider,
+        models: aiSettings.model_presets[provider] || [],
+        source: 'preset',
+        message: '当前 provider 暂未启用真实模型拉取，已显示内置预设。',
+      })
+    }
     if (pathname === '/api/backup/stats') return json(route, { total_size: 0 })
     if (pathname === '/api/backup/backups') return json(route, [])
     if (pathname === '/api/backup/checkpoints') return json(route, [])

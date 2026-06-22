@@ -182,3 +182,58 @@ def test_gemini_cli_source_blocks_when_command_missing(monkeypatch) -> None:
         environ={},
     )
     assert any(i.code == "missing_gemini_cli" for i in issues)
+
+
+def test_opencode_source_passes_when_command_and_auth_available(monkeypatch) -> None:
+    import writer.services.ai.preflight as preflight_mod
+
+    class Status:
+        available = True
+
+    monkeypatch.setattr(preflight_mod, "find_opencode_cli", lambda: "opencode")
+    monkeypatch.setattr(
+        preflight_mod,
+        "opencode_auth_status",
+        lambda command=None: Status(),
+    )
+    issues = preflight_rewrite(
+        _config(provider_name="opencode", api_key_source="opencode"),
+        "hello",
+        has_entry=True,
+        environ={},
+    )
+    assert issues == []
+
+
+def test_opencode_source_blocks_when_command_missing(monkeypatch) -> None:
+    import writer.services.ai.preflight as preflight_mod
+
+    monkeypatch.setattr(preflight_mod, "find_opencode_cli", lambda: None)
+    issues = preflight_rewrite(
+        _config(provider_name="opencode", api_key_source="opencode"),
+        "hello",
+        has_entry=True,
+        environ={},
+    )
+    assert any(i.code == "missing_opencode_cli" for i in issues)
+
+
+def test_opencode_source_blocks_when_auth_missing(monkeypatch) -> None:
+    import writer.services.ai.preflight as preflight_mod
+
+    class Status:
+        available = False
+
+    monkeypatch.setattr(preflight_mod, "find_opencode_cli", lambda: "opencode")
+    monkeypatch.setattr(
+        preflight_mod,
+        "opencode_auth_status",
+        lambda command=None: Status(),
+    )
+    issues = preflight_rewrite(
+        _config(provider_name="opencode", api_key_source="opencode"),
+        "hello",
+        has_entry=True,
+        environ={},
+    )
+    assert any(i.code == "missing_opencode_auth" for i in issues)

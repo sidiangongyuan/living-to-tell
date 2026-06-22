@@ -25,6 +25,7 @@ Windows 安装器通常把程序文件放在 `%LOCALAPPDATA%\活着为了讲述`
    - OpenAI 兼容接口：使用 `env:OPENAI_API_KEY`。
    - Gemini：使用 `env:GEMINI_API_KEY` 或本机 Gemini 配置。
    - Gemini CLI / OAuth：适合已经在本机使用 Gemini CLI 的用户。
+   - OpenCode：适合已经在本机运行过 `opencode auth login` 的用户。设置页可实时获取 OpenCode 模型，例如 `opencode/deepseek-v4-flash-free`、`opencode/mimo-v2.5-free`、`opencode/nemotron-3-ultra-free`、`opencode/north-mini-code-free`、`opencode/big-pickle`。
 5. 先点击 **检查本地配置**，确认凭据来源存在；再点击 **发送真实测试请求**，用一条短示例请求验证 provider、model、base URL、key 和 transport。
 6. 第一次正式调用 AI 时，仍建议先使用非敏感示例文本。
 

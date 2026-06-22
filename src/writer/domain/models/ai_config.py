@@ -9,6 +9,7 @@ Supported values for ``api_key_source``:
 - ``codex``       — read from ``~/.codex/auth.json`` at request time.
 - ``gemini``      — read from ``~/.gemini/.env`` at request time.
 - ``gemini-cli``  — reuse Gemini CLI OAuth state at request time.
+- ``opencode``    — reuse OpenCode CLI local auth at request time.
 
 Both paths read the secret strictly at runtime; Writer never persists the
 key itself on disk.
@@ -44,3 +45,7 @@ class AiConfig:
     def uses_gemini_auth(self) -> bool:
         """True when the key should be read from a local Gemini env file."""
         return (self.api_key_source or "").strip().lower() == "gemini"
+
+    def uses_opencode_auth(self) -> bool:
+        """True when OpenCode CLI should provide local authentication."""
+        return (self.api_key_source or "").strip().lower() == "opencode"
