@@ -1,11 +1,10 @@
 """Gemini provider adapter.
 
-Native Gemini API keys use the ``generateContent`` route. Gemini CLI configs
-with a custom ``GOOGLE_GEMINI_BASE_URL`` often route through gateway services
-that mirror the CLI's streaming SDK request instead of the non-streaming
-``generateContent`` endpoint, so imported CLI settings use that compatible
-transport. Explicit ``env:`` configs with ``sk-...`` keys still keep the
-OpenAI-compatible fallback for proxies that expose ``/v1/chat/completions``.
+Native Gemini API keys use the ``generateContent`` route. Gemini proxy keys
+that look like ``sk-...`` usually expose Gemini models through the familiar
+``/v1/chat/completions`` wire protocol, even though the provider and model are
+still Gemini. The adapter chooses the transport from the key shape and base
+URL, so user-facing configuration can stay provider-oriented.
 """
 from __future__ import annotations
 
@@ -13,6 +12,8 @@ import html
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 from typing import List, Optional
 from urllib import error, request
@@ -62,6 +63,7 @@ class GeminiProvider(AiProvider):
             content=result.content,
             model=self._config.model,
             provider=self.name,
+            transport=result.transport,
             input_tokens=result.input_tokens,
             output_tokens=result.output_tokens,
             finish_reason=result.finish_reason,
@@ -74,6 +76,7 @@ class GeminiProvider(AiProvider):
             content=result.content,
             model=used_model,
             provider=self.name,
+            transport=result.transport,
             input_tokens=result.input_tokens,
             output_tokens=result.output_tokens,
             finish_reason=result.finish_reason,
@@ -81,11 +84,11 @@ class GeminiProvider(AiProvider):
 
     def _send_request(self, model: str, messages: List[dict]) -> ChatResponse:
         api_key = self._resolve_api_key()
-        if _should_use_gemini_cli_gateway_transport(self._config):
-            return self._send_gemini_cli_gateway_request(model, messages, api_key)
-
         if _should_use_openai_compatible_transport(api_key, self._config.base_url):
             return self._send_openai_compatible_request(model, messages, api_key)
+
+        if _should_use_gemini_cli_gateway_transport(self._config):
+            return self._send_gemini_cli_gateway_request(model, messages, api_key)
 
         url = self._request_url(model)
         payload = self._build_payload(messages)
@@ -122,6 +125,7 @@ class GeminiProvider(AiProvider):
             content=text,
             model=model,
             provider=self.name,
+            transport="gemini_native",
             input_tokens=_as_int(usage, "promptTokenCount"),
             output_tokens=_as_int(usage, "candidatesTokenCount"),
             finish_reason=_as_str(candidate, "finishReason"),
@@ -169,6 +173,7 @@ class GeminiProvider(AiProvider):
             content=text,
             model=model,
             provider=self.name,
+            transport="gemini_stream_gateway",
             input_tokens=_as_int(usage, "promptTokenCount"),
             output_tokens=_as_int(usage, "candidatesTokenCount"),
             finish_reason=_as_str(candidate, "finishReason"),
@@ -181,33 +186,24 @@ class GeminiProvider(AiProvider):
         api_key: str,
     ) -> ChatResponse:
         url = _openai_compatible_chat_url(self._config.base_url)
-        body = json.dumps(
-            {
-                "model": model,
-                "messages": _openai_messages(messages),
-            },
-            ensure_ascii=False,
-        ).encode("utf-8")
-        req = request.Request(
-            url,
-            data=body,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
-                "User-Agent": "Writer/0.2",
-            },
-            method="POST",
-        )
-        try:
-            with self._opener(req, timeout=self._timeout_seconds) as resp:
-                raw = resp.read().decode("utf-8")
-        except error.HTTPError as exc:
-            message = _extract_http_error(exc)
-            raise AiError(f"AI request failed: {message}") from exc
-        except error.URLError as exc:
-            raise AiError(f"AI request failed: {exc.reason}") from exc
-        except Exception as exc:  # noqa: BLE001
-            raise AiError(f"AI request failed: {exc}") from exc
+        payload = {
+            "model": model,
+            "messages": _gateway_compatible_messages(messages),
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": _gemini_cli_gateway_user_agent(model),
+        }
+        if self._opener is request.urlopen:
+            raw = _post_json_with_curl(
+                url,
+                headers=headers,
+                payload=payload,
+                timeout_seconds=self._timeout_seconds,
+            )
+        else:
+            raw = self._post_json_with_urllib(url, headers=headers, payload=payload)
 
         parsed = _parse_response_json(raw)
         text = _extract_openai_compatible_text(parsed)
@@ -219,10 +215,31 @@ class GeminiProvider(AiProvider):
             content=text,
             model=model,
             provider=self.name,
+            transport="gateway_compatible",
             input_tokens=_as_int(usage, "prompt_tokens"),
             output_tokens=_as_int(usage, "completion_tokens"),
             finish_reason=_as_str(choice, "finish_reason"),
         )
+
+    def _post_json_with_urllib(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        payload: dict,
+    ) -> str:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = request.Request(url, data=body, headers=headers, method="POST")
+        try:
+            with self._opener(req, timeout=self._timeout_seconds) as resp:
+                return resp.read().decode("utf-8")
+        except error.HTTPError as exc:
+            message = _extract_http_error(exc)
+            raise AiError(f"AI request failed: {message}") from exc
+        except error.URLError as exc:
+            raise AiError(f"AI request failed: {exc.reason}") from exc
+        except Exception as exc:  # noqa: BLE001
+            raise AiError(f"AI request failed: {exc}") from exc
 
     def _resolve_api_key(self) -> str:
         if self._config.uses_gemini_auth():
@@ -322,6 +339,73 @@ def _gemini_cli_gateway_user_agent(model: str) -> str:
     )
 
 
+def _post_json_with_curl(
+    url: str,
+    *,
+    headers: dict[str, str],
+    payload: dict,
+    timeout_seconds: int,
+) -> str:
+    curl = shutil.which("curl.exe") or shutil.which("curl")
+    if not curl:
+        raise AiError(
+            "Gateway-compatible Gemini transport requires curl on this system. "
+            "Install curl or use a Google-native Gemini key."
+        )
+    payload_text = json.dumps(payload, ensure_ascii=False)
+    config_lines = [
+        "silent",
+        "show-error",
+        f"max-time = {max(1, int(timeout_seconds))}",
+        f"url = {json.dumps(url, ensure_ascii=False)}",
+        "request = POST",
+        f"data-binary = {json.dumps(payload_text, ensure_ascii=False)}",
+        f"write-out = {json.dumps(chr(10) + '__WRITER_HTTP_STATUS__:%{http_code}')}",
+    ]
+    config_lines.extend(
+        f"header = {json.dumps(f'{key}: {value}', ensure_ascii=False)}"
+        for key, value in headers.items()
+    )
+    config = "\n".join(config_lines)
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        completed = subprocess.run(
+            [curl, "--config", "-"],
+            input=config,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=max(1, int(timeout_seconds)) + 5,
+            creationflags=creationflags,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise AiError(f"AI request failed: timed out after {timeout_seconds} seconds") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise AiError(f"AI request failed: curl could not start: {exc}") from exc
+
+    if completed.returncode != 0:
+        message = (completed.stderr or completed.stdout or f"curl exit {completed.returncode}").strip()
+        raise AiError(f"AI request failed: {message}")
+    return _extract_curl_body_or_raise(completed.stdout)
+
+
+def _extract_curl_body_or_raise(raw: str) -> str:
+    marker = "\n__WRITER_HTTP_STATUS__:"
+    if marker not in raw:
+        return raw
+    body, status_text = raw.rsplit(marker, 1)
+    try:
+        status = int(status_text.strip()[:3])
+    except ValueError:
+        return body
+    if status >= 400:
+        raise AiError(f"AI request failed: {_extract_error_body(body, status, '')}")
+    if status == 0:
+        raise AiError("AI request failed: network connection failed")
+    return body
+
+
 def _resolve_timeout_seconds(explicit: Optional[int]) -> int:
     if explicit is not None:
         return max(1, int(explicit))
@@ -372,15 +456,40 @@ def _message_text(content) -> str:
     return ""
 
 
-def _openai_messages(messages: List[dict]) -> List[dict]:
+def _gateway_compatible_messages(messages: List[dict]) -> List[dict]:
+    """Build messages for Gemini models behind OpenAI-compatible gateways.
+
+    Some Gemini relay services expose /v1/chat/completions but reject OpenAI's
+    system role when forwarding to the upstream Gemini API. Folding system
+    instructions into the first user message keeps one wire protocol for the
+    user-facing Gemini provider while avoiding that gateway-specific failure.
+    """
+    system_parts: List[str] = []
     out: List[dict] = []
+    first_user_index: Optional[int] = None
     for message in messages:
         role = str(message.get("role", "user") or "user").strip().lower()
-        if role not in {"system", "user", "assistant"}:
-            role = "user"
         text = _message_text(message.get("content"))
-        if text:
-            out.append({"role": role, "content": text})
+        if not text:
+            continue
+        if role == "system":
+            system_parts.append(text)
+            continue
+        if role not in {"user", "assistant"}:
+            role = "user"
+        if role == "user" and first_user_index is None:
+            first_user_index = len(out)
+        out.append({"role": role, "content": text})
+
+    system_text = "\n\n".join(system_parts).strip()
+    if system_text:
+        folded = f"系统指令：\n{system_text}"
+        if first_user_index is None:
+            out.insert(0, {"role": "user", "content": folded})
+        else:
+            original = out[first_user_index]["content"]
+            out[first_user_index]["content"] = f"{folded}\n\n用户输入：\n{original}"
+
     if not out:
         out.append({"role": "user", "content": ""})
     return out
@@ -392,15 +501,34 @@ def _extract_http_error(exc: error.HTTPError) -> str:
     except Exception:  # noqa: BLE001
         body = ""
     if body:
-        try:
-            parsed = json.loads(body)
-        except json.JSONDecodeError:
-            return _clean_http_error_body(body, exc.code, exc.reason)
-        err = parsed.get("error") if isinstance(parsed, dict) else None
-        if isinstance(err, dict) and isinstance(err.get("message"), str):
-            return err["message"]
-        return _clean_http_error_body(body, exc.code, exc.reason)
+        return _extract_error_body(body, exc.code, exc.reason)
     return f"HTTP {exc.code}"
+
+
+def _extract_error_body(body: str, code: int, reason: str) -> str:
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        return _clean_http_error_body(body, code, reason)
+    err = parsed.get("error") if isinstance(parsed, dict) else None
+    if isinstance(err, dict):
+        message = err.get("message")
+        code_text = err.get("code")
+        err_type = err.get("type")
+        if code >= 500 and (
+            message == "openai_error"
+            or code_text == "bad_response_status_code"
+            or err_type == "bad_response_status_code"
+        ):
+            return (
+                f"HTTP {code}: 中转接口返回了上游错误，请检查模型名、"
+                "模型权限或请求格式。"
+            )
+        if isinstance(message, str) and message.strip():
+            if isinstance(code_text, str) and code_text.strip() and code_text not in message:
+                return f"HTTP {code}: {code_text}: {message}"
+            return f"HTTP {code}: {message}"
+    return _clean_http_error_body(body, code, reason)
 
 
 def _clean_http_error_body(body: str, code: int, reason: str) -> str:
@@ -408,6 +536,11 @@ def _clean_http_error_body(body: str, code: int, reason: str) -> str:
     if not text:
         return f"HTTP {code} {reason}".strip()
     if "<html" in text[:500].lower() or "<!doctype html" in text[:500].lower():
+        if code == 403:
+            return (
+                "HTTP 403: AI 服务拒绝了当前请求。可能是中转接口协议不匹配、"
+                "模型无权限或密钥无效。"
+            )
         title_match = re.search(
             r"<title[^>]*>(.*?)</title>", text, flags=re.IGNORECASE | re.DOTALL
         )

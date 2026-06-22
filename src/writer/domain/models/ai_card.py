@@ -1,4 +1,4 @@
-"""Reusable AI cards: style / character / setting (M10A)."""
+"""Reusable AI cards: style / character / scene."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -7,7 +7,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class AiCard:
     id: str
-    kind: str  # 'style' | 'character' | 'setting'
+    kind: str  # 'style' | 'character' | 'scene'
     name: str
     body: str
     created_at: str

@@ -6,7 +6,7 @@ This list tracks product-facing work that would make Living to Tell more reliabl
 
 - [ ] Improve onboarding for language, data location, backups, and AI provider setup.
 - [ ] Add a sample project that demonstrates articles, collections, references, notes, and AI setup.
-- [ ] Add a user-facing data location screen.
+- [x] Add a user-facing data location screen.
 - [ ] Add a safe restore workflow for backups.
 - [ ] Re-enable dark mode after a complete visual pass.
 
@@ -24,15 +24,20 @@ This list tracks product-facing work that would make Living to Tell more reliabl
 - [x] Make AI results safer to apply with clearer original-vs-result comparison and explicit replace / insert / copy actions.
 - [x] Give polish, rewrite, expand, and continue their own focused controls.
 - [x] Let users save personal prompt presets for each writing tool.
+- [x] Add article-scoped AI chat with standing instructions and save-reply-as-note.
+- [x] Add style / character / scene AI Cards with fixed templates and AI-assisted draft generation.
+- [x] Add scene-module search and manual attachment for AI tasks.
+- [x] Add a real AI connectivity test that separates local config checks from real provider requests.
 - [ ] Add clearer long-text request size, wait-time, and timeout feedback.
-- [ ] Make it easier to turn AI chat ideas into articles, notes, or reference material.
+- [ ] Make it easier to turn AI chat ideas into articles or reference material.
 - [ ] Improve quota, model availability, network, and proxy error messages.
 - [ ] Add provider-native token counting where available.
 - [ ] Expand clickable AI reports so issues can locate source text or become follow-up tasks.
 
 ## Knowledge and planning
 
-- [ ] Add a mind map / imagery collection space for organizing themes, symbols, motifs, character links, arguments, references, and AI-generated ideas visually.
+- [x] Add a motif star map for organizing recurring images, symbols, and source excerpts visually.
+- [ ] Add richer graph views for themes, character links, arguments, references, and AI-generated ideas visually.
 - [ ] Add richer reference-library views for large reading collections.
 - [ ] Add better cross-links between articles, collections, notes, references, and AI conversations.
 
@@ -52,6 +57,10 @@ This list tracks product-facing work that would make Living to Tell more reliabl
 ## Completed recently
 
 - Renamed the public app to Living to Tell / 活着为了讲述.
+- Added a motif star map with right-click capture, source anchors, co-occurrence links, deduplication, and safer unlink behavior.
+- Upgraded AI Cards into style / character / scene templates, added AI draft generation, and added manual scene-module attachment.
+- Added a real AI connectivity test and fixed Gemini proxy transport selection for custom-base `sk-...` keys.
+- Added Data and Storage settings with visible paths, open-folder actions, and copy-based directory migration.
 - Added article notes, focused AI writing controls, per-tool presets, and explicit AI writeback actions.
 - Improved long-form editing with last-position restore, wider writing layout, and end-of-document breathing space.
 - Added daily writing quote links and one-click start writing.

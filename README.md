@@ -30,7 +30,7 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 | **Collections** | Arrange multiple articles into a reading order and export them as a collected manuscript. |
 | **Reference Library** | Keep quotes, source titles, authors, usage notes, and citation-ready snippets in one place. |
 | **Article AI** | Use focused AI tools and article-scoped chat while keeping every write-back explicit. |
-| **AI Cards** | Save reusable style, character, and setting context for later prompts. |
+| **AI Cards** | Save reusable style, character, and scene cards for later prompts. |
 | **Motif Star Map** | Mark selected text as motifs, revisit source anchors, and explore how motifs co-occur. |
 | **Local First** | Store writing data locally and send text to AI only when you explicitly run an AI action. |
 
@@ -102,7 +102,8 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 - Standing chat instructions let you keep long-term style preferences without rewriting them in every message.
 - AI results are previewed before writing back, with explicit replace, insert, and copy actions.
 - Personal presets for each writing tool.
-- AI Cards for reusable style, character, and setting context, with type/source filters and keyword search.
+- AI Cards for reusable style, character, and scene modules, with fixed templates, AI-assisted draft generation, type/source filters, and keyword search.
+- Scene modules can be searched and manually attached to AI tasks, so narrative structure is sent only when you choose it.
 - Supports OpenAI-compatible APIs, Codex local auth, Gemini API/local config, and Gemini CLI / OAuth.
 
 ### Desktop Experience
@@ -144,6 +145,10 @@ Open Settings and choose one provider:
 - Gemini API: use `env:GEMINI_API_KEY` or import local Gemini configuration.
 - Gemini CLI / OAuth: reuse a local Gemini CLI login. No API key field is required.
 
+Settings separates **Check Local Config** from **Send Real Test Request**. The first only checks local credential sources; the second sends a short sample request to verify the provider, model, base URL, key, and internal transport.
+
+Gemini proxy keys shaped like `sk-...` with a custom base URL automatically use the gateway-compatible `/v1/chat/completions` transport while staying configured as the Gemini provider.
+
 Long Gemini requests default to a 120 second wait. Advanced users can tune this with `WRITER_GEMINI_TIMEOUT_SECONDS` or `WRITER_GEMINI_CLI_TIMEOUT_SECONDS`.
 
 ## Data & Privacy
@@ -163,6 +168,8 @@ Long Gemini requests default to a 120 second wait. Advanced users can tune this 
 - Renamed the public app to Living to Tell / 活着为了讲述.
 - Added a motif star map with right-click text capture, source anchors, co-occurrence links, deduplication, and safer unlink behavior.
 - Added article-scoped AI chat, standing instructions, copy actions, and save-as-note actions.
+- Upgraded AI Cards into style / character / scene templates, added AI draft generation, and added manual scene-module attachment for AI tasks.
+- Added a real AI connectivity test and fixed Gemini proxy transport selection for `sk-...` keys behind custom base URLs.
 - Added Data and Storage settings with directory display, open-folder actions, and copy-based migration.
 - Added a Tauri startup splash so cold starts show immediate progress instead of a blank window.
 - Hid the uninstall-time app-data deletion option and clarified that uninstalling does not delete writing data.
@@ -198,6 +205,9 @@ The public TODO list is kept visible but folded so the README stays readable.
 - [x] Give polish, rewrite, expand, and continue their own focused controls.
 - [x] Let users save personal prompt presets for each writing tool.
 - [x] Add article-scoped AI chat with standing instructions and save-reply-as-note.
+- [x] Add style / character / scene AI Cards with structured templates and AI-assisted draft generation.
+- [x] Add manual scene-module search and attachment for AI tasks.
+- [x] Add a real AI connectivity test that reports provider, model, transport, and response preview.
 - [ ] Add clearer long-text request size, wait-time, and timeout feedback.
 - [ ] Make it easier to turn AI chat ideas into articles, notes, or reference material.
 

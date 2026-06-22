@@ -48,6 +48,16 @@ export interface AiTestResult {
   message: string
 }
 
+export interface AiLiveTestResult {
+  ok: boolean
+  message: string
+  provider: string
+  model: string
+  transport?: string | null
+  elapsed_ms?: number | null
+  preview: string
+}
+
 export interface DataLocationInfo {
   data_dir: string
   default_data_dir: string
@@ -89,6 +99,15 @@ export const settingsApi = {
 
   async testAiSettings(data: AiSettingsUpdate): Promise<AiTestResult> {
     const res = await apiFetch('/api/settings/ai/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async testAiSettingsLive(data: AiSettingsUpdate): Promise<AiLiveTestResult> {
+    const res = await apiFetch('/api/settings/ai/test-live', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),

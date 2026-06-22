@@ -161,7 +161,7 @@ def build_container(db_path: Optional[Path] = None) -> AppContainer:
 
     # ---- M10A: AI workspace -----------------------------------------
     ai_thread_repo = AiThreadRepository(conn)
-    # Cards (style/character/setting) and saved task templates: schema
+    # Cards (style/character/scene) and saved task templates: schema
     # and repository are wired so future milestones can land the UI
     # without a migration. There is intentionally no card or template
     # entry point in the M10A panel — that surface is deferred.

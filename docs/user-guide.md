@@ -25,7 +25,8 @@ If an old Writer database exists at `%APPDATA%\Writer\Writer\writer.sqlite3`, fi
    - `env:OPENAI_API_KEY` for OpenAI-compatible providers.
    - `env:GEMINI_API_KEY` or local Gemini configuration for Gemini.
    - Gemini CLI / OAuth if you already use Gemini CLI locally.
-5. Run one small AI test on non-sensitive sample text before using AI with private writing.
+5. Use **Check Local Config** to confirm the credential source exists, then use **Send Real Test Request** to verify the provider, model, base URL, key, and transport with a short sample request.
+6. Before using AI with private writing, still run your first real task on non-sensitive sample text.
 
 ## 3. Daily writing flow
 
@@ -97,6 +98,18 @@ Recommended safety workflow:
 5. Use replace, insert, or copy explicitly. AI output is not written back automatically.
 
 AI providers receive the text you send. Do not send content that you are not comfortable sharing with the configured provider.
+
+### AI Cards and Scene Modules
+
+AI Cards store reusable writing context. They are meant to capture structure and guidance, not long source excerpts.
+
+- **Style cards** capture prose texture, sentence rhythm, narrative distance, imagery preferences, and constraints.
+- **Character cards** capture the character core, desire, fear, action pattern, voice, and relationship tension.
+- **Scene cards** capture the scene prototype, trigger conditions, core conflict, key actions, emotional curve, narrative function, scene DNA, and replaceable elements.
+
+New cards can insert a fixed template. You can also paste material into **Card Generator AI** to generate a draft, then review and save it as a new card or apply it to the current card.
+
+In the AI workspace, scene modules are searched and selected manually. Scene cards are not sent to a provider unless you explicitly check them for the current task.
 
 ## 8. Export
 

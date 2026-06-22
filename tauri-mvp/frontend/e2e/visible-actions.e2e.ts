@@ -256,15 +256,41 @@ async function mockVisibleActionApi(page: Page) {
     await route.fulfill({ json: existingReference })
   })
 
-  await page.route('**/api/ai-cards**', async (route) => route.fulfill({ json: [{
-    id: 'card-a',
-    title: '克制风格',
-    content: '少用夸张表达。',
-    card_type: 'style',
-    tags: [],
-    created_at: null,
-    updated_at: null,
-  }] }))
+  await page.route('**/api/ai-cards**', async (route) => {
+    const url = new URL(route.request().url())
+    const cards = [
+      {
+        id: 'card-a',
+        title: '克制风格',
+        content: '少用夸张表达。',
+        card_type: 'style',
+        tags: [],
+        created_at: null,
+        updated_at: null,
+      },
+      {
+        id: 'scene-a',
+        title: '等待回应',
+        content: '【场景原型】\n一方表达后等待回应。\n\n【参考原文（可选）】\n第一句\n第二句\n第三句\n第四句',
+        card_type: 'scene',
+        tags: [],
+        created_at: null,
+        updated_at: null,
+      },
+    ]
+    if (url.pathname === '/api/ai-cards/search') {
+      const cardType = url.searchParams.get('card_type')
+      const q = url.searchParams.get('q') || ''
+      await route.fulfill({
+        json: cards.filter((card) =>
+          (!cardType || card.card_type === cardType)
+          && (card.title.includes(q) || card.content.includes(q))
+        ),
+      })
+      return
+    }
+    await route.fulfill({ json: cards })
+  })
   await page.route('**/api/ai/task-presets', async (route) => route.fulfill({ json: {} }))
   await page.route('**/api/ai/task', async (route) => {
     await route.fulfill({ json: { result: 'AI 生成结果', task_type: (route.request().postDataJSON() as { task_type?: string }).task_type ?? 'polish' } })
@@ -962,9 +988,9 @@ test('app shell navigation, language, focus mode, and command palette actions wo
   await page.getByRole('button', { name: '设置' }).click()
   await expect(page).toHaveURL(/\/settings/)
 
-  await page.getByRole('button', { name: '中' }).click()
+  await page.getByRole('button', { name: '中', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Articles' })).toBeVisible()
-  await page.getByRole('button', { name: 'EN' }).click()
+  await page.getByRole('button', { name: 'EN', exact: true }).click()
   await expect(page.getByRole('button', { name: '文章' })).toBeVisible()
 
   await page.getByTitle('专注模式 (F11)').click()
@@ -1367,10 +1393,10 @@ test('AI tools run tasks, attach contexts, and keep generated outputs actionable
 
   await page.getByRole('button', { name: '添加文脉标本' }).click()
   await page.getByPlaceholder('搜索标本...').fill('不存在的标本')
-  await page.getByRole('button', { name: '搜索' }).click()
+  await page.getByPlaceholder('搜索标本...').press('Enter')
   await expect(page.getByText('暂无标本。点击"新建"添加。')).toBeVisible()
   await page.getByPlaceholder('搜索标本...').fill('')
-  await page.getByRole('button', { name: '搜索' }).click()
+  await page.getByPlaceholder('搜索标本...').press('Enter')
   await page.getByRole('button', { name: /已有标本正文/ }).click()
   await page.getByRole('button', { name: /添加所选上下文/ }).click()
   await expect(page.getByText('测试书')).toBeVisible()
@@ -1432,8 +1458,14 @@ test('AI presets, card contexts, and clear controls update the workspace visibly
   await page.getByRole('button', { name: '添加 AI 卡片' }).click()
   await page.getByRole('button', { name: /克制风格/ }).click()
   await expect(page.locator('article').filter({ hasText: '克制风格' })).toBeVisible()
+  await page.getByPlaceholder('例如：等待、试探、关系突破').fill('等待')
+  await page.getByPlaceholder('例如：等待、试探、关系突破').press('Enter')
+  await page.getByRole('button', { name: /等待回应/ }).click()
+  await expect(page.locator('article').filter({ hasText: '等待回应' })).toBeVisible()
   await page.getByRole('button', { name: '清空上下文' }).click()
   await expect(page.getByText('克制风格')).toHaveCount(1)
+  await expect(page.locator('article').filter({ hasText: '等待回应' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /等待回应/ })).toHaveCount(1)
   await expect(page.getByText('尚未添加上下文。AI 只会处理原文，除非你手动加入卡片、便签或文脉标本。')).toBeVisible()
 
   await page.getByRole('button', { name: '粘贴文本' }).click()

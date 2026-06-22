@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from types import SimpleNamespace
 import sys
@@ -81,8 +82,145 @@ def test_tauri_ai_cards_seed_and_crud(monkeypatch):
     assert updated.json()["id"] == card_id
     assert updated.json()["card_type"] == "character"
 
+    scene = client.post(
+        "/api/ai-cards",
+        json={
+            "title": "等待回应",
+            "content": "【场景原型】\n等待关系回应",
+            "card_type": "scene",
+            "tags": [],
+        },
+    )
+    assert scene.status_code == 201
+
+    search = client.get("/api/ai-cards/search?q=等待&card_type=scene&limit=10")
+    assert search.status_code == 200
+    assert [card["card_type"] for card in search.json()] == ["scene"]
+
+    rejected = client.post(
+        "/api/ai-cards",
+        json={
+            "title": "旧设定",
+            "content": "不再支持",
+            "card_type": "setting",
+            "tags": [],
+        },
+    )
+    assert rejected.status_code == 400
+
     deleted = client.delete(f"/api/ai-cards/{card_id}")
     assert deleted.status_code == 204
+
+
+def test_tauri_ai_cards_delete_legacy_setting_cards_once(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from deps import get_container
+
+    container = get_container()
+    container.settings_repository.delete("tauri.ai_cards.deleted_setting_cards_v1")
+    legacy = container.ai_card_repository.create(
+        kind="setting",
+        name="旧设定卡",
+        body="旧内容",
+    )
+
+    response = client.get("/api/ai-cards")
+    assert response.status_code == 200
+    assert all(card["id"] != legacy.id for card in response.json())
+    assert all(card["card_type"] != "setting" for card in response.json())
+    assert container.ai_card_repository.get(legacy.id) is None
+    assert container.settings_repository.get("tauri.ai_cards.deleted_setting_cards_v1") == "1"
+
+
+def test_tauri_ai_card_generate_draft_uses_strict_json(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from deps import get_container
+
+    class FakeTaskService:
+        def __init__(self):
+            self.calls = []
+
+        def generate_from_messages(self, messages, *, cost_tier):
+            self.calls.append({"messages": messages, "cost_tier": cost_tier})
+            return SimpleNamespace(
+                content=json.dumps(
+                    {
+                        "title": "赌注式情书",
+                        "card_type": "scene",
+                        "content": "【场景原型】\n用带赌注的表达推动关系。\n\n【参考原文（可选）】\n无",
+                    },
+                    ensure_ascii=False,
+                )
+            )
+
+    fake = FakeTaskService()
+    get_container().ai_task_service = fake
+
+    response = client.post(
+        "/api/ai-cards/generate-draft",
+        json={
+            "card_type": "scene",
+            "source_text": "长期暧昧后，主角写下一封带赌注的信。",
+            "keep_source_quotes": False,
+            "cost_tier": "strong",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["title"] == "赌注式情书"
+    assert payload["card_type"] == "scene"
+    assert "【场景原型】" in payload["content"]
+    assert fake.calls[-1]["cost_tier"].value == "strong"
+    assert "不要保留原文摘录" in fake.calls[-1]["messages"][1]["content"]
+
+
+def test_tauri_ai_card_generate_draft_rejects_bad_json(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from deps import get_container
+
+    class FakeTaskService:
+        def generate_from_messages(self, messages, *, cost_tier):
+            return SimpleNamespace(content="not json")
+
+    get_container().ai_task_service = FakeTaskService()
+
+    response = client.post(
+        "/api/ai-cards/generate-draft",
+        json={
+            "card_type": "scene",
+            "source_text": "一段材料",
+        },
+    )
+
+    assert response.status_code == 502
+
+
+def test_tauri_ai_card_generate_draft_sanitizes_html_errors(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from deps import get_container
+
+    class FakeTaskService:
+        def generate_from_messages(self, messages, *, cost_tier):
+            raise RuntimeError(
+                "AI request failed: <!doctype html><html><title>403 | Forbidden</title></html>"
+            )
+
+    get_container().ai_task_service = FakeTaskService()
+
+    response = client.post(
+        "/api/ai-cards/generate-draft",
+        json={
+            "card_type": "scene",
+            "source_text": "一段材料",
+        },
+    )
+
+    assert response.status_code == 500
+    detail = response.json()["detail"]
+    assert "AI 卡片生成失败" in detail
+    assert "网页错误页" in detail
+    assert "<!doctype html>" not in detail
 
 
 def test_tauri_article_collection_flow(monkeypatch):
@@ -1103,6 +1241,76 @@ def test_tauri_ai_settings_test_endpoint_uses_preflight(monkeypatch):
     )
     assert passed.status_code == 200
     assert passed.json()["ok"] is True
+
+
+def test_tauri_ai_settings_live_test_uses_provider_and_reports_transport(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.settings import routes as settings_routes
+    from writer.services.ai.interfaces import ChatResponse
+
+    class FakeProvider:
+        def chat(self, messages, *, model=None):
+            assert "请轻微润色这句话" in messages[-1]["content"]
+            return ChatResponse(
+                content="雨夜车站，两个人就此告别。",
+                model=model or "gemini-3.1-pro",
+                provider="gemini",
+                transport="gateway_compatible",
+            )
+
+    monkeypatch.setattr(settings_routes, "_provider_for_config", lambda config: FakeProvider())
+    monkeypatch.setenv("WRITER_TEST_PRESENT_KEY", "test-key")
+
+    response = client.post(
+        "/api/settings/ai/test-live",
+        json={
+            "provider_name": "gemini",
+            "base_url": "https://proxy.example",
+            "wire_api": "responses",
+            "model": "gemini-3.1-pro",
+            "api_key_source": "env:WRITER_TEST_PRESENT_KEY",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["provider"] == "gemini"
+    assert payload["model"] == "gemini-3.1-pro"
+    assert payload["transport"] == "gateway_compatible"
+    assert payload["preview"] == "雨夜车站，两个人就此告别。"
+
+
+def test_tauri_ai_settings_live_test_sanitizes_html_errors(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.settings import routes as settings_routes
+    from writer.services.ai.interfaces import AiError
+
+    class FakeProvider:
+        def chat(self, messages, *, model=None):
+            raise AiError(
+                "AI request failed: <!doctype html><html><title>403 | Forbidden</title></html>"
+            )
+
+    monkeypatch.setattr(settings_routes, "_provider_for_config", lambda config: FakeProvider())
+    monkeypatch.setenv("WRITER_TEST_PRESENT_KEY", "test-key")
+
+    response = client.post(
+        "/api/settings/ai/test-live",
+        json={
+            "provider_name": "gemini",
+            "base_url": "https://proxy.example",
+            "wire_api": "responses",
+            "model": "gemini-3.1-pro",
+            "api_key_source": "env:WRITER_TEST_PRESENT_KEY",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is False
+    assert "网页错误页" in payload["message"]
+    assert "<!doctype html>" not in payload["message"]
 
 
 def test_tauri_ai_settings_import_failures_are_explicit(monkeypatch):

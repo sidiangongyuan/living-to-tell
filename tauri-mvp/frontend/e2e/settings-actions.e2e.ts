@@ -63,6 +63,7 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
   const state = {
     aiSaves: [] as Array<Record<string, unknown>>,
     aiTests: [] as Array<Record<string, unknown>>,
+    aiLiveTests: [] as Array<Record<string, unknown>>,
     codexImports: 0,
     geminiImports: 0,
     migrations: [] as Array<Record<string, unknown>>,
@@ -127,6 +128,21 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
     await route.fulfill({ json: { ok: true, message: 'ok' } })
   })
 
+  await page.route('http://backend.test/api/settings/ai/test-live', async (route) => {
+    state.aiLiveTests.push(route.request().postDataJSON() as Record<string, unknown>)
+    await route.fulfill({
+      json: {
+        ok: true,
+        message: '真实 AI 请求成功。provider=gemini, model=gemini-2.5-flash, transport=gateway_compatible, elapsed=120ms',
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        transport: 'gateway_compatible',
+        elapsed_ms: 120,
+        preview: '雨夜车站，两个人就此告别。',
+      },
+    })
+  })
+
   await page.route('http://backend.test/api/settings/ai/import-codex', async (route) => {
     state.codexImports += 1
     await route.fulfill({
@@ -188,7 +204,7 @@ test('settings AI buttons import, test, save, and reset with visible feedback', 
   await expect.poll(() => state.geminiImports).toBe(1)
   await expect(page.getByText('已导入 Gemini 配置')).toBeVisible()
 
-  await page.getByRole('button', { name: '检查配置' }).click()
+  await page.getByRole('button', { name: '检查本地配置' }).click()
   await expect.poll(() => state.aiTests.length).toBe(1)
   expect(state.aiTests[0]).toEqual(expect.objectContaining({
     provider_name: 'gemini',
@@ -196,6 +212,16 @@ test('settings AI buttons import, test, save, and reset with visible feedback', 
     api_key_source: 'gemini',
   }))
   await expect(page.getByText(/本地配置检查通过/)).toBeVisible()
+
+  await page.getByRole('button', { name: '发送真实测试请求' }).click()
+  await expect.poll(() => state.aiLiveTests.length).toBe(1)
+  expect(state.aiLiveTests[0]).toEqual(expect.objectContaining({
+    provider_name: 'gemini',
+    model: 'gemini-2.5-flash',
+    api_key_source: 'gemini',
+  }))
+  await expect(page.getByText(/真实 AI 请求成功/)).toBeVisible()
+  await expect(page.getByText(/响应预览：雨夜车站，两个人就此告别。/)).toBeVisible()
 
   await page.locator('section').filter({ hasText: '界面设置' }).locator('select').nth(1).selectOption('tray')
   await page.getByRole('button', { name: '保存设置' }).click()

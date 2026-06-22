@@ -1,5 +1,6 @@
 import io
 import json
+import os
 from urllib.error import HTTPError
 
 import pytest
@@ -7,7 +8,7 @@ import pytest
 from writer.app.container import build_container
 from writer.domain.enums import RewriteAction
 from writer.domain.models.ai_config import AiConfig
-from writer.services.ai.gemini_auth import GeminiAuthResolver
+from writer.services.ai.gemini_auth import GeminiAuthResolver, GeminiConfigImporter
 from writer.services.ai.gemini_provider import GeminiProvider
 from writer.services.ai.interfaces import AiError, RewriteRequest
 from writer.services.ai.prompt_builder import PromptBuilder
@@ -83,6 +84,7 @@ def test_chat_uses_native_gemini_route_and_headers(monkeypatch):
 
     assert response.content == "pong"
     assert response.provider == "gemini"
+    assert response.transport == "gemini_native"
     assert response.input_tokens == 12
     assert response.output_tokens == 3
 
@@ -102,9 +104,51 @@ def test_chat_uses_native_gemini_route_and_headers(monkeypatch):
     assert body["contents"][1]["role"] == "model"
 
 
-def test_gemini_cli_custom_base_uses_stream_gateway_route(tmp_path):
+def test_sk_style_gemini_config_uses_openai_compatible_chat_route(tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text("GEMINI_API_KEY=sk-test-proxy-key\n", encoding="utf-8")
+    opener = _RecordingOpener(
+        {
+            "choices": [
+                {
+                    "message": {"content": "代理返回"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 21,
+                "completion_tokens": 4,
+            },
+        }
+    )
+    provider = GeminiProvider(
+        AiConfig(
+            base_url="https://proxy.example",
+            model="gemini-3-flash-preview",
+            api_key_source="gemini",
+        ),
+        PromptBuilder(),
+        gemini_auth=GeminiAuthResolver(path=env_file),
+        opener=opener,
+    )
+
+    response = provider.chat([{"role": "user", "content": "hi"}])
+
+    assert response.content == "代理返回"
+    assert response.input_tokens == 21
+    assert response.output_tokens == 4
+    assert response.finish_reason == "stop"
+    assert response.transport == "gateway_compatible"
+    req, _ = opener.requests[0]
+    assert req.full_url == "https://proxy.example/v1/chat/completions"
+    headers = _headers(req)
+    assert headers["authorization"] == "Bearer sk-test-proxy-key"
+    assert "x-goog-api-key" not in headers
+
+
+def test_non_sk_gemini_config_with_custom_base_uses_stream_gateway_route(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("GEMINI_API_KEY=AIza-test-native-key\n", encoding="utf-8")
     opener = _RecordingOpener(
         'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"片段一"}]}}]}\n\n'
         'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"片段二"}]'
@@ -128,13 +172,14 @@ def test_gemini_cli_custom_base_uses_stream_gateway_route(tmp_path):
     assert response.input_tokens == 11
     assert response.output_tokens == 5
     assert response.finish_reason == "STOP"
+    assert response.transport == "gemini_stream_gateway"
     req, _ = opener.requests[0]
     assert req.full_url == (
         "https://proxy.example/v1beta/models/"
         "gemini-3-flash-preview:streamGenerateContent?alt=sse"
     )
     headers = _headers(req)
-    assert headers["x-goog-api-key"] == "sk-test-proxy-key"
+    assert headers["x-goog-api-key"] == "AIza-test-native-key"
     assert headers["x-goog-api-client"] == "google-genai-sdk/1.30.0 gl-node/v25.7.0"
     assert headers["user-agent"].startswith("GeminiCLI-tui/")
     assert "authorization" not in headers
@@ -177,6 +222,7 @@ def test_sk_style_env_config_uses_openai_compatible_chat_route(monkeypatch):
     assert response.input_tokens == 21
     assert response.output_tokens == 4
     assert response.finish_reason == "stop"
+    assert response.transport == "gateway_compatible"
     req, _ = opener.requests[0]
     assert req.full_url == "https://proxy.example/v1/chat/completions"
     headers = _headers(req)
@@ -185,8 +231,40 @@ def test_sk_style_env_config_uses_openai_compatible_chat_route(monkeypatch):
     body = json.loads(req.data.decode("utf-8"))
     assert body["model"] == "gemini-3-flash-preview"
     assert body["messages"] == [
-        {"role": "system", "content": "sys"},
-        {"role": "user", "content": "hi"},
+        {"role": "user", "content": "系统指令：\nsys\n\n用户输入：\nhi"},
+    ]
+
+
+def test_gateway_compatible_transport_folds_system_into_first_user_message(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("GEMINI_API_KEY=sk-test-proxy-key\n", encoding="utf-8")
+    opener = _RecordingOpener(
+        {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
+    )
+    provider = GeminiProvider(
+        AiConfig(
+            base_url="https://proxy.example",
+            model="gemini-3.1-pro",
+            api_key_source="gemini",
+        ),
+        PromptBuilder(),
+        gemini_auth=GeminiAuthResolver(path=env_file),
+        opener=opener,
+    )
+
+    provider.chat(
+        [
+            {"role": "system", "content": "只输出 JSON。"},
+            {"role": "assistant", "content": "上一轮"},
+            {"role": "user", "content": "生成场景卡。"},
+        ]
+    )
+
+    req, _ = opener.requests[0]
+    body = json.loads(req.data.decode("utf-8"))
+    assert body["messages"] == [
+        {"role": "assistant", "content": "上一轮"},
+        {"role": "user", "content": "系统指令：\n只输出 JSON。\n\n用户输入：\n生成场景卡。"},
     ]
 
 
@@ -295,7 +373,7 @@ def test_http_html_error_is_sanitized(tmp_path):
         provider.chat([{"role": "user", "content": "hi"}])
 
     message = str(excinfo.value)
-    assert "HTTP 403: 403 | Forbidden" in message
+    assert "AI 服务拒绝了当前请求" in message
     assert "<!doctype html>" not in message
     assert "<html" not in message
 
@@ -332,3 +410,36 @@ def test_container_uses_gemini_provider_for_explicit_provider_name(isolated_data
         assert isinstance(provider, GeminiProvider)
     finally:
         container.close()
+
+
+@pytest.mark.skipif(
+    os.environ.get("WRITER_RUN_LIVE_AI_TEST") != "1",
+    reason="set WRITER_RUN_LIVE_AI_TEST=1 to spend quota on a real Gemini request",
+)
+def test_live_gemini_config_can_answer_minimal_probe():
+    imported = GeminiConfigImporter().import_default()
+    provider = GeminiProvider(
+        AiConfig(
+            provider_name="gemini",
+            base_url=imported.base_url,
+            model=os.environ.get("WRITER_LIVE_GEMINI_MODEL") or imported.model or "gemini-2.5-flash",
+            api_key_source="gemini",
+        ),
+        PromptBuilder(),
+    )
+
+    try:
+        response = provider.chat(
+            [
+                {
+                    "role": "user",
+                    "content": "请轻微润色这句话，只返回润色后的句子：雨夜里，两个人在车站告别。",
+                },
+            ]
+        )
+    except AiError as exc:
+        pytest.fail(f"Live Gemini probe failed: {exc}", pytrace=False)
+
+    assert response.content.strip()
+    assert response.provider == "gemini"
+    assert response.transport in {"gateway_compatible", "gemini_native", "gemini_stream_gateway"}

@@ -24,8 +24,10 @@ const aiSettings = ref<AiSettings | null>(null)
 const loadingAiSettings = ref(false)
 const savingSettings = ref(false)
 const testingConnection = ref(false)
+const testingLiveConnection = ref(false)
 const importing = ref<'codex' | 'gemini' | null>(null)
 const testResult = ref<{ success: boolean; message: string } | null>(null)
+const liveTestResult = ref<{ success: boolean; message: string; preview?: string } | null>(null)
 const saveNotice = ref('')
 const saveError = ref('')
 let applyingAiSettings = false
@@ -116,6 +118,7 @@ watch(aiProvider, (provider, previous) => {
   if (applyingAiSettings) return
   if (provider === previous) return
   testResult.value = null
+  liveTestResult.value = null
   saveNotice.value = ''
   saveError.value = ''
   if (provider === 'openai') {
@@ -173,6 +176,7 @@ async function saveSettings() {
   saveNotice.value = ''
   saveError.value = ''
   testResult.value = null
+  liveTestResult.value = null
   try {
     const saved = await settingsApi.saveAiSettings(buildAiSettingsUpdate())
     applyAiSettings(saved)
@@ -193,6 +197,7 @@ async function saveSettings() {
 async function testConnection() {
   testingConnection.value = true
   testResult.value = null
+  liveTestResult.value = null
   saveNotice.value = ''
   saveError.value = ''
   try {
@@ -207,6 +212,26 @@ async function testConnection() {
     testResult.value = { success: false, message: e instanceof Error ? e.message : String(e) }
   } finally {
     testingConnection.value = false
+  }
+}
+
+async function testLiveConnection() {
+  testingLiveConnection.value = true
+  testResult.value = null
+  liveTestResult.value = null
+  saveNotice.value = ''
+  saveError.value = ''
+  try {
+    const result = await settingsApi.testAiSettingsLive(buildAiSettingsUpdate())
+    liveTestResult.value = {
+      success: result.ok,
+      message: result.message,
+      preview: result.preview,
+    }
+  } catch (e) {
+    liveTestResult.value = { success: false, message: errorMessage(e) }
+  } finally {
+    testingLiveConnection.value = false
   }
 }
 
@@ -505,6 +530,13 @@ async function restoreDefaultDataDirectory() {
                 >
                   {{ testingConnection ? t('settings.testing') : t('settings.testConnection') }}
                 </button>
+                <button
+                  @click="testLiveConnection"
+                  :disabled="testingLiveConnection"
+                  class="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+                >
+                  {{ testingLiveConnection ? t('settings.liveTesting') : t('settings.testLiveConnection') }}
+                </button>
               </div>
             </div>
             <pre v-if="statusDetail" class="mt-3 whitespace-pre-wrap text-xs leading-5 text-gray-500">{{ statusDetail }}</pre>
@@ -516,6 +548,18 @@ async function restoreDefaultDataDirectory() {
               ]"
             >
               {{ testResult.message }}
+            </div>
+            <div
+              v-if="liveTestResult"
+              :class="[
+                'mt-3 rounded-lg p-3 text-sm',
+                liveTestResult.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800',
+              ]"
+            >
+              <div>{{ liveTestResult.message }}</div>
+              <div v-if="liveTestResult.preview" class="mt-1 text-xs opacity-80">
+                {{ t('settings.liveTestPreview') }}：{{ liveTestResult.preview }}
+              </div>
             </div>
           </div>
         </div>

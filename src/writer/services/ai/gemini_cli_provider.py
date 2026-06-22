@@ -147,6 +147,7 @@ class GeminiCliProvider(AiProvider):
             content=result.text,
             model=result.model,
             provider=self.name,
+            transport="gemini_cli",
             input_tokens=result.input_tokens,
             output_tokens=result.output_tokens,
         )
@@ -158,6 +159,7 @@ class GeminiCliProvider(AiProvider):
             content=result.text,
             model=result.model,
             provider=self.name,
+            transport="gemini_cli",
             input_tokens=result.input_tokens,
             output_tokens=result.output_tokens,
         )

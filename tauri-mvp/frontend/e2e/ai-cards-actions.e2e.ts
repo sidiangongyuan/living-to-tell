@@ -20,6 +20,16 @@ const characterCard = {
   updated_at: '2026-01-02T00:00:00Z',
 }
 
+const sceneCard = {
+  id: 'card-scene',
+  title: '等待回应',
+  content: '【场景原型】\n一方表达后等待回应。\n\n【参考原文（可选）】\n无',
+  card_type: 'scene',
+  tags: [],
+  created_at: '2026-01-03T00:00:00Z',
+  updated_at: '2026-01-03T00:00:00Z',
+}
+
 const presetCard = {
   id: 'card-preset',
   title: '加缪式冷峻',
@@ -31,10 +41,11 @@ const presetCard = {
 }
 
 async function mockAiCardsApi(page: Page) {
-  let cards = [userCard, characterCard]
+  let cards = [userCard, characterCard, sceneCard]
 
   await page.addInitScript(() => {
     window.localStorage.clear()
+    ;(window as Window & { __WRITER_API_BASE__?: string }).__WRITER_API_BASE__ = 'http://backend.test'
   })
 
   await page.route('**/api/app/version', async (route) => {
@@ -64,6 +75,40 @@ async function mockAiCardsApi(page: Page) {
         return
       }
       await route.fallback()
+      return
+    }
+
+    if (url.pathname === '/api/ai-cards/generate-draft') {
+      await route.fulfill({
+        json: {
+          title: '赌注式情书',
+          card_type: 'scene',
+          content: '【场景原型】\n用带赌注的表达推动关系。\n\n【参考原文（可选）】\n无',
+        },
+      })
+      return
+    }
+
+    if (url.pathname.endsWith('/upgrade-draft')) {
+      await route.fulfill({
+        json: {
+          title: '升级后的风格',
+          card_type: 'style',
+          content: '【语言质感】\n具体、克制。\n\n【参考原文（可选）】\n无',
+        },
+      })
+      return
+    }
+
+    if (url.pathname === '/api/ai-cards/search') {
+      const q = url.searchParams.get('q') || ''
+      const cardType = url.searchParams.get('card_type')
+      await route.fulfill({
+        json: cards.filter((card) =>
+          (!cardType || card.card_type === cardType)
+          && (card.title.includes(q) || card.content.includes(q))
+        ),
+      })
       return
     }
 
@@ -150,21 +195,21 @@ test('AI Cards create, edit autosave, filter, generate samples, and delete actio
   await expect(page.getByText('克制风格')).toHaveCount(0)
   await page.getByPlaceholder('搜索卡片...').fill('')
 
-  await page.getByRole('button', { name: '角色卡' }).click()
+  await page.getByRole('button', { name: '人物卡', exact: true }).click()
   await expect(page.getByText('人物观察')).toBeVisible()
   await expect(page.getByText('克制风格')).toHaveCount(0)
-  await page.getByRole('button', { name: '全部' }).click()
+  await page.getByRole('button', { name: '全部', exact: true }).click()
 
   await page.getByRole('button', { name: '+ 新建' }).click()
   await expect.poll(() => createdBodies.length).toBe(1)
   expect(createdBodies[0]).toEqual(expect.objectContaining({
-    title: '未命名卡片',
-    content: '',
-    card_type: 'style',
+    title: '未命名场景卡',
+    content: expect.stringContaining('【场景原型】'),
+    card_type: 'scene',
   }))
 
   await page.getByPlaceholder('例如：海明威式简洁').fill('新的风格卡')
-  await page.getByPlaceholder('描述风格特征、典型句式、适用场景...').fill('句子短，动作清楚。')
+  await page.getByPlaceholder('按模板填写这张卡片的结构信息...').fill('句子短，动作清楚。')
   await expect.poll(() => updatedBodies.length).toBeGreaterThanOrEqual(1)
   expect(updatedBodies.at(-1)).toEqual(expect.objectContaining({
     title: '新的风格卡',
@@ -189,6 +234,35 @@ test('AI Cards create, edit autosave, filter, generate samples, and delete actio
   page.once('dialog', async (dialog) => dialog.accept())
   await page.getByRole('button', { name: '删除卡片' }).click()
   await expect.poll(() => deleted).toBe(1)
+})
+
+test('AI Cards generate scene drafts and preview before saving', async ({ page }) => {
+  const createdBodies: Array<Record<string, unknown>> = []
+
+  await page.route('**/api/ai-cards', async (route) => {
+    if (route.request().method() === 'POST') {
+      createdBodies.push(route.request().postDataJSON() as Record<string, unknown>)
+      await route.fallback()
+      return
+    }
+    await route.fallback()
+  })
+
+  await page.goto('/ai-cards')
+  await page.getByPlaceholder('粘贴一段人物描写、风格样本或场景材料...').fill('主角写下一封带赌注的信，等待回应。')
+  await page.getByRole('button', { name: '生成新卡草稿' }).click()
+
+  await expect(page.getByText('赌注式情书')).toBeVisible()
+  await expect(page.getByText('用带赌注的表达推动关系。')).toBeVisible()
+  expect(createdBodies).toHaveLength(0)
+
+  await page.getByRole('button', { name: '保存为新卡' }).click()
+  await expect.poll(() => createdBodies.length).toBe(1)
+  expect(createdBodies[0]).toEqual(expect.objectContaining({
+    title: '赌注式情书',
+    card_type: 'scene',
+    content: expect.stringContaining('【场景原型】'),
+  }))
 })
 
 test('AI Cards autosave failures show a visible unsaved-state error', async ({ page }) => {

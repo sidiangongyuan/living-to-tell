@@ -129,7 +129,7 @@ class AiOutputAction(str, Enum):
 class AiCardKind(str, Enum):
     STYLE = "style"
     CHARACTER = "character"
-    SETTING = "setting"
+    SCENE = "scene"
 
 
 class AiThreadScope(str, Enum):

@@ -49,6 +49,10 @@ const { t } = useI18n()
 
 const aiCards = ref<AiCard[]>([])
 const showCardSelector = ref(false)
+const sceneSearchQuery = ref('')
+const sceneSearchResults = ref<AiCard[]>([])
+const sceneSearchLoading = ref(false)
+const sceneSearchError = ref('')
 
 const referencePickerOpen = ref(false)
 const referenceSearch = ref('')
@@ -188,8 +192,12 @@ const taskGroups = computed<TaskGroup[]>(() => [
 ])
 
 const selectedCards = computed(() =>
-  aiCards.value.filter((card) => selectedCardIds.value.includes(card.id))
+  [...aiCards.value, ...sceneSearchResults.value]
+    .filter((card, index, allCards) => allCards.findIndex((item) => item.id === card.id) === index)
+    .filter((card) => selectedCardIds.value.includes(card.id))
 )
+
+const nonSceneCards = computed(() => aiCards.value.filter((card) => card.card_type !== 'scene'))
 
 const selectedArticle = computed(() =>
   articles.value.find((article) => article.id === selectedArticleId.value) ?? null
@@ -254,7 +262,7 @@ const chatScopeLabel = computed(() => {
 const cardTypeLabels = computed<Record<string, string>>(() => ({
   style: t('aiCards.cardTypes.style'),
   character: t('aiCards.cardTypes.character'),
-  setting: t('aiCards.cardTypes.setting'),
+  scene: t('aiCards.cardTypes.scene'),
 }))
 
 onMounted(async () => {
@@ -616,6 +624,24 @@ function toggleCard(cardId: string) {
   }
 }
 
+async function searchSceneCards() {
+  const query = sceneSearchQuery.value.trim()
+  sceneSearchError.value = ''
+  if (!query) {
+    sceneSearchResults.value = []
+    return
+  }
+  sceneSearchLoading.value = true
+  try {
+    sceneSearchResults.value = await aiCardApi.searchCards(query, 'scene', 30)
+  } catch (e) {
+    sceneSearchError.value = errorMessage(e)
+    sceneSearchResults.value = []
+  } finally {
+    sceneSearchLoading.value = false
+  }
+}
+
 function removeContextItem(item: ContextItem) {
   if (item.kind === 'ai_card') {
     selectedCardIds.value = selectedCardIds.value.filter((id) => id !== item.ref_id)
@@ -637,6 +663,8 @@ function clearCurrentResult() {
 function clearCurrentTaskState() {
   workspace.clearCurrentTask()
   showCardSelector.value = false
+  sceneSearchResults.value = []
+  sceneSearchQuery.value = ''
   notice.value = t('ai.currentTaskCleared')
 }
 
@@ -644,6 +672,8 @@ function clearAllWorkspaceState() {
   if (!confirm(t('ai.clearAllWorkspaceConfirm'))) return
   workspace.clearAllTools()
   showCardSelector.value = false
+  sceneSearchResults.value = []
+  sceneSearchQuery.value = ''
   notice.value = t('ai.allWorkspaceCleared')
 }
 
@@ -786,8 +816,27 @@ function cardToContextItem(card: AiCard): ContextItem {
     ref_id: card.id,
     title: card.title,
     subtitle: cardTypeLabels.value[card.card_type] ?? card.card_type,
-    body: card.content,
+    body: aiCardContextBody(card),
   }
+}
+
+function aiCardContextBody(card: AiCard): string {
+  if (card.card_type !== 'scene') return card.content
+  return limitSceneReference(card.content)
+}
+
+function limitSceneReference(content: string): string {
+  const marker = '【参考原文（可选）】'
+  const index = content.indexOf(marker)
+  if (index < 0) return content
+  const before = content.slice(0, index + marker.length).trimEnd()
+  const after = content.slice(index + marker.length)
+  const quotes = after
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line && line !== '无')
+    .slice(0, 3)
+  return `${before}\n${quotes.length ? quotes.join('\n') : '无'}`
 }
 
 function referenceToContextItem(reference: Reference): ContextItem {
@@ -1088,7 +1137,7 @@ function makeId(): string {
 
             <div v-if="showCardSelector" class="mb-3 max-h-44 space-y-1 overflow-y-auto rounded-lg border border-gray-200 p-2">
               <button
-                v-for="card in aiCards"
+                v-for="card in nonSceneCards"
                 :key="card.id"
                 @click="toggleCard(card.id)"
                 :class="[
@@ -1099,8 +1148,48 @@ function makeId(): string {
                 <div class="font-semibold">{{ card.title }}</div>
                 <div class="text-gray-500">{{ cardTypeLabels[card.card_type] }}</div>
               </button>
-              <div v-if="!aiCards.length" class="py-4 text-center text-gray-400">
+              <div v-if="!nonSceneCards.length" class="py-4 text-center text-gray-400">
                 {{ t('ai.noCards') }}
+              </div>
+            </div>
+
+            <div class="mb-3 rounded-lg border border-emerald-100 bg-emerald-50/70 p-3">
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <div class="text-xs font-semibold text-emerald-900">{{ t('ai.sceneModuleTitle') }}</div>
+                <span class="text-[11px] text-emerald-700">{{ t('ai.sceneModuleHint') }}</span>
+              </div>
+              <div class="flex gap-2">
+                <input
+                  v-model="sceneSearchQuery"
+                  @keydown.enter.prevent="searchSceneCards"
+                  class="min-w-0 flex-1 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500"
+                  :placeholder="t('ai.sceneSearchPlaceholder')"
+                />
+                <button
+                  @click="searchSceneCards"
+                  :disabled="sceneSearchLoading"
+                  class="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  {{ sceneSearchLoading ? t('common.loading') : t('ai.sceneSearch') }}
+                </button>
+              </div>
+              <div v-if="sceneSearchError" class="mt-2 rounded bg-red-50 p-2 text-xs text-red-700">{{ sceneSearchError }}</div>
+              <div v-if="sceneSearchResults.length" class="mt-2 max-h-44 space-y-1 overflow-y-auto">
+                <button
+                  v-for="card in sceneSearchResults"
+                  :key="card.id"
+                  @click="toggleCard(card.id)"
+                  :class="[
+                    'w-full rounded p-2 text-left text-xs transition-colors',
+                    selectedCardIds.includes(card.id) ? 'border border-emerald-300 bg-emerald-100' : 'bg-white hover:bg-emerald-50',
+                  ]"
+                >
+                  <div class="font-semibold text-emerald-950">{{ card.title }}</div>
+                  <div class="line-clamp-2 text-emerald-700">{{ card.content }}</div>
+                </button>
+              </div>
+              <div v-else-if="sceneSearchQuery.trim() && !sceneSearchLoading" class="mt-2 text-xs text-emerald-700">
+                {{ t('ai.sceneNoResults') }}
               </div>
             </div>
 

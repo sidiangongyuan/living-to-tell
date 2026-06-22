@@ -3,11 +3,13 @@
  */
 import { apiFetch, handleResponse } from './base'
 
+export type AiCardType = 'style' | 'character' | 'scene'
+
 export interface AiCard {
   id: string
   title: string
   content: string
-  card_type: 'style' | 'character' | 'setting'
+  card_type: AiCardType
   tags: string[]
   created_at: string | null
   updated_at: string | null
@@ -16,15 +18,28 @@ export interface AiCard {
 export interface AiCardCreate {
   title: string
   content: string
-  card_type?: 'style' | 'character' | 'setting'
+  card_type?: AiCardType
   tags?: string[]
 }
 
 export interface AiCardUpdate {
   title: string
   content: string
-  card_type: 'style' | 'character' | 'setting'
+  card_type: AiCardType
   tags: string[]
+}
+
+export interface AiCardDraftRequest {
+  card_type: AiCardType
+  source_text: string
+  keep_source_quotes?: boolean
+  cost_tier?: 'thrifty' | 'balanced' | 'strong'
+}
+
+export interface AiCardDraft {
+  title: string
+  card_type: AiCardType
+  content: string
 }
 
 export const aiCardApi = {
@@ -34,8 +49,11 @@ export const aiCardApi = {
     return handleResponse(res)
   },
 
-  async searchCards(query: string): Promise<AiCard[]> {
-    const res = await apiFetch(`/api/ai-cards/search?q=${encodeURIComponent(query)}`)
+  async searchCards(query: string, cardType?: AiCardType, limit?: number): Promise<AiCard[]> {
+    const params = new URLSearchParams({ q: query })
+    if (cardType) params.set('card_type', cardType)
+    if (limit) params.set('limit', String(limit))
+    const res = await apiFetch(`/api/ai-cards/search?${params.toString()}`)
     return handleResponse(res)
   },
 
@@ -77,6 +95,24 @@ export const aiCardApi = {
   async generateFromPresets(): Promise<{ created: number; cards: AiCard[] }> {
     const res = await apiFetch('/api/ai-cards/presets/generate', {
       method: 'POST',
+    })
+    return handleResponse(res)
+  },
+
+  async generateDraft(data: AiCardDraftRequest): Promise<AiCardDraft> {
+    const res = await apiFetch('/api/ai-cards/generate-draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async upgradeDraft(id: string, data: AiCardDraftRequest): Promise<AiCardDraft> {
+    const res = await apiFetch(`/api/ai-cards/${id}/upgrade-draft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
     })
     return handleResponse(res)
   },

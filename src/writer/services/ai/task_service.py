@@ -120,6 +120,31 @@ class AiTaskService:
             citations=citations,
             model=response.model,
             provider=response.provider,
+            transport=response.transport,
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
+            finish_reason=response.finish_reason,
+        )
+
+    def generate_from_messages(
+        self,
+        messages: List[dict],
+        *,
+        cost_tier: AiCostTier = AiCostTier.BALANCED,
+    ) -> AiTaskResponse:
+        """Run a fixed prompt that is not part of the task taxonomy.
+
+        This is used by narrow generators such as AI card drafting where the
+        UI needs a strict artifact instead of a general writing task.
+        """
+        provider = self._provider_factory()
+        model = self.model_for_tier(cost_tier)
+        response = provider.chat(messages, model=model)
+        return AiTaskResponse(
+            content=response.content,
+            model=response.model,
+            provider=response.provider,
+            transport=response.transport,
             input_tokens=response.input_tokens,
             output_tokens=response.output_tokens,
             finish_reason=response.finish_reason,

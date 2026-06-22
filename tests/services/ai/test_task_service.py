@@ -318,6 +318,21 @@ def test_tier_models_are_resolved_from_settings(container) -> None:
     assert provider.model_seen[-3:] == ["tiny", "mid", "big"]
 
 
+def test_fixed_message_generation_uses_requested_tier_model(container) -> None:
+    container.settings.set(KEY_AI_MODEL_STRONG, "big")
+    provider = _StubProvider("draft")
+    service = _make_service(provider, container.settings)
+
+    response = service.generate_from_messages(
+        [{"role": "user", "content": "make a card"}],
+        cost_tier=AiCostTier.STRONG,
+    )
+
+    assert response.content == "draft"
+    assert provider.model_seen[-1] == "big"
+    assert provider.calls[-1]["messages"][0]["content"] == "make a card"
+
+
 def test_unset_tier_falls_back_to_provider_default(container) -> None:
     provider = _StubProvider("ok")
     service = _make_service(provider, container.settings)

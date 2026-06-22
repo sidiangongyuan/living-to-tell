@@ -30,11 +30,16 @@ from writer.services.ai.gemini_auth import (
 from writer.services.ai.gemini_cli_provider import (
     GEMINI_CLI_AUTH_SOURCE,
     GEMINI_CLI_DEFAULT_MODEL,
+    GeminiCliProvider,
     detect_gemini_cli_proxy,
     find_gemini_cli,
     gemini_cli_oauth_status,
 )
+from writer.services.ai.gemini_provider import GeminiProvider
+from writer.services.ai.interfaces import AiError, AiProvider
+from writer.services.ai.openai_provider import OpenAiProvider
 from writer.services.ai.preflight import format_issues, preflight_rewrite
+from writer.services.ai.prompt_builder import PromptBuilder
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -104,6 +109,16 @@ class AiTestRequest(AiSettingsUpdate):
 class AiTestOut(BaseModel):
     ok: bool
     message: str
+
+
+class AiLiveTestOut(BaseModel):
+    ok: bool
+    message: str
+    provider: str
+    model: str
+    transport: Optional[str] = None
+    elapsed_ms: Optional[int] = None
+    preview: str = ""
 
 
 class DataLocationInfo(BaseModel):
@@ -349,6 +364,50 @@ def _request_to_config(data: AiSettingsUpdate) -> AiConfig:
     )
 
 
+def _provider_for_config(config: AiConfig) -> AiProvider:
+    prompt_builder = PromptBuilder()
+    if config.provider_key() == "gemini_cli":
+        return GeminiCliProvider(config, prompt_builder)
+    if config.provider_key() == "gemini" or config.uses_gemini_auth():
+        return GeminiProvider(config, prompt_builder)
+    return OpenAiProvider(config, prompt_builder)
+
+
+def _friendly_ai_test_error(exc: Exception) -> str:
+    raw = str(exc).strip()
+    if "HTTP 403" in raw:
+        return (
+            "AI 服务拒绝了当前请求。可能是中转接口协议不匹配、"
+            "模型无权限或密钥无效。"
+        )
+    if "<html" in raw.lower() or "<!doctype html" in raw.lower():
+        return "AI 服务返回了网页错误页，请检查中转地址、模型权限和密钥。"
+    return raw or exc.__class__.__name__
+
+
+def _live_test_message(provider: str, model: str, transport: Optional[str], elapsed_ms: int) -> str:
+    transport_label = transport or "unknown"
+    return (
+        "真实 AI 请求成功。"
+        f"provider={provider}, model={model}, transport={transport_label}, "
+        f"elapsed={elapsed_ms}ms"
+    )
+
+
+def _preview_text(value: str) -> str:
+    cleaned = " ".join((value or "").split())
+    return cleaned[:160]
+
+
+def _live_test_messages() -> list[dict[str, str]]:
+    return [
+        {
+            "role": "user",
+            "content": "请轻微润色这句话，只返回润色后的句子：雨夜里，两个人在车站告别。",
+        }
+    ]
+
+
 @router.get("/ai", response_model=AiSettingsOut)
 def get_ai_settings(
     container: AppContainer = Depends(get_container),
@@ -487,3 +546,55 @@ def test_ai_settings(data: AiTestRequest) -> AiTestOut:
     if issues:
         return AiTestOut(ok=False, message=format_issues(issues))
     return AiTestOut(ok=True, message="Local AI configuration check passed. This does not contact the provider.")
+
+
+@router.post("/ai/test-live", response_model=AiLiveTestOut)
+def test_ai_settings_live(data: AiTestRequest) -> AiLiveTestOut:
+    config = _request_to_config(data)
+    issues = preflight_rewrite(config, target_text="_", has_entry=True)
+    if issues:
+        return AiLiveTestOut(
+            ok=False,
+            message=format_issues(issues),
+            provider=config.provider_key(),
+            model=config.model,
+        )
+
+    provider = _provider_for_config(config)
+    started = time.perf_counter()
+    try:
+        response = provider.chat(_live_test_messages(), model=config.model)
+    except AiError as exc:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        return AiLiveTestOut(
+            ok=False,
+            message=_friendly_ai_test_error(exc),
+            provider=config.provider_key(),
+            model=config.model,
+            elapsed_ms=elapsed_ms,
+        )
+    except Exception as exc:  # noqa: BLE001
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        return AiLiveTestOut(
+            ok=False,
+            message=_friendly_ai_test_error(exc),
+            provider=config.provider_key(),
+            model=config.model,
+            elapsed_ms=elapsed_ms,
+        )
+
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    return AiLiveTestOut(
+        ok=True,
+        message=_live_test_message(
+            response.provider,
+            response.model,
+            response.transport,
+            elapsed_ms,
+        ),
+        provider=response.provider,
+        model=response.model,
+        transport=response.transport,
+        elapsed_ms=elapsed_ms,
+        preview=_preview_text(response.content),
+    )

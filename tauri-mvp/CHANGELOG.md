@@ -12,6 +12,10 @@
 - Added copy-based data-directory migration so users can switch storage locations without deleting the old folder.
 - Added a light Tauri startup splash window so cold starts show progress instead of a blank window.
 - Added article-scoped AI chat with standing instructions, copy actions, and save-reply-as-article-note actions.
+- Added fixed-template AI Cards for style, character, and scene cards.
+- Added AI-assisted card draft generation with preview-before-save behavior.
+- Added manual scene-module search and attachment in the AI workspace.
+- Added a real AI provider test request in Settings, separate from the local credential/configuration check.
 - Added first-run welcome checklist entries for creating articles, saving references, configuring AI, opening article chat, and reading data/backup notes.
 - Added the Motif Star Map for saving selected article/reference text into motifs, exploring co-occurrence, and jumping back to source anchors.
 - Added motif excerpt deduplication and repair for position drift after article edits.
@@ -23,6 +27,8 @@
 - Renamed the packaged backend sidecar to `living-to-tell-backend`.
 - Kept old Writer data and preferences as compatibility sources; no old user data is deleted.
 - Public AI chat UI now focuses on article context instead of exposing unfinished global or collection chat entry points.
+- AI card types now focus on `style`, `character`, and `scene`; the old public `setting` card type is removed.
+- Gemini configurations that use `sk-...` proxy keys with a custom base URL now automatically use the gateway-compatible `/v1/chat/completions` transport while staying configured as Gemini.
 - Reference-library line statistics now use non-empty paragraph counts where appropriate.
 - Article list filtering now supports single-tag filtering combined with keyword search.
 - The motif attach flow now uses right-click selection instead of opening automatically after a left-click selection.
@@ -34,6 +40,8 @@
 - Hid the installer/uninstaller app-data deletion option so uninstalling does not offer a dangerous one-click path to writing data.
 - Fixed old backend sidecar leftovers by tightening process cleanup and adding backend capability/version checks.
 - Replaced raw `Not Found` and `Failed to fetch` surfaces with user-facing backend connection/version messages.
+- Sanitized AI provider HTML errors so 403 pages and raw proxy responses are not shown in the UI.
+- Fixed Gemini proxy 403 failures caused by routing custom-base `sk-...` keys through Gemini-native endpoints.
 - Fixed article position restore by using a reliable outer-scroll writing surface and separate read/edit position records.
 - Fixed article epigraph saving so leading full-width indentation in the first body paragraph is preserved.
 - Fixed context tag switching in the reference library.
@@ -41,6 +49,7 @@
 - Fixed motif star map density controls, local graph label overlap, duplicate bottom index, and English `Motif not found` errors.
 - Fixed motif excerpt deletion semantics so removing from one motif does not delete the same excerpt from other motifs.
 - Fixed motif lookup after source-position drift so the same sentence reopens existing motif chips and historical duplicate anchors merge automatically.
+- Fixed AI settings and AI card generation to report provider/model/transport diagnostics without exposing API keys.
 
 ### Verification
 
@@ -49,7 +58,15 @@
 - `npm run test:e2e`
 - `npm run build`
 - `cargo check --manifest-path tauri-mvp\frontend\src-tauri\Cargo.toml`
+- Real gated Gemini probe with local configuration: `WRITER_RUN_LIVE_AI_TEST=1 python -m pytest tests\services\ai\test_gemini_provider.py::test_live_gemini_config_can_answer_minimal_probe -q`
 - `.\tauri-mvp\build-release.ps1 -PythonExe python`
+
+### Release artifacts
+
+- `LivingToTell_0.1.7_x64-setup.exe`
+  - SHA256: `569B968FA96E1A68D3CBD3407DF389B7A3E0DB9D7FDA1191352CE204872AF2D1`
+- `LivingToTell_0.1.7_x64_zh-CN.msi`
+  - SHA256: `E28623CDCFFA104B3DF61A059248CA32C0C08331760155085064DF5F183EDB34`
 
 ## 0.1.6 - Public Preview Final Fixes (2026-06-16)
 

@@ -89,6 +89,7 @@ class AiTaskResponse:
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
     finish_reason: Optional[str] = None
+    transport: Optional[str] = None
 
 
 @dataclass

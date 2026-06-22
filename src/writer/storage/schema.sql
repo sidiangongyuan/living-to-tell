@@ -422,7 +422,7 @@ CREATE INDEX IF NOT EXISTS idx_ai_messages_thread
 
 CREATE TABLE IF NOT EXISTS ai_cards (
     id          TEXT PRIMARY KEY,
-    kind        TEXT NOT NULL,           -- 'style' | 'character' | 'setting'
+    kind        TEXT NOT NULL,           -- 'style' | 'character' | 'scene'
     name        TEXT NOT NULL DEFAULT '',
     body        TEXT NOT NULL DEFAULT '',
     created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
