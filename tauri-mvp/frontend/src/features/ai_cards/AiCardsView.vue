@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { aiCardApi, type AiCard, type AiCardDraft, type AiCardType } from '../../api/aiCards'
 import { errorMessage } from '../../api/base'
 import { useI18n } from '../../i18n'
+import TagSelector from '../../components/TagSelector.vue'
 
 const { t } = useI18n()
 const CARD_TYPES: AiCardType[] = ['style', 'character', 'scene']
@@ -97,6 +98,10 @@ const draftPreview = ref<AiCardDraft | null>(null)
 const draftMode = ref<'new' | 'upgrade'>('new')
 
 const selectedCard = computed(() => cards.value.find(c => c.id === selectedCardId.value) || null)
+
+const allCardTags = computed(() =>
+  Array.from(new Set(cards.value.flatMap((card) => card.tags))).sort((a, b) => a.localeCompare(b, 'zh-CN'))
+)
 
 const filteredCards = computed(() => {
   let result = cards.value.filter((card) => CARD_TYPES.includes(card.card_type))
@@ -637,6 +642,16 @@ async function applyDraftToCurrent() {
                 {{ t('aiCards.insertTemplate') }}
               </button>
             </div>
+          </div>
+
+          <div class="mb-6">
+            <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('aiCards.fields.tags') }}</label>
+            <TagSelector
+              v-model="selectedCard.tags"
+              :suggestions="allCardTags"
+              :placeholder="t('aiCards.placeholders.tags')"
+              @change="scheduleAutoSave"
+            />
           </div>
 
           <div class="mb-6">

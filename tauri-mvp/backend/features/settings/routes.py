@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import os
+import json
 import shutil
 import sqlite3
 import time
 from pathlib import Path
 from typing import Any, Optional
+from urllib import error as urlerror
+from urllib.parse import urlparse
+from urllib import request as urlrequest
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
@@ -452,6 +456,129 @@ def _preset_model_list(provider: str, message: str = "") -> AiModelListOut:
     )
 
 
+def _resolve_api_key_for_source(source: str) -> str:
+    normalized = (source or "").strip()
+    if normalized.startswith("env:"):
+        var = normalized.split(":", 1)[1].strip()
+        if not var:
+            raise AiError("环境变量名称为空。")
+        key = os.environ.get(var, "").strip()
+        if not key:
+            raise AiError(f"环境变量 {var} 未配置。")
+        return key
+    if normalized.lower() == CODEX_AUTH_SOURCE:
+        return CodexAuthResolver().read_api_key()
+    if normalized.lower() == GEMINI_AUTH_SOURCE:
+        return GeminiAuthResolver().read_api_key()
+    raise AiError("当前凭据来源不能用于远程模型列表拉取。")
+
+
+def _openai_compatible_models_url(base_url: str) -> str:
+    base = (base_url or "").strip().rstrip("/")
+    if not base:
+        raise AiError("模型列表拉取需要配置 Base URL。")
+    lower = base.lower()
+    if lower.endswith("/models"):
+        return base
+    if lower.endswith("/v1") or lower.endswith("/v1beta") or lower.endswith("/openai"):
+        return f"{base}/models"
+    return f"{base}/v1/models"
+
+
+def _extract_model_ids(payload: Any) -> list[str]:
+    if isinstance(payload, dict):
+        candidates = payload.get("data")
+        if candidates is None:
+            candidates = payload.get("models")
+    else:
+        candidates = payload
+    if not isinstance(candidates, list):
+        return []
+    models: list[str] = []
+    for item in candidates:
+        if isinstance(item, str) and item.strip():
+            models.append(item.strip())
+        elif isinstance(item, dict):
+            raw = item.get("id") or item.get("name") or item.get("model") or item.get("model_name")
+            if isinstance(raw, str) and raw.strip():
+                models.append(raw.strip())
+    return list(dict.fromkeys(models))
+
+
+def _fetch_openai_compatible_models(base_url: str, api_key: str) -> list[str]:
+    url = _openai_compatible_models_url(base_url)
+    req = urlrequest.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": "LivingToTell/0.1",
+        },
+        method="GET",
+    )
+    try:
+        with urlrequest.urlopen(req, timeout=20) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except urlerror.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:400]
+        raise AiError(f"HTTP {exc.code}: {detail}") from exc
+    except urlerror.URLError as exc:
+        raise AiError(str(exc.reason)) from exc
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise AiError("模型列表接口没有返回 JSON。") from exc
+    models = _extract_model_ids(payload)
+    if not models:
+        raise AiError("模型列表接口没有返回可识别的模型 id。")
+    return models
+
+
+def _pricing_model_list_urls(base_url: str) -> list[str]:
+    parsed = urlparse((base_url or "").strip())
+    if not parsed.scheme or not parsed.netloc:
+        return []
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    urls = [f"{origin}/api/pricing"]
+    if parsed.netloc.lower() == "elysia.h-e.top":
+        urls.append("https://elysiver.h-e.top/api/pricing")
+    return list(dict.fromkeys(urls))
+
+
+def _fetch_public_pricing_models(base_url: str) -> list[str]:
+    errors: list[str] = []
+    for url in _pricing_model_list_urls(base_url):
+        req = urlrequest.Request(
+            url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 LivingToTell/0.1",
+            },
+            method="GET",
+        )
+        try:
+            with urlrequest.urlopen(req, timeout=20) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+            payload = json.loads(raw)
+            models = _extract_model_ids(payload)
+            if models:
+                return models
+            errors.append(f"{url}: no model_name/id fields")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{url}: {_friendly_model_fetch_error(exc)}")
+    raise AiError("; ".join(errors) or "没有可用的模型广场接口。")
+
+
+def _friendly_model_fetch_error(exc: Exception) -> str:
+    raw = str(exc).strip()
+    lowered = raw.lower()
+    if "http 403" in lowered:
+        return "模型列表接口拒绝访问，可能是密钥权限、模型广场接口权限或中转站不开放 /v1/models。"
+    if "<html" in lowered or "<!doctype html" in lowered:
+        return "模型列表接口返回了网页错误页，请检查中转地址和密钥权限。"
+    return raw or exc.__class__.__name__
+
+
 def _live_test_messages() -> list[dict[str, str]]:
     return [
         {
@@ -469,25 +596,87 @@ def get_ai_settings(
 
 
 @router.get("/ai/models", response_model=AiModelListOut)
-def get_ai_models(provider: str, refresh: bool = True) -> AiModelListOut:
+def get_ai_models(
+    provider: str,
+    refresh: bool = True,
+    base_url: Optional[str] = None,
+    api_key_source: Optional[str] = None,
+    container: AppContainer = Depends(get_container),
+) -> AiModelListOut:
     provider_key = provider.strip().lower()
     if provider_key not in PUBLIC_AI_PROVIDERS:
         raise HTTPException(400, f"Unsupported provider: {provider}")
-    if provider_key != "opencode":
-        return _preset_model_list(provider_key)
-    try:
-        models = list_opencode_models(refresh=refresh)
-    except AiError as exc:
+    if provider_key == "opencode":
+        try:
+            models = list_opencode_models(refresh=refresh)
+        except AiError as exc:
+            return _preset_model_list(
+                provider_key,
+                message=f"OpenCode 模型列表真实拉取失败，已显示内置预设：{_friendly_ai_test_error(exc)}",
+            )
+        return AiModelListOut(
+            provider=provider_key,
+            models=models,
+            source="live",
+            message="已从 OpenCode 真实拉取模型列表。",
+        )
+
+    current = container.settings.load_ai_config()
+    effective_base_url = (base_url or "").strip() or (
+        current.base_url if current.provider_key() == provider_key else ""
+    )
+    effective_api_key_source = (api_key_source or "").strip() or (
+        current.api_key_source if current.provider_key() == provider_key else ""
+    )
+
+    if provider_key == "gemini" and (
+        not effective_base_url
+        or "generativelanguage.googleapis.com" in effective_base_url.lower()
+    ):
         return _preset_model_list(
             provider_key,
-            message=f"OpenCode 模型列表真实拉取失败，已显示内置预设：{_friendly_ai_test_error(exc)}",
+            message="Google 原生 Gemini 模型列表暂未启用真实拉取；已显示内置预设。自定义中转地址会尝试 /v1/models。",
         )
-    return AiModelListOut(
-        provider=provider_key,
-        models=models,
-        source="live",
-        message="已从 OpenCode 真实拉取模型列表。",
-    )
+
+    if provider_key == "openai" and not effective_base_url:
+        effective_base_url = "https://api.openai.com/v1"
+
+    if provider_key in {"openai", "gemini"}:
+        try:
+            api_key = _resolve_api_key_for_source(effective_api_key_source)
+            models = _fetch_openai_compatible_models(effective_base_url, api_key)
+        except Exception as exc:  # noqa: BLE001
+            if provider_key == "gemini" and effective_base_url:
+                try:
+                    models = _fetch_public_pricing_models(effective_base_url)
+                except Exception as pricing_exc:  # noqa: BLE001
+                    return _preset_model_list(
+                        provider_key,
+                        message=(
+                            "模型列表真实拉取失败，已显示内置预设："
+                            f"{_friendly_model_fetch_error(exc)}；模型广场也不可用："
+                            f"{_friendly_model_fetch_error(pricing_exc)}"
+                        ),
+                    )
+                return AiModelListOut(
+                    provider=provider_key,
+                    models=models,
+                    source="live",
+                    message="兼容 /v1/models 被中转拒绝；已从公开模型广场真实拉取模型列表。请注意：模型广场列表不等于当前密钥一定有权限调用每个模型。",
+                )
+            return _preset_model_list(
+                provider_key,
+                message=f"模型列表真实拉取失败，已显示内置预设：{_friendly_model_fetch_error(exc)}",
+            )
+        return AiModelListOut(
+            provider=provider_key,
+            models=models,
+            source="live",
+            message="已从兼容模型列表接口真实拉取模型。",
+        )
+
+    if provider_key != "opencode":
+        return _preset_model_list(provider_key)
 
 
 @router.get("/data-location", response_model=DataLocationInfo)

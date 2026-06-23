@@ -16,6 +16,7 @@ import {
   resolveMotifExcerptRange,
 } from '../motifs/selection'
 import FindReplace from '../../components/FindReplace.vue'
+import TagSelector from '../../components/TagSelector.vue'
 import { useI18n } from '../../i18n'
 import { saveBlobWithDialog } from '../../utils/exportFile'
 import { collectArticleTags, countParagraphs, filterArticlesByTag } from './articleList'
@@ -73,6 +74,8 @@ const editingNoteBody = ref('')
 const notesError = ref('')
 const notesLoading = ref(false)
 const showDoneNotes = ref(false)
+const motifAnchorsExpanded = ref(true)
+const writingNotesExpanded = ref(true)
 const motifAttachOpen = ref(false)
 const motifAttachX = ref(0)
 const motifAttachY = ref(0)
@@ -1922,7 +1925,7 @@ watch(
           :placeholder="t('articles.titlePlaceholder')"
         />
         <div v-else class="text-stone-400">{{ t('articles.noArticleSelected') }}</div>
-        <div class="flex items-center gap-3 shrink-0">
+        <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
           <button
             v-if="store.selectedEntry"
             @click="showFindReplace = !showFindReplace"
@@ -1951,6 +1954,34 @@ watch(
             </button>
           </div>
           <span class="text-xs text-stone-400">{{ store.saving ? t('common.saving') : t('common.saved') }}</span>
+          <div v-if="store.selectedEntry" class="flex items-center gap-1 rounded-xl bg-stone-100 p-1">
+            <button
+              @click="openAiChatForArticle"
+              class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-700"
+            >
+              {{ t('articles.aiChat') }}
+            </button>
+            <button
+              @click="openAiToolsForArticle"
+              class="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-amber-700"
+            >
+              {{ t('articles.aiTools') }}
+            </button>
+            <button
+              v-if="!store.selectedEntry.archived_at"
+              @click="archiveSelectedEntry"
+              class="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-50"
+            >
+              {{ t('articles.archive') }}
+            </button>
+            <button
+              @click="deleteSelectedEntry"
+              data-testid="article-action-delete"
+              class="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 transition-colors hover:bg-red-100"
+            >
+              {{ t('common.delete') }}
+            </button>
+          </div>
           <button
             @click="settings.toggleRightContextPane"
             :class="[
@@ -2184,78 +2215,73 @@ watch(
           </section>
 
           <section data-testid="article-motif-anchors">
-            <div class="mb-2 flex items-center justify-between gap-2">
-              <h3 class="text-sm font-semibold text-stone-700">{{ t('motifs.sourceAnchors') }}</h3>
+            <button
+              type="button"
+              class="mb-2 flex w-full items-center justify-between gap-2 rounded-xl px-2 py-1 text-left hover:bg-stone-50"
+              @click="motifAnchorsExpanded = !motifAnchorsExpanded"
+            >
+              <span class="text-sm font-semibold text-stone-700">
+                {{ motifAnchorsExpanded ? '⌄' : '›' }} {{ t('motifs.sourceAnchors') }}
+              </span>
               <span class="rounded-full bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-700">
                 {{ sortedMotifSourceExcerpts.length }}
               </span>
-            </div>
-            <p class="mb-3 text-xs leading-5 text-stone-500">{{ t('motifs.sourceAnchorsHint') }}</p>
-            <div v-if="motifSourceError" class="mb-2 rounded-lg bg-red-50 p-2 text-xs text-red-700">
-              {{ motifSourceError }}
-            </div>
-            <div v-if="motifSourceLoading" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-400">
-              {{ t('common.loading') }}
-            </div>
-            <div v-else-if="!resolvedMotifSourceExcerpts.length" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-400">
-              {{ t('motifs.noSourceAnchors') }}
-            </div>
-            <div v-else class="space-y-2">
-              <button
-                v-for="item in resolvedMotifSourceExcerpts"
-                :key="item.excerpt.id"
-                type="button"
-                :disabled="item.range.status === 'missing'"
-                @click="jumpToMotifSourceExcerpt(item.excerpt)"
-                :class="[
-                  'w-full rounded-2xl border p-3 text-left transition',
-                  activeMotifExcerptId === item.excerpt.id
-                    ? 'border-teal-300 bg-teal-50/80 shadow-sm'
-                    : 'border-stone-200 bg-white hover:border-teal-200 hover:bg-teal-50/40',
-                  item.range.status === 'missing' ? 'cursor-not-allowed opacity-70' : '',
-                ]"
-              >
-                <p class="motif-anchor-preview text-sm leading-6 text-stone-800">
-                  {{ previewMotifExcerptText(item.excerpt.excerpt_text) }}
-                </p>
-                <div class="mt-2 flex flex-wrap gap-1.5">
-                  <span
-                    v-for="name in item.excerpt.motif_names"
-                    :key="`${item.excerpt.id}-${name}`"
-                    class="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-medium text-teal-800 ring-1 ring-teal-100"
-                  >
-                    {{ name }}
-                  </span>
-                </div>
-                <div class="mt-2 flex items-center justify-between gap-2 text-[11px] text-stone-400">
-                  <span>{{ motifRangeStatusLabel(item.range.status) }}</span>
-                  <span v-if="item.range.status !== 'missing'" class="font-semibold text-teal-700">{{ t('motifs.locateAnchor') }}</span>
-                </div>
-              </button>
+            </button>
+            <div v-show="motifAnchorsExpanded">
+              <p class="mb-3 text-xs leading-5 text-stone-500">{{ t('motifs.sourceAnchorsHint') }}</p>
+              <div v-if="motifSourceError" class="mb-2 rounded-lg bg-red-50 p-2 text-xs text-red-700">
+                {{ motifSourceError }}
+              </div>
+              <div v-if="motifSourceLoading" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-400">
+                {{ t('common.loading') }}
+              </div>
+              <div v-else-if="!resolvedMotifSourceExcerpts.length" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-400">
+                {{ t('motifs.noSourceAnchors') }}
+              </div>
+              <div v-else class="space-y-2">
+                <button
+                  v-for="item in resolvedMotifSourceExcerpts"
+                  :key="item.excerpt.id"
+                  type="button"
+                  :disabled="item.range.status === 'missing'"
+                  @click="jumpToMotifSourceExcerpt(item.excerpt)"
+                  :class="[
+                    'w-full rounded-2xl border p-3 text-left transition',
+                    activeMotifExcerptId === item.excerpt.id
+                      ? 'border-teal-300 bg-teal-50/80 shadow-sm'
+                      : 'border-stone-200 bg-white hover:border-teal-200 hover:bg-teal-50/40',
+                    item.range.status === 'missing' ? 'cursor-not-allowed opacity-70' : '',
+                  ]"
+                >
+                  <p class="motif-anchor-preview text-sm leading-6 text-stone-800">
+                    {{ previewMotifExcerptText(item.excerpt.excerpt_text) }}
+                  </p>
+                  <div class="mt-2 flex flex-wrap gap-1.5">
+                    <span
+                      v-for="name in item.excerpt.motif_names"
+                      :key="`${item.excerpt.id}-${name}`"
+                      class="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-medium text-teal-800 ring-1 ring-teal-100"
+                    >
+                      {{ name }}
+                    </span>
+                  </div>
+                  <div class="mt-2 flex items-center justify-between gap-2 text-[11px] text-stone-400">
+                    <span>{{ motifRangeStatusLabel(item.range.status) }}</span>
+                    <span v-if="item.range.status !== 'missing'" class="font-semibold text-teal-700">{{ t('motifs.locateAnchor') }}</span>
+                  </div>
+                </button>
+              </div>
             </div>
           </section>
 
           <section>
             <h3 class="text-sm font-semibold text-stone-700 mb-2">{{ t('articles.tags') }}</h3>
-            <div class="flex flex-wrap gap-2 mb-2">
-              <span
-                v-for="tag in store.selectedEntry.tags"
-                :key="tag"
-                class="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded"
-              >{{ tag }}</span>
-            </div>
-            <input
-              type="text"
+            <TagSelector
+              v-model="store.selectedEntry.tags"
+              :suggestions="allTags"
               :placeholder="t('articles.addTag')"
-              class="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-              @keydown.enter="(e) => {
-                const val = (e.target as HTMLInputElement).value.trim()
-                if (val && store.selectedEntry && !store.selectedEntry.tags.includes(val)) {
-                  store.selectedEntry.tags.push(val);
-                  (e.target as HTMLInputElement).value = '';
-                  scheduleSave()
-                }
-              }"
+              :create-label="t('articles.createTagLabel', { tag: '{tag}' })"
+              @change="scheduleSave"
             />
           </section>
 
@@ -2289,44 +2315,51 @@ watch(
           </section>
 
           <section>
-            <div class="mb-2 flex items-center justify-between gap-2">
-              <h3 class="text-sm font-semibold text-stone-700">{{ t('articles.writingNotes') }}</h3>
+            <button
+              type="button"
+              class="mb-2 flex w-full items-center justify-between gap-2 rounded-xl px-2 py-1 text-left hover:bg-stone-50"
+              @click="writingNotesExpanded = !writingNotesExpanded"
+            >
+              <span class="text-sm font-semibold text-stone-700">
+                {{ writingNotesExpanded ? '⌄' : '›' }} {{ t('articles.writingNotes') }}
+              </span>
               <span class="rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-700">
                 {{ t('articles.openNotesCount', { count: openWritingNotes.length }) }}
               </span>
-            </div>
-            <p class="mb-3 text-xs leading-5 text-stone-500">{{ t('articles.writingNotesHint') }}</p>
-            <div v-if="notesError" class="mb-2 rounded-lg bg-red-50 p-2 text-xs text-red-700">
-              {{ notesError }}
-            </div>
-            <div class="mb-3 rounded-2xl border border-amber-100 bg-amber-50/50 p-3">
-              <textarea
-                v-model="newNoteBody"
-                rows="3"
-                class="w-full resize-none rounded-xl border border-amber-100 bg-white/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-300"
-                :placeholder="t('articles.writingNotePlaceholder')"
-                @keydown.ctrl.enter.prevent="addWritingNote"
-                @keydown.meta.enter.prevent="addWritingNote"
-              />
-              <button
-                @click="addWritingNote"
-                :disabled="!newNoteBody.trim() || notesLoading"
-                class="mt-2 w-full rounded-xl bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
-              >
-                {{ t('articles.addWritingNote') }}
-              </button>
-            </div>
+            </button>
+            <div v-show="writingNotesExpanded">
+              <p class="mb-3 text-xs leading-5 text-stone-500">{{ t('articles.writingNotesHint') }}</p>
+              <div v-if="notesError" class="mb-2 rounded-lg bg-red-50 p-2 text-xs text-red-700">
+                {{ notesError }}
+              </div>
+              <div class="mb-3 rounded-2xl border border-amber-100 bg-amber-50/50 p-3">
+                <textarea
+                  v-model="newNoteBody"
+                  rows="3"
+                  class="w-full resize-none rounded-xl border border-amber-100 bg-white/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-300"
+                  :placeholder="t('articles.writingNotePlaceholder')"
+                  @keydown.ctrl.enter.prevent="addWritingNote"
+                  @keydown.meta.enter.prevent="addWritingNote"
+                />
+                <button
+                  @click="addWritingNote"
+                  :disabled="!newNoteBody.trim() || notesLoading"
+                  class="mt-2 w-full rounded-xl bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
+                >
+                  {{ t('articles.addWritingNote') }}
+                </button>
+              </div>
 
-            <div v-if="notesLoading" class="text-sm text-stone-400">{{ t('common.loading') }}</div>
-            <div v-else-if="!openWritingNotes.length" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-400">
-              {{ t('articles.noWritingNotes') }}
-            </div>
-            <div v-else class="space-y-2">
-              <article
-                v-for="note in openWritingNotes"
-                :key="note.id"
-                class="rounded-2xl border border-amber-100 bg-[#fff9e8] p-3 shadow-sm"
-              >
+              <div v-if="notesLoading" class="text-sm text-stone-400">{{ t('common.loading') }}</div>
+              <div v-else-if="!openWritingNotes.length" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-400">
+                {{ t('articles.noWritingNotes') }}
+              </div>
+              <div v-else class="space-y-2">
+                <article
+                  v-for="note in openWritingNotes"
+                  :key="note.id"
+                  class="rounded-2xl border border-amber-100 bg-[#fff9e8] p-3 shadow-sm"
+                >
                 <textarea
                   v-if="editingNoteId === note.id"
                   v-model="editingNoteBody"
@@ -2358,72 +2391,37 @@ watch(
                     </button>
                   </template>
                 </div>
-              </article>
-            </div>
-
-            <div v-if="doneWritingNotes.length" class="mt-3">
-              <button
-                @click="showDoneNotes = !showDoneNotes"
-                class="w-full rounded-xl bg-stone-50 px-3 py-2 text-left text-xs font-semibold text-stone-500 hover:bg-stone-100"
-              >
-                {{ showDoneNotes ? t('articles.hideDoneNotes') : t('articles.showDoneNotes', { count: doneWritingNotes.length }) }}
-              </button>
-              <div v-if="showDoneNotes" class="mt-2 space-y-2">
-                <article
-                  v-for="note in doneWritingNotes"
-                  :key="note.id"
-                  class="rounded-2xl border border-stone-100 bg-stone-50 p-3 opacity-75"
-                >
-                  <p class="whitespace-pre-wrap text-sm leading-6 text-stone-500 line-through">{{ note.body }}</p>
-                  <div class="mt-2 flex gap-2">
-                    <button @click="toggleNoteDone(note)" class="rounded-lg bg-white px-2.5 py-1 text-xs text-stone-600">
-                      {{ t('articles.restoreNote') }}
-                    </button>
-                    <button @click="deleteWritingNote(note)" class="rounded-lg bg-red-50 px-2.5 py-1 text-xs text-red-600">
-                      {{ t('common.delete') }}
-                    </button>
-                  </div>
                 </article>
+              </div>
+
+              <div v-if="doneWritingNotes.length" class="mt-3">
+                <button
+                  @click="showDoneNotes = !showDoneNotes"
+                  class="w-full rounded-xl bg-stone-50 px-3 py-2 text-left text-xs font-semibold text-stone-500 hover:bg-stone-100"
+                >
+                  {{ showDoneNotes ? t('articles.hideDoneNotes') : t('articles.showDoneNotes', { count: doneWritingNotes.length }) }}
+                </button>
+                <div v-if="showDoneNotes" class="mt-2 space-y-2">
+                  <article
+                    v-for="note in doneWritingNotes"
+                    :key="note.id"
+                    class="rounded-2xl border border-stone-100 bg-stone-50 p-3 opacity-75"
+                  >
+                    <p class="whitespace-pre-wrap text-sm leading-6 text-stone-500 line-through">{{ note.body }}</p>
+                    <div class="mt-2 flex gap-2">
+                      <button @click="toggleNoteDone(note)" class="rounded-lg bg-white px-2.5 py-1 text-xs text-stone-600">
+                        {{ t('articles.restoreNote') }}
+                      </button>
+                      <button @click="deleteWritingNote(note)" class="rounded-lg bg-red-50 px-2.5 py-1 text-xs text-red-600">
+                        {{ t('common.delete') }}
+                      </button>
+                    </div>
+                  </article>
+                </div>
               </div>
             </div>
           </section>
 
-          <section>
-            <h3 class="text-sm font-semibold text-stone-700 mb-2">{{ t('articles.actions') }}</h3>
-            <div class="space-y-2">
-              <button
-                @click="saveNow"
-                class="w-full px-3 py-2 bg-stone-900 hover:bg-stone-700 text-white rounded-lg text-sm transition-colors"
-              >
-                {{ t('articles.saveNow') }}
-              </button>
-              <button
-                @click="openAiChatForArticle"
-                class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
-              >
-                {{ t('articles.aiChat') }}
-              </button>
-              <button
-                @click="openAiToolsForArticle"
-                class="w-full px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm transition-colors"
-              >
-                {{ t('articles.aiTools') }}
-              </button>
-              <button
-                v-if="!store.selectedEntry.archived_at"
-                @click="archiveSelectedEntry"
-                class="w-full px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg text-sm transition-colors"
-              >
-                {{ t('articles.archive') }}
-              </button>
-              <button
-                @click="deleteSelectedEntry"
-                class="w-full px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm transition-colors"
-              >
-                {{ t('common.delete') }}
-              </button>
-            </div>
-          </section>
         </template>
         <div v-else class="text-sm text-stone-400">{{ t('articles.noArticleSelected') }}</div>
       </div>

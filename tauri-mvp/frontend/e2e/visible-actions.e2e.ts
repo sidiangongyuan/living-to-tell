@@ -365,11 +365,11 @@ test('article delete asks for confirmation before calling the destructive API', 
 
   await page.goto('/articles?id=article-a')
   page.once('dialog', async (dialog) => dialog.dismiss())
-  await page.getByRole('button', { name: '删除' }).last().click()
+  await page.getByTestId('article-action-delete').click()
   expect(deleteRequests).toBe(0)
 
   page.once('dialog', async (dialog) => dialog.accept())
-  await page.getByRole('button', { name: '删除' }).last().click()
+  await page.getByTestId('article-action-delete').click()
   await expect.poll(() => deleteRequests).toBe(1)
 })
 
@@ -384,7 +384,7 @@ test('article delete failures show a visible error', async ({ page }) => {
 
   await page.goto('/articles?id=article-a')
   page.once('dialog', async (dialog) => dialog.accept())
-  await page.getByRole('button', { name: '删除' }).last().click()
+  await page.getByTestId('article-action-delete').click()
 
   await expect(page.getByText('删除文章失败')).toBeVisible()
   await expect(page.getByTestId('article-body-editor')).toHaveValue(article.body)
@@ -768,9 +768,8 @@ test('article list filters, context pane, save, AI navigation, archive, and coll
   await page.getByRole('button', { name: '显示上下文' }).click()
   await expect(page.getByRole('button', { name: '收起上下文' })).toBeVisible()
 
-  await page.getByTestId('article-body-editor').fill('手动保存正文')
-  await page.getByRole('button', { name: '立即保存' }).click()
-  await expect.poll(() => updates.at(-1)?.body).toBe('手动保存正文')
+  await page.getByTestId('article-body-editor').fill('自动保存正文')
+  await expect.poll(() => updates.at(-1)?.body).toBe('自动保存正文')
 
   await page.getByRole('button', { name: 'AI 对话' }).click()
   await expect(page).toHaveURL(/\/ai\?.*tab=chat/)
@@ -1383,13 +1382,10 @@ test('AI tools run tasks, attach contexts, and keep generated outputs actionable
   await expect(page.getByRole('button', { name: '运行任务' })).toBeVisible()
 
   await page.getByRole('button', { name: '添加文章便签' }).click()
+  await page.getByRole('button', { name: '加入全部未完成' }).click()
   await expect(page.getByText('上下文已添加')).toBeVisible()
   await expect(page.getByText('文章便签 · 1 条')).toBeVisible()
-
-  await page.getByRole('button', { name: '添加文脉标本' }).click()
-  await expect(page.getByRole('heading', { name: '添加文脉标本' })).toBeVisible()
-  await page.getByRole('button', { name: '取消' }).click()
-  await expect(page.getByRole('heading', { name: '添加文脉标本' })).toHaveCount(0)
+  await page.getByRole('button', { name: '完成', exact: true }).click()
 
   await page.getByRole('button', { name: '添加文脉标本' }).click()
   await page.getByPlaceholder('搜索标本...').fill('不存在的标本')
@@ -1399,15 +1395,17 @@ test('AI tools run tasks, attach contexts, and keep generated outputs actionable
   await page.getByPlaceholder('搜索标本...').press('Enter')
   await page.getByRole('button', { name: /已有标本正文/ }).click()
   await page.getByRole('button', { name: /添加所选上下文/ }).click()
-  await expect(page.getByText('测试书')).toBeVisible()
+  await page.getByRole('button', { name: '完成', exact: true }).click()
   const referenceContext = page.locator('article').filter({ hasText: '测试书' })
+  await expect(referenceContext).toBeVisible()
   await referenceContext.getByRole('button', { name: '×' }).click()
   await expect(referenceContext).toHaveCount(0)
 
   await page.getByRole('button', { name: '添加文脉标本' }).click()
   await page.getByRole('button', { name: /已有标本正文/ }).click()
   await page.getByRole('button', { name: /添加所选上下文/ }).click()
-  await expect(page.getByText('测试书')).toBeVisible()
+  await expect(page.locator('article').filter({ hasText: '测试书' })).toBeVisible()
+  await page.getByRole('button', { name: '完成', exact: true }).click()
 
   await page.getByRole('button', { name: '运行任务' }).click()
   await expect.poll(() => taskBodies.length).toBe(1)
@@ -1458,14 +1456,17 @@ test('AI presets, card contexts, and clear controls update the workspace visibly
   await page.getByRole('button', { name: '添加 AI 卡片' }).click()
   await page.getByRole('button', { name: /克制风格/ }).click()
   await expect(page.locator('article').filter({ hasText: '克制风格' })).toBeVisible()
-  await page.getByPlaceholder('例如：等待、试探、关系突破').fill('等待')
-  await page.getByPlaceholder('例如：等待、试探、关系突破').press('Enter')
+  await page.getByPlaceholder('搜索风格、人物、场景卡...').fill('等待')
   await page.getByRole('button', { name: /等待回应/ }).click()
   await expect(page.locator('article').filter({ hasText: '等待回应' })).toBeVisible()
+  await page.getByRole('button', { name: '完成', exact: true }).click()
   await page.getByRole('button', { name: '清空上下文' }).click()
-  await expect(page.getByText('克制风格')).toHaveCount(1)
   await expect(page.locator('article').filter({ hasText: '等待回应' })).toHaveCount(0)
+  await page.getByRole('button', { name: '添加 AI 卡片' }).click()
+  await page.getByPlaceholder('搜索风格、人物、场景卡...').fill('')
+  await expect(page.getByRole('button', { name: /克制风格/ })).toHaveCount(1)
   await expect(page.getByRole('button', { name: /等待回应/ })).toHaveCount(1)
+  await page.getByRole('button', { name: '完成', exact: true }).click()
   await expect(page.getByText('尚未添加上下文。AI 只会处理原文，除非你手动加入卡片、便签或文脉标本。')).toBeVisible()
 
   await page.getByRole('button', { name: '粘贴文本' }).click()

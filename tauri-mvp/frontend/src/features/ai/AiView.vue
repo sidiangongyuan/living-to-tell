@@ -4,10 +4,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { appApi } from '../../api/app'
 import { aiApi, type AiContextAttachment, type AiTaskPreset, type AiTaskPresetMap, type Message } from '../../api/ai'
 import { articlesApi, type Entry } from '../../api/articles'
-import { aiCardApi, type AiCard } from '../../api/aiCards'
+import { aiCardApi, type AiCard, type AiCardType } from '../../api/aiCards'
 import { errorMessage, isHttpStatus } from '../../api/base'
 import { libraryApi, type Reference } from '../../api/library'
-import { notesApi } from '../../api/notes'
+import { notesApi, type WritingNote } from '../../api/notes'
 import { useI18n } from '../../i18n'
 import { countParagraphs } from '../articles/articleList'
 import { applyArticleBodyEdit, selectArticleBodyText } from './applyArticleEdit'
@@ -24,11 +24,11 @@ import {
 import {
   buildTaskRequestOptions,
   cloneControls,
-  isFocusTask,
   mergeControls,
 } from './taskControls'
 
 type ChatScopeKind = 'global' | 'article' | 'collection'
+type ContextSource = 'cards' | 'notes' | 'references'
 
 interface TaskOption {
   value: TaskType
@@ -48,17 +48,18 @@ const router = useRouter()
 const { t } = useI18n()
 
 const aiCards = ref<AiCard[]>([])
-const showCardSelector = ref(false)
-const sceneSearchQuery = ref('')
-const sceneSearchResults = ref<AiCard[]>([])
-const sceneSearchLoading = ref(false)
-const sceneSearchError = ref('')
+const contextSource = ref<ContextSource>('cards')
+const contextPickerOpen = ref(false)
+const cardSearchQuery = ref('')
+const cardTypeFilter = ref<'all' | AiCardType>('all')
 
-const referencePickerOpen = ref(false)
 const referenceSearch = ref('')
 const referenceResults = ref<Reference[]>([])
 const selectedReferenceIds = ref<string[]>([])
 const referenceLoading = ref(false)
+const contextNotes = ref<WritingNote[]>([])
+const contextNotesLoading = ref(false)
+const contextNotesError = ref('')
 
 const articles = ref<Entry[]>([])
 const taskPresets = ref<AiTaskPresetMap>({})
@@ -191,13 +192,22 @@ const taskGroups = computed<TaskGroup[]>(() => [
   },
 ])
 
-const selectedCards = computed(() =>
-  [...aiCards.value, ...sceneSearchResults.value]
-    .filter((card, index, allCards) => allCards.findIndex((item) => item.id === card.id) === index)
-    .filter((card) => selectedCardIds.value.includes(card.id))
-)
+const aiCardResults = computed(() => {
+  const query = cardSearchQuery.value.trim().toLowerCase()
+  return aiCards.value
+    .filter((card) => cardTypeFilter.value === 'all' || card.card_type === cardTypeFilter.value)
+    .filter((card) => {
+      if (!query) return true
+      return card.title.toLowerCase().includes(query)
+        || card.content.toLowerCase().includes(query)
+        || card.tags.some((tag) => tag.toLowerCase().includes(query))
+    })
+    .slice(0, 40)
+})
 
-const nonSceneCards = computed(() => aiCards.value.filter((card) => card.card_type !== 'scene'))
+const selectedCards = computed(() =>
+  aiCards.value.filter((card) => selectedCardIds.value.includes(card.id))
+)
 
 const selectedArticle = computed(() =>
   articles.value.find((article) => article.id === selectedArticleId.value) ?? null
@@ -254,6 +264,29 @@ const contextAttachments = computed<AiContextAttachment[]>(() =>
 )
 
 const canAddArticleNotes = computed(() => scopeType.value === 'article' && Boolean(selectedArticleId.value))
+
+const openContextNotes = computed(() =>
+  contextNotes.value
+    .filter((note) => note.status === 'open')
+    .sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+      return a.sort_order - b.sort_order
+    })
+)
+
+const contextSourceOptions = computed<Array<{ value: ContextSource; label: string; count: number }>>(() => [
+  { value: 'cards', label: t('ai.contextSourceCards'), count: selectedCardIds.value.length },
+  {
+    value: 'notes',
+    label: t('ai.contextSourceNotes'),
+    count: manualContextItems.value.filter((item) => item.kind === 'writing_note').length,
+  },
+  {
+    value: 'references',
+    label: t('ai.contextSourceReferences'),
+    count: manualContextItems.value.filter((item) => item.kind === 'reference').length,
+  },
+])
 
 const chatScopeLabel = computed(() => {
   return selectedChatArticle.value?.title || t('ai.chatNoArticleSelected')
@@ -315,6 +348,17 @@ watch([chatScopeKind, chatScopeId], async () => {
 
 watch(taskType, () => {
   selectedPresetId.value = ''
+})
+
+watch(contextSource, (source) => {
+  if (source === 'notes') void loadContextNotes()
+  if (source === 'references' && !referenceResults.value.length) void searchReferences()
+})
+
+watch(selectedArticleId, () => {
+  contextNotes.value = []
+  contextNotesError.value = ''
+  if (contextSource.value === 'notes') void loadContextNotes()
 })
 
 async function loadAiCards() {
@@ -476,16 +520,14 @@ async function handleRunTask() {
 
   try {
     const controls = controlsByTask.value[taskType.value].controls
-    const focusOptions = isFocusTask(taskType.value)
-      ? buildTaskRequestOptions(taskType.value, controls)
-      : { extra_instructions: controls.extraInstructions }
+    const taskOptions = buildTaskRequestOptions(taskType.value, controls)
     taskResult.value = await store.runTask({
       task_type: taskType.value,
       text: subject,
       target_kind: scopeType.value === 'article' ? (hasArticleSelection.value ? 'selection' : 'article') : 'paste',
       target_ref_id: selectedArticleId.value,
       attachments: contextAttachments.value,
-      ...focusOptions,
+      ...taskOptions,
     })
     showComparison.value = true
   } catch (e) {
@@ -624,24 +666,6 @@ function toggleCard(cardId: string) {
   }
 }
 
-async function searchSceneCards() {
-  const query = sceneSearchQuery.value.trim()
-  sceneSearchError.value = ''
-  if (!query) {
-    sceneSearchResults.value = []
-    return
-  }
-  sceneSearchLoading.value = true
-  try {
-    sceneSearchResults.value = await aiCardApi.searchCards(query, 'scene', 30)
-  } catch (e) {
-    sceneSearchError.value = errorMessage(e)
-    sceneSearchResults.value = []
-  } finally {
-    sceneSearchLoading.value = false
-  }
-}
-
 function removeContextItem(item: ContextItem) {
   if (item.kind === 'ai_card') {
     selectedCardIds.value = selectedCardIds.value.filter((id) => id !== item.ref_id)
@@ -655,6 +679,17 @@ function clearContextItems() {
   manualContextItems.value = []
 }
 
+function openContextPicker(source: ContextSource) {
+  contextSource.value = source
+  contextPickerOpen.value = true
+  if (source === 'notes') void loadContextNotes()
+  if (source === 'references' && !referenceResults.value.length) void searchReferences()
+}
+
+function closeContextPicker() {
+  contextPickerOpen.value = false
+}
+
 function clearCurrentResult() {
   workspace.clearCurrentResult()
   notice.value = t('ai.currentResultCleared')
@@ -662,19 +697,31 @@ function clearCurrentResult() {
 
 function clearCurrentTaskState() {
   workspace.clearCurrentTask()
-  showCardSelector.value = false
-  sceneSearchResults.value = []
-  sceneSearchQuery.value = ''
+  cardSearchQuery.value = ''
+  cardTypeFilter.value = 'all'
   notice.value = t('ai.currentTaskCleared')
 }
 
 function clearAllWorkspaceState() {
   if (!confirm(t('ai.clearAllWorkspaceConfirm'))) return
   workspace.clearAllTools()
-  showCardSelector.value = false
-  sceneSearchResults.value = []
-  sceneSearchQuery.value = ''
+  cardSearchQuery.value = ''
+  cardTypeFilter.value = 'all'
   notice.value = t('ai.allWorkspaceCleared')
+}
+
+async function loadContextNotes() {
+  if (!selectedArticleId.value) return
+  contextNotesLoading.value = true
+  contextNotesError.value = ''
+  try {
+    contextNotes.value = await notesApi.listNotes(selectedArticleId.value, false)
+  } catch (e) {
+    contextNotesError.value = errorMessage(e)
+    contextNotes.value = []
+  } finally {
+    contextNotesLoading.value = false
+  }
 }
 
 async function addArticleNotesContext() {
@@ -682,13 +729,8 @@ async function addArticleNotesContext() {
   error.value = ''
   notice.value = ''
   try {
-    const notes = await notesApi.listNotes(selectedArticleId.value, false)
-    const openNotes = notes
-      .filter((note) => note.status === 'open')
-      .sort((a, b) => {
-        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
-        return a.sort_order - b.sort_order
-      })
+    if (!contextNotes.value.length) await loadContextNotes()
+    const openNotes = openContextNotes.value
     if (!openNotes.length) {
       notice.value = t('ai.noOpenNotes')
       return
@@ -708,10 +750,14 @@ async function addArticleNotesContext() {
   }
 }
 
-async function openReferencePicker() {
-  referencePickerOpen.value = true
-  selectedReferenceIds.value = []
-  await searchReferences()
+function toggleSingleArticleNoteContext(note: WritingNote) {
+  const item = articleNoteToContextItem(note)
+  if (isManualContextSelected(item.uid)) {
+    manualContextItems.value = manualContextItems.value.filter((context) => context.uid !== item.uid)
+    return
+  }
+  upsertManualContext(item)
+  notice.value = t('ai.contextAdded')
 }
 
 async function searchReferences() {
@@ -740,8 +786,20 @@ function addSelectedReferences() {
   for (const reference of selected) {
     upsertManualContext(referenceToContextItem(reference))
   }
-  referencePickerOpen.value = false
+  selectedReferenceIds.value = []
   if (selected.length) notice.value = t('ai.contextAdded')
+}
+
+function isManualContextSelected(uid: string) {
+  return manualContextItems.value.some((item) => item.uid === uid)
+}
+
+function isArticleNoteSelected(note: WritingNote) {
+  return isManualContextSelected(articleNoteToContextItem(note).uid)
+}
+
+function isReferenceContextSelected(reference: Reference) {
+  return isManualContextSelected(referenceToContextItem(reference).uid)
 }
 
 async function saveCurrentPreset() {
@@ -839,6 +897,17 @@ function limitSceneReference(content: string): string {
   return `${before}\n${quotes.length ? quotes.join('\n') : '无'}`
 }
 
+function articleNoteToContextItem(note: WritingNote): ContextItem {
+  return {
+    uid: `writing_note:${note.entry_id}:${note.id}`,
+    kind: 'writing_note',
+    ref_id: note.id,
+    title: note.body.trim().slice(0, 28) || t('ai.contextWritingNote'),
+    subtitle: selectedArticle.value?.title || t('articles.untitled'),
+    body: note.body.trim(),
+  }
+}
+
 function referenceToContextItem(reference: Reference): ContextItem {
   const source = [reference.source_title ? `《${reference.source_title}》` : '', reference.source_author].filter(Boolean).join(' ')
   return {
@@ -930,7 +999,7 @@ function makeId(): string {
             <p class="mt-2 text-xs leading-5 text-gray-500">{{ taskDescription }}</p>
           </section>
 
-          <section v-if="isFocusTask(taskType)" class="space-y-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-3">
+          <section class="space-y-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-3">
             <div class="flex items-center justify-between">
               <h3 class="text-sm font-semibold text-blue-950">{{ t('ai.taskControls') }}</h3>
               <span class="text-xs text-blue-700">{{ t('ai.previewOnlyHint') }}</span>
@@ -942,6 +1011,25 @@ function makeId(): string {
                 <option value="light">{{ t('ai.options.light') }}</option>
                 <option value="medium">{{ t('ai.options.medium') }}</option>
                 <option value="strong">{{ t('ai.options.strong') }}</option>
+              </select>
+              <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.polishGoal') }}</label>
+              <select v-model="controlsByTask[taskType].controls.polishGoal" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm">
+                <option value="clarity">{{ t('ai.options.polishGoalClarity') }}</option>
+                <option value="rhythm">{{ t('ai.options.polishGoalRhythm') }}</option>
+                <option value="literary">{{ t('ai.options.polishGoalLiterary') }}</option>
+                <option value="restrained">{{ t('ai.options.polishGoalRestrained') }}</option>
+              </select>
+              <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.polishRhythm') }}</label>
+              <select v-model="controlsByTask[taskType].controls.polishRhythm" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm">
+                <option value="balanced">{{ t('ai.options.rhythmBalanced') }}</option>
+                <option value="tight">{{ t('ai.options.rhythmTight') }}</option>
+                <option value="flowing">{{ t('ai.options.rhythmFlowing') }}</option>
+              </select>
+              <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.polishImagery') }}</label>
+              <select v-model="controlsByTask[taskType].controls.polishImagery" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm">
+                <option value="preserve">{{ t('ai.options.imageryPreserve') }}</option>
+                <option value="enhance">{{ t('ai.options.imageryEnhance') }}</option>
+                <option value="reduce">{{ t('ai.options.imageryReduce') }}</option>
               </select>
               <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.languageStyle') }}</label>
               <input v-model="controlsByTask[taskType].controls.polishStyle" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
@@ -1004,6 +1092,46 @@ function makeId(): string {
               <input v-model="controlsByTask[taskType].controls.continuationMode" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
             </template>
 
+            <template v-if="taskType === 'style_transfer'">
+              <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.styleTransferTarget') }}</label>
+              <input v-model="controlsByTask[taskType].controls.styleTransferTarget" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
+              <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.styleTransferStrictness') }}</label>
+              <select v-model="controlsByTask[taskType].controls.styleTransferStrictness" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm">
+                <option value="light">{{ t('ai.options.light') }}</option>
+                <option value="medium">{{ t('ai.options.medium') }}</option>
+                <option value="strong">{{ t('ai.options.strong') }}</option>
+              </select>
+            </template>
+
+            <template v-if="taskType === 'summarize'">
+              <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.summarizeFormat') }}</label>
+              <input v-model="controlsByTask[taskType].controls.summarizeFormat" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
+              <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.summarizeFocus') }}</label>
+              <input v-model="controlsByTask[taskType].controls.summarizeFocus" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
+            </template>
+
+            <template v-if="taskType === 'outline'">
+              <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.outlineMode') }}</label>
+              <input v-model="controlsByTask[taskType].controls.outlineMode" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
+              <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.outlineDepth') }}</label>
+              <select v-model="controlsByTask[taskType].controls.outlineDepth" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm">
+                <option value="brief">{{ t('ai.options.brief') }}</option>
+                <option value="standard">{{ t('ai.options.standard') }}</option>
+                <option value="deep">{{ t('ai.options.deep') }}</option>
+              </select>
+            </template>
+
+            <template v-if="taskType === 'title'">
+              <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.titleCount') }}</label>
+              <select v-model="controlsByTask[taskType].controls.titleCount" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm">
+                <option value="few">{{ t('ai.options.few') }}</option>
+                <option value="standard">{{ t('ai.options.standard') }}</option>
+                <option value="many">{{ t('ai.options.many') }}</option>
+              </select>
+              <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.titleStyle') }}</label>
+              <input v-model="controlsByTask[taskType].controls.titleStyle" class="w-full rounded-lg border border-blue-100 px-3 py-2 text-sm" />
+            </template>
+
             <label class="block text-xs font-semibold text-gray-600">{{ t('ai.controls.extraInstructions') }}</label>
             <textarea
               v-model="controlsByTask[taskType].controls.extraInstructions"
@@ -1013,7 +1141,7 @@ function makeId(): string {
             />
           </section>
 
-          <section v-if="isFocusTask(taskType)" class="rounded-2xl border border-gray-200 p-3">
+          <section class="rounded-2xl border border-gray-200 p-3">
             <div class="mb-2 flex items-center justify-between">
               <h3 class="text-sm font-semibold text-gray-700">{{ t('ai.myPresets') }}</h3>
               <span class="text-xs text-gray-400">{{ currentTaskPresets.length }}</span>
@@ -1113,84 +1241,36 @@ function makeId(): string {
                 {{ t('ai.clearContext') }}
               </button>
             </div>
-            <div class="mb-3 grid grid-cols-2 gap-2">
-              <button
-                @click="showCardSelector = !showCardSelector"
-                class="rounded-lg bg-purple-50 px-3 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-100"
-              >
-                {{ t('ai.addAiCard') }}
-              </button>
-              <button
-                @click="addArticleNotesContext"
-                :disabled="!canAddArticleNotes"
-                class="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-40"
-              >
-                {{ t('ai.addArticleNotes') }}
-              </button>
-              <button
-                @click="openReferencePicker"
-                class="col-span-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
-              >
-                {{ t('ai.addReference') }}
-              </button>
-            </div>
 
-            <div v-if="showCardSelector" class="mb-3 max-h-44 space-y-1 overflow-y-auto rounded-lg border border-gray-200 p-2">
+            <div class="mb-3 grid gap-2">
               <button
-                v-for="card in nonSceneCards"
-                :key="card.id"
-                @click="toggleCard(card.id)"
-                :class="[
-                  'w-full rounded p-2 text-left text-xs transition-colors',
-                  selectedCardIds.includes(card.id) ? 'border border-purple-300 bg-purple-100' : 'bg-gray-50 hover:bg-gray-100',
-                ]"
+                type="button"
+                @click="openContextPicker('cards')"
+                class="flex items-center justify-between rounded-xl border border-purple-100 bg-purple-50 px-3 py-2 text-left text-sm font-semibold text-purple-900 hover:bg-purple-100"
               >
-                <div class="font-semibold">{{ card.title }}</div>
-                <div class="text-gray-500">{{ cardTypeLabels[card.card_type] }}</div>
+                <span>{{ t('ai.addAiCard') }}</span>
+                <span class="rounded-full bg-white px-2 py-0.5 text-xs text-purple-700">{{ selectedCardIds.length }}</span>
               </button>
-              <div v-if="!nonSceneCards.length" class="py-4 text-center text-gray-400">
-                {{ t('ai.noCards') }}
-              </div>
-            </div>
-
-            <div class="mb-3 rounded-lg border border-emerald-100 bg-emerald-50/70 p-3">
-              <div class="mb-2 flex items-center justify-between gap-2">
-                <div class="text-xs font-semibold text-emerald-900">{{ t('ai.sceneModuleTitle') }}</div>
-                <span class="text-[11px] text-emerald-700">{{ t('ai.sceneModuleHint') }}</span>
-              </div>
-              <div class="flex gap-2">
-                <input
-                  v-model="sceneSearchQuery"
-                  @keydown.enter.prevent="searchSceneCards"
-                  class="min-w-0 flex-1 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500"
-                  :placeholder="t('ai.sceneSearchPlaceholder')"
-                />
-                <button
-                  @click="searchSceneCards"
-                  :disabled="sceneSearchLoading"
-                  class="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
-                >
-                  {{ sceneSearchLoading ? t('common.loading') : t('ai.sceneSearch') }}
-                </button>
-              </div>
-              <div v-if="sceneSearchError" class="mt-2 rounded bg-red-50 p-2 text-xs text-red-700">{{ sceneSearchError }}</div>
-              <div v-if="sceneSearchResults.length" class="mt-2 max-h-44 space-y-1 overflow-y-auto">
-                <button
-                  v-for="card in sceneSearchResults"
-                  :key="card.id"
-                  @click="toggleCard(card.id)"
-                  :class="[
-                    'w-full rounded p-2 text-left text-xs transition-colors',
-                    selectedCardIds.includes(card.id) ? 'border border-emerald-300 bg-emerald-100' : 'bg-white hover:bg-emerald-50',
-                  ]"
-                >
-                  <div class="font-semibold text-emerald-950">{{ card.title }}</div>
-                  <div class="line-clamp-2 text-emerald-700">{{ card.content }}</div>
-                </button>
-              </div>
-              <div v-else-if="sceneSearchQuery.trim() && !sceneSearchLoading" class="mt-2 text-xs text-emerald-700">
-                {{ t('ai.sceneNoResults') }}
-              </div>
+              <button
+                type="button"
+                @click="openContextPicker('notes')"
+                class="flex items-center justify-between rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-left text-sm font-semibold text-amber-900 hover:bg-amber-100"
+              >
+                <span>{{ t('ai.addArticleNotes') }}</span>
+                <span class="rounded-full bg-white px-2 py-0.5 text-xs text-amber-700">
+                  {{ manualContextItems.filter((item) => item.kind === 'writing_note').length }}
+                </span>
+              </button>
+              <button
+                type="button"
+                @click="openContextPicker('references')"
+                class="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-left text-sm font-semibold text-emerald-900 hover:bg-emerald-100"
+              >
+                <span>{{ t('ai.addReference') }}</span>
+                <span class="rounded-full bg-white px-2 py-0.5 text-xs text-emerald-700">
+                  {{ manualContextItems.filter((item) => item.kind === 'reference').length }}
+                </span>
+              </button>
             </div>
 
             <div v-if="selectedContextItems.length" class="space-y-2">
@@ -1430,66 +1510,190 @@ function makeId(): string {
       </main>
     </div>
 
-    <div v-if="referencePickerOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div class="flex max-h-[80vh] w-[680px] flex-col rounded-3xl bg-white shadow-2xl">
-        <div class="border-b border-gray-200 p-6">
-          <h3 class="text-xl font-bold">{{ t('ai.pickReferences') }}</h3>
-          <p class="mt-1 text-sm text-gray-500">{{ t('ai.pickReferencesHint') }}</p>
-          <div class="mt-4 flex gap-2">
-            <input
-              v-model="referenceSearch"
-              class="min-w-0 flex-1 rounded-xl border border-gray-300 px-4 py-2 text-sm"
-              :placeholder="t('library.search')"
-              @keydown.enter.prevent="searchReferences"
-            />
-            <button @click="searchReferences" class="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white">
-              {{ t('common.search') }}
+    <div
+      v-if="contextPickerOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
+      data-testid="ai-context-picker"
+    >
+      <div class="flex max-h-[88vh] w-[min(920px,calc(100vw-48px))] flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div class="border-b border-gray-200 p-5">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h3 class="text-xl font-bold text-gray-900">{{ t('ai.contextPickerTitle') }}</h3>
+              <p class="mt-1 text-sm text-gray-500">{{ t('ai.contextPickerHint') }}</p>
+            </div>
+            <button
+              type="button"
+              @click="closeContextPicker"
+              class="rounded-full px-3 py-1 text-2xl leading-none text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            >
+              ×
+            </button>
+          </div>
+          <div class="mt-4 grid grid-cols-3 gap-2 rounded-2xl bg-gray-100 p-1">
+            <button
+              v-for="option in contextSourceOptions"
+              :key="option.value"
+              type="button"
+              @click="openContextPicker(option.value)"
+              :class="[
+                'rounded-xl px-3 py-2 text-sm font-semibold transition',
+                contextSource === option.value ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800',
+              ]"
+            >
+              {{ option.label }}
+              <span v-if="option.count" class="ml-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700">{{ option.count }}</span>
             </button>
           </div>
         </div>
-        <div class="flex-1 overflow-y-auto p-4">
-          <div v-if="referenceLoading" class="p-8 text-center text-gray-400">{{ t('common.loading') }}</div>
-          <div v-else-if="!referenceResults.length" class="p-8 text-center text-gray-400">{{ t('library.noReferences') }}</div>
-          <template v-else>
-            <button
-              v-for="reference in referenceResults"
-              :key="reference.id"
-              @click="toggleReference(reference.id)"
-              :class="[
-                'mb-2 w-full rounded-2xl border p-4 text-left transition-all',
-                selectedReferenceIds.includes(reference.id)
-                  ? 'border-emerald-400 bg-emerald-50'
-                  : 'border-gray-200 hover:border-gray-300'
-              ]"
-            >
-              <div class="flex gap-3">
-                <input type="checkbox" class="mt-1" :checked="selectedReferenceIds.includes(reference.id)" readonly />
-                <div class="min-w-0 flex-1">
-                  <div class="font-semibold">
-                    {{ reference.source_title ? `《${reference.source_title}》` : t('library.empty') }}
-                    <span class="text-sm font-normal text-gray-500">{{ reference.source_author }}</span>
-                  </div>
-                  <p class="mt-2 line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-gray-600">{{ reference.content }}</p>
-                  <div class="mt-2 text-xs text-gray-400">{{ reference.usage_kind || t('library.other') }}</div>
+
+        <div class="min-h-0 flex-1 overflow-y-auto p-5">
+          <section v-if="contextSource === 'cards'" class="space-y-4">
+            <div class="grid gap-3 md:grid-cols-[1fr_180px]">
+              <input
+                v-model="cardSearchQuery"
+                class="rounded-xl border border-purple-100 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-purple-400"
+                :placeholder="t('ai.cardSearchPlaceholder')"
+              />
+              <select
+                v-model="cardTypeFilter"
+                class="rounded-xl border border-purple-100 bg-white px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-purple-400"
+              >
+                <option value="all">{{ t('aiCards.filterAll') }}</option>
+                <option value="style">{{ cardTypeLabels.style }}</option>
+                <option value="character">{{ cardTypeLabels.character }}</option>
+                <option value="scene">{{ cardTypeLabels.scene }}</option>
+              </select>
+            </div>
+            <div class="grid max-h-[52vh] gap-3 overflow-y-auto pr-1 md:grid-cols-2">
+              <button
+                v-for="card in aiCardResults"
+                :key="card.id"
+                type="button"
+                @click="toggleCard(card.id)"
+                :class="[
+                  'rounded-2xl border p-4 text-left transition-colors',
+                  selectedCardIds.includes(card.id) ? 'border-purple-300 bg-purple-50 shadow-sm' : 'border-gray-100 bg-white hover:border-purple-200 hover:bg-purple-50/40',
+                ]"
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <div class="min-w-0 font-semibold text-purple-950">{{ card.title }}</div>
+                  <span class="shrink-0 rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-700">{{ cardTypeLabels[card.card_type] }}</span>
                 </div>
+                <div class="mt-2 line-clamp-3 text-sm leading-6 text-gray-500">{{ card.content }}</div>
+              </button>
+              <div v-if="!aiCardResults.length" class="col-span-full py-12 text-center text-sm text-gray-400">
+                {{ t('ai.noCards') }}
               </div>
-            </button>
-          </template>
+            </div>
+          </section>
+
+          <section v-if="contextSource === 'notes'" class="space-y-4">
+            <div v-if="!canAddArticleNotes" class="rounded-2xl border border-amber-100 bg-amber-50 p-5 text-sm leading-6 text-amber-900">
+              {{ t('ai.selectArticleForNotes') }}
+            </div>
+            <template v-else>
+              <div class="flex items-center justify-between gap-3 rounded-2xl border border-amber-100 bg-amber-50 p-4">
+                <div class="text-sm leading-6 text-amber-900">{{ t('ai.notesContextHint') }}</div>
+                <button
+                  type="button"
+                  @click="addArticleNotesContext"
+                  class="shrink-0 rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
+                >
+                  {{ t('ai.addAllOpenNotes') }}
+                </button>
+              </div>
+              <div v-if="contextNotesLoading" class="py-12 text-center text-sm text-gray-400">{{ t('common.loading') }}</div>
+              <div v-else-if="contextNotesError" class="rounded-xl bg-red-50 p-3 text-sm text-red-700">{{ contextNotesError }}</div>
+              <div v-else-if="!openContextNotes.length" class="py-12 text-center text-sm text-gray-400">{{ t('ai.noOpenNotes') }}</div>
+              <div v-else class="grid max-h-[52vh] gap-3 overflow-y-auto pr-1 md:grid-cols-2">
+                <button
+                  v-for="note in openContextNotes"
+                  :key="note.id"
+                  type="button"
+                  @click="toggleSingleArticleNoteContext(note)"
+                  :class="[
+                    'rounded-2xl border p-4 text-left text-sm transition-colors',
+                    isArticleNoteSelected(note) ? 'border-amber-300 bg-amber-50 shadow-sm' : 'border-gray-100 bg-white hover:border-amber-200 hover:bg-amber-50/40',
+                  ]"
+                >
+                  <div class="line-clamp-3 leading-6 text-gray-700">{{ note.body }}</div>
+                  <div class="mt-2 text-xs font-semibold text-amber-700">
+                    {{ note.pinned ? t('ai.pinnedNote') : t('ai.openNote') }}
+                  </div>
+                </button>
+              </div>
+            </template>
+          </section>
+
+          <section v-if="contextSource === 'references'" class="space-y-4">
+            <div class="grid gap-3 md:grid-cols-[1fr_auto]">
+              <input
+                v-model="referenceSearch"
+                class="rounded-xl border border-emerald-100 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-400"
+                :placeholder="t('library.search')"
+                @keydown.enter.prevent="searchReferences"
+              />
+              <button
+                type="button"
+                @click="searchReferences"
+                :disabled="referenceLoading"
+                class="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+              >
+                {{ referenceLoading ? t('common.loading') : t('common.search') }}
+              </button>
+            </div>
+            <div v-if="referenceLoading" class="py-12 text-center text-sm text-gray-400">{{ t('common.loading') }}</div>
+            <div v-else-if="!referenceResults.length" class="py-12 text-center text-sm text-gray-400">{{ t('library.noReferences') }}</div>
+            <div v-else class="grid max-h-[52vh] gap-3 overflow-y-auto pr-1 md:grid-cols-2">
+              <button
+                v-for="reference in referenceResults"
+                :key="reference.id"
+                type="button"
+                @click="toggleReference(reference.id)"
+                :class="[
+                  'rounded-2xl border p-4 text-left text-sm transition-colors',
+                  selectedReferenceIds.includes(reference.id) || isReferenceContextSelected(reference)
+                    ? 'border-emerald-300 bg-emerald-50 shadow-sm'
+                    : 'border-gray-100 bg-white hover:border-emerald-200 hover:bg-emerald-50/40',
+                ]"
+              >
+                <div class="font-semibold text-emerald-950">
+                  {{ reference.source_title ? `《${reference.source_title}》` : t('library.empty') }}
+                  <span class="font-normal text-emerald-700">{{ reference.source_author }}</span>
+                </div>
+                <div class="mt-2 line-clamp-3 leading-6 text-gray-500">{{ reference.content }}</div>
+              </button>
+            </div>
+          </section>
         </div>
-        <div class="flex justify-end gap-3 border-t border-gray-200 p-5">
-          <button @click="referencePickerOpen = false" class="rounded-xl bg-gray-100 px-4 py-2 text-sm">
-            {{ t('common.cancel') }}
-          </button>
-          <button
-            @click="addSelectedReferences"
-            :disabled="!selectedReferenceIds.length"
-            class="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
-          >
-            {{ t('ai.addSelectedContext', { count: selectedReferenceIds.length }) }}
-          </button>
+
+        <div class="flex items-center justify-between gap-3 border-t border-gray-200 bg-gray-50 px-5 py-4">
+          <div class="text-sm text-gray-500">
+            {{ t('ai.selectedContextSummary', { count: selectedContextItems.length }) }}
+          </div>
+          <div class="flex gap-2">
+            <button
+              v-if="contextSource === 'references'"
+              type="button"
+              @click="addSelectedReferences"
+              :disabled="!selectedReferenceIds.length"
+              class="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              {{ t('ai.addSelectedContext', { count: selectedReferenceIds.length }) }}
+            </button>
+            <button
+              type="button"
+              @click="closeContextPicker"
+              class="rounded-xl bg-gray-900 px-5 py-2 text-sm font-semibold text-white hover:bg-gray-700"
+            >
+              {{ t('common.done') }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
+
   </div>
 </template>
 

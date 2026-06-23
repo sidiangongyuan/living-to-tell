@@ -1256,7 +1256,7 @@ def test_tauri_ai_settings_models_endpoint_fetches_opencode_live(monkeypatch):
     ]
 
 
-def test_tauri_ai_settings_models_endpoint_uses_presets_for_non_opencode(monkeypatch):
+def test_tauri_ai_settings_models_endpoint_uses_presets_for_native_gemini(monkeypatch):
     client = _tauri_client(monkeypatch)
 
     response = client.get("/api/settings/ai/models?provider=gemini")
@@ -1265,7 +1265,94 @@ def test_tauri_ai_settings_models_endpoint_uses_presets_for_non_opencode(monkeyp
     payload = response.json()
     assert payload["provider"] == "gemini"
     assert payload["source"] == "preset"
-    assert "暂未启用真实模型拉取" in payload["message"]
+    assert "Google 原生 Gemini" in payload["message"]
+
+
+def test_tauri_ai_settings_models_endpoint_fetches_custom_gemini_relay_live(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.settings import routes as settings_routes
+
+    calls = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {
+                    "data": [
+                        {"id": "gemini-3.1-pro"},
+                        {"id": "gemini-3.1-flash"},
+                    ]
+                }
+            ).encode("utf-8")
+
+    def fake_urlopen(req, timeout):
+        calls.append(
+            {
+                "url": req.full_url,
+                "auth": req.headers.get("Authorization"),
+                "timeout": timeout,
+            }
+        )
+        return FakeResponse()
+
+    monkeypatch.setattr(settings_routes.urlrequest, "urlopen", fake_urlopen)
+    monkeypatch.setenv("WRITER_TEST_PRESENT_KEY", "sk-test")
+
+    response = client.get(
+        "/api/settings/ai/models"
+        "?provider=gemini"
+        "&base_url=https%3A%2F%2Frelay.example"
+        "&api_key_source=env%3AWRITER_TEST_PRESENT_KEY"
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["provider"] == "gemini"
+    assert payload["source"] == "live"
+    assert payload["models"] == ["gemini-3.1-pro", "gemini-3.1-flash"]
+    assert calls == [
+        {
+            "url": "https://relay.example/v1/models",
+            "auth": "Bearer sk-test",
+            "timeout": 20,
+        }
+    ]
+
+
+def test_tauri_ai_settings_models_endpoint_falls_back_to_public_pricing(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.settings import routes as settings_routes
+
+    monkeypatch.setattr(
+        settings_routes,
+        "_fetch_openai_compatible_models",
+        lambda base_url, api_key: (_ for _ in ()).throw(settings_routes.AiError("HTTP 403: forbidden")),
+    )
+    monkeypatch.setattr(
+        settings_routes,
+        "_fetch_public_pricing_models",
+        lambda base_url: ["gemini-3.1-pro", "deepseek-v4-flash"],
+    )
+    monkeypatch.setenv("WRITER_TEST_PRESENT_KEY", "sk-test")
+
+    response = client.get(
+        "/api/settings/ai/models"
+        "?provider=gemini"
+        "&base_url=https%3A%2F%2Felysia.h-e.top"
+        "&api_key_source=env%3AWRITER_TEST_PRESENT_KEY"
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["source"] == "live"
+    assert payload["models"] == ["gemini-3.1-pro", "deepseek-v4-flash"]
+    assert "模型广场" in payload["message"]
 
 
 def test_tauri_ai_settings_test_endpoint_uses_preflight(monkeypatch):

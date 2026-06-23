@@ -306,7 +306,7 @@ async function fetchModels() {
   saveNotice.value = ''
   saveError.value = ''
   try {
-    const result = await settingsApi.getAiModels(aiProvider.value, true)
+    const result = await settingsApi.getAiModels(aiProvider.value, true, buildAiSettingsUpdate())
     fetchedModelPresets.value = {
       ...fetchedModelPresets.value,
       [aiProvider.value]: result.models,

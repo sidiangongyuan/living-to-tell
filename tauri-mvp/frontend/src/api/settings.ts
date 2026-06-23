@@ -124,8 +124,10 @@ export const settingsApi = {
     return handleResponse(res)
   },
 
-  async getAiModels(provider: AiProviderName, refresh = true): Promise<AiModelListResult> {
+  async getAiModels(provider: AiProviderName, refresh = true, config?: Partial<AiSettingsUpdate>): Promise<AiModelListResult> {
     const params = new URLSearchParams({ provider, refresh: String(refresh) })
+    if (config?.base_url) params.set('base_url', config.base_url)
+    if (config?.api_key_source) params.set('api_key_source', config.api_key_source)
     const res = await apiFetch(`/api/settings/ai/models?${params.toString()}`)
     return handleResponse(res)
   },
