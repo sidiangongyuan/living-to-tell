@@ -4,9 +4,9 @@
 
 ### 本地优先的写作工作室：文章、作品集、文脉标本与边界清晰的 AI
 
-中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.8)
+中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.9)
 
-[![Version](https://img.shields.io/badge/preview-0.1.8-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.9-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **写作、拍照、唱歌、讲话，都是为了讲述。活着，就是为了讲述。**
 
-[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.8) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
+[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.9) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
 
 </div>
 
@@ -110,6 +110,7 @@
 
 - Windows 桌面预览版提供简单安装包。
 - 冷启动时显示浅色启动反馈窗口，后台启动时不会黑屏等待。
+- 应用会在启动后后台检查 GitHub Releases，发现新版本时会显示清晰的更新提示。
 - 关闭按钮可设置为每次询问、最小化到托盘或直接退出。
 - 设置中的“数据与存储”会显示当前 SQLite 数据库、备份目录、检查点目录和自定义目录状态。
 - 数据目录迁移采用复制方式，新旧目录都会保留。
@@ -117,15 +118,15 @@
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.8) 下载最新公开预览版。
+从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.9) 下载最新公开预览版。
 
 推荐 Windows 资产：
 
-- `LivingToTell_0.1.8_x64-setup.exe`
+- `LivingToTell_0.1.9_x64-setup.exe`
 
 可选资产：
 
-- `LivingToTell_0.1.8_x64_zh-CN.msi`
+- `LivingToTell_0.1.9_x64_zh-CN.msi`
 
 预览版暂未签名，Windows SmartScreen 可能会提示风险。请只运行来自本仓库 Release 页的安装包。
 

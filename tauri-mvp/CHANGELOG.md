@@ -1,5 +1,40 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.9 - Update Notice And Release Flow Update (2026-06-25)
+
+### Added
+
+- Added a GitHub Release update-check endpoint that reports the current app version, the latest published version, release notes, and the preferred installer download.
+- Added an app-shell update banner that appears after startup when a newer public release is available.
+- Added a dedicated About and Updates section in Settings with manual update checks, release notes, and direct download/open-release actions.
+
+### Changed
+
+- Public update handling now tells users when a newer version exists instead of leaving them to check releases manually.
+- Update checking is silent when used as a background startup task and only surfaces an error copy when the user explicitly checks for updates.
+- The public release flow still uses installers, but the app now opens the correct installer or release page automatically.
+
+### Fixed
+
+- Fixed the release-check UX so users are no longer left guessing whether a newer build is available.
+- Fixed the user-facing copy around updates so it clearly explains that writing data remains safe and the installer is the actual update path.
+
+### Verification
+
+- `python -m pytest`
+- `npm test -- --run`
+- `npm run test:e2e`
+- `npm run build`
+- `cargo check --manifest-path tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe python`
+
+### Release artifacts
+
+- `LivingToTell_0.1.9_x64-setup.exe`
+  - SHA256: `C412C5610CE44BF57976018049EBD949899F1CCF8CA664037C328CCB3F65D5BC`
+- `LivingToTell_0.1.9_x64_zh-CN.msi`
+  - SHA256: `EDF3B001407AF8343F09427E013ECD856D8C19B842FCF9B0C8D00EF373710910`
+
 ## 0.1.8 - Layout And AI Card Quality Update (2026-06-25)
 
 ### Added

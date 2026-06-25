@@ -4,6 +4,7 @@ import { appApi } from '../../api/app'
 import { errorMessage, isHttpStatus } from '../../api/base'
 import { settingsApi, type AiProviderName, type AiSettings, type AiSettingsUpdate, type DataLocationInfo } from '../../api/settings'
 import { useI18n } from '../../i18n'
+import { useAppUpdateStore } from '../../stores/appUpdate'
 import { useSettingsStore } from '../../stores/settings'
 
 interface DataDirectoryOverrideState {
@@ -14,6 +15,7 @@ interface DataDirectoryOverrideState {
 
 const { t } = useI18n()
 const settings = useSettingsStore()
+const appUpdate = useAppUpdateStore()
 const OPENCODE_DEFAULT_MODEL = 'opencode/deepseek-v4-flash-free'
 
 const aiProvider = ref<AiProviderName>('openai')
@@ -45,6 +47,7 @@ const migratingDataLocation = ref(false)
 const dataLocationNotice = ref('')
 const dataLocationError = ref('')
 const dataLocationUnsupported = ref(false)
+const updateActionError = ref('')
 
 const providerOptions = computed<Array<{ value: AiProviderName; label: string }>>(() => [
   { value: 'openai', label: t('settings.providers.openai') },
@@ -131,6 +134,7 @@ onMounted(() => {
   void loadSettings()
   void loadDataLocation()
   void settings.loadNativePreferences()
+  void appUpdate.ensureVersionLoaded()
 })
 
 watch(aiProvider, (provider, previous) => {
@@ -467,6 +471,33 @@ async function restoreDefaultDataDirectory() {
     migratingDataLocation.value = false
   }
 }
+
+async function checkForUpdates() {
+  updateActionError.value = ''
+  try {
+    await appUpdate.checkForUpdates({ force: true, source: 'manual' })
+  } catch (e) {
+    updateActionError.value = errorMessage(e)
+  }
+}
+
+async function openLatestInstaller() {
+  updateActionError.value = ''
+  try {
+    await appUpdate.openDownload()
+  } catch (e) {
+    updateActionError.value = errorMessage(e)
+  }
+}
+
+async function openReleasePage() {
+  updateActionError.value = ''
+  try {
+    await appUpdate.openReleasePage()
+  } catch (e) {
+    updateActionError.value = errorMessage(e)
+  }
+}
 </script>
 
 <template>
@@ -792,6 +823,94 @@ async function restoreDefaultDataDirectory() {
               </button>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <div class="mb-4">
+          <h2 class="text-lg font-bold text-gray-900">{{ t('updates.sectionTitle') }}</h2>
+          <p class="mt-1 text-sm text-gray-500">{{ t('updates.sectionHelp') }}</p>
+        </div>
+
+        <div class="grid gap-3 md:grid-cols-2">
+          <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ t('updates.currentVersion') }}</div>
+            <div class="mt-1 text-sm text-gray-900">{{ appUpdate.currentVersion || t('updates.notCheckedYet') }}</div>
+          </div>
+          <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ t('updates.latestVersion') }}</div>
+            <div class="mt-1 text-sm text-gray-900">
+              {{ appUpdate.latestVersion || t('updates.notCheckedYet') }}
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-if="appUpdate.status !== 'idle' || updateActionError"
+          :class="[
+            'mt-4 rounded-lg p-3 text-sm',
+            updateActionError || appUpdate.status === 'error'
+              ? 'bg-red-50 text-red-700'
+              : appUpdate.status === 'update_available'
+                ? 'bg-amber-50 text-amber-800'
+                : appUpdate.status === 'up_to_date'
+                  ? 'bg-green-50 text-green-700'
+                  : 'bg-gray-100 text-gray-700',
+          ]"
+        >
+          {{ updateActionError || appUpdate.message || t('updates.checking') }}
+        </div>
+
+        <div class="mt-4 flex flex-wrap gap-2">
+          <button
+            @click="checkForUpdates"
+            :disabled="appUpdate.status === 'checking'"
+            class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
+          >
+            {{ appUpdate.status === 'checking' ? t('updates.checkingButton') : t('updates.checkNow') }}
+          </button>
+          <button
+            @click="openLatestInstaller"
+            :disabled="!appUpdate.downloadUrl && !appUpdate.releaseUrl"
+            class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+          >
+            {{ t('updates.downloadInstaller') }}
+          </button>
+          <button
+            @click="openReleasePage"
+            :disabled="!appUpdate.releaseUrl && !appUpdate.downloadUrl"
+            class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+          >
+            {{ t('updates.viewRelease') }}
+          </button>
+          <button
+            v-if="appUpdate.status === 'update_available'"
+            @click="appUpdate.dismissUpdate()"
+            class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            {{ t('updates.later') }}
+          </button>
+        </div>
+
+        <div class="mt-4 space-y-3 text-sm text-gray-600">
+          <div v-if="appUpdate.releaseName">
+            <span class="font-semibold text-gray-800">{{ t('updates.releaseName') }}：</span>{{ appUpdate.releaseName }}
+          </div>
+          <div v-if="appUpdate.publishedAt">
+            <span class="font-semibold text-gray-800">{{ t('updates.publishedAt') }}：</span>{{ appUpdate.publishedAt }}
+          </div>
+          <div v-if="appUpdate.checkedAt">
+            <span class="font-semibold text-gray-800">{{ t('updates.lastCheckedAt') }}：</span>{{ appUpdate.checkedAt }}
+          </div>
+          <div v-if="appUpdate.downloadName">
+            <span class="font-semibold text-gray-800">{{ t('updates.preferredInstaller') }}：</span>{{ appUpdate.downloadName }}
+          </div>
+          <p class="leading-6 text-gray-500">{{ t('updates.manualInstallerHint') }}</p>
+        </div>
+
+        <div v-if="appUpdate.releaseNotes" class="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <div class="text-sm font-semibold text-gray-800">{{ t('updates.releaseNotes') }}</div>
+          <pre class="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap text-xs leading-6 text-gray-600">{{ appUpdate.releaseNotes }}</pre>
         </div>
       </section>
 

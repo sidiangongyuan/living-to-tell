@@ -126,6 +126,37 @@ async function mockMotifFlowApi(page: Page) {
   let motifs: MotifNode[] = []
   let excerpts: MotifExcerpt[] = []
 
+  await page.route('**/api/app/version', async (route) => {
+    await route.fulfill({
+      json: {
+        app_name: 'Living to Tell',
+        version: '0.1.9',
+        api_version: '2.0.0',
+        capabilities: ['data_location', 'ai_chat_settings', 'ai_task_presets', 'update_check'],
+      },
+    })
+  })
+  await page.route('**/api/app/update-check*', async (route) => {
+    await route.fulfill({
+      json: {
+        current_version: '0.1.9',
+        latest_version: '0.1.9',
+        latest_tag: 'living-to-tell-v0.1.9',
+        release_name: 'Living to Tell Preview 0.1.9',
+        release_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.9',
+        published_at: '2026-06-25T03:03:04Z',
+        release_notes: '',
+        source: 'github_releases_latest',
+        status: 'up_to_date',
+        message: '当前已是最新版本。',
+        checked_at: '2026-06-25T03:05:06Z',
+        cached: false,
+        download_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.9/LivingToTell_0.1.9_x64-setup.exe',
+        download_name: 'LivingToTell_0.1.9_x64-setup.exe',
+      },
+    })
+  })
+
   function getSourceText(sourceKind: SourceKind, sourceId: string) {
     return sourceKind === 'article'
       ? articlesById[sourceId]?.body ?? ''
@@ -357,13 +388,14 @@ async function mockMotifFlowApi(page: Page) {
 
   await page.addInitScript(() => {
     window.localStorage.clear()
+    ;(window as Window & { __WRITER_DISABLE_AUTO_UPDATE__?: boolean }).__WRITER_DISABLE_AUTO_UPDATE__ = true
   })
 
   await page.route(/\/api\/app\/version$/, async (route) => {
     await route.fulfill({
       json: {
         app_name: 'Living to Tell',
-        version: '0.1.8',
+        version: '0.1.9',
         api_version: '2.0.0',
         capabilities: ['motif_star_map'],
       },

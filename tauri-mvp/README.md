@@ -4,7 +4,7 @@
 
 ### The current Windows desktop preview for 活着为了讲述 / Living to Tell
 
-[![Version](https://img.shields.io/badge/version-0.1.8-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.9-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-preview-orange.svg)](#download)
@@ -81,6 +81,7 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 - Windows installer builds with a bundled Python backend sidecar.
 - Release builds discover the sidecar port automatically, so users do not need to run a backend manually.
 - Startup uses a light splash window so users see progress while the backend sidecar starts.
+- The app checks GitHub Releases in the background after startup and shows a clear update notice when a newer public build is available.
 - Close behavior can be set to ask every time, minimize to tray, or exit directly.
 - Settings show the current data directory, database, backup folder, checkpoint folder, and custom-directory status.
 - Data-directory migration copies data and preserves the previous folder.
@@ -88,15 +89,15 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.8).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.9).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.8_x64-setup.exe`
+- `LivingToTell_0.1.9_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.8_x64_zh-CN.msi`
+- `LivingToTell_0.1.9_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 

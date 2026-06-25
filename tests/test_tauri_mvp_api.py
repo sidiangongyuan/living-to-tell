@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import sys
 import uuid
 from pathlib import Path
+from urllib import error as urlerror
 
 
 def _tauri_client(monkeypatch):
@@ -33,16 +34,106 @@ def test_tauri_app_version_capabilities(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["app_name"] == "Living to Tell"
-    assert payload["version"] == "0.1.8"
+    assert payload["version"] == "0.1.9"
     assert payload["api_version"] == "2.0.0"
     assert {
         "data_location",
         "ai_chat_settings",
         "ai_task_presets",
         "motif_star_map",
+        "update_check",
     }.issubset(
         set(payload["capabilities"])
     )
+
+
+def test_tauri_app_update_check_reports_latest_release(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.app_meta import routes as app_routes
+
+    app_routes.UPDATE_CACHE["payload"] = None
+    app_routes.UPDATE_CACHE["expires_at"] = 0.0
+    calls = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {
+                    "tag_name": "living-to-tell-v0.1.10",
+                    "name": "Living to Tell Preview 0.1.10",
+                    "html_url": "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.10",
+                    "published_at": "2026-06-26T01:02:03Z",
+                    "body": "## 0.1.10\n\nAdded update notifications.",
+                    "assets": [
+                        {
+                            "name": "LivingToTell_0.1.10_x64_zh-CN.msi",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.10_x64_zh-CN.msi",
+                        },
+                        {
+                            "name": "LivingToTell_0.1.10_x64-setup.exe",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.10_x64-setup.exe",
+                        },
+                    ],
+                }
+            ).encode("utf-8")
+
+    def fake_urlopen(req, timeout):
+        calls.append(
+            {
+                "url": req.full_url,
+                "timeout": timeout,
+                "accept": req.headers.get("Accept"),
+            }
+        )
+        return FakeResponse()
+
+    monkeypatch.setattr(app_routes.urlrequest, "urlopen", fake_urlopen)
+
+    response = client.get("/api/app/update-check?force=true")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "update_available"
+    assert payload["current_version"] == "0.1.9"
+    assert payload["latest_version"] == "0.1.10"
+    assert payload["release_name"] == "Living to Tell Preview 0.1.10"
+    assert payload["download_name"] == "LivingToTell_0.1.10_x64-setup.exe"
+    assert payload["download_url"] == "https://example.test/LivingToTell_0.1.10_x64-setup.exe"
+    assert "下载安装包" in payload["message"]
+    assert calls == [
+        {
+            "url": app_routes.GITHUB_LATEST_RELEASE_URL,
+            "timeout": 15,
+            "accept": "application/vnd.github+json",
+        }
+    ]
+
+
+def test_tauri_app_update_check_returns_friendly_error(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.app_meta import routes as app_routes
+
+    app_routes.UPDATE_CACHE["payload"] = None
+    app_routes.UPDATE_CACHE["expires_at"] = 0.0
+
+    def fake_urlopen(req, timeout):
+        raise urlerror.URLError("offline")
+
+    monkeypatch.setattr(app_routes.urlrequest, "urlopen", fake_urlopen)
+
+    response = client.get("/api/app/update-check?force=true")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "error"
+    assert payload["current_version"] == "0.1.9"
+    assert "暂时无法检查更新" in payload["message"]
 
 
 def test_tauri_ai_cards_do_not_seed_samples_and_crud_tags(monkeypatch):

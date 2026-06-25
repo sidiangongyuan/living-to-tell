@@ -5,12 +5,14 @@ import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useRouter } from 'vue-router'
 import { useSettingsStore } from './stores/settings'
+import { useAppUpdateStore } from './stores/appUpdate'
 import { useI18n } from './i18n'
 import CommandPalette from './components/CommandPalette.vue'
 import QuickCapture from './components/QuickCapture.vue'
 
 const router = useRouter()
 const settings = useSettingsStore()
+const appUpdate = useAppUpdateStore()
 const { t } = useI18n()
 const commandPaletteRef = ref<InstanceType<typeof CommandPalette> | null>(null)
 const quickCaptureRef = ref<InstanceType<typeof QuickCapture> | null>(null)
@@ -18,6 +20,7 @@ const showCloseDialog = ref(false)
 const closeChoice = ref<'tray' | 'exit'>('tray')
 const rememberCloseChoice = ref(false)
 const closeDialogMessage = ref('')
+const updateBannerError = ref('')
 let closeDialogUnlisten: UnlistenFn | null = null
 let closeDialogWindowUnlisten: UnlistenFn | null = null
 
@@ -48,6 +51,8 @@ function handleKeydown(e: KeyboardEvent) {
 
 onMounted(() => {
   settings.loadNativePreferences()
+  void appUpdate.ensureVersionLoaded()
+  appUpdate.scheduleAutomaticCheck()
   window.addEventListener('keydown', handleKeydown)
   void bindCloseDialogListener()
 })
@@ -103,12 +108,75 @@ async function confirmCloseChoice() {
     closeDialogMessage.value = error instanceof Error ? error.message : String(error)
   }
 }
+
+async function openUpdateDownload() {
+  updateBannerError.value = ''
+  try {
+    await appUpdate.openDownload()
+  } catch (error) {
+    updateBannerError.value = error instanceof Error ? error.message : String(error)
+  }
+}
+
+async function openUpdateReleasePage() {
+  updateBannerError.value = ''
+  try {
+    await appUpdate.openReleasePage()
+  } catch (error) {
+    updateBannerError.value = error instanceof Error ? error.message : String(error)
+  }
+}
 </script>
 
 <template>
   <div class="flex h-screen bg-gray-50">
     <CommandPalette ref="commandPaletteRef" />
     <QuickCapture ref="quickCaptureRef" />
+    <div
+      v-if="appUpdate.hasVisibleUpdate"
+      :class="[
+        'fixed right-4 z-[65] w-[min(24rem,calc(100vw-2rem))] rounded-3xl border border-amber-200 bg-white/95 p-4 shadow-2xl backdrop-blur',
+        settings.focusMode ? 'top-20' : 'top-4',
+      ]"
+    >
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <div class="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">{{ t('updates.bannerEyebrow') }}</div>
+          <h2 class="mt-1 text-lg font-semibold text-stone-900">
+            {{ t('updates.bannerTitle', { version: appUpdate.latestVersion || appUpdate.latestTag }) }}
+          </h2>
+          <p class="mt-2 text-sm leading-6 text-stone-600">
+            {{ t('updates.bannerBody', { current: appUpdate.currentVersion, latest: appUpdate.latestVersion }) }}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="rounded-full border border-stone-200 px-2 py-1 text-xs font-semibold text-stone-500 hover:border-stone-300 hover:text-stone-700"
+          @click="appUpdate.dismissUpdate()"
+        >
+          {{ t('updates.later') }}
+        </button>
+      </div>
+      <div class="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          class="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700"
+          @click="openUpdateDownload"
+        >
+          {{ t('updates.downloadInstaller') }}
+        </button>
+        <button
+          type="button"
+          class="rounded-xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-50"
+          @click="openUpdateReleasePage"
+        >
+          {{ t('updates.viewRelease') }}
+        </button>
+      </div>
+      <div v-if="updateBannerError" class="mt-3 rounded-2xl bg-red-50 px-3 py-2 text-sm text-red-700">
+        {{ updateBannerError }}
+      </div>
+    </div>
     <div v-if="showCloseDialog" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 px-4">
       <div class="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
         <h2 class="text-xl font-semibold text-stone-900">{{ t('settings.closeBehaviorPromptTitle') }}</h2>
