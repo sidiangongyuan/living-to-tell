@@ -118,7 +118,7 @@ async function mockVisibleActionApi(page: Page) {
     await route.fulfill({
       json: {
         app_name: 'Living to Tell',
-        version: '0.1.7',
+        version: '0.1.8',
         api_version: '2.0.0',
         capabilities: ['data_location', 'ai_chat_settings', 'ai_task_presets'],
       },
@@ -368,8 +368,10 @@ test('article delete asks for confirmation before calling the destructive API', 
   await page.getByTestId('article-action-delete').click()
   expect(deleteRequests).toBe(0)
 
+  await page.getByTestId('article-entry-article-a').click({ button: 'right' })
+  await expect(page.getByTestId('context-menu')).toBeVisible()
   page.once('dialog', async (dialog) => dialog.accept())
-  await page.getByTestId('article-action-delete').click()
+  await page.getByTestId('context-menu').getByRole('button', { name: '删除' }).click()
   await expect.poll(() => deleteRequests).toBe(1)
 })
 
@@ -709,8 +711,10 @@ test('article writing notes can be added, pinned, edited, completed, restored, a
   await restoredCard.getByRole('button', { name: '删除' }).click()
   expect(requests.deleted).toBe(0)
 
+  await restoredCard.click({ button: 'right' })
+  await expect(page.getByTestId('context-menu')).toBeVisible()
   page.once('dialog', async (dialog) => dialog.accept())
-  await restoredCard.getByRole('button', { name: '删除' }).click()
+  await page.getByTestId('context-menu').getByRole('button', { name: '删除' }).click()
   await expect.poll(() => requests.deleted).toBe(1)
 })
 

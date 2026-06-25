@@ -30,7 +30,7 @@ _FEATURE_ROUTERS = (
 )
 
 APP_DISPLAY_NAME = "Living to Tell"
-APP_VERSION = "0.1.7"
+APP_VERSION = "0.1.8"
 API_VERSION = "2.0.0"
 API_CAPABILITIES = [
     "data_location",

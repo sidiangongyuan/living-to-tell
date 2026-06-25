@@ -17,9 +17,12 @@ import {
 } from '../motifs/selection'
 import FindReplace from '../../components/FindReplace.vue'
 import TagSelector from '../../components/TagSelector.vue'
+import PaneResizeHandle from '../../components/PaneResizeHandle.vue'
+import ContextMenu from '../../components/ContextMenu.vue'
 import { useI18n } from '../../i18n'
 import { saveBlobWithDialog } from '../../utils/exportFile'
 import { collectArticleTags, countParagraphs, filterArticlesByTag } from './articleList'
+import { useResizablePane } from '../../composables/useResizablePane'
 import { composeArticleBody, detectEpigraph, type EpigraphParts } from './epigraph'
 import {
   type ArticleEditorInteraction,
@@ -76,6 +79,27 @@ const notesLoading = ref(false)
 const showDoneNotes = ref(false)
 const motifAnchorsExpanded = ref(true)
 const writingNotesExpanded = ref(true)
+const articleListPane = useResizablePane({
+  key: 'articles:list',
+  defaultSize: 300,
+  minSize: 240,
+  maxSize: 430,
+})
+const articleContextPane = useResizablePane({
+  key: 'articles:context',
+  defaultSize: 320,
+  minSize: 260,
+  maxSize: 440,
+  edge: 'start',
+})
+const deleteContextMenuOpen = ref(false)
+const deleteContextMenuX = ref(0)
+const deleteContextMenuY = ref(0)
+const deleteContextTarget = ref<
+  | { kind: 'article'; id: string; title: string }
+  | { kind: 'note'; note: WritingNote }
+  | null
+>(null)
 const motifAttachOpen = ref(false)
 const motifAttachX = ref(0)
 const motifAttachY = ref(0)
@@ -586,6 +610,42 @@ function scheduleSave() {
   saveTimer.value = window.setTimeout(() => {
     void flushPendingArticleSave()
   }, 600)
+}
+
+function scheduleSaveWithTags(tags: string[]) {
+  if (store.selectedEntry) {
+    store.selectedEntry.tags = [...tags]
+  }
+  scheduleSave()
+}
+
+function closeDeleteContextMenu() {
+  deleteContextMenuOpen.value = false
+  deleteContextTarget.value = null
+}
+
+function openDeleteContextMenu(event: MouseEvent, target: typeof deleteContextTarget.value) {
+  if (!target) return
+  event.preventDefault()
+  deleteContextTarget.value = target
+  deleteContextMenuX.value = Math.max(12, Math.min(event.clientX + 8, window.innerWidth - 172))
+  deleteContextMenuY.value = Math.max(12, Math.min(event.clientY + 8, window.innerHeight - 56))
+  deleteContextMenuOpen.value = true
+}
+
+function handleDeleteContextMenuSelect(item: { key: string }) {
+  const target = deleteContextTarget.value
+  closeDeleteContextMenu()
+  if (item.key !== 'delete' || !target) return
+  if (target.kind === 'article') {
+    if (store.selectedEntry?.id !== target.id) {
+      void selectEntryFromList(target.id).then(() => deleteSelectedEntry())
+      return
+    }
+    void deleteSelectedEntry()
+    return
+  }
+  void deleteWritingNote(target.note)
 }
 
 function handleBodyInput() {
@@ -1816,7 +1876,12 @@ watch(
 
 <template>
   <div class="flex h-full overflow-hidden bg-[#f7f3ea] text-stone-900">
-    <aside v-if="!settings.focusMode" class="w-80 shrink-0 border-r border-stone-200 bg-white flex flex-col">
+    <aside
+      v-if="!settings.focusMode"
+      class="shrink-0 border-r border-stone-200 bg-white flex flex-col max-[900px]:w-[280px]"
+      :style="articleListPane.paneStyle.value"
+      data-testid="article-list-pane"
+    >
       <div class="p-4 border-b border-stone-200">
         <div class="flex items-center justify-between mb-3">
           <h2 class="text-xl font-bold">{{ t('articles.title') }}</h2>
@@ -1880,6 +1945,7 @@ watch(
           v-for="entry in displayList"
           :key="entry.id"
           @click="selectEntryFromList(entry.id)"
+          @contextmenu="openDeleteContextMenu($event, { kind: 'article', id: entry.id, title: entry.title })"
           :data-testid="`article-entry-${entry.id}`"
           :class="[
             'w-full p-4 border-b border-stone-100 cursor-pointer text-left transition-colors',
@@ -1904,6 +1970,11 @@ watch(
         </button>
       </div>
     </aside>
+    <PaneResizeHandle
+      v-if="!settings.focusMode"
+      data-testid="article-list-resizer"
+      @pointerdown="articleListPane.startResize"
+    />
 
     <main class="flex-1 min-w-0 min-h-0 flex flex-col bg-[#fffdf8] overflow-hidden relative">
       <FindReplace
@@ -2187,9 +2258,17 @@ watch(
       </div>
     </main>
 
+    <PaneResizeHandle
+      v-if="!settings.rightContextPaneCollapsed && !settings.focusMode"
+      class="hidden min-[1160px]:block"
+      data-testid="article-context-resizer"
+      @pointerdown="articleContextPane.startResize"
+    />
     <aside
       v-if="!settings.rightContextPaneCollapsed && !settings.focusMode"
-      class="w-80 shrink-0 bg-white border-l border-stone-200 flex flex-col overflow-hidden"
+      class="hidden min-[1160px]:flex shrink-0 bg-white border-l border-stone-200 flex-col overflow-hidden"
+      :style="articleContextPane.paneStyle.value"
+      data-testid="article-context-pane"
     >
       <div class="p-4 border-b border-stone-200">
         <h2 class="text-lg font-bold">{{ t('articles.context') }}</h2>
@@ -2281,7 +2360,7 @@ watch(
               :suggestions="allTags"
               :placeholder="t('articles.addTag')"
               :create-label="t('articles.createTagLabel', { tag: '{tag}' })"
-              @change="scheduleSave"
+              @change="scheduleSaveWithTags"
             />
           </section>
 
@@ -2358,6 +2437,7 @@ watch(
                 <article
                   v-for="note in openWritingNotes"
                   :key="note.id"
+                  @contextmenu="openDeleteContextMenu($event, { kind: 'note', note })"
                   class="rounded-2xl border border-amber-100 bg-[#fff9e8] p-3 shadow-sm"
                 >
                 <textarea
@@ -2405,6 +2485,7 @@ watch(
                   <article
                     v-for="note in doneWritingNotes"
                     :key="note.id"
+                    @contextmenu="openDeleteContextMenu($event, { kind: 'note', note })"
                     class="rounded-2xl border border-stone-100 bg-stone-50 p-3 opacity-75"
                   >
                     <p class="whitespace-pre-wrap text-sm leading-6 text-stone-500 line-through">{{ note.body }}</p>
@@ -2426,6 +2507,15 @@ watch(
         <div v-else class="text-sm text-stone-400">{{ t('articles.noArticleSelected') }}</div>
       </div>
     </aside>
+
+    <ContextMenu
+      :open="deleteContextMenuOpen"
+      :x="deleteContextMenuX"
+      :y="deleteContextMenuY"
+      :items="[{ key: 'delete', label: t('common.delete'), danger: true }]"
+      @close="closeDeleteContextMenu"
+      @select="handleDeleteContextMenuSelect"
+    />
 
     <div v-if="collectionPickerOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div class="flex max-h-[78vh] w-[560px] flex-col rounded-3xl bg-white shadow-2xl">

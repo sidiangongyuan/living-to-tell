@@ -30,16 +30,6 @@ const sceneCard = {
   updated_at: '2026-01-03T00:00:00Z',
 }
 
-const presetCard = {
-  id: 'card-preset',
-  title: '加缪式冷峻',
-  content: '短句，冷静，保持距离。',
-  card_type: 'style',
-  tags: [],
-  created_at: '2026-01-04T00:00:00Z',
-  updated_at: '2026-01-04T00:00:00Z',
-}
-
 async function mockAiCardsApi(page: Page) {
   let cards = [userCard, characterCard, sceneCard]
 
@@ -52,7 +42,7 @@ async function mockAiCardsApi(page: Page) {
     await route.fulfill({
       json: {
         app_name: 'Living to Tell',
-        version: '0.1.7',
+        version: '0.1.8',
         api_version: '2.0.0',
         capabilities: ['data_location', 'ai_chat_settings', 'ai_task_presets'],
       },
@@ -62,21 +52,6 @@ async function mockAiCardsApi(page: Page) {
   await page.route('**/api/ai-cards**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
-
-    if (url.pathname === '/api/ai-cards/presets/list') {
-      await route.fulfill({ json: [presetCard] })
-      return
-    }
-
-    if (url.pathname === '/api/ai-cards/presets/generate') {
-      if (request.method() === 'POST') {
-        cards = [presetCard, ...cards.filter((card) => card.id !== presetCard.id)]
-        await route.fulfill({ json: { created: 1, cards: [presetCard] } })
-        return
-      }
-      await route.fallback()
-      return
-    }
 
     if (url.pathname === '/api/ai-cards/generate-draft') {
       await route.fulfill({
@@ -152,10 +127,10 @@ test.beforeEach(async ({ page }) => {
   await mockAiCardsApi(page)
 })
 
-test('AI Cards create, edit autosave, filter, generate samples, and delete actions work', async ({ page }) => {
+test('AI Cards create, edit autosave, tags, filters, no sample restore, and delete actions work', async ({ page }) => {
   const createdBodies: Array<Record<string, unknown>> = []
   const updatedBodies: Array<Record<string, unknown>> = []
-  let generated = 0
+  let presetGenerateRequests = 0
   let deleted = 0
 
   await page.route('**/api/ai-cards**', async (route) => {
@@ -168,9 +143,9 @@ test('AI Cards create, edit autosave, filter, generate samples, and delete actio
       await route.fallback()
       return
     }
-    if (url.pathname === '/api/ai-cards/presets/generate' && request.method() === 'POST') {
-      generated += 1
-      await route.fallback()
+    if (url.pathname === '/api/ai-cards/presets/generate') {
+      presetGenerateRequests += 1
+      await route.fulfill({ status: 404, json: { detail: 'removed' } })
       return
     }
     if (request.method() === 'PUT') {
@@ -189,6 +164,24 @@ test('AI Cards create, edit autosave, filter, generate samples, and delete actio
   await page.goto('/ai-cards')
   await expect(page.getByText('克制风格')).toBeVisible()
   await expect(page.getByText('人物观察')).toBeVisible()
+  await expect(page.getByRole('button', { name: '恢复样例' })).toHaveCount(0)
+  await expect(page.getByText('内置样例')).toHaveCount(0)
+  expect(presetGenerateRequests).toBe(0)
+
+  const paneBefore = await page.getByTestId('ai-cards-list-pane').boundingBox()
+  const handleBox = await page.getByTestId('ai-cards-list-resizer').boundingBox()
+  expect(paneBefore).not.toBeNull()
+  expect(handleBox).not.toBeNull()
+  if (paneBefore && handleBox) {
+    await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(handleBox.x + handleBox.width / 2 + 48, handleBox.y + handleBox.height / 2)
+    await page.mouse.up()
+    await expect.poll(async () => {
+      const next = await page.getByTestId('ai-cards-list-pane').boundingBox()
+      return next?.width ?? 0
+    }).toBeGreaterThan(paneBefore.width + 24)
+  }
 
   await page.getByPlaceholder('搜索卡片...').fill('人物')
   await expect(page.getByText('人物观察')).toBeVisible()
@@ -208,31 +201,32 @@ test('AI Cards create, edit autosave, filter, generate samples, and delete actio
     card_type: 'scene',
   }))
 
-  await page.getByPlaceholder('例如：海明威式简洁').fill('新的风格卡')
+  const titleInput = page.getByPlaceholder('例如：海明威式简洁')
+  await titleInput.click()
+  await titleInput.press('Control+A')
+  await titleInput.fill('新的风格卡')
+  await expect(titleInput).toHaveValue('新的风格卡')
+  await expect.poll(() => updatedBodies.some((body) => body.title === '新的风格卡')).toBe(true)
   await page.getByPlaceholder('按模板填写这张卡片的结构信息...').fill('句子短，动作清楚。')
-  await expect.poll(() => updatedBodies.length).toBeGreaterThanOrEqual(1)
-  expect(updatedBodies.at(-1)).toEqual(expect.objectContaining({
-    title: '新的风格卡',
-    content: '句子短，动作清楚。',
-  }))
+  await expect.poll(() => updatedBodies.some((body) => body.content === '句子短，动作清楚。')).toBe(true)
   await expect(page.getByText('卡片已保存')).toBeVisible()
 
-  page.once('dialog', async (dialog) => dialog.dismiss())
-  await page.getByRole('button', { name: '恢复样例' }).click()
-  expect(generated).toBe(0)
-
-  page.once('dialog', async (dialog) => dialog.accept())
-  await page.getByRole('button', { name: '恢复样例' }).click()
-  await expect.poll(() => generated).toBe(1)
-  await expect(page.getByText('成功生成 1 张预设风格卡！')).toBeVisible()
-  await expect(page.getByText('加缪式冷峻')).toBeVisible()
+  const tagInput = page.getByPlaceholder('搜索或输入标签，回车添加')
+  await tagInput.fill('节奏')
+  await tagInput.press('Enter')
+  await expect(page.getByText('节奏')).toBeVisible()
+  await expect.poll(() => updatedBodies.some((body) =>
+    Array.isArray(body.tags) && body.tags.includes('节奏')
+  )).toBe(true)
 
   page.once('dialog', async (dialog) => dialog.dismiss())
   await page.getByRole('button', { name: '删除卡片' }).click()
   expect(deleted).toBe(0)
 
+  await page.getByTestId('ai-card-list-item-card-created').click({ button: 'right' })
+  await expect(page.getByTestId('context-menu')).toBeVisible()
   page.once('dialog', async (dialog) => dialog.accept())
-  await page.getByRole('button', { name: '删除卡片' }).click()
+  await page.getByTestId('context-menu').getByRole('button', { name: '删除卡片' }).click()
   await expect.poll(() => deleted).toBe(1)
 })
 
@@ -304,14 +298,4 @@ test('AI Cards recover visibly after an autosave failure', async ({ page }) => {
   await page.getByPlaceholder('例如：海明威式简洁').fill('第二次成功')
   await expect(page.getByText('卡片已保存')).toBeVisible()
   await expect(page.getByText('卡片目录不可写')).toHaveCount(0)
-})
-
-test('AI Cards show a visible warning when preset metadata cannot load', async ({ page }) => {
-  await page.route('**/api/ai-cards/presets/list', async (route) => {
-    await route.fulfill({ status: 500, json: { detail: 'preset metadata unavailable' } })
-  })
-
-  await page.goto('/ai-cards')
-  await expect(page.getByText('样例卡片来源信息暂时不可用，卡片仍可正常编辑和使用。')).toBeVisible()
-  await expect(page.getByText('克制风格')).toBeVisible()
 })

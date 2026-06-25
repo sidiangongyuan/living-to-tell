@@ -18,3 +18,39 @@ body {
   overflow: hidden;
   background: #f8fafc;
 }
+
+.pane-resizing,
+.pane-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+.pane-resize-handle {
+  width: 8px;
+  flex: 0 0 8px;
+  align-self: stretch;
+  cursor: col-resize;
+  border: 0;
+  background: transparent;
+  position: relative;
+}
+
+.pane-resize-handle::after {
+  content: '';
+  position: absolute;
+  inset: 0 3px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+
+.pane-resize-handle:hover::after,
+.pane-resize-handle:focus-visible::after {
+  background: rgba(120, 113, 108, 0.28);
+}
+
+@media (max-width: 900px) {
+  .pane-resize-handle {
+    display: none;
+  }
+}

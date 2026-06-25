@@ -6,14 +6,17 @@ import uuid
 from typing import List, Optional
 
 from writer.domain.models.ai_card import AiCard
+from writer.storage.repositories.entry_repository import parse_tags, serialize_tags
 
 
 def _row_to_card(row: sqlite3.Row) -> AiCard:
+    keys = row.keys()
     return AiCard(
         id=row["id"],
         kind=row["kind"],
         name=row["name"],
         body=row["body"],
+        tags=parse_tags(row["tags_text"] if "tags_text" in keys else ""),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -23,39 +26,70 @@ class AiCardRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def create(self, *, kind: str, name: str, body: str) -> AiCard:
+    def create(
+        self, *, kind: str, name: str, body: str, tags: list[str] | None = None
+    ) -> AiCard:
         new_id = str(uuid.uuid4())
         self._conn.execute(
-            "INSERT INTO ai_cards (id, kind, name, body) VALUES (?, ?, ?, ?)",
-            (new_id, kind, name, body),
+            "INSERT INTO ai_cards (id, kind, name, body, tags_text) VALUES (?, ?, ?, ?, ?)",
+            (new_id, kind, name, body, serialize_tags(tags or [])),
         )
         loaded = self.get(new_id)
         assert loaded is not None
         return loaded
 
     def update(
-        self, card_id: str, *, name: str, body: str, kind: str | None = None
+        self,
+        card_id: str,
+        *,
+        name: str,
+        body: str,
+        kind: str | None = None,
+        tags: list[str] | None = None,
     ) -> Optional[AiCard]:
+        tags_text = serialize_tags(tags) if tags is not None else None
         if kind is None:
-            self._conn.execute(
-                """
-                UPDATE ai_cards
-                   SET name = ?, body = ?,
-                       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                 WHERE id = ?
-                """,
-                (name, body, card_id),
-            )
+            if tags_text is None:
+                self._conn.execute(
+                    """
+                    UPDATE ai_cards
+                       SET name = ?, body = ?,
+                           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                     WHERE id = ?
+                    """,
+                    (name, body, card_id),
+                )
+            else:
+                self._conn.execute(
+                    """
+                    UPDATE ai_cards
+                       SET name = ?, body = ?, tags_text = ?,
+                           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                     WHERE id = ?
+                    """,
+                    (name, body, tags_text, card_id),
+                )
         else:
-            self._conn.execute(
-                """
-                UPDATE ai_cards
-                   SET kind = ?, name = ?, body = ?,
-                       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                 WHERE id = ?
-                """,
-                (kind, name, body, card_id),
-            )
+            if tags_text is None:
+                self._conn.execute(
+                    """
+                    UPDATE ai_cards
+                       SET kind = ?, name = ?, body = ?,
+                           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                     WHERE id = ?
+                    """,
+                    (kind, name, body, card_id),
+                )
+            else:
+                self._conn.execute(
+                    """
+                    UPDATE ai_cards
+                       SET kind = ?, name = ?, body = ?, tags_text = ?,
+                           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                     WHERE id = ?
+                    """,
+                    (kind, name, body, tags_text, card_id),
+                )
         return self.get(card_id)
 
     def delete(self, card_id: str) -> None:

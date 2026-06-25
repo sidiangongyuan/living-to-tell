@@ -4,6 +4,9 @@ import { aiCardApi, type AiCard, type AiCardDraft, type AiCardType } from '../..
 import { errorMessage } from '../../api/base'
 import { useI18n } from '../../i18n'
 import TagSelector from '../../components/TagSelector.vue'
+import PaneResizeHandle from '../../components/PaneResizeHandle.vue'
+import ContextMenu from '../../components/ContextMenu.vue'
+import { useResizablePane } from '../../composables/useResizablePane'
 
 const { t } = useI18n()
 const CARD_TYPES: AiCardType[] = ['style', 'character', 'scene']
@@ -79,15 +82,22 @@ const loading = ref(false)
 const error = ref('')
 const notice = ref('')
 const filterType = ref<'all' | AiCardType>('all')
-const filterSource = ref<'all' | 'preset' | 'user'>('all')
 const sortMode = ref<'recent' | 'title'>('recent')
 const searchQuery = ref('')
-const presetSignatures = ref(new Set<string>())
 const pendingCardSave = ref<AiCard | null>(null)
 const saveNotice = ref('')
 const saveFailed = ref(false)
-const presetWarning = ref('')
 const newCardType = ref<AiCardType>('scene')
+const cardListPane = useResizablePane({
+  key: 'ai-cards:list',
+  defaultSize: 300,
+  minSize: 260,
+  maxSize: 460,
+})
+const contextMenuOpen = ref(false)
+const contextMenuX = ref(0)
+const contextMenuY = ref(0)
+const contextDeleteCardId = ref<string | null>(null)
 
 const generatorType = ref<AiCardType>('scene')
 const generatorSource = ref('')
@@ -108,14 +118,12 @@ const filteredCards = computed(() => {
   if (filterType.value !== 'all') {
     result = result.filter(c => c.card_type === filterType.value)
   }
-  if (filterSource.value !== 'all') {
-    result = result.filter(c => cardSource(c) === filterSource.value)
-  }
   if (searchQuery.value.trim()) {
     const q = searchQuery.value.toLowerCase()
     result = result.filter(c =>
       c.title.toLowerCase().includes(q) ||
-      c.content.toLowerCase().includes(q)
+      c.content.toLowerCase().includes(q) ||
+      c.tags.some((tag) => tag.toLowerCase().includes(q))
     )
   }
   return [...result].sort((a, b) => {
@@ -141,7 +149,6 @@ const selectedCardNeedsUpgrade = computed(() => {
 
 onMounted(() => {
   loadCards()
-  loadPresets()
 })
 
 onUnmounted(() => {
@@ -163,29 +170,6 @@ async function loadCards() {
   } finally {
     loading.value = false
   }
-}
-
-async function loadPresets() {
-  presetWarning.value = ''
-  try {
-    const presets = await aiCardApi.listPresets()
-    presetSignatures.value = new Set(
-      presets
-        .filter((preset) => CARD_TYPES.includes(String(preset.card_type || 'style').trim() as AiCardType))
-        .map((preset) => `${String(preset.title || '').trim()}::${String(preset.card_type || 'style').trim()}`)
-    )
-  } catch (e) {
-    console.error('Load presets failed:', e)
-    presetWarning.value = t('aiCards.presetMetadataUnavailable')
-  }
-}
-
-function cardSource(card: AiCard): 'preset' | 'user' {
-  return presetSignatures.value.has(`${card.title.trim()}::${card.card_type}`) ? 'preset' : 'user'
-}
-
-function sourceLabel(card: AiCard): string {
-  return cardSource(card) === 'preset' ? t('aiCards.sourcePreset') : t('aiCards.sourceUser')
 }
 
 function templateFor(cardType: AiCardType): string {
@@ -327,22 +311,6 @@ async function deleteCard(id: string) {
   }
 }
 
-async function generatePresets() {
-  const saved = await flushPendingCardSave()
-  if (!saved) return
-  if (cards.value.length && !confirm(t('aiCards.confirmGenerate'))) return
-  try {
-    error.value = ''
-    notice.value = ''
-    const result = await aiCardApi.generateFromPresets()
-    notice.value = t('aiCards.generateSuccess', { count: result.created })
-    await loadCards()
-  } catch (e) {
-    console.error('Generate presets failed:', e)
-    error.value = `${t('aiCards.generateFailed')}：${errorMessage(e)}`
-  }
-}
-
 async function selectCard(id: string) {
   const saved = await flushPendingCardSave()
   if (!saved) return
@@ -420,21 +388,46 @@ async function applyDraftToCurrent() {
   const saved = await persistCard(card, t('aiCards.draftApplied'))
   if (saved) draftPreview.value = null
 }
+
+function updateSelectedTags(tags: string[]) {
+  const card = selectedCard.value
+  if (!card) return
+  card.tags = [...tags]
+  scheduleAutoSave()
+}
+
+function closeContextMenu() {
+  contextMenuOpen.value = false
+  contextDeleteCardId.value = null
+}
+
+function openCardContextMenu(event: MouseEvent, cardId: string) {
+  event.preventDefault()
+  contextDeleteCardId.value = cardId
+  contextMenuX.value = Math.max(12, Math.min(event.clientX + 8, window.innerWidth - 172))
+  contextMenuY.value = Math.max(12, Math.min(event.clientY + 8, window.innerHeight - 56))
+  contextMenuOpen.value = true
+}
+
+function handleContextMenuSelect(item: { key: string }) {
+  const cardId = contextDeleteCardId.value
+  closeContextMenu()
+  if (item.key === 'delete' && cardId) {
+    void deleteCard(cardId)
+  }
+}
 </script>
 
 <template>
   <div class="flex h-full overflow-hidden bg-gray-50">
-    <div class="w-80 shrink-0 bg-white border-r border-gray-200 flex flex-col">
+    <div
+      class="min-w-0 shrink-0 bg-white border-r border-gray-200 flex flex-col"
+      :style="cardListPane.paneStyle.value"
+      data-testid="ai-cards-list-pane"
+    >
       <div class="p-4 border-b border-gray-200">
         <div class="mb-3 flex items-center justify-between gap-2">
           <h2 class="text-xl font-bold">{{ t('aiCards.title') }}</h2>
-          <button
-            @click="generatePresets"
-            class="rounded-lg bg-amber-600 px-3 py-2 text-sm text-white transition-colors hover:bg-amber-700"
-            :title="t('aiCards.presetTooltip')"
-          >
-            {{ t('aiCards.generatePresets') }}
-          </button>
         </div>
         <div class="mb-3 grid grid-cols-[1fr_auto] gap-2">
           <select
@@ -471,18 +464,10 @@ async function applyDraftToCurrent() {
             {{ type === 'all' ? t('aiCards.filterAll') : cardTypeLabels[type] }}
           </button>
         </div>
-        <div class="mt-3 grid grid-cols-2 gap-2">
-          <select
-            v-model="filterSource"
-            class="rounded-lg border border-gray-300 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="all">{{ t('aiCards.sourceAll') }}</option>
-            <option value="preset">{{ t('aiCards.sourcePreset') }}</option>
-            <option value="user">{{ t('aiCards.sourceUser') }}</option>
-          </select>
+        <div class="mt-3">
           <select
             v-model="sortMode"
-            class="rounded-lg border border-gray-300 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="recent">{{ t('aiCards.sortRecent') }}</option>
             <option value="title">{{ t('aiCards.sortTitle') }}</option>
@@ -492,7 +477,6 @@ async function applyDraftToCurrent() {
 
       <div class="flex-1 overflow-y-auto">
         <div v-if="notice" class="m-3 rounded-lg bg-green-50 p-3 text-sm text-green-700">{{ notice }}</div>
-        <div v-if="presetWarning" class="m-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{{ presetWarning }}</div>
         <div v-if="error" class="m-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ error }}</div>
         <div v-if="loading" class="p-4 text-sm text-gray-400">{{ t('common.loading') }}</div>
         <div v-else-if="!filteredCards.length" class="p-4 text-sm text-gray-400">
@@ -502,6 +486,8 @@ async function applyDraftToCurrent() {
           v-for="card in filteredCards"
           :key="card.id"
           @click="selectCard(card.id)"
+          @contextmenu="openCardContextMenu($event, card.id)"
+          :data-testid="`ai-card-list-item-${card.id}`"
           :class="[
             'block w-full border-b border-gray-100 p-4 text-left transition-colors',
             selectedCardId === card.id
@@ -517,9 +503,6 @@ async function applyDraftToCurrent() {
             <span class="rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700">
               {{ cardTypeLabels[card.card_type] }}
             </span>
-            <span class="rounded bg-stone-100 px-2 py-0.5 text-xs text-stone-600">
-              {{ sourceLabel(card) }}
-            </span>
             <span v-if="!isTemplateCard(card)" class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
               {{ t('aiCards.needsUpgrade') }}
             </span>
@@ -527,6 +510,7 @@ async function applyDraftToCurrent() {
         </button>
       </div>
     </div>
+    <PaneResizeHandle data-testid="ai-cards-list-resizer" @pointerdown="cardListPane.startResize" />
 
     <div class="flex-1 min-w-0 overflow-y-auto bg-white">
       <div class="mx-auto w-full max-w-5xl p-8">
@@ -650,7 +634,7 @@ async function applyDraftToCurrent() {
               v-model="selectedCard.tags"
               :suggestions="allCardTags"
               :placeholder="t('aiCards.placeholders.tags')"
-              @change="scheduleAutoSave"
+              @change="updateSelectedTags"
             />
           </div>
 
@@ -684,6 +668,14 @@ async function applyDraftToCurrent() {
         </div>
       </div>
     </div>
+    <ContextMenu
+      :open="contextMenuOpen"
+      :x="contextMenuX"
+      :y="contextMenuY"
+      :items="[{ key: 'delete', label: t('aiCards.deleteCard'), danger: true }]"
+      @close="closeContextMenu"
+      @select="handleContextMenuSelect"
+    />
   </div>
 </template>
 

@@ -5,7 +5,7 @@ Living to Tell is a local-first desktop writing app for writing articles, arrang
 ## 1. Install and start
 
 1. Download the latest Windows installer from the GitHub Releases page.
-2. Run `LivingToTell_0.1.7_x64-setup.exe`.
+2. Run `LivingToTell_0.1.8_x64-setup.exe`.
 3. Open **活着为了讲述** from the Start menu or desktop shortcut.
 
 By default, the app stores its SQLite database at `%APPDATA%\LivingToTell\LivingToTell\living-to-tell.sqlite3`.

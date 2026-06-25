@@ -13,11 +13,9 @@ from deps import get_container
 from writer.app.container import AppContainer
 from writer.domain.enums import AiCostTier
 from writer.domain.models.ai_card import AiCard as DomainCard
-
-from .presets import get_preset_cards
+from writer.storage.repositories.entry_repository import parse_tags
 
 router = APIRouter(prefix="/api/ai-cards", tags=["ai-cards"])
-PRESET_SEED_KEY = "tauri.ai_cards.seeded_presets_v1"
 SETTING_CLEANUP_KEY = "tauri.ai_cards.deleted_setting_cards_v1"
 VALID_CARD_TYPES = {"style", "character", "scene"}
 MAX_DRAFT_SOURCE_CHARS = 12000
@@ -126,10 +124,14 @@ def _card_to_dto(card: DomainCard) -> AiCardOut:
         title=card.name or "",
         content=card.body or "",
         card_type=card.kind or "style",
-        tags=[],
+        tags=card.tags,
         created_at=card.created_at,
         updated_at=card.updated_at,
     )
+
+
+def _clean_tags(values: list[str] | None) -> list[str]:
+    return parse_tags(", ".join(values or []))
 
 
 def _clean_card_type(value: str | None, *, reject_setting: bool = True) -> str:
@@ -146,38 +148,6 @@ def _cleanup_setting_cards(container: AppContainer) -> None:
         return
     container.connection.execute("DELETE FROM ai_cards WHERE kind = ?", ("setting",))
     container.settings_repository.set(SETTING_CLEANUP_KEY, "1")
-
-
-def _preset_signature(preset: dict) -> tuple[str, str]:
-    return (str(preset.get("title", "")).strip(), str(preset.get("card_type", "style")).strip())
-
-
-def _seed_presets(container: AppContainer, *, force: bool = False) -> None:
-    """Seed built-in samples as normal editable cards once.
-
-    The current repository does not have a system-card flag, so idempotency is
-    based on title + kind. This keeps the samples editable/deletable while
-    avoiding duplicates on every startup/request.
-    """
-    if not force and container.settings_repository.get(PRESET_SEED_KEY) == "1":
-        return
-    existing = {
-        (card.name.strip(), card.kind.strip())
-        for card in container.ai_card_repository.list_all()
-    }
-    for preset in get_preset_cards():
-        title, kind = _preset_signature(preset)
-        if kind == "setting":
-            continue
-        if not title or (title, kind) in existing:
-            continue
-        container.ai_card_repository.create(
-            kind=_clean_card_type(kind or "style"),
-            name=title,
-            body=str(preset.get("content", "")),
-        )
-        existing.add((title, kind))
-    container.settings_repository.set(PRESET_SEED_KEY, "1")
 
 
 def _draft_template_for(card_type: str) -> str:
@@ -318,7 +288,6 @@ def list_cards(
     container: AppContainer = Depends(get_container),
 ) -> list[AiCardOut]:
     _cleanup_setting_cards(container)
-    _seed_presets(container)
     if card_type:
         cards = container.ai_card_repository.list_by_kind(_clean_card_type(card_type))
     else:
@@ -334,7 +303,6 @@ def search_cards(
     container: AppContainer = Depends(get_container),
 ) -> list[AiCardOut]:
     _cleanup_setting_cards(container)
-    _seed_presets(container)
     needle = q.strip().lower()
     if not needle:
         return []
@@ -349,27 +317,22 @@ def search_cards(
         if needle in (card.name or "").lower()
         or needle in (card.body or "").lower()
         or needle in (card.kind or "").lower()
+        or any(needle in tag.lower() for tag in card.tags)
     ]
     return [_card_to_dto(card) for card in cards[:limit]]
 
 
 @router.get("/presets/list", response_model=list[dict])
 def list_presets() -> list[dict]:
-    return get_preset_cards()
+    return []
 
 
-@router.post("/presets/generate", status_code=201)
+@router.post("/presets/generate", status_code=410)
 def generate_from_presets(
     container: AppContainer = Depends(get_container),
 ) -> dict:
     _cleanup_setting_cards(container)
-    before = len(container.ai_card_repository.list_all())
-    _seed_presets(container, force=True)
-    cards = container.ai_card_repository.list_all()
-    return {
-        "created": max(0, len(cards) - before),
-        "cards": [_card_to_dto(card).model_dump() for card in cards],
-    }
+    raise HTTPException(410, "内置样例已移除。请新建自己的风格、人物或场景卡。")
 
 
 @router.post("/generate-draft", response_model=AiCardDraftOut)
@@ -420,6 +383,7 @@ def create_card(
         kind=card_type,
         name=data.title,
         body=data.content,
+        tags=_clean_tags(data.tags),
     )
     return _card_to_dto(card)
 
@@ -440,6 +404,7 @@ def update_card(
         kind=card_type,
         name=data.title,
         body=data.content,
+        tags=_clean_tags(data.tags),
     )
     if not card:
         raise HTTPException(404, "AI Card not found")

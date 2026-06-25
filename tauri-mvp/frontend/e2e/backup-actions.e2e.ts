@@ -35,7 +35,7 @@ async function mockBackupApi(page: Page) {
     await route.fulfill({
       json: {
         app_name: 'Living to Tell',
-        version: '0.1.7',
+        version: '0.1.8',
         api_version: '2.0.0',
         capabilities: ['data_location', 'ai_chat_settings', 'ai_task_presets'],
       },

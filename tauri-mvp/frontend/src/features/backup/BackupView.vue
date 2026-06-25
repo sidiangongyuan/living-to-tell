@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from '../../i18n'
 import { backupApi, type BackupInfo, type BackupStats, type CheckpointInfo } from './api'
+import ContextMenu from '../../components/ContextMenu.vue'
 
 const { t } = useI18n()
 
@@ -20,6 +21,14 @@ const creatingCheckpoint = ref(false)
 const showConfirmDialog = ref(false)
 const confirmAction = ref<() => void>(() => {})
 const confirmMessage = ref('')
+const deleteContextMenuOpen = ref(false)
+const deleteContextMenuX = ref(0)
+const deleteContextMenuY = ref(0)
+const deleteContextTarget = ref<{
+  path: string
+  name: string
+  type: 'backup' | 'checkpoint'
+} | null>(null)
 
 onMounted(() => {
   loadData()
@@ -116,6 +125,28 @@ function confirmDelete(path: string, name: string, type: 'backup' | 'checkpoint'
   showConfirmDialog.value = true
 }
 
+function closeDeleteContextMenu() {
+  deleteContextMenuOpen.value = false
+  deleteContextTarget.value = null
+}
+
+function openDeleteContextMenu(event: MouseEvent, target: typeof deleteContextTarget.value) {
+  if (!target) return
+  event.preventDefault()
+  deleteContextTarget.value = target
+  deleteContextMenuX.value = Math.max(12, Math.min(event.clientX + 8, window.innerWidth - 172))
+  deleteContextMenuY.value = Math.max(12, Math.min(event.clientY + 8, window.innerHeight - 56))
+  deleteContextMenuOpen.value = true
+}
+
+function handleDeleteContextMenuSelect(item: { key: string }) {
+  const target = deleteContextTarget.value
+  closeDeleteContextMenu()
+  if (item.key === 'delete' && target) {
+    confirmDelete(target.path, target.name, target.type)
+  }
+}
+
 async function deleteItem(path: string, type: 'backup' | 'checkpoint') {
   showConfirmDialog.value = false
   loading.value = true
@@ -207,6 +238,7 @@ function formatDate(isoString: string): string {
             <article
               v-for="cp in checkpoints"
               :key="cp.path"
+              @contextmenu="openDeleteContextMenu($event, { path: cp.path, name: cp.name, type: 'checkpoint' })"
               class="rounded-lg border border-gray-200 bg-white p-4 transition-shadow hover:shadow-md"
             >
               <div class="flex items-start justify-between gap-4">
@@ -240,6 +272,7 @@ function formatDate(isoString: string): string {
             <article
               v-for="backup in backups"
               :key="backup.path"
+              @contextmenu="openDeleteContextMenu($event, { path: backup.path, name: backup.name, type: 'backup' })"
               class="rounded-lg border border-gray-200 bg-white p-4 transition-shadow hover:shadow-md"
             >
               <div class="flex items-start justify-between gap-4">
@@ -320,5 +353,13 @@ function formatDate(isoString: string): string {
         </div>
       </div>
     </div>
+    <ContextMenu
+      :open="deleteContextMenuOpen"
+      :x="deleteContextMenuX"
+      :y="deleteContextMenuY"
+      :items="[{ key: 'delete', label: t('backup.delete'), danger: true }]"
+      @close="closeDeleteContextMenu"
+      @select="handleDeleteContextMenuSelect"
+    />
   </div>
 </template>

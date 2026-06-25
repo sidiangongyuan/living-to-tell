@@ -33,7 +33,7 @@ def test_tauri_app_version_capabilities(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["app_name"] == "Living to Tell"
-    assert payload["version"] == "0.1.7"
+    assert payload["version"] == "0.1.8"
     assert payload["api_version"] == "2.0.0"
     assert {
         "data_location",
@@ -45,17 +45,30 @@ def test_tauri_app_version_capabilities(monkeypatch):
     )
 
 
-def test_tauri_ai_cards_seed_and_crud(monkeypatch):
+def test_tauri_ai_cards_do_not_seed_samples_and_crud_tags(monkeypatch):
     client = _tauri_client(monkeypatch)
+    from deps import get_container
+
+    container = get_container()
+    container.connection.execute("DELETE FROM ai_cards")
+    container.settings_repository.delete("tauri.ai_cards.seeded_presets_v1")
 
     first = client.get("/api/ai-cards")
     assert first.status_code == 200
     first_cards = first.json()
-    assert len(first_cards) >= 5
+    assert first_cards == []
 
     second = client.get("/api/ai-cards")
     assert second.status_code == 200
-    assert len(second.json()) == len(first_cards)
+    assert second.json() == []
+
+    preset_list = client.get("/api/ai-cards/presets/list")
+    assert preset_list.status_code == 200
+    assert preset_list.json() == []
+
+    preset_generate = client.post("/api/ai-cards/presets/generate")
+    assert preset_generate.status_code == 410
+    assert client.get("/api/ai-cards").json() == []
 
     created = client.post(
         "/api/ai-cards",
@@ -63,10 +76,11 @@ def test_tauri_ai_cards_seed_and_crud(monkeypatch):
             "title": "测试卡",
             "content": "内容",
             "card_type": "style",
-            "tags": [],
+            "tags": ["节奏", "节奏", "结构"],
         },
     )
     assert created.status_code == 201
+    assert created.json()["tags"] == ["节奏", "结构"]
     card_id = created.json()["id"]
 
     updated = client.put(
@@ -75,12 +89,13 @@ def test_tauri_ai_cards_seed_and_crud(monkeypatch):
             "title": "测试卡2",
             "content": "内容2",
             "card_type": "character",
-            "tags": [],
+            "tags": ["人物"],
         },
     )
     assert updated.status_code == 200
     assert updated.json()["id"] == card_id
     assert updated.json()["card_type"] == "character"
+    assert updated.json()["tags"] == ["人物"]
 
     scene = client.post(
         "/api/ai-cards",
@@ -95,7 +110,14 @@ def test_tauri_ai_cards_seed_and_crud(monkeypatch):
 
     search = client.get("/api/ai-cards/search?q=等待&card_type=scene&limit=10")
     assert search.status_code == 200
-    assert [card["card_type"] for card in search.json()] == ["scene"]
+    search_payload = search.json()
+    assert search_payload
+    assert all(card["card_type"] == "scene" for card in search_payload)
+    assert any(card["id"] == scene.json()["id"] for card in search_payload)
+
+    tag_search = client.get("/api/ai-cards/search?q=人物&limit=10")
+    assert tag_search.status_code == 200
+    assert any(card["id"] == card_id for card in tag_search.json())
 
     rejected = client.post(
         "/api/ai-cards",
@@ -1165,7 +1187,6 @@ def test_tauri_ai_settings_read_save_and_validate(monkeypatch):
     assert "opencode" in initial_payload["status"]
     assert "model_presets" in initial_payload
     assert "opencode/deepseek-v4-flash-free" in initial_payload["model_presets"]["opencode"]
-
     saved = client.put(
         "/api/settings/ai",
         json={

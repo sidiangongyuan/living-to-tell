@@ -9,6 +9,9 @@ import { errorMessage, isHttpStatus } from '../../api/base'
 import { libraryApi, type Reference } from '../../api/library'
 import { notesApi, type WritingNote } from '../../api/notes'
 import { useI18n } from '../../i18n'
+import ContextMenu from '../../components/ContextMenu.vue'
+import PaneResizeHandle from '../../components/PaneResizeHandle.vue'
+import { useResizablePane } from '../../composables/useResizablePane'
 import { countParagraphs } from '../articles/articleList'
 import { applyArticleBodyEdit, selectArticleBodyText } from './applyArticleEdit'
 import { useAiStore } from './store'
@@ -72,6 +75,22 @@ const chatSettingsSupported = ref(true)
 const savingChatSettings = ref(false)
 const chatNotice = ref('')
 const backendCapabilities = ref<string[] | null>(null)
+const toolsPane = useResizablePane({
+  key: 'ai:tools',
+  defaultSize: 340,
+  minSize: 300,
+  maxSize: 500,
+})
+const chatPane = useResizablePane({
+  key: 'ai:chat',
+  defaultSize: 320,
+  minSize: 280,
+  maxSize: 460,
+})
+const presetContextMenuOpen = ref(false)
+const presetContextMenuX = ref(0)
+const presetContextMenuY = ref(0)
+const presetContextTarget = ref<AiTaskPreset | null>(null)
 const activeTab = computed({
   get: () => workspace.activeTab,
   set: (value: AiTab) => {
@@ -867,6 +886,27 @@ async function deletePreset(preset: AiTaskPreset) {
   }
 }
 
+function closePresetContextMenu() {
+  presetContextMenuOpen.value = false
+  presetContextTarget.value = null
+}
+
+function openPresetContextMenu(event: MouseEvent, preset: AiTaskPreset) {
+  event.preventDefault()
+  presetContextTarget.value = preset
+  presetContextMenuX.value = Math.max(12, Math.min(event.clientX + 8, window.innerWidth - 172))
+  presetContextMenuY.value = Math.max(12, Math.min(event.clientY + 8, window.innerHeight - 56))
+  presetContextMenuOpen.value = true
+}
+
+function handlePresetContextMenuSelect(item: { key: string }) {
+  const preset = presetContextTarget.value
+  closePresetContextMenu()
+  if (item.key === 'delete' && preset) {
+    void deletePreset(preset)
+  }
+}
+
 function cardToContextItem(card: AiCard): ContextItem {
   return {
     uid: `ai_card:${card.id}`,
@@ -979,7 +1019,11 @@ function makeId(): string {
     </header>
 
     <div v-if="activeTab === 'tools'" class="flex min-h-0 flex-1 overflow-hidden">
-      <aside class="flex w-[360px] shrink-0 flex-col overflow-y-auto border-r border-gray-200 bg-white">
+      <aside
+        class="flex shrink-0 flex-col overflow-y-auto border-r border-gray-200 bg-white"
+        :style="toolsPane.paneStyle.value"
+        data-testid="ai-tools-pane"
+      >
         <div class="space-y-5 p-4">
           <div v-if="error" class="rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ error }}</div>
           <div v-if="notice" class="rounded-lg bg-green-50 p-3 text-sm text-green-700">{{ notice }}</div>
@@ -1168,6 +1212,7 @@ function makeId(): string {
               <div
                 v-for="preset in currentTaskPresets"
                 :key="preset.id"
+                @contextmenu="openPresetContextMenu($event, preset)"
                 class="flex items-center gap-2 rounded-xl bg-gray-50 px-3 py-2 text-sm"
               >
                 <button @click="applyPreset(preset.id)" class="min-w-0 flex-1 truncate text-left font-medium text-gray-700">
@@ -1321,6 +1366,7 @@ function makeId(): string {
           </div>
         </div>
       </aside>
+      <PaneResizeHandle data-testid="ai-tools-resizer" @pointerdown="toolsPane.startResize" />
 
       <main v-if="!showComparison" class="flex flex-1 items-center justify-center text-gray-400">
         <div class="text-center">
@@ -1361,7 +1407,7 @@ function makeId(): string {
           </div>
         </div>
 
-        <div class="flex flex-1 overflow-hidden">
+        <div class="flex flex-1 flex-col overflow-hidden min-[1180px]:flex-row">
           <section class="flex min-w-0 flex-1 flex-col border-r border-gray-200">
             <div class="border-b border-gray-200 bg-gray-100 p-3 text-sm font-semibold">{{ t('ai.original') }}</div>
             <div class="flex-1 overflow-y-auto p-6">
@@ -1380,7 +1426,11 @@ function makeId(): string {
     </div>
 
     <div v-else class="flex min-h-0 flex-1 overflow-hidden">
-      <aside class="w-80 shrink-0 overflow-y-auto border-r border-gray-200 bg-white p-4">
+      <aside
+        class="shrink-0 overflow-y-auto border-r border-gray-200 bg-white p-4"
+        :style="chatPane.paneStyle.value"
+        data-testid="ai-chat-pane"
+      >
         <div v-if="error" class="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ error }}</div>
         <div v-if="chatNotice" class="mb-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">{{ chatNotice }}</div>
 
@@ -1437,6 +1487,7 @@ function makeId(): string {
           </button>
         </section>
       </aside>
+      <PaneResizeHandle data-testid="ai-chat-resizer" @pointerdown="chatPane.startResize" />
 
       <main class="flex min-w-0 flex-1 flex-col bg-[#fbfaf7]">
         <div class="border-b border-gray-200 bg-white px-6 py-4">
@@ -1693,6 +1744,15 @@ function makeId(): string {
         </div>
       </div>
     </div>
+
+    <ContextMenu
+      :open="presetContextMenuOpen"
+      :x="presetContextMenuX"
+      :y="presetContextMenuY"
+      :items="[{ key: 'delete', label: t('common.delete'), danger: true }]"
+      @close="closePresetContextMenu"
+      @select="handlePresetContextMenuSelect"
+    />
 
   </div>
 </template>

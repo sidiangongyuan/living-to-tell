@@ -11,6 +11,9 @@ import {
 } from '../../api/motifs'
 import { errorMessage, isHttpStatus } from '../../api/base'
 import { useI18n } from '../../i18n'
+import ContextMenu from '../../components/ContextMenu.vue'
+import PaneResizeHandle from '../../components/PaneResizeHandle.vue'
+import { useResizablePane } from '../../composables/useResizablePane'
 import { densityToLimit, filterMotifGraphByLimit, layoutMotifGraph } from './graphLayout'
 
 const router = useRouter()
@@ -35,6 +38,27 @@ const formAliases = ref('')
 const formTags = ref('')
 const formNote = ref('')
 const formPinned = ref(false)
+const motifListPane = useResizablePane({
+  key: 'motifs:list',
+  defaultSize: 260,
+  minSize: 240,
+  maxSize: 420,
+})
+const motifDetailPane = useResizablePane({
+  key: 'motifs:detail',
+  defaultSize: 320,
+  minSize: 300,
+  maxSize: 520,
+  edge: 'start',
+})
+const deleteContextMenuOpen = ref(false)
+const deleteContextMenuX = ref(0)
+const deleteContextMenuY = ref(0)
+const deleteContextTarget = ref<
+  | { kind: 'motif'; id: string }
+  | { kind: 'excerpt'; excerpt: MotifExcerpt }
+  | null
+>(null)
 
 let searchTimer: number | null = null
 let motifsLoadToken = 0
@@ -57,6 +81,11 @@ const graphCountLabel = computed(() =>
     : t('motifs.noGraphNodes')
 )
 const filteredMotifs = computed(() => motifs.value)
+const deleteContextMenuItems = computed(() => [{
+  key: 'delete',
+  label: deleteContextTarget.value?.kind === 'excerpt' ? t('motifs.removeFromMotif') : t('common.delete'),
+  danger: true,
+}])
 
 const motifPalette = [
   { fill: '#f5d7b8', stroke: '#c4774e', halo: '#f7b47b', text: '#633018' },
@@ -266,6 +295,36 @@ async function removeExcerptFromSelectedMotif(excerpt: MotifExcerpt) {
   }
 }
 
+function closeDeleteContextMenu() {
+  deleteContextMenuOpen.value = false
+  deleteContextTarget.value = null
+}
+
+function openDeleteContextMenu(event: MouseEvent, target: typeof deleteContextTarget.value) {
+  if (!target) return
+  event.preventDefault()
+  deleteContextTarget.value = target
+  deleteContextMenuX.value = Math.max(12, Math.min(event.clientX + 8, window.innerWidth - 190))
+  deleteContextMenuY.value = Math.max(12, Math.min(event.clientY + 8, window.innerHeight - 56))
+  deleteContextMenuOpen.value = true
+}
+
+function handleDeleteContextMenuSelect(item: { key: string }) {
+  const target = deleteContextTarget.value
+  closeDeleteContextMenu()
+  if (item.key !== 'delete' || !target) return
+  if (target.kind === 'excerpt') {
+    void removeExcerptFromSelectedMotif(target.excerpt)
+    return
+  }
+  if (selectedMotifId.value === target.id) {
+    void deleteSelectedMotif()
+    return
+  }
+  selectedMotifId.value = target.id
+  void deleteSelectedMotif()
+}
+
 function selectMotif(id: string) {
   selectedMotifId.value = id
 }
@@ -329,7 +388,11 @@ function previewExcerpt(text: string): string {
 
 <template>
   <div class="flex h-full overflow-hidden bg-[#f6f2ea] text-stone-900">
-    <aside class="flex w-80 shrink-0 flex-col border-r border-stone-200 bg-[#fffdf8]">
+    <aside
+      class="flex shrink-0 flex-col border-r border-stone-200 bg-[#fffdf8]"
+      :style="motifListPane.paneStyle.value"
+      data-testid="motifs-list-pane"
+    >
       <div class="border-b border-stone-200 p-5">
         <div class="mb-4">
           <p class="text-xs font-semibold uppercase tracking-[0.22em] text-teal-700">{{ t('motifs.eyebrow') }}</p>
@@ -379,6 +442,7 @@ function previewExcerpt(text: string): string {
           v-for="motif in filteredMotifs"
           :key="motif.id"
           @click="selectMotif(motif.id)"
+          @contextmenu="openDeleteContextMenu($event, { kind: 'motif', id: motif.id })"
           :class="[
             'mb-2 w-full rounded-xl border px-3 py-3 text-left transition',
             selectedMotifId === motif.id
@@ -404,6 +468,7 @@ function previewExcerpt(text: string): string {
         </button>
       </div>
     </aside>
+    <PaneResizeHandle data-testid="motifs-list-resizer" @pointerdown="motifListPane.startResize" />
 
     <main class="flex min-w-0 flex-1 flex-col overflow-hidden">
       <div class="border-b border-stone-200 bg-[#fffdf8]/90 px-6 py-4">
@@ -419,8 +484,8 @@ function previewExcerpt(text: string): string {
         </div>
       </div>
 
-      <div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1.35fr)_minmax(24rem,0.65fr)] gap-0 overflow-hidden">
-        <section class="min-w-0 overflow-hidden p-5">
+      <div class="flex min-h-0 flex-1 overflow-hidden">
+        <section class="min-w-0 flex-1 overflow-hidden p-5">
           <div class="h-full rounded-[1.75rem] border border-amber-100 bg-[#fff9ed] p-3 shadow-sm">
             <svg viewBox="0 0 1080 620" class="h-full min-h-[520px] w-full overflow-visible" role="img" :aria-label="t('motifs.graphAria')">
               <defs>
@@ -538,7 +603,12 @@ function previewExcerpt(text: string): string {
           </div>
         </section>
 
-        <aside class="min-w-0 overflow-y-auto border-l border-stone-200 bg-[#fffdf8]">
+        <PaneResizeHandle data-testid="motifs-detail-resizer" @pointerdown="motifDetailPane.startResize" />
+        <aside
+          class="min-w-0 shrink-0 overflow-y-auto border-l border-stone-200 bg-[#fffdf8]"
+          :style="motifDetailPane.paneStyle.value"
+          data-testid="motifs-detail-pane"
+        >
           <div v-if="selectedMotif" class="p-6">
             <div class="mb-5">
               <div class="flex items-start justify-between gap-3">
@@ -658,7 +728,11 @@ function previewExcerpt(text: string): string {
                 <textarea v-model="formNote" rows="4" class="mt-1 w-full resize-none rounded-xl border border-stone-200 px-3 py-2 leading-6 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.notePlaceholder')" />
               </label>
               <div class="mt-4 flex justify-between gap-3">
-                <button @click="deleteSelectedMotif" class="rounded-xl bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100">
+                <button
+                  @click="deleteSelectedMotif"
+                  @contextmenu="openDeleteContextMenu($event, { kind: 'motif', id: selectedMotif.id })"
+                  class="rounded-xl bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100"
+                >
                   {{ t('common.delete') }}
                 </button>
                 <button
@@ -688,6 +762,7 @@ function previewExcerpt(text: string): string {
               <article
                 v-for="excerpt in excerpts"
                 :key="excerpt.id"
+                @contextmenu="openDeleteContextMenu($event, { kind: 'excerpt', excerpt })"
                 class="mb-3 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm"
               >
                 <p class="whitespace-pre-wrap text-base leading-8 text-stone-850">{{ previewExcerpt(excerpt.excerpt_text) }}</p>
@@ -730,5 +805,13 @@ function previewExcerpt(text: string): string {
         </aside>
       </div>
     </main>
+    <ContextMenu
+      :open="deleteContextMenuOpen"
+      :x="deleteContextMenuX"
+      :y="deleteContextMenuY"
+      :items="deleteContextMenuItems"
+      @close="closeDeleteContextMenu"
+      @select="handleDeleteContextMenuSelect"
+    />
   </div>
 </template>

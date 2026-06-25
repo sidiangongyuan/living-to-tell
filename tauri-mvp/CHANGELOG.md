@@ -1,5 +1,46 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.8 - Layout And AI Card Quality Update (2026-06-25)
+
+### Added
+
+- Added reusable resizable pane controls for dense windowed layouts.
+- Added persistent pane widths for Articles, AI Workspace, AI Cards, Reference Library, Collections, and Motif Star Map surfaces.
+- Added a shared right-click context menu for destructive actions that already had a visible delete button.
+- Added right-click delete entry points for articles, article notes, AI cards, AI task presets, reference passages, collections, collection articles, motifs, motif excerpts, backups, and checkpoints.
+- Added persisted AI Card tags with a database migration for existing local databases.
+
+### Changed
+
+- Improved windowed-mode behavior so side panes can be adjusted instead of forcing fixed widths that can obstruct content.
+- Tightened context menu styling for a calmer desktop-tool feel.
+- Removed public AI Card sample restore controls.
+- Stopped AI Card list/search requests from automatically re-seeding built-in sample cards.
+- Deprecated the old AI Card preset generation endpoint; it now returns a clear `410` response instead of recreating samples.
+
+### Fixed
+
+- Fixed AI Card tags disappearing after save by storing them in `ai_cards.tags_text`.
+- Fixed AI Card tag search so saved tags participate in card search.
+- Fixed the product behavior where built-in AI Card samples could reappear after users deleted them.
+- Fixed rigid windowed layouts across the main writing and knowledge-management surfaces.
+
+### Verification
+
+- `python -m pytest`
+- `npm test -- --run`
+- `npm run test:e2e`
+- `npm run build`
+- `cargo check --manifest-path tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe python`
+
+### Release artifacts
+
+- `LivingToTell_0.1.8_x64-setup.exe`
+  - SHA256: `2DB5EC63E7FE936F58E1ECC4586D03D173F5A74E83E470B34B8FF027103EE102`
+- `LivingToTell_0.1.8_x64_zh-CN.msi`
+  - SHA256: `E9387AE7A42CD0A1AB1F9427BD794D1CAAE7250E1892EB4388DA791A60671578`
+
 ## 0.1.7 - Living to Tell Major Preview (2026-06-20)
 
 ### Added

@@ -355,3 +355,38 @@ def test_tags_text_migration_is_idempotent(tmp_path: Path) -> None:
         assert "tags_text" in cols
     finally:
         conn.close()
+
+
+def test_ai_cards_get_tags_text_column_on_upgrade(tmp_path: Path) -> None:
+    """Older AI-card tables preserve existing cards and gain tag storage."""
+    db_path = tmp_path / "writer.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE ai_cards (
+            id          TEXT PRIMARY KEY,
+            kind        TEXT NOT NULL,
+            name        TEXT NOT NULL DEFAULT '',
+            body        TEXT NOT NULL DEFAULT '',
+            created_at  TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
+            updated_at  TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z'
+        );
+        INSERT INTO ai_cards (id, kind, name, body)
+            VALUES ('card-old', 'style', '旧卡', '旧内容');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    conn = open_and_initialize(db_path)
+    try:
+        cols = _columns(conn, "ai_cards")
+        assert "tags_text" in cols
+        row = conn.execute(
+            "SELECT name, tags_text FROM ai_cards WHERE id = 'card-old'"
+        ).fetchone()
+        assert row is not None
+        assert row["name"] == "旧卡"
+        assert row["tags_text"] == ""
+    finally:
+        conn.close()

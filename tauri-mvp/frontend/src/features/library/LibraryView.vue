@@ -7,6 +7,9 @@ import { motifsApi, type MotifExcerpt, type MotifNode } from '../../api/motifs'
 import { errorMessage, isHttpStatus } from '../../api/base'
 import { type LibraryGroupMode, EMPTY_SOURCE_GROUP_KEY } from './grouping'
 import { useI18n } from '../../i18n'
+import ContextMenu from '../../components/ContextMenu.vue'
+import PaneResizeHandle from '../../components/PaneResizeHandle.vue'
+import { useResizablePane } from '../../composables/useResizablePane'
 import {
   addUniqueMotifName,
   buildMotifSelectionSnapshot,
@@ -30,6 +33,22 @@ const saveNotice = ref('')
 const saveFailed = ref(false)
 const contentRef = ref<HTMLTextAreaElement | null>(null)
 const detailScrollRef = ref<HTMLElement | null>(null)
+const groupPane = useResizablePane({
+  key: 'library:groups',
+  defaultSize: 240,
+  minSize: 220,
+  maxSize: 340,
+})
+const referenceListPane = useResizablePane({
+  key: 'library:references',
+  defaultSize: 340,
+  minSize: 300,
+  maxSize: 520,
+})
+const deleteContextMenuOpen = ref(false)
+const deleteContextMenuX = ref(0)
+const deleteContextMenuY = ref(0)
+const deleteContextReferenceId = ref<string | null>(null)
 const motifAttachOpen = ref(false)
 const motifAttachX = ref(0)
 const motifAttachY = ref(0)
@@ -321,6 +340,30 @@ async function deleteSelectedReference() {
   }
   await store.deleteReference(store.selectedReference.id)
   await loadStats()
+}
+
+function closeDeleteContextMenu() {
+  deleteContextMenuOpen.value = false
+  deleteContextReferenceId.value = null
+}
+
+function openReferenceDeleteContextMenu(event: MouseEvent, referenceId: string) {
+  event.preventDefault()
+  deleteContextReferenceId.value = referenceId
+  deleteContextMenuX.value = Math.max(12, Math.min(event.clientX + 8, window.innerWidth - 172))
+  deleteContextMenuY.value = Math.max(12, Math.min(event.clientY + 8, window.innerHeight - 56))
+  deleteContextMenuOpen.value = true
+}
+
+function handleDeleteContextMenuSelect(item: { key: string }) {
+  const referenceId = deleteContextReferenceId.value
+  closeDeleteContextMenu()
+  if (item.key !== 'delete' || !referenceId) return
+  if (store.selectedReference?.id === referenceId) {
+    void deleteSelectedReference()
+    return
+  }
+  void selectReference(referenceId).then(() => deleteSelectedReference())
 }
 
 async function createReference() {
@@ -735,7 +778,7 @@ function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string 
 
 <template>
   <div class="flex h-full overflow-hidden bg-gray-50">
-    <aside class="flex w-72 shrink-0 flex-col border-r border-gray-200 bg-white">
+    <aside class="flex shrink-0 flex-col border-r border-gray-200 bg-white" :style="groupPane.paneStyle.value" data-testid="library-group-pane">
       <div class="border-b border-gray-200 p-4">
         <div class="mb-4 flex items-start justify-between gap-3">
           <div>
@@ -818,8 +861,9 @@ function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string 
         </div>
       </div>
     </aside>
+    <PaneResizeHandle data-testid="library-group-resizer" @pointerdown="groupPane.startResize" />
 
-    <section class="flex w-[28rem] shrink-0 flex-col border-r border-gray-200 bg-white">
+    <section class="flex shrink-0 flex-col border-r border-gray-200 bg-white" :style="referenceListPane.paneStyle.value" data-testid="library-reference-list-pane">
       <div class="border-b border-gray-200 px-5 py-4">
         <div class="text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">
           {{ store.groupMode === 'usage' ? t('library.groupByUsage') : t('library.groupBySource') }}
@@ -852,6 +896,7 @@ function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string 
             v-for="reference in store.visibleReferences"
             :key="reference.id"
             @click="selectReference(reference.id)"
+            @contextmenu="openReferenceDeleteContextMenu($event, reference.id)"
             :class="[
               'cursor-pointer rounded-2xl border p-4 transition-all',
               store.selectedRefId === reference.id
@@ -873,6 +918,7 @@ function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string 
         </div>
       </div>
     </section>
+    <PaneResizeHandle data-testid="library-reference-list-resizer" @pointerdown="referenceListPane.startResize" />
 
     <section ref="detailScrollRef" class="flex min-w-0 flex-1 flex-col overflow-y-auto bg-white">
       <div v-if="store.selectedReference" class="mx-auto w-full max-w-3xl p-8">
@@ -1026,6 +1072,7 @@ function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string 
           </div>
           <button
             @click="deleteSelectedReference"
+            @contextmenu="openReferenceDeleteContextMenu($event, store.selectedReference.id)"
             class="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 transition-colors hover:bg-red-100"
           >
             {{ t('library.deleteReference') }}
@@ -1033,9 +1080,18 @@ function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string 
         </div>
       </div>
       <div v-else class="flex h-full items-center justify-center text-gray-400">
-        {{ t('library.selectOrCreate') }}
+      {{ t('library.selectOrCreate') }}
       </div>
     </section>
+
+    <ContextMenu
+      :open="deleteContextMenuOpen"
+      :x="deleteContextMenuX"
+      :y="deleteContextMenuY"
+      :items="[{ key: 'delete', label: t('library.deleteReference'), danger: true }]"
+      @close="closeDeleteContextMenu"
+      @select="handleDeleteContextMenuSelect"
+    />
 
     <div
       v-if="motifContextMenuOpen && motifAttachSelection"

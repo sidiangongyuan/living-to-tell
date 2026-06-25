@@ -148,6 +148,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "ADD COLUMN z_index INTEGER NOT NULL DEFAULT 0"
         )
 
+    ai_card_cols = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(ai_cards)")
+    }
+    if "tags_text" not in ai_card_cols:
+        conn.execute(
+            "ALTER TABLE ai_cards ADD COLUMN tags_text TEXT NOT NULL DEFAULT ''"
+        )
+
 
 def _ensure_reference_passages_fts_schema(
     conn: sqlite3.Connection, *, force_rebuild: bool = False

@@ -87,18 +87,6 @@ export const aiCardApi = {
     return handleResponse(res)
   },
 
-  async listPresets(): Promise<any[]> {
-    const res = await apiFetch('/api/ai-cards/presets/list')
-    return handleResponse(res)
-  },
-
-  async generateFromPresets(): Promise<{ created: number; cards: AiCard[] }> {
-    const res = await apiFetch('/api/ai-cards/presets/generate', {
-      method: 'POST',
-    })
-    return handleResponse(res)
-  },
-
   async generateDraft(data: AiCardDraftRequest): Promise<AiCardDraft> {
     const res = await apiFetch('/api/ai-cards/generate-draft', {
       method: 'POST',

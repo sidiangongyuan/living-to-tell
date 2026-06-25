@@ -10,5 +10,6 @@ class AiCard:
     kind: str  # 'style' | 'character' | 'scene'
     name: str
     body: str
+    tags: list[str]
     created_at: str
     updated_at: str

@@ -363,7 +363,7 @@ async function mockMotifFlowApi(page: Page) {
     await route.fulfill({
       json: {
         app_name: 'Living to Tell',
-        version: '0.1.7',
+        version: '0.1.8',
         api_version: '2.0.0',
         capabilities: ['motif_star_map'],
       },

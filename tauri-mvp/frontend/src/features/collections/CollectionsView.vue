@@ -3,6 +3,9 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useCollectionsStore } from './store'
 import { articlesApi, type Entry } from '../../api/articles'
 import { useI18n } from '../../i18n'
+import ContextMenu from '../../components/ContextMenu.vue'
+import PaneResizeHandle from '../../components/PaneResizeHandle.vue'
+import { useResizablePane } from '../../composables/useResizablePane'
 
 const store = useCollectionsStore()
 const { t } = useI18n()
@@ -18,6 +21,26 @@ const draftDescription = ref('')
 const savingMeta = ref(false)
 const dragArticleId = ref<string | null>(null)
 const actionError = ref<string | null>(null)
+const collectionListPane = useResizablePane({
+  key: 'collections:list',
+  defaultSize: 240,
+  minSize: 240,
+  maxSize: 420,
+})
+const collectionArticlePane = useResizablePane({
+  key: 'collections:articles',
+  defaultSize: 320,
+  minSize: 300,
+  maxSize: 540,
+})
+const deleteContextMenuOpen = ref(false)
+const deleteContextMenuX = ref(0)
+const deleteContextMenuY = ref(0)
+const deleteContextTarget = ref<
+  | { kind: 'collection'; id: string }
+  | { kind: 'article'; id: string }
+  | null
+>(null)
 
 const currentArticleIds = computed(() => new Set(store.articles.map((article) => article.id)))
 const previewArticle = computed(() => store.selectedArticle)
@@ -153,6 +176,35 @@ async function removeArticle(entryId: string) {
   }
 }
 
+function closeDeleteContextMenu() {
+  deleteContextMenuOpen.value = false
+  deleteContextTarget.value = null
+}
+
+function openDeleteContextMenu(event: MouseEvent, target: typeof deleteContextTarget.value) {
+  if (!target) return
+  event.preventDefault()
+  deleteContextTarget.value = target
+  deleteContextMenuX.value = Math.max(12, Math.min(event.clientX + 8, window.innerWidth - 172))
+  deleteContextMenuY.value = Math.max(12, Math.min(event.clientY + 8, window.innerHeight - 56))
+  deleteContextMenuOpen.value = true
+}
+
+function handleDeleteContextMenuSelect(item: { key: string }) {
+  const target = deleteContextTarget.value
+  closeDeleteContextMenu()
+  if (item.key !== 'delete' || !target) return
+  if (target.kind === 'article') {
+    void removeArticle(target.id)
+    return
+  }
+  if (store.selectedCollectionId === target.id) {
+    void deleteSelectedCollection()
+    return
+  }
+  void selectCollection(target.id).then(() => deleteSelectedCollection())
+}
+
 async function moveArticleSafely(entryId: string, direction: -1 | 1) {
   try {
     await store.moveArticle(entryId, direction)
@@ -193,7 +245,11 @@ async function onDrop(targetId: string) {
 
 <template>
   <div class="flex h-full overflow-hidden bg-[#f5f1e8] text-stone-900">
-    <aside class="w-72 shrink-0 border-r border-stone-200 bg-[#2d2a25] text-stone-100 flex flex-col">
+    <aside
+      class="shrink-0 border-r border-stone-200 bg-[#2d2a25] text-stone-100 flex flex-col"
+      :style="collectionListPane.paneStyle.value"
+      data-testid="collections-list-pane"
+    >
       <div class="p-5 border-b border-white/10">
         <div class="flex items-center justify-between gap-3">
           <div>
@@ -222,6 +278,7 @@ async function onDrop(targetId: string) {
           v-for="collection in store.collections"
           :key="collection.id"
           @click="selectCollection(collection.id)"
+          @contextmenu="openDeleteContextMenu($event, { kind: 'collection', id: collection.id })"
           :class="[
             'w-full rounded-2xl p-4 text-left transition-all',
             store.selectedCollectionId === collection.id
@@ -239,6 +296,7 @@ async function onDrop(targetId: string) {
         </button>
       </div>
     </aside>
+    <PaneResizeHandle data-testid="collections-list-resizer" @pointerdown="collectionListPane.startResize" />
 
     <main class="flex-1 min-w-0 flex flex-col">
       <header class="border-b border-stone-200 bg-[#fbf7ef]/95 px-6 py-5">
@@ -328,7 +386,11 @@ async function onDrop(targetId: string) {
       </header>
 
       <div class="flex-1 min-h-0 flex overflow-hidden">
-        <section class="w-[420px] shrink-0 overflow-y-auto border-r border-stone-200 p-5">
+        <section
+          class="shrink-0 overflow-y-auto border-r border-stone-200 p-5"
+          :style="collectionArticlePane.paneStyle.value"
+          data-testid="collections-article-pane"
+        >
           <div v-if="!store.selectedCollection" class="mt-16 text-center text-stone-400">
             {{ t('collections.noCollectionSelected') }}
           </div>
@@ -354,6 +416,7 @@ async function onDrop(targetId: string) {
               @dragover.prevent
               @drop="onDrop(article.id)"
               @click="store.selectArticle(article.id)"
+              @contextmenu="openDeleteContextMenu($event, { kind: 'article', id: article.id })"
               :class="[
                 'group cursor-pointer rounded-3xl border bg-white p-4 shadow-sm transition-all',
                 store.selectedArticleId === article.id
@@ -410,6 +473,7 @@ async function onDrop(targetId: string) {
             </article>
           </div>
         </section>
+        <PaneResizeHandle data-testid="collections-article-resizer" @pointerdown="collectionArticlePane.startResize" />
 
         <section class="flex-1 overflow-y-auto p-8">
           <div v-if="previewArticle" class="mx-auto max-w-3xl rounded-[2rem] bg-[#fffdf8] px-10 py-9 shadow-[0_18px_60px_rgba(73,55,35,0.12)]">
@@ -437,6 +501,15 @@ async function onDrop(targetId: string) {
         </section>
       </div>
     </main>
+
+    <ContextMenu
+      :open="deleteContextMenuOpen"
+      :x="deleteContextMenuX"
+      :y="deleteContextMenuY"
+      :items="[{ key: 'delete', label: t('common.delete'), danger: true }]"
+      @close="closeDeleteContextMenu"
+      @select="handleDeleteContextMenuSelect"
+    />
 
     <div v-if="createDialogOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div class="w-[460px] rounded-3xl bg-white p-6 shadow-2xl">
