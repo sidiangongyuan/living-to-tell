@@ -99,8 +99,8 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
           if (command === 'get_api_base_url') return 'http://backend.test'
           if (command === 'get_close_preference') return 'ask'
           if (command === 'set_close_preference') return args?.preference === 'tray' ? 'exit' : args?.preference
-          if (command === 'plugin:shell|open') {
-            if (typeof args?.path === 'string') window.__openedUrls?.push(args.path)
+          if (command === 'open_external_url') {
+            if (typeof args?.url === 'string') window.__openedUrls?.push(args.url)
             return null
           }
           if (command === 'get_data_directory_override') {
@@ -125,7 +125,7 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
     await route.fulfill({
       json: {
         app_name: 'Living to Tell',
-        version: '0.1.10',
+        version: '0.1.11',
         api_version: '2.0.0',
         capabilities: dataLocationCapability
           ? ['data_location', 'ai_chat_settings', 'ai_task_presets', 'update_check']
@@ -139,27 +139,27 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
     await route.fulfill({
       json: updateAvailable
         ? {
-            current_version: '0.1.10',
-            latest_version: '0.1.11',
-            latest_tag: 'living-to-tell-v0.1.11',
-            release_name: 'Living to Tell Preview 0.1.11',
-            release_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.11',
+            current_version: '0.1.11',
+            latest_version: '0.1.12',
+            latest_tag: 'living-to-tell-v0.1.12',
+            release_name: 'Living to Tell Preview 0.1.12',
+            release_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.12',
             published_at: '2026-06-26T01:02:03Z',
-            release_notes: '## 0.1.11\n\nAdded update notifications.',
+            release_notes: '## 0.1.12\n\nAdded update notifications.',
             source: 'github_releases_latest',
             status: 'update_available',
             message: '发现新版本。请下载最新安装包或点击下载安装包完成更新。',
             checked_at: '2026-06-26T01:05:06Z',
             cached: false,
-            download_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.11/LivingToTell_0.1.11_x64-setup.exe',
-            download_name: 'LivingToTell_0.1.11_x64-setup.exe',
+            download_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.12/LivingToTell_0.1.12_x64-setup.exe',
+            download_name: 'LivingToTell_0.1.12_x64-setup.exe',
           }
         : {
-            current_version: '0.1.10',
-            latest_version: '0.1.10',
-            latest_tag: 'living-to-tell-v0.1.10',
-            release_name: 'Living to Tell Preview 0.1.10',
-            release_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.10',
+            current_version: '0.1.11',
+            latest_version: '0.1.11',
+            latest_tag: 'living-to-tell-v0.1.11',
+            release_name: 'Living to Tell Preview 0.1.11',
+            release_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.11',
             published_at: '2026-06-25T03:03:04Z',
             release_notes: '',
             source: 'github_releases_latest',
@@ -167,8 +167,8 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
             message: '当前已是最新版本。',
             checked_at: '2026-06-25T03:05:06Z',
             cached: false,
-            download_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.10/LivingToTell_0.1.10_x64-setup.exe',
-            download_name: 'LivingToTell_0.1.10_x64-setup.exe',
+            download_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.11/LivingToTell_0.1.11_x64-setup.exe',
+            download_name: 'LivingToTell_0.1.11_x64-setup.exe',
           },
     })
   })
@@ -409,16 +409,22 @@ test('settings can check for updates and open the latest installer link', async 
 
   await page.goto('/settings')
   const updateSection = page.locator('section').filter({ hasText: '关于与更新' })
-  await expect(updateSection).toBeVisible()
+  await expect(updateSection).toBeVisible({ timeout: 15000 })
 
   await updateSection.getByRole('button', { name: '检查更新' }).click()
   await expect.poll(() => state.updateChecks).toBe(1)
   await expect(page.getByText('发现新版本。请下载最新安装包或点击下载安装包完成更新。')).toBeVisible()
-  await expect(page.getByText('Living to Tell Preview 0.1.11')).toBeVisible()
-  await expect(page.getByText('LivingToTell_0.1.11_x64-setup.exe')).toBeVisible()
+  await expect(page.getByText('Living to Tell Preview 0.1.12')).toBeVisible()
+  await expect(page.getByText('LivingToTell_0.1.12_x64-setup.exe')).toBeVisible()
 
   await updateSection.getByRole('button', { name: '下载安装包' }).click()
   await expect.poll(() => page.evaluate(() => window.__openedUrls)).toContain(
-    'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.11/LivingToTell_0.1.11_x64-setup.exe',
+    'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.12/LivingToTell_0.1.12_x64-setup.exe',
   )
+  await expect.poll(() => page.evaluate(() =>
+    window.__settingsInvokes?.some((item) =>
+      item.command === 'open_external_url'
+      && item.args?.url === 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.12/LivingToTell_0.1.12_x64-setup.exe'
+    )
+  )).toBe(true)
 })

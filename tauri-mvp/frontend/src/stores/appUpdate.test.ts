@@ -30,16 +30,16 @@ describe('app update store', () => {
     vi.useFakeTimers()
     vi.mocked(appApi.getVersion).mockResolvedValue({
       app_name: 'Living to Tell',
-      version: '0.1.10',
+      version: '0.1.11',
       api_version: '2.0.0',
       capabilities: ['update_check'],
     })
     vi.mocked(appApi.checkForUpdate).mockResolvedValue({
-      current_version: '0.1.10',
-      latest_version: '0.1.11',
-      latest_tag: 'living-to-tell-v0.1.11',
-      release_name: 'Living to Tell Preview 0.1.11',
-      release_url: 'https://example.test/releases/tag/living-to-tell-v0.1.11',
+      current_version: '0.1.11',
+      latest_version: '0.1.12',
+      latest_tag: 'living-to-tell-v0.1.12',
+      release_name: 'Living to Tell Preview 0.1.12',
+      release_url: 'https://example.test/releases/tag/living-to-tell-v0.1.12',
       published_at: '2026-06-26T01:02:03Z',
       release_notes: 'Added update notifications.',
       source: 'github_releases_latest',
@@ -47,8 +47,8 @@ describe('app update store', () => {
       message: '发现新版本。请下载最新安装包或点击下载安装包完成更新。',
       checked_at: '2026-06-26T01:05:06Z',
       cached: false,
-      download_url: 'https://example.test/LivingToTell_0.1.11_x64-setup.exe',
-      download_name: 'LivingToTell_0.1.11_x64-setup.exe',
+      download_url: 'https://example.test/LivingToTell_0.1.12_x64-setup.exe',
+      download_name: 'LivingToTell_0.1.12_x64-setup.exe',
     })
 
     store.scheduleAutomaticCheck()
@@ -60,10 +60,10 @@ describe('app update store', () => {
     expect(appApi.getVersion).toHaveBeenCalledOnce()
     expect(appApi.checkForUpdate).toHaveBeenCalledOnce()
     expect(store.hasVisibleUpdate).toBe(true)
-    expect(store.latestVersion).toBe('0.1.11')
+    expect(store.latestVersion).toBe('0.1.12')
 
     store.dismissUpdate()
-    expect(setItem).toHaveBeenCalledWith(UPDATE_DISMISSED_VERSION_KEY, '0.1.11')
+    expect(setItem).toHaveBeenCalledWith(UPDATE_DISMISSED_VERSION_KEY, '0.1.12')
     expect(store.hasVisibleUpdate).toBe(false)
   })
 })

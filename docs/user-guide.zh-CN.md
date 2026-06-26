@@ -5,7 +5,7 @@
 ## 1. 安装与启动
 
 1. 从 GitHub Releases 下载最新 Windows 安装包。
-2. 运行 `LivingToTell_0.1.10_x64-setup.exe`。
+2. 运行 `LivingToTell_0.1.11_x64-setup.exe`。
 3. 从开始菜单或桌面快捷方式打开 **活着为了讲述**。
 
 默认情况下，应用会把 SQLite 数据库保存在 `%APPDATA%\LivingToTell\LivingToTell\living-to-tell.sqlite3`。

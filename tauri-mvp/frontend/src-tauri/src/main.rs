@@ -194,6 +194,19 @@ fn open_path(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    let target = url.trim();
+    if target.is_empty() {
+        return Err("URL is empty".to_string());
+    }
+    let normalized = target.to_ascii_lowercase();
+    if !normalized.starts_with("http://") && !normalized.starts_with("https://") {
+        return Err("Only http and https URLs are supported".to_string());
+    }
+    open_url_with_system(target)
+}
+
+#[tauri::command]
 fn get_data_directory_override(
     state: State<'_, AppState>,
 ) -> Result<DataDirectoryOverrideState, String> {
@@ -388,6 +401,31 @@ fn open_path_with_system(path: &Path) -> Result<(), String> {
     command
         .spawn()
         .map_err(|e| format!("Failed to open path: {e}"))?;
+    Ok(())
+}
+
+fn open_url_with_system(url: &str) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = StdCommand::new("explorer");
+        command.arg(url);
+        command
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = StdCommand::new("open");
+        command.arg(url);
+        command
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut command = StdCommand::new("xdg-open");
+        command.arg(url);
+        command
+    };
+    command
+        .spawn()
+        .map_err(|e| format!("Failed to open external URL: {e}"))?;
     Ok(())
 }
 
@@ -854,6 +892,7 @@ fn main() {
             choose_export_file,
             write_export_file,
             open_path,
+            open_external_url,
             get_data_directory_override,
             set_data_directory_override,
             clear_data_directory_override,

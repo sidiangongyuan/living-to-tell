@@ -3,8 +3,8 @@ export async function openExternalUrl(url: string): Promise<void> {
   if (!target) throw new Error('URL is empty')
 
   try {
-    const { open } = await import('@tauri-apps/plugin-shell')
-    await open(target)
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('open_external_url', { url: target })
     return
   } catch {
     if (typeof window !== 'undefined' && typeof window.open === 'function') {
