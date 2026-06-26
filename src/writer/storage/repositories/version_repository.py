@@ -13,12 +13,38 @@ from typing import List, Optional
 from writer.domain.models.entry_version import EntryVersion
 
 
+def _word_count(body: str) -> int:
+    if not body:
+        return 0
+    total = 0
+    buffer: list[str] = []
+    for ch in body:
+        if "\u4e00" <= ch <= "\u9fff" or "\u3400" <= ch <= "\u4dbf":
+            if buffer:
+                if "".join(buffer).strip():
+                    total += 1
+                buffer = []
+            total += 1
+        else:
+            buffer.append(ch)
+    if buffer:
+        total += len([token for token in "".join(buffer).split() if token.strip()])
+    return total
+
+
 def _row_to_version(row: sqlite3.Row) -> EntryVersion:
+    keys = row.keys()
     return EntryVersion(
         id=row["id"],
         entry_id=row["entry_id"],
         version_type=row["version_type"],
         content=row["content"],
+        title_snapshot=row["title_snapshot"] if "title_snapshot" in keys else "",
+        tags_snapshot=row["tags_snapshot"] if "tags_snapshot" in keys else "",
+        label=row["label"] if "label" in keys else "",
+        reason=row["reason"] if "reason" in keys else "",
+        word_count=int(row["word_count"]) if "word_count" in keys else _word_count(row["content"] or ""),
+        char_count=int(row["char_count"]) if "char_count" in keys else len(row["content"] or ""),
         created_at=row["created_at"],
         provider=row["provider"],
         model=row["model"],
@@ -35,17 +61,40 @@ class VersionRepository:
         entry_id: str,
         version_type: str,
         content: str,
+        title_snapshot: str = "",
+        tags_snapshot: str = "",
+        label: str = "",
+        reason: str = "",
         provider: Optional[str] = None,
         model: Optional[str] = None,
     ) -> EntryVersion:
         new_id = str(uuid.uuid4())
+        word_count = _word_count(content)
+        char_count = len(content or "")
         self._conn.execute(
             """
             INSERT INTO entry_versions
-                (id, entry_id, version_type, content, provider, model)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (
+                    id, entry_id, version_type, content,
+                    title_snapshot, tags_snapshot, label, reason,
+                    word_count, char_count, provider, model
+                )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (new_id, entry_id, version_type, content, provider, model),
+            (
+                new_id,
+                entry_id,
+                version_type,
+                content,
+                title_snapshot,
+                tags_snapshot,
+                label,
+                reason,
+                word_count,
+                char_count,
+                provider,
+                model,
+            ),
         )
         row = self._conn.execute(
             "SELECT * FROM entry_versions WHERE id = ?", (new_id,)

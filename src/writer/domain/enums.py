@@ -19,6 +19,7 @@ class VersionType(str, Enum):
     AI_EXPAND = "ai_expand"
     AI_CONTINUE = "ai_continue"
     AI_OTHER = "ai_other"
+    AI_BEFORE_APPLY = "ai_before_apply"
     MANUAL_SNAPSHOT = "manual_snapshot"
     MANUAL_CHECKPOINT = "manual_checkpoint"
 

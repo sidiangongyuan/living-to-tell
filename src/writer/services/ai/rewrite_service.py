@@ -88,6 +88,8 @@ class RewriteService:
             entry_id=entry_id,
             version_type=VersionType.ORIGINAL.value,
             content=original_full_body,
+            title_snapshot=title,
+            reason="ai_original",
         )
         ai_version = self._versions.add(
             entry_id=entry_id,

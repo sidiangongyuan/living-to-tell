@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 APP_DISPLAY_NAME = "Living to Tell"
-APP_VERSION = "0.1.11"
+APP_VERSION = "0.1.12"
 API_VERSION = "2.0.0"
 API_CAPABILITIES = [
     "data_location",
@@ -10,4 +10,6 @@ API_CAPABILITIES = [
     "ai_task_presets",
     "motif_star_map",
     "update_check",
+    "article_versions",
+    "collection_outline",
 ]

@@ -27,6 +27,35 @@ export interface EntryUpdate {
   tags?: string[]
 }
 
+export interface EntryVersion {
+  id: string
+  entry_id: string
+  version_type: string
+  content: string
+  title_snapshot: string
+  tags: string[]
+  label: string
+  reason: string
+  word_count: number
+  char_count: number
+  created_at: string | null
+  provider: string | null
+  model: string | null
+}
+
+export interface EntryVersionCreate {
+  version_type?: 'manual_checkpoint' | 'ai_before_apply'
+  label?: string
+  provider?: string | null
+  model?: string | null
+}
+
+export interface EntryVersionRestoreResult {
+  entry: Entry
+  snapshot_version_id: string | null
+  was_noop: boolean
+}
+
 export type ArticleExportFormat = 'txt' | 'md' | 'docx'
 
 export const articlesApi = {
@@ -109,5 +138,40 @@ export const articlesApi = {
       await handleResponse(res)
     }
     return res.blob()
+  },
+
+  async listVersions(id: string): Promise<EntryVersion[]> {
+    const res = await apiFetch(`/api/articles/${id}/versions`)
+    return handleResponse(res)
+  },
+
+  async createVersion(id: string, data: EntryVersionCreate = {}): Promise<EntryVersion> {
+    const res = await apiFetch(`/api/articles/${id}/versions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async restoreVersion(id: string, versionId: string): Promise<EntryVersionRestoreResult> {
+    const res = await apiFetch(`/api/articles/${id}/versions/${versionId}/restore`, {
+      method: 'POST',
+    })
+    return handleResponse(res)
+  },
+
+  async cloneVersion(id: string, versionId: string): Promise<Entry> {
+    const res = await apiFetch(`/api/articles/${id}/versions/${versionId}/clone`, {
+      method: 'POST',
+    })
+    return handleResponse(res)
+  },
+
+  async deleteVersion(id: string, versionId: string): Promise<void> {
+    const res = await apiFetch(`/api/articles/${id}/versions/${versionId}`, {
+      method: 'DELETE',
+    })
+    return handleResponse(res)
   },
 }

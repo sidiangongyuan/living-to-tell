@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useCollectionsStore } from './store'
 import { articlesApi, type Entry } from '../../api/articles'
+import type { CollectionOutlineItem, CollectionOutlineItemInput, OutlineItemStatus, OutlineItemType } from '../../api/collections'
 import { useI18n } from '../../i18n'
 import ContextMenu from '../../components/ContextMenu.vue'
 import PaneResizeHandle from '../../components/PaneResizeHandle.vue'
@@ -9,18 +11,34 @@ import { useResizablePane } from '../../composables/useResizablePane'
 
 const store = useCollectionsStore()
 const { t } = useI18n()
+const router = useRouter()
 
 const allArticles = ref<Entry[]>([])
 const articlePickerOpen = ref(false)
 const createDialogOpen = ref(false)
 const selectedArticleIds = ref<string[]>([])
+const viewMode = ref<'manuscript' | 'outline'>('manuscript')
 const newTitle = ref('')
 const newDescription = ref('')
 const draftTitle = ref('')
 const draftDescription = ref('')
 const savingMeta = ref(false)
 const dragArticleId = ref<string | null>(null)
+const dragOutlineItemId = ref<string | null>(null)
 const actionError = ref<string | null>(null)
+const outlineActionError = ref<string | null>(null)
+const outlineSaving = ref(false)
+const outlineDraftTitle = ref('')
+const outlineDraftType = ref<OutlineItemType>('scene')
+const outlineDraftStatus = ref<OutlineItemStatus>('idea')
+const outlineDraftSummary = ref('')
+const outlineDraftNotes = ref('')
+const outlineDraftEntryId = ref('')
+const outlineDraftPov = ref('')
+const outlineDraftSetting = ref('')
+const outlineDraftTimeline = ref('')
+const outlineDraftTags = ref('')
+const outlineDraftTargetWords = ref<number | null>(null)
 const collectionListPane = useResizablePane({
   key: 'collections:list',
   defaultSize: 240,
@@ -44,6 +62,26 @@ const deleteContextTarget = ref<
 
 const currentArticleIds = computed(() => new Set(store.articles.map((article) => article.id)))
 const previewArticle = computed(() => store.selectedArticle)
+const outlineLinkedArticle = computed(() => {
+  const entryId = store.selectedOutlineItem?.entry_id
+  if (!entryId) return null
+  return allArticles.value.find((article) => article.id === entryId)
+    ?? store.articles.find((article) => article.id === entryId)
+    ?? null
+})
+const outlineTypeOptions: { value: OutlineItemType; label: string }[] = [
+  { value: 'part', label: t('collectionOutline.typePart') },
+  { value: 'chapter', label: t('collectionOutline.typeChapter') },
+  { value: 'scene', label: t('collectionOutline.typeScene') },
+  { value: 'note', label: t('collectionOutline.typeNote') },
+]
+const outlineStatusOptions: { value: OutlineItemStatus; label: string }[] = [
+  { value: 'idea', label: t('collectionOutline.statusIdea') },
+  { value: 'drafting', label: t('collectionOutline.statusDrafting') },
+  { value: 'revising', label: t('collectionOutline.statusRevising') },
+  { value: 'done', label: t('collectionOutline.statusDone') },
+  { value: 'parked', label: t('collectionOutline.statusParked') },
+]
 
 function articlePreview(body: string): string {
   const compact = body.trim().replace(/\s+/g, ' ')
@@ -65,6 +103,14 @@ watch(
   (collection) => {
     draftTitle.value = collection?.title ?? ''
     draftDescription.value = collection?.description ?? ''
+  },
+  { immediate: true }
+)
+
+watch(
+  () => store.selectedOutlineItem,
+  (item) => {
+    loadOutlineDraft(item)
   },
   { immediate: true }
 )
@@ -117,6 +163,130 @@ async function saveCollectionMetaIfNeeded(): Promise<boolean> {
   } finally {
     savingMeta.value = false
   }
+}
+
+function loadOutlineDraft(item: CollectionOutlineItem | null) {
+  outlineActionError.value = null
+  outlineDraftTitle.value = item?.title ?? ''
+  outlineDraftType.value = item?.item_type ?? 'scene'
+  outlineDraftStatus.value = item?.status ?? 'idea'
+  outlineDraftSummary.value = item?.summary ?? ''
+  outlineDraftNotes.value = item?.notes ?? ''
+  outlineDraftEntryId.value = item?.entry_id ?? ''
+  outlineDraftPov.value = item?.pov ?? ''
+  outlineDraftSetting.value = item?.setting ?? ''
+  outlineDraftTimeline.value = item?.timeline ?? ''
+  outlineDraftTags.value = item?.tags.join(', ') ?? ''
+  outlineDraftTargetWords.value = item?.target_word_count ?? null
+}
+
+function outlinePayload(): CollectionOutlineItemInput {
+  const tags = outlineDraftTags.value
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+  return {
+    title: outlineDraftTitle.value.trim() || t('collectionOutline.untitled'),
+    item_type: outlineDraftType.value,
+    status: outlineDraftStatus.value,
+    summary: outlineDraftSummary.value,
+    notes: outlineDraftNotes.value,
+    entry_id: outlineDraftEntryId.value || null,
+    pov: outlineDraftPov.value,
+    setting: outlineDraftSetting.value,
+    timeline: outlineDraftTimeline.value,
+    tags,
+    target_word_count: outlineDraftTargetWords.value && outlineDraftTargetWords.value > 0
+      ? outlineDraftTargetWords.value
+      : null,
+  }
+}
+
+function outlineTypeLabel(type: OutlineItemType): string {
+  return outlineTypeOptions.find((item) => item.value === type)?.label ?? type
+}
+
+function outlineStatusLabel(status: OutlineItemStatus): string {
+  return outlineStatusOptions.find((item) => item.value === status)?.label ?? status
+}
+
+async function createOutlineItem(type: OutlineItemType = 'scene') {
+  if (!store.selectedCollection) return
+  outlineActionError.value = null
+  try {
+    const created = await store.createOutlineItem({
+      title: type === 'part' ? t('collectionOutline.newPart') : t('collectionOutline.newItem'),
+      item_type: type,
+      status: 'idea',
+    })
+    if (created) loadOutlineDraft(created)
+  } catch (e) {
+    outlineActionError.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function saveOutlineItem() {
+  if (!store.selectedOutlineItem) return
+  outlineSaving.value = true
+  outlineActionError.value = null
+  try {
+    await store.updateOutlineItem(store.selectedOutlineItem.id, outlinePayload())
+  } catch (e) {
+    outlineActionError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    outlineSaving.value = false
+  }
+}
+
+async function deleteSelectedOutlineItem() {
+  if (!store.selectedOutlineItem) return
+  if (!confirm(t('collectionOutline.deleteConfirm'))) return
+  try {
+    await store.deleteOutlineItem(store.selectedOutlineItem.id)
+  } catch (e) {
+    outlineActionError.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function createArticleFromOutline() {
+  if (!store.selectedOutlineItem) return
+  const saved = await saveOutlineItemIfDirty()
+  if (!saved) return
+  try {
+    const article = await articlesApi.create({
+      title: outlineDraftTitle.value.trim() || t('articles.untitled'),
+      body: outlineDraftSummary.value.trim(),
+      tags: outlineDraftTags.value.split(',').map((tag) => tag.trim()).filter(Boolean),
+    })
+    allArticles.value = [article, ...allArticles.value]
+    if (!store.articles.some((item) => item.id === article.id)) {
+      await store.addArticles([article.id])
+    }
+    outlineDraftEntryId.value = article.id
+    await saveOutlineItem()
+  } catch (e) {
+    outlineActionError.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function saveOutlineItemIfDirty(): Promise<boolean> {
+  if (!store.selectedOutlineItem) return true
+  const payload = outlinePayload()
+  const current = store.selectedOutlineItem
+  const dirty = payload.title !== current.title
+    || payload.item_type !== current.item_type
+    || payload.status !== current.status
+    || payload.summary !== current.summary
+    || payload.notes !== current.notes
+    || (payload.entry_id ?? null) !== current.entry_id
+    || payload.pov !== current.pov
+    || payload.setting !== current.setting
+    || payload.timeline !== current.timeline
+    || (payload.target_word_count ?? null) !== current.target_word_count
+    || payload.tags?.join(', ') !== current.tags.join(', ')
+  if (!dirty) return true
+  await saveOutlineItem()
+  return !outlineActionError.value
 }
 
 async function openArticlePicker() {
@@ -241,6 +411,54 @@ async function onDrop(targetId: string) {
     // The store owns the visible error state; keep the drop handler settled.
   }
 }
+
+async function selectOutlineItem(id: string) {
+  const saved = await saveOutlineItemIfDirty()
+  if (!saved) return
+  store.selectOutlineItem(id)
+}
+
+async function moveOutlineItem(itemId: string, direction: -1 | 1) {
+  const index = store.outline.findIndex((item) => item.id === itemId)
+  const nextIndex = index + direction
+  if (index < 0 || nextIndex < 0 || nextIndex >= store.outline.length) return
+  const reordered = [...store.outline]
+  const [moving] = reordered.splice(index, 1)
+  reordered.splice(nextIndex, 0, moving)
+  try {
+    await store.reorderOutline(reordered.map((item) => item.id))
+  } catch {
+    // The store owns the visible error state; keep the click handler settled.
+  }
+}
+
+function onOutlineDragStart(itemId: string) {
+  dragOutlineItemId.value = itemId
+}
+
+async function onOutlineDrop(targetId: string) {
+  if (!dragOutlineItemId.value || dragOutlineItemId.value === targetId) return
+  const reordered = [...store.outline]
+  const from = reordered.findIndex((item) => item.id === dragOutlineItemId.value)
+  const to = reordered.findIndex((item) => item.id === targetId)
+  if (from < 0 || to < 0) return
+  const [moving] = reordered.splice(from, 1)
+  reordered.splice(to, 0, moving)
+  dragOutlineItemId.value = null
+  try {
+    await store.reorderOutline(reordered.map((item) => item.id))
+  } catch {
+    // The store owns the visible error state; keep the drop handler settled.
+  }
+}
+
+async function openLinkedOutlineArticle() {
+  if (!store.selectedOutlineItem?.entry_id) return
+  await router.push({
+    name: 'articles',
+    query: { id: store.selectedOutlineItem.entry_id },
+  })
+}
 </script>
 
 <template>
@@ -323,9 +541,34 @@ async function onDrop(targetId: string) {
                 <span class="rounded-full bg-stone-200/70 px-3 py-1">
                   {{ t('collections.wordCount', { count: store.collectionWordCount }) }}
                 </span>
+                <span class="rounded-full bg-stone-200/70 px-3 py-1">
+                  {{ t('collectionOutline.itemCount', { count: store.outline.length }) }}
+                </span>
                 <span v-if="savingMeta" class="rounded-full bg-blue-100 px-3 py-1 text-blue-700">
                   {{ t('common.saving') }}
                 </span>
+              </div>
+              <div class="inline-flex rounded-xl bg-stone-100 p-1 text-sm font-semibold text-stone-600">
+                <button
+                  type="button"
+                  :class="[
+                    'rounded-lg px-3 py-1.5 transition',
+                    viewMode === 'manuscript' ? 'bg-white text-stone-950 shadow-sm' : 'hover:text-stone-900'
+                  ]"
+                  @click="viewMode = 'manuscript'"
+                >
+                  {{ t('collectionOutline.manuscriptTab') }}
+                </button>
+                <button
+                  type="button"
+                  :class="[
+                    'rounded-lg px-3 py-1.5 transition',
+                    viewMode === 'outline' ? 'bg-white text-stone-950 shadow-sm' : 'hover:text-stone-900'
+                  ]"
+                  @click="viewMode = 'outline'"
+                >
+                  {{ t('collectionOutline.outlineTab') }}
+                </button>
               </div>
             </div>
             <div class="flex flex-wrap justify-end gap-2">
@@ -386,6 +629,7 @@ async function onDrop(targetId: string) {
       </header>
 
       <div class="flex-1 min-h-0 flex overflow-hidden">
+        <template v-if="viewMode === 'manuscript'">
         <section
           class="shrink-0 overflow-y-auto border-r border-stone-200 p-5"
           :style="collectionArticlePane.paneStyle.value"
@@ -499,6 +743,214 @@ async function onDrop(targetId: string) {
             {{ t('collections.selectArticle') }}
           </div>
         </section>
+        </template>
+
+        <template v-else>
+          <section
+            class="shrink-0 overflow-y-auto border-r border-stone-200 bg-[#fbf7ef] p-5"
+            :style="collectionArticlePane.paneStyle.value"
+            data-testid="collection-outline-pane"
+          >
+            <div class="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('collectionOutline.kicker') }}</p>
+                <h3 class="mt-1 text-lg font-semibold text-stone-900">{{ t('collectionOutline.title') }}</h3>
+              </div>
+              <button
+                class="rounded-xl bg-stone-900 px-3 py-2 text-xs font-semibold text-white hover:bg-stone-700"
+                @click="createOutlineItem('scene')"
+              >
+                {{ t('collectionOutline.newItem') }}
+              </button>
+            </div>
+            <div class="mb-4 grid grid-cols-2 gap-2">
+              <button class="rounded-xl bg-white px-3 py-2 text-xs text-stone-700 ring-1 ring-stone-200" @click="createOutlineItem('part')">
+                {{ t('collectionOutline.newPart') }}
+              </button>
+              <button class="rounded-xl bg-white px-3 py-2 text-xs text-stone-700 ring-1 ring-stone-200" @click="createOutlineItem('chapter')">
+                {{ t('collectionOutline.newChapter') }}
+              </button>
+            </div>
+            <div v-if="outlineActionError || store.error" class="mb-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
+              {{ outlineActionError || store.error }}
+            </div>
+            <div v-if="store.outlineLoading" class="rounded-xl bg-white/70 p-4 text-sm text-stone-400">
+              {{ t('common.loading') }}
+            </div>
+            <div v-else-if="!store.outline.length" class="rounded-2xl border border-dashed border-stone-300 bg-white/70 p-6 text-center">
+              <div class="text-sm font-semibold text-stone-700">{{ t('collectionOutline.emptyTitle') }}</div>
+              <p class="mt-2 text-xs leading-5 text-stone-500">{{ t('collectionOutline.emptyHint') }}</p>
+            </div>
+            <div v-else class="space-y-2">
+              <article
+                v-for="(item, index) in store.outline"
+                :key="item.id"
+                draggable="true"
+                @dragstart="onOutlineDragStart(item.id)"
+                @dragover.prevent
+                @drop="onOutlineDrop(item.id)"
+                @click="selectOutlineItem(item.id)"
+                :class="[
+                  'group cursor-pointer rounded-2xl border bg-white p-4 shadow-sm transition-all',
+                  store.selectedOutlineItemId === item.id
+                    ? 'border-indigo-300 shadow-md'
+                    : 'border-stone-200 hover:border-stone-300 hover:shadow-md'
+                ]"
+              >
+                <div class="flex items-start gap-3">
+                  <div class="w-7 shrink-0 rounded-full bg-stone-100 py-1 text-center text-xs font-semibold text-stone-500">
+                    {{ index + 1 }}
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <h4 class="min-w-0 truncate font-semibold text-stone-900">{{ item.title || t('collectionOutline.untitled') }}</h4>
+                      <span class="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] text-indigo-700">
+                        {{ outlineTypeLabel(item.item_type) }}
+                      </span>
+                      <span class="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] text-stone-500">
+                        {{ outlineStatusLabel(item.status) }}
+                      </span>
+                    </div>
+                    <p class="mt-2 line-clamp-2 text-sm leading-6 text-stone-600">
+                      {{ item.summary || t('collectionOutline.noSummary') }}
+                    </p>
+                    <div class="mt-3 flex flex-wrap gap-1.5">
+                      <span v-if="item.entry_id" class="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
+                        {{ t('collectionOutline.linked') }}
+                      </span>
+                      <span v-if="item.target_word_count" class="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
+                        {{ item.target_word_count }}
+                      </span>
+                      <span v-for="tag in item.tags.slice(0, 3)" :key="`${item.id}-${tag}`" class="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] text-stone-500">
+                        {{ tag }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div class="mt-3 flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  <button
+                    class="rounded-lg px-2 py-1 text-xs text-stone-500 hover:bg-stone-100 disabled:opacity-30"
+                    :disabled="index === 0"
+                    @click.stop="moveOutlineItem(item.id, -1)"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    class="rounded-lg px-2 py-1 text-xs text-stone-500 hover:bg-stone-100 disabled:opacity-30"
+                    :disabled="index === store.outline.length - 1"
+                    @click.stop="moveOutlineItem(item.id, 1)"
+                  >
+                    ↓
+                  </button>
+                </div>
+              </article>
+            </div>
+          </section>
+          <PaneResizeHandle data-testid="collections-outline-resizer" @pointerdown="collectionArticlePane.startResize" />
+          <section class="flex-1 overflow-y-auto p-8" data-testid="collection-outline-detail">
+            <div v-if="store.selectedOutlineItem" class="mx-auto max-w-4xl space-y-5">
+              <div class="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
+                <div class="mb-5 flex items-start justify-between gap-4">
+                  <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('collectionOutline.detailKicker') }}</p>
+                    <h3 class="mt-1 text-2xl font-semibold text-stone-900">{{ t('collectionOutline.detailTitle') }}</h3>
+                  </div>
+                  <div class="flex gap-2">
+                    <button class="rounded-xl bg-stone-100 px-3 py-2 text-sm text-stone-700" @click="createArticleFromOutline">
+                      {{ t('collectionOutline.createArticle') }}
+                    </button>
+                    <button class="rounded-xl bg-stone-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40" :disabled="outlineSaving" @click="saveOutlineItem">
+                      {{ outlineSaving ? t('common.saving') : t('common.save') }}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-2">
+                  <label class="md:col-span-2">
+                    <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldTitle') }}</span>
+                    <input v-model="outlineDraftTitle" class="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" />
+                  </label>
+                  <label>
+                    <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldType') }}</span>
+                    <select v-model="outlineDraftType" class="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200">
+                      <option v-for="option in outlineTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldStatus') }}</span>
+                    <select v-model="outlineDraftStatus" class="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200">
+                      <option v-for="option in outlineStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldEntry') }}</span>
+                    <select v-model="outlineDraftEntryId" class="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200">
+                      <option value="">{{ t('collectionOutline.noLinkedArticle') }}</option>
+                      <option v-for="article in allArticles" :key="article.id" :value="article.id">
+                        {{ article.title || t('articles.untitled') }}
+                      </option>
+                    </select>
+                  </label>
+                  <label>
+                    <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldTargetWords') }}</span>
+                    <input v-model.number="outlineDraftTargetWords" type="number" min="0" class="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" />
+                  </label>
+                  <label class="md:col-span-2">
+                    <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldSummary') }}</span>
+                    <textarea v-model="outlineDraftSummary" rows="4" class="w-full resize-none rounded-xl border border-stone-200 px-3 py-2 text-sm leading-6 outline-none focus:ring-2 focus:ring-indigo-200" />
+                  </label>
+                  <label>
+                    <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldPov') }}</span>
+                    <input v-model="outlineDraftPov" class="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" />
+                  </label>
+                  <label>
+                    <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldTimeline') }}</span>
+                    <input v-model="outlineDraftTimeline" class="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" />
+                  </label>
+                  <label>
+                    <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldSetting') }}</span>
+                    <input v-model="outlineDraftSetting" class="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" />
+                  </label>
+                  <label>
+                    <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldTags') }}</span>
+                    <input v-model="outlineDraftTags" class="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" :placeholder="t('collectionOutline.tagsPlaceholder')" />
+                  </label>
+                  <label class="md:col-span-2">
+                    <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldNotes') }}</span>
+                    <textarea v-model="outlineDraftNotes" rows="6" class="w-full resize-none rounded-xl border border-stone-200 px-3 py-2 text-sm leading-6 outline-none focus:ring-2 focus:ring-indigo-200" :placeholder="t('collectionOutline.notesPlaceholder')" />
+                  </label>
+                </div>
+              </div>
+
+              <div class="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <h4 class="font-semibold text-stone-900">{{ t('collectionOutline.linkedArticle') }}</h4>
+                    <p class="mt-1 text-sm text-stone-500">
+                      {{ outlineLinkedArticle?.title || t('collectionOutline.noLinkedArticle') }}
+                    </p>
+                  </div>
+                  <button
+                    class="rounded-xl bg-stone-100 px-3 py-2 text-sm text-stone-700 disabled:opacity-40"
+                    :disabled="!store.selectedOutlineItem.entry_id"
+                    @click="openLinkedOutlineArticle"
+                  >
+                    {{ t('collectionOutline.openArticle') }}
+                  </button>
+                </div>
+              </div>
+
+              <div class="flex justify-between">
+                <button class="rounded-xl bg-red-50 px-4 py-2 text-sm text-red-700 hover:bg-red-100" @click="deleteSelectedOutlineItem">
+                  {{ t('collectionOutline.deleteItem') }}
+                </button>
+              </div>
+            </div>
+            <div v-else class="mt-20 text-center text-stone-400">
+              {{ t('collectionOutline.selectItem') }}
+            </div>
+          </section>
+        </template>
       </div>
     </main>
 

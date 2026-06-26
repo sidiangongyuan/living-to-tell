@@ -15,7 +15,9 @@ from starlette.background import BackgroundTask
 
 from deps import get_container
 from writer.app.container import AppContainer
+from writer.domain.enums import VersionType
 from writer.domain.models.entry import Entry as DomainEntry
+from writer.domain.models.entry_version import EntryVersion as DomainEntryVersion
 from writer.services.epigraph import detect_epigraph, strip_epigraph
 
 router = APIRouter(prefix="/api/articles", tags=["articles"])
@@ -46,6 +48,35 @@ class EntryUpdate(BaseModel):
     tags: Optional[list[str]] = None
 
 
+class EntryVersionOut(BaseModel):
+    id: str
+    entry_id: str
+    version_type: str
+    content: str
+    title_snapshot: str
+    tags: list[str]
+    label: str
+    reason: str
+    word_count: int
+    char_count: int
+    created_at: Optional[str]
+    provider: Optional[str]
+    model: Optional[str]
+
+
+class EntryVersionCreate(BaseModel):
+    version_type: str = VersionType.MANUAL_CHECKPOINT.value
+    label: str = ""
+    provider: Optional[str] = None
+    model: Optional[str] = None
+
+
+class EntryVersionRestoreOut(BaseModel):
+    entry: EntryOut
+    snapshot_version_id: Optional[str]
+    was_noop: bool
+
+
 def _to_dto(e: DomainEntry) -> EntryOut:
     return EntryOut(
         id=e.id,
@@ -57,6 +88,35 @@ def _to_dto(e: DomainEntry) -> EntryOut:
         tags=e.tags,
         archived_at=e.archived_at,
         curation_status=e.curation_status,
+    )
+
+
+def _parse_tags_snapshot(tags_snapshot: str) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for part in (tags_snapshot or "").split(","):
+        tag = part.strip()
+        if tag and tag.lower() not in seen:
+            seen.add(tag.lower())
+            result.append(tag)
+    return result
+
+
+def _version_to_dto(version: DomainEntryVersion) -> EntryVersionOut:
+    return EntryVersionOut(
+        id=version.id,
+        entry_id=version.entry_id,
+        version_type=version.version_type,
+        content=version.content,
+        title_snapshot=version.title_snapshot,
+        tags=_parse_tags_snapshot(version.tags_snapshot),
+        label=version.label,
+        reason=version.reason,
+        word_count=version.word_count,
+        char_count=version.char_count,
+        created_at=version.created_at,
+        provider=version.provider,
+        model=version.model,
     )
 
 
@@ -176,6 +236,97 @@ def export_entry(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         background=BackgroundTask(_cleanup_temp_file, output),
     )
+
+
+@router.get("/{entry_id}/versions", response_model=list[EntryVersionOut])
+def list_entry_versions(
+    entry_id: str,
+    container: AppContainer = Depends(get_container),
+) -> list[EntryVersionOut]:
+    _entry_or_404(entry_id, container)
+    return [
+        _version_to_dto(version)
+        for version in container.version_history_service.list_history(entry_id)
+    ]
+
+
+@router.post("/{entry_id}/versions", response_model=EntryVersionOut, status_code=201)
+def create_entry_version(
+    entry_id: str,
+    data: EntryVersionCreate,
+    container: AppContainer = Depends(get_container),
+) -> EntryVersionOut:
+    _entry_or_404(entry_id, container)
+    version_type = (data.version_type or VersionType.MANUAL_CHECKPOINT.value).strip()
+    try:
+        if version_type == VersionType.AI_BEFORE_APPLY.value:
+            version = container.version_history_service.save_ai_before_apply(
+                entry_id,
+                label=data.label,
+                provider=data.provider,
+                model=data.model,
+            )
+        elif version_type == VersionType.MANUAL_CHECKPOINT.value:
+            version = container.version_history_service.save_manual_checkpoint(
+                entry_id,
+                label=data.label,
+            )
+        else:
+            raise ValueError("Unsupported version type")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return _version_to_dto(version)
+
+
+@router.post("/{entry_id}/versions/{version_id}/restore", response_model=EntryVersionRestoreOut)
+def restore_entry_version(
+    entry_id: str,
+    version_id: str,
+    container: AppContainer = Depends(get_container),
+) -> EntryVersionRestoreOut:
+    try:
+        outcome = container.version_history_service.restore(entry_id, version_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    entry = _entry_or_404(entry_id, container)
+    return EntryVersionRestoreOut(
+        entry=_to_dto(entry),
+        snapshot_version_id=outcome.snapshot_version_id,
+        was_noop=outcome.was_noop,
+    )
+
+
+@router.post("/{entry_id}/versions/{version_id}/clone", response_model=EntryOut, status_code=201)
+def clone_entry_version(
+    entry_id: str,
+    version_id: str,
+    container: AppContainer = Depends(get_container),
+) -> EntryOut:
+    _entry_or_404(entry_id, container)
+    version = container.version_repository.get(version_id)
+    if version is None or version.entry_id != entry_id:
+        raise HTTPException(404, "Version not found")
+    base_title = (version.title_snapshot or "").strip() or _entry_or_404(entry_id, container).title
+    title = f"{base_title or '未命名文章'}（历史版本）"
+    entry = container.entry_repository.create(
+        title=title,
+        body=version.content,
+        tags=_parse_tags_snapshot(version.tags_snapshot),
+    )
+    return _to_dto(entry)
+
+
+@router.delete("/{entry_id}/versions/{version_id}", status_code=204)
+def delete_entry_version(
+    entry_id: str,
+    version_id: str,
+    container: AppContainer = Depends(get_container),
+):
+    _entry_or_404(entry_id, container)
+    try:
+        container.version_history_service.delete_version(entry_id, version_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
 
 
 @router.post("", response_model=EntryOut, status_code=201)

@@ -57,6 +57,7 @@ def test_list_history_newest_first(svc, container):
 def test_version_type_label_known_types():
     assert VersionHistoryService.version_type_label("original") == "Original"
     assert VersionHistoryService.version_type_label("ai_polish") == "AI Polish"
+    assert VersionHistoryService.version_type_label("ai_before_apply") == "Before AI Apply"
     assert VersionHistoryService.version_type_label("manual_checkpoint") == "Checkpoint"
     assert VersionHistoryService.version_type_label("manual_snapshot") == "Snapshot (pre-restore)"
 
@@ -70,13 +71,34 @@ def test_version_type_label_unknown_falls_back_to_raw():
 # ------------------------------------------------------------------
 
 def test_save_manual_checkpoint_persists_current_body(svc, container):
-    entry = container.entry_repository.create(title="t", body="checkpoint body")
+    entry = container.entry_repository.create(title="t", body="checkpoint body", tags=["结构"])
 
-    version = svc.save_manual_checkpoint(entry.id)
+    version = svc.save_manual_checkpoint(entry.id, label="第一章定稿")
 
     assert version.version_type == VersionType.MANUAL_CHECKPOINT.value
     assert version.content == "checkpoint body"
+    assert version.title_snapshot == "t"
+    assert version.tags_snapshot == "结构"
+    assert version.label == "第一章定稿"
+    assert version.word_count > 0
     assert svc.list_history(entry.id)[0].id == version.id
+
+
+def test_save_ai_before_apply_records_current_body(svc, container):
+    entry = container.entry_repository.create(title="AI Target", body="before ai")
+
+    version = svc.save_ai_before_apply(
+        entry.id,
+        label="润色前",
+        provider="opencode",
+        model="opencode/deepseek-v4-flash-free",
+    )
+
+    assert version.version_type == VersionType.AI_BEFORE_APPLY.value
+    assert version.content == "before ai"
+    assert version.label == "润色前"
+    assert version.provider == "opencode"
+    assert version.model == "opencode/deepseek-v4-flash-free"
 
 
 def test_save_manual_checkpoint_raises_for_missing_entry(svc):

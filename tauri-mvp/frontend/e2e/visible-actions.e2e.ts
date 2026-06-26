@@ -119,20 +119,27 @@ async function mockVisibleActionApi(page: Page) {
     await route.fulfill({
       json: {
         app_name: 'Living to Tell',
-        version: '0.1.11',
+        version: '0.1.12',
         api_version: '2.0.0',
-        capabilities: ['data_location', 'ai_chat_settings', 'ai_task_presets', 'update_check'],
+        capabilities: [
+          'data_location',
+          'ai_chat_settings',
+          'ai_task_presets',
+          'update_check',
+          'article_versions',
+          'collection_outline',
+        ],
       },
     })
   })
   await page.route('**/api/app/update-check*', async (route) => {
     await route.fulfill({
       json: {
-        current_version: '0.1.11',
-        latest_version: '0.1.11',
-        latest_tag: 'living-to-tell-v0.1.11',
-        release_name: 'Living to Tell Preview 0.1.11',
-        release_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.11',
+        current_version: '0.1.12',
+        latest_version: '0.1.12',
+        latest_tag: 'living-to-tell-v0.1.12',
+        release_name: 'Living to Tell Preview 0.1.12',
+        release_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.12',
         published_at: '2026-06-25T03:03:04Z',
         release_notes: '',
         source: 'github_releases_latest',
@@ -140,8 +147,8 @@ async function mockVisibleActionApi(page: Page) {
         message: '当前已是最新版本。',
         checked_at: '2026-06-25T03:05:06Z',
         cached: false,
-        download_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.11/LivingToTell_0.1.11_x64-setup.exe',
-        download_name: 'LivingToTell_0.1.11_x64-setup.exe',
+        download_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.12/LivingToTell_0.1.12_x64-setup.exe',
+        download_name: 'LivingToTell_0.1.12_x64-setup.exe',
       },
     })
   })
@@ -178,6 +185,45 @@ async function mockVisibleActionApi(page: Page) {
       return
     }
     await route.fulfill({ json: [openNote] })
+  })
+  await page.route('**/api/articles/*/versions', async (route) => {
+    const request = route.request()
+    const entryId = new URL(request.url()).pathname.split('/')[3] ?? article.id
+    if (request.method() === 'POST') {
+      const body = request.postDataJSON() as { version_type?: string; label?: string | null }
+      await route.fulfill({
+        status: 201,
+        json: {
+          id: `version-${Date.now()}`,
+          entry_id: entryId,
+          version_type: body.version_type ?? 'manual_checkpoint',
+          content: entryId === articleB.id ? articleB.body : article.body,
+          title_snapshot: entryId === articleB.id ? articleB.title : article.title,
+          tags: entryId === articleB.id ? articleB.tags : article.tags,
+          label: body.label ?? '',
+          reason: '',
+          word_count: 2,
+          char_count: (entryId === articleB.id ? articleB.body : article.body).length,
+          created_at: null,
+          provider: null,
+          model: null,
+        },
+      })
+      return
+    }
+    await route.fulfill({ json: [] })
+  })
+  await page.route('**/api/articles/*/versions/*', async (route) => {
+    const request = route.request()
+    if (request.method() === 'DELETE') {
+      await route.fulfill({ status: 204 })
+      return
+    }
+    if (request.method() === 'POST') {
+      await route.fulfill({ json: { entry: article, snapshot_version_id: 'snapshot-a', was_noop: false } })
+      return
+    }
+    await route.fulfill({ json: [] })
   })
   await page.route('**/api/articles/*', async (route) => {
     const request = route.request()
@@ -226,6 +272,69 @@ async function mockVisibleActionApi(page: Page) {
     }
     if (url.pathname === '/api/collections/collection-a/articles/article-a') {
       await route.fulfill({ status: 204 })
+      return
+    }
+    if (url.pathname === '/api/collections/collection-a/outline') {
+      if (request.method() === 'POST') {
+        const body = request.postDataJSON() as Record<string, unknown>
+        await route.fulfill({
+          status: 201,
+          json: {
+            id: 'outline-created',
+            collection_id: collection.id,
+            title: body.title ?? '新大纲项',
+            item_type: body.item_type ?? 'scene',
+            status: body.status ?? 'planned',
+            summary: body.summary ?? '',
+            pov: body.pov ?? '',
+            timeline: body.timeline ?? '',
+            setting: body.setting ?? '',
+            tags: body.tags ?? [],
+            notes: body.notes ?? '',
+            target_word_count: body.target_word_count ?? null,
+            entry_id: body.entry_id ?? null,
+            parent_id: body.parent_id ?? null,
+            sort_order: 0,
+            created_at: null,
+            updated_at: null,
+          },
+        })
+        return
+      }
+      await route.fulfill({ json: [] })
+      return
+    }
+    if (url.pathname === '/api/collections/collection-a/outline/order') {
+      await route.fulfill({ json: [] })
+      return
+    }
+    if (url.pathname.startsWith('/api/collections/collection-a/outline/')) {
+      if (request.method() === 'DELETE') {
+        await route.fulfill({ status: 204 })
+        return
+      }
+      await route.fulfill({
+        json: {
+          id: url.pathname.split('/').pop() ?? 'outline-created',
+          collection_id: collection.id,
+          title: '大纲项',
+          item_type: 'scene',
+          status: 'planned',
+          summary: '',
+          pov: '',
+          timeline: '',
+          setting: '',
+          tags: [],
+          notes: '',
+          target_word_count: null,
+          entry_id: null,
+          parent_id: null,
+          sort_order: 0,
+          created_at: null,
+          updated_at: null,
+          ...(request.method() === 'PUT' ? request.postDataJSON() as Record<string, unknown> : {}),
+        },
+      })
       return
     }
     if (url.pathname === '/api/collections/collection-a') {

@@ -157,6 +157,41 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "ALTER TABLE ai_cards ADD COLUMN tags_text TEXT NOT NULL DEFAULT ''"
         )
 
+    version_cols = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(entry_versions)")
+    }
+    if "title_snapshot" not in version_cols:
+        conn.execute(
+            "ALTER TABLE entry_versions ADD COLUMN title_snapshot TEXT NOT NULL DEFAULT ''"
+        )
+    if "tags_snapshot" not in version_cols:
+        conn.execute(
+            "ALTER TABLE entry_versions ADD COLUMN tags_snapshot TEXT NOT NULL DEFAULT ''"
+        )
+    if "label" not in version_cols:
+        conn.execute(
+            "ALTER TABLE entry_versions ADD COLUMN label TEXT NOT NULL DEFAULT ''"
+        )
+    if "reason" not in version_cols:
+        conn.execute(
+            "ALTER TABLE entry_versions ADD COLUMN reason TEXT NOT NULL DEFAULT ''"
+        )
+    if "word_count" not in version_cols:
+        conn.execute(
+            "ALTER TABLE entry_versions ADD COLUMN word_count INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.execute(
+            "UPDATE entry_versions SET word_count = length(content) WHERE word_count = 0"
+        )
+    if "char_count" not in version_cols:
+        conn.execute(
+            "ALTER TABLE entry_versions ADD COLUMN char_count INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.execute(
+            "UPDATE entry_versions SET char_count = length(content) WHERE char_count = 0"
+        )
+
 
 def _ensure_reference_passages_fts_schema(
     conn: sqlite3.Connection, *, force_rebuild: bool = False
@@ -385,6 +420,18 @@ def _ensure_post_migration_indexes(conn: sqlite3.Connection) -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_collection_entries_entry "
             "ON collection_entries (entry_id)"
+        )
+    collection_outline_items = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'collection_outline_items'"
+    ).fetchone()
+    if collection_outline_items is not None:
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_collection_outline_collection_order "
+            "ON collection_outline_items (collection_id, sort_order)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_collection_outline_entry "
+            "ON collection_outline_items (entry_id)"
         )
 
 

@@ -41,7 +41,7 @@ async function mockWriterApi(page: MockedPage) {
     await route.fulfill({
       json: {
         app_name: 'Living to Tell',
-        version: '0.1.11',
+        version: '0.1.12',
         api_version: '2.0.0',
         capabilities: ['data_location', 'ai_chat_settings', 'ai_task_presets', 'update_check'],
       },
@@ -50,11 +50,11 @@ async function mockWriterApi(page: MockedPage) {
   await page.route('**/api/app/update-check*', async (route) => {
     await route.fulfill({
       json: {
-        current_version: '0.1.11',
-        latest_version: '0.1.11',
-        latest_tag: 'living-to-tell-v0.1.11',
-        release_name: 'Living to Tell Preview 0.1.11',
-        release_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.11',
+        current_version: '0.1.12',
+        latest_version: '0.1.12',
+        latest_tag: 'living-to-tell-v0.1.12',
+        release_name: 'Living to Tell Preview 0.1.12',
+        release_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.12',
         published_at: '2026-06-25T03:03:04Z',
         release_notes: '',
         source: 'github_releases_latest',
@@ -62,8 +62,8 @@ async function mockWriterApi(page: MockedPage) {
         message: '当前已是最新版本。',
         checked_at: '2026-06-25T03:05:06Z',
         cached: false,
-        download_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.11/LivingToTell_0.1.11_x64-setup.exe',
-        download_name: 'LivingToTell_0.1.11_x64-setup.exe',
+        download_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.12/LivingToTell_0.1.12_x64-setup.exe',
+        download_name: 'LivingToTell_0.1.12_x64-setup.exe',
       },
     })
   })

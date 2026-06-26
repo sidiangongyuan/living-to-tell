@@ -35,6 +35,44 @@ export interface CollectionArticle {
   updated_at: string | null
 }
 
+export type OutlineItemType = 'part' | 'chapter' | 'scene' | 'note'
+export type OutlineItemStatus = 'idea' | 'drafting' | 'revising' | 'done' | 'parked'
+
+export interface CollectionOutlineItem {
+  id: string
+  collection_id: string
+  parent_id: string | null
+  entry_id: string | null
+  title: string
+  item_type: OutlineItemType
+  status: OutlineItemStatus
+  summary: string
+  notes: string
+  pov: string
+  setting: string
+  timeline: string
+  tags: string[]
+  target_word_count: number | null
+  sort_order: number
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface CollectionOutlineItemInput {
+  parent_id?: string | null
+  entry_id?: string | null
+  title: string
+  item_type: OutlineItemType
+  status: OutlineItemStatus
+  summary?: string
+  notes?: string
+  pov?: string
+  setting?: string
+  timeline?: string
+  tags?: string[]
+  target_word_count?: number | null
+}
+
 export type CollectionExportFormat = 'txt' | 'md' | 'docx'
 
 export const collectionsApi = {
@@ -123,5 +161,44 @@ export const collectionsApi = {
       await handleResponse(res)
     }
     return res.blob()
+  },
+
+  async listOutline(collectionId: string): Promise<CollectionOutlineItem[]> {
+    const res = await apiFetch(`/api/collections/${collectionId}/outline`)
+    return handleResponse(res)
+  },
+
+  async createOutlineItem(collectionId: string, data: CollectionOutlineItemInput): Promise<CollectionOutlineItem> {
+    const res = await apiFetch(`/api/collections/${collectionId}/outline`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async updateOutlineItem(collectionId: string, itemId: string, data: CollectionOutlineItemInput): Promise<CollectionOutlineItem> {
+    const res = await apiFetch(`/api/collections/${collectionId}/outline/${itemId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async deleteOutlineItem(collectionId: string, itemId: string): Promise<void> {
+    const res = await apiFetch(`/api/collections/${collectionId}/outline/${itemId}`, {
+      method: 'DELETE',
+    })
+    return handleResponse(res)
+  },
+
+  async reorderOutline(collectionId: string, itemIds: string[]): Promise<CollectionOutlineItem[]> {
+    const res = await apiFetch(`/api/collections/${collectionId}/outline/order`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_ids: itemIds }),
+    })
+    return handleResponse(res)
   },
 }

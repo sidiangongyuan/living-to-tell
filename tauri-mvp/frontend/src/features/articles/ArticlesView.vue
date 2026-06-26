@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useArticlesStore } from './store'
 import { useSettingsStore } from '../../stores/settings'
 import { collectionsApi, type Collection } from '../../api/collections'
-import { articlesApi, type ArticleExportFormat } from '../../api/articles'
+import { articlesApi, type ArticleExportFormat, type Entry } from '../../api/articles'
 import { notesApi, type WritingNote } from '../../api/notes'
 import { motifsApi, type MotifExcerpt, type MotifNode } from '../../api/motifs'
 import { errorMessage, isHttpStatus } from '../../api/base'
@@ -19,6 +19,7 @@ import FindReplace from '../../components/FindReplace.vue'
 import TagSelector from '../../components/TagSelector.vue'
 import PaneResizeHandle from '../../components/PaneResizeHandle.vue'
 import ContextMenu from '../../components/ContextMenu.vue'
+import ArticleVersionsPanel from './ArticleVersionsPanel.vue'
 import { useI18n } from '../../i18n'
 import { saveBlobWithDialog } from '../../utils/exportFile'
 import { collectArticleTags, countParagraphs, filterArticlesByTag } from './articleList'
@@ -718,6 +719,23 @@ async function flushPendingArticleSave(): Promise<boolean> {
     pendingArticleSave.value = snapshot
     return false
   }
+}
+
+async function handleVersionRestored(entry: Entry) {
+  if (!entry) return
+  store.replaceEntry(entry)
+  pendingArticleSave.value = null
+  syncDraftFromSelected()
+  await refreshArticleSideData(entry.id)
+}
+
+async function handleVersionCloned(entry: Entry) {
+  if (!entry) return
+  store.replaceEntry(entry)
+  saveLastSelectedArticleId(entry.id)
+  await router.replace({ name: 'articles', query: { id: entry.id } })
+  syncDraftFromSelected()
+  await refreshArticleSideData(entry.id)
 }
 
 async function handleSearch() {
@@ -2306,6 +2324,12 @@ watch(
               </div>
             </div>
           </section>
+
+          <ArticleVersionsPanel
+            :entry="store.selectedEntry"
+            @restored="handleVersionRestored"
+            @cloned="handleVersionCloned"
+          />
 
           <section data-testid="article-motif-anchors">
             <button

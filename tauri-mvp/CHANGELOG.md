@@ -1,5 +1,42 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.12 - Version History And Collection Outline (2026-06-26)
+
+### Added
+
+- Added article version history in the article context pane.
+- Added manual checkpoints with labels, article title snapshots, tag snapshots, word counts, and character counts.
+- Added automatic AI-before-apply snapshots so AI write-back actions preserve the previous manuscript body before updating an article.
+- Added pre-restore snapshots so restoring an old body still leaves a rollback point for the current body.
+- Added a paragraph-level comparison view for saved versions, with restore, clone-as-new, copy, and delete actions.
+- Added a collection-level outline tab for long-form projects.
+- Added outline items for part, chapter, scene, and note planning inside each collection.
+- Added outline status, summary, point of view, timeline, setting, tags, target word count, linked article, reorder, and delete support.
+- Added create-linked-article and link-existing-article flows from outline items.
+- Added backend capabilities for `article_versions` and `collection_outline`.
+
+### Changed
+
+- Collections now support both manuscript article ordering and project planning in the same collection surface, matching the model that a collection can be a novel, essay group, diary group, or other long-form container.
+- AI apply actions now use the shared article version API before mutating article content.
+- Existing article versions remain compatible; new metadata columns are added through the SQLite migration path.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest`
+- `npm test -- --run`
+- `npm run test:e2e`
+- `npm run build`
+- `cargo check --manifest-path tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.12_x64-setup.exe`
+  - SHA256: `8D5F15D102D12437EDEE06BF977E08FB864411E1BB7FDCD70EC1826B301D1E57`
+- `LivingToTell_0.1.12_x64_zh-CN.msi`
+  - SHA256: `0925169817F26B46986DBA8922621BF719FB548B85B1436417FFBFB51C6214C1`
+
 ## 0.1.11 - Update Buttons And Article Warning Fix (2026-06-26)
 
 ### Fixed

@@ -31,6 +31,12 @@ CREATE TABLE IF NOT EXISTS entry_versions (
     entry_id     TEXT NOT NULL,
     version_type TEXT NOT NULL,
     content      TEXT NOT NULL,
+    title_snapshot TEXT NOT NULL DEFAULT '',
+    tags_snapshot  TEXT NOT NULL DEFAULT '',
+    label       TEXT NOT NULL DEFAULT '',
+    reason      TEXT NOT NULL DEFAULT '',
+    word_count  INTEGER NOT NULL DEFAULT 0,
+    char_count  INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     provider     TEXT,
     model        TEXT,
@@ -299,6 +305,31 @@ CREATE INDEX IF NOT EXISTS idx_collection_entries_collection_order
     ON collection_entries (collection_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_collection_entries_entry
     ON collection_entries (entry_id);
+
+CREATE TABLE IF NOT EXISTS collection_outline_items (
+    id                TEXT PRIMARY KEY,
+    collection_id     TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    parent_id         TEXT REFERENCES collection_outline_items(id) ON DELETE SET NULL,
+    entry_id          TEXT REFERENCES entries(id) ON DELETE SET NULL,
+    title             TEXT NOT NULL DEFAULT '',
+    item_type         TEXT NOT NULL DEFAULT 'scene',
+    status            TEXT NOT NULL DEFAULT 'idea',
+    summary           TEXT NOT NULL DEFAULT '',
+    notes             TEXT NOT NULL DEFAULT '',
+    pov               TEXT NOT NULL DEFAULT '',
+    setting           TEXT NOT NULL DEFAULT '',
+    timeline          TEXT NOT NULL DEFAULT '',
+    tags_text         TEXT NOT NULL DEFAULT '',
+    target_word_count INTEGER,
+    sort_order        INTEGER NOT NULL DEFAULT 0,
+    created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_collection_outline_collection_order
+    ON collection_outline_items (collection_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_collection_outline_entry
+    ON collection_outline_items (entry_id);
 
 -- ---------------------------------------------------------------------------
 -- Motif star map: imagery nodes, saved excerpts, and multi-motif links.

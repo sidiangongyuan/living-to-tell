@@ -12,6 +12,7 @@ from starlette.background import BackgroundTask
 
 from deps import get_container
 from writer.app.container import AppContainer
+from writer.domain.models.collection_outline import CollectionOutlineItem
 from writer.domain.models.collection import Collection as DomainCollection
 from writer.domain.models.entry import Entry as DomainEntry
 
@@ -37,6 +38,45 @@ class CollectionUpdate(BaseModel):
     description: str = ""
 
 
+class OutlineItemOut(BaseModel):
+    id: str
+    collection_id: str
+    parent_id: Optional[str] = None
+    entry_id: Optional[str] = None
+    title: str
+    item_type: str
+    status: str
+    summary: str
+    notes: str
+    pov: str
+    setting: str
+    timeline: str
+    tags: list[str]
+    target_word_count: Optional[int] = None
+    sort_order: int
+    created_at: Optional[str]
+    updated_at: Optional[str]
+
+
+class OutlineItemCreate(BaseModel):
+    parent_id: Optional[str] = None
+    entry_id: Optional[str] = None
+    title: str = ""
+    item_type: str = "scene"
+    status: str = "idea"
+    summary: str = ""
+    notes: str = ""
+    pov: str = ""
+    setting: str = ""
+    timeline: str = ""
+    tags: list[str] = Field(default_factory=list)
+    target_word_count: Optional[int] = None
+
+
+class OutlineItemUpdate(OutlineItemCreate):
+    title: str
+
+
 class ArticleOut(BaseModel):
     id: str
     title: str
@@ -56,6 +96,10 @@ class AddArticlesRequest(BaseModel):
 
 class ReorderArticlesRequest(BaseModel):
     entry_ids: list[str] = Field(default_factory=list)
+
+
+class ReorderOutlineRequest(BaseModel):
+    item_ids: list[str] = Field(default_factory=list)
 
 
 class EntryCollectionsRequest(BaseModel):
@@ -114,6 +158,28 @@ def _entry_to_dto(entry: DomainEntry, *, sort_order: int = 0) -> ArticleOut:
         sort_order=sort_order,
         created_at=entry.created_at,
         updated_at=entry.updated_at,
+    )
+
+
+def _outline_to_dto(item: CollectionOutlineItem) -> OutlineItemOut:
+    return OutlineItemOut(
+        id=item.id,
+        collection_id=item.collection_id,
+        parent_id=item.parent_id,
+        entry_id=item.entry_id,
+        title=item.title,
+        item_type=item.item_type,
+        status=item.status,
+        summary=item.summary,
+        notes=item.notes,
+        pov=item.pov,
+        setting=item.setting,
+        timeline=item.timeline,
+        tags=item.tags,
+        target_word_count=item.target_word_count,
+        sort_order=item.sort_order,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
     )
 
 
@@ -261,6 +327,109 @@ def reorder_collection_articles(
     _collection_or_404(collection_id, container)
     container.collection_repository.reorder_entries(collection_id, data.entry_ids)
     return list_collection_articles(collection_id, container)
+
+
+@router.get("/{collection_id}/outline", response_model=list[OutlineItemOut])
+def list_collection_outline(
+    collection_id: str,
+    container: AppContainer = Depends(get_container),
+) -> list[OutlineItemOut]:
+    _collection_or_404(collection_id, container)
+    return [
+        _outline_to_dto(item)
+        for item in container.collection_outline_repository.list_for_collection(collection_id)
+    ]
+
+
+@router.post("/{collection_id}/outline", response_model=OutlineItemOut, status_code=201)
+def create_collection_outline_item(
+    collection_id: str,
+    data: OutlineItemCreate,
+    container: AppContainer = Depends(get_container),
+) -> OutlineItemOut:
+    _collection_or_404(collection_id, container)
+    try:
+        item = container.collection_outline_repository.create(
+            collection_id,
+            title=data.title,
+            item_type=data.item_type,
+            status=data.status,
+            summary=data.summary,
+            notes=data.notes,
+            parent_id=data.parent_id,
+            entry_id=data.entry_id,
+            pov=data.pov,
+            setting=data.setting,
+            timeline=data.timeline,
+            tags=data.tags,
+            target_word_count=data.target_word_count,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if item is None:
+        raise HTTPException(404, "Collection not found")
+    return _outline_to_dto(item)
+
+
+@router.put("/{collection_id}/outline/order", response_model=list[OutlineItemOut])
+def reorder_collection_outline(
+    collection_id: str,
+    data: ReorderOutlineRequest,
+    container: AppContainer = Depends(get_container),
+) -> list[OutlineItemOut]:
+    _collection_or_404(collection_id, container)
+    return [
+        _outline_to_dto(item)
+        for item in container.collection_outline_repository.reorder(
+            collection_id,
+            data.item_ids,
+        )
+    ]
+
+
+@router.put("/{collection_id}/outline/{item_id}", response_model=OutlineItemOut)
+def update_collection_outline_item(
+    collection_id: str,
+    item_id: str,
+    data: OutlineItemUpdate,
+    container: AppContainer = Depends(get_container),
+) -> OutlineItemOut:
+    _collection_or_404(collection_id, container)
+    try:
+        item = container.collection_outline_repository.update(
+            item_id,
+            title=data.title,
+            item_type=data.item_type,
+            status=data.status,
+            summary=data.summary,
+            notes=data.notes,
+            parent_id=data.parent_id,
+            entry_id=data.entry_id,
+            pov=data.pov,
+            setting=data.setting,
+            timeline=data.timeline,
+            tags=data.tags,
+            target_word_count=data.target_word_count,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if item is None or item.collection_id != collection_id:
+        raise HTTPException(404, "Outline item not found")
+    return _outline_to_dto(item)
+
+
+@router.delete("/{collection_id}/outline/{item_id}", status_code=204)
+def delete_collection_outline_item(
+    collection_id: str,
+    item_id: str,
+    container: AppContainer = Depends(get_container),
+):
+    _collection_or_404(collection_id, container)
+    if not container.collection_outline_repository.delete(
+        item_id,
+        collection_id=collection_id,
+    ):
+        raise HTTPException(404, "Outline item not found")
 
 
 @router.delete("/{collection_id}/articles/{entry_id}", status_code=204, response_class=Response)

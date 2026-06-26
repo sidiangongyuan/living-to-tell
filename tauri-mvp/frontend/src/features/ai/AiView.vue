@@ -657,6 +657,10 @@ async function applyResultToArticle(mode: 'replace' | 'insert_after') {
     const end = selection ? selection.end : bodyText.length
     if (!selection && mode === 'replace' && !confirm(t('ai.confirmReplace'))) return
     const edit = applyArticleBodyEdit(article.body || '', start, end, taskResult.value, mode)
+    await articlesApi.createVersion(article.id, {
+      version_type: 'ai_before_apply',
+      label: t('ai.beforeApplyVersionLabel'),
+    })
     await articlesApi.updateArticle(article.id, {
       title: article.title,
       body: edit.body,

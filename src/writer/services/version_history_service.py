@@ -27,6 +27,7 @@ _VERSION_LABELS: dict[str, str] = {
     VersionType.AI_POLISH.value: "AI Polish",
     VersionType.AI_EXPAND.value: "AI Expand",
     VersionType.AI_CONTINUE.value: "AI Continue",
+    VersionType.AI_BEFORE_APPLY.value: "Before AI Apply",
     VersionType.MANUAL_CHECKPOINT.value: "Checkpoint",
     VersionType.MANUAL_SNAPSHOT.value: "Snapshot (pre-restore)",
 }
@@ -65,7 +66,7 @@ class VersionHistoryService:
         """Return a user-friendly label for a raw version_type string."""
         return _VERSION_LABELS.get(version_type, version_type)
 
-    def save_manual_checkpoint(self, entry_id: str) -> EntryVersion:
+    def save_manual_checkpoint(self, entry_id: str, *, label: str = "") -> EntryVersion:
         """Persist the current live body as a user-requested checkpoint."""
         entry = self._entries.get(entry_id)
         if entry is None:
@@ -74,6 +75,34 @@ class VersionHistoryService:
             entry_id=entry_id,
             version_type=VersionType.MANUAL_CHECKPOINT.value,
             content=entry.body,
+            title_snapshot=entry.title,
+            tags_snapshot=", ".join(entry.tags),
+            label=label,
+            reason="manual",
+        )
+
+    def save_ai_before_apply(
+        self,
+        entry_id: str,
+        *,
+        label: str = "",
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> EntryVersion:
+        """Persist the live body before an AI result is written back."""
+        entry = self._entries.get(entry_id)
+        if entry is None:
+            raise ValueError(f"Entry {entry_id!r} not found")
+        return self._versions.add(
+            entry_id=entry_id,
+            version_type=VersionType.AI_BEFORE_APPLY.value,
+            content=entry.body,
+            title_snapshot=entry.title,
+            tags_snapshot=", ".join(entry.tags),
+            label=label,
+            reason="ai_before_apply",
+            provider=provider,
+            model=model,
         )
 
     def delete_version(self, entry_id: str, version_id: str) -> None:
@@ -120,6 +149,9 @@ class VersionHistoryService:
             entry_id=entry_id,
             version_type=VersionType.MANUAL_SNAPSHOT.value,
             content=entry.body,
+            title_snapshot=entry.title,
+            tags_snapshot=", ".join(entry.tags),
+            reason="pre_restore",
         )
 
         # Write the restored body; title stays unchanged.

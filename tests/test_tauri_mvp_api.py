@@ -34,7 +34,7 @@ def test_tauri_app_version_capabilities(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["app_name"] == "Living to Tell"
-    assert payload["version"] == "0.1.11"
+    assert payload["version"] == "0.1.12"
     assert payload["api_version"] == "2.0.0"
     assert {
         "data_location",
@@ -42,6 +42,8 @@ def test_tauri_app_version_capabilities(monkeypatch):
         "ai_task_presets",
         "motif_star_map",
         "update_check",
+        "article_versions",
+        "collection_outline",
     }.issubset(
         set(payload["capabilities"])
     )
@@ -65,19 +67,19 @@ def test_tauri_app_update_check_reports_latest_release(monkeypatch):
         def read(self):
             return json.dumps(
                 {
-                    "tag_name": "living-to-tell-v0.1.12",
-                    "name": "Living to Tell Preview 0.1.12",
-                    "html_url": "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.12",
+                    "tag_name": "living-to-tell-v0.1.13",
+                    "name": "Living to Tell Preview 0.1.13",
+                    "html_url": "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.13",
                     "published_at": "2026-06-26T01:02:03Z",
-                    "body": "## 0.1.12\n\nAdded update notifications.",
+                    "body": "## 0.1.13\n\nAdded update notifications.",
                     "assets": [
                         {
-                            "name": "LivingToTell_0.1.12_x64_zh-CN.msi",
-                            "browser_download_url": "https://example.test/LivingToTell_0.1.12_x64_zh-CN.msi",
+                            "name": "LivingToTell_0.1.13_x64_zh-CN.msi",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.13_x64_zh-CN.msi",
                         },
                         {
-                            "name": "LivingToTell_0.1.12_x64-setup.exe",
-                            "browser_download_url": "https://example.test/LivingToTell_0.1.12_x64-setup.exe",
+                            "name": "LivingToTell_0.1.13_x64-setup.exe",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.13_x64-setup.exe",
                         },
                     ],
                 }
@@ -100,11 +102,11 @@ def test_tauri_app_update_check_reports_latest_release(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "update_available"
-    assert payload["current_version"] == "0.1.11"
-    assert payload["latest_version"] == "0.1.12"
-    assert payload["release_name"] == "Living to Tell Preview 0.1.12"
-    assert payload["download_name"] == "LivingToTell_0.1.12_x64-setup.exe"
-    assert payload["download_url"] == "https://example.test/LivingToTell_0.1.12_x64-setup.exe"
+    assert payload["current_version"] == "0.1.12"
+    assert payload["latest_version"] == "0.1.13"
+    assert payload["release_name"] == "Living to Tell Preview 0.1.13"
+    assert payload["download_name"] == "LivingToTell_0.1.13_x64-setup.exe"
+    assert payload["download_url"] == "https://example.test/LivingToTell_0.1.13_x64-setup.exe"
     assert "下载安装包" in payload["message"]
     assert calls == [
         {
@@ -132,8 +134,103 @@ def test_tauri_app_update_check_returns_friendly_error(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "error"
-    assert payload["current_version"] == "0.1.11"
+    assert payload["current_version"] == "0.1.12"
     assert "暂时无法检查更新" in payload["message"]
+
+
+def test_tauri_article_versions_create_restore_clone(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    created = client.post(
+        "/api/articles",
+        json={"title": "版本测试", "body": "第一版正文", "tags": ["历史"]},
+    )
+    assert created.status_code == 201, created.text
+    article = created.json()
+
+    version = client.post(
+        f"/api/articles/{article['id']}/versions",
+        json={"version_type": "manual_checkpoint", "label": "第一版"},
+    )
+    assert version.status_code == 201, version.text
+    payload = version.json()
+    assert payload["content"] == "第一版正文"
+    assert payload["title_snapshot"] == "版本测试"
+    assert payload["tags"] == ["历史"]
+    assert payload["label"] == "第一版"
+
+    updated = client.put(
+        f"/api/articles/{article['id']}",
+        json={"title": "版本测试", "body": "第二版正文", "tags": ["历史"]},
+    )
+    assert updated.status_code == 200, updated.text
+
+    restore = client.post(f"/api/articles/{article['id']}/versions/{payload['id']}/restore")
+    assert restore.status_code == 200, restore.text
+    restore_payload = restore.json()
+    assert restore_payload["entry"]["body"] == "第一版正文"
+    assert restore_payload["snapshot_version_id"]
+
+    clone = client.post(f"/api/articles/{article['id']}/versions/{payload['id']}/clone")
+    assert clone.status_code == 201, clone.text
+    clone_payload = clone.json()
+    assert clone_payload["body"] == "第一版正文"
+    assert clone_payload["tags"] == ["历史"]
+    assert clone_payload["id"] != article["id"]
+
+
+def test_tauri_collection_outline_crud(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    collection = client.post(
+        "/api/collections",
+        json={"title": "长篇项目测试", "description": "大纲容器"},
+    )
+    assert collection.status_code == 201, collection.text
+    collection_id = collection.json()["id"]
+    article = client.post(
+        "/api/articles",
+        json={"title": "雨夜来信", "body": "正文", "tags": []},
+    ).json()
+
+    created = client.post(
+        f"/api/collections/{collection_id}/outline",
+        json={
+            "title": "雨夜来信",
+            "item_type": "scene",
+            "status": "drafting",
+            "summary": "一封信推动关系。",
+            "entry_id": article["id"],
+            "tags": ["爱情", "等待"],
+            "target_word_count": 2500,
+        },
+    )
+    assert created.status_code == 201, created.text
+    item = created.json()
+    assert item["tags"] == ["爱情", "等待"]
+    assert item["entry_id"] == article["id"]
+
+    listed = client.get(f"/api/collections/{collection_id}/outline")
+    assert listed.status_code == 200, listed.text
+    assert [row["id"] for row in listed.json()] == [item["id"]]
+
+    updated = client.put(
+        f"/api/collections/{collection_id}/outline/{item['id']}",
+        json={
+            **item,
+            "title": "雨夜来信修订",
+            "item_type": "chapter",
+            "status": "revising",
+            "tags": ["等待"],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["title"] == "雨夜来信修订"
+    assert updated.json()["item_type"] == "chapter"
+
+    delete = client.delete(f"/api/collections/{collection_id}/outline/{item['id']}")
+    assert delete.status_code == 204, delete.text
+    assert client.get(f"/api/collections/{collection_id}/outline").json() == []
 
 
 def test_tauri_ai_cards_do_not_seed_samples_and_crud_tags(monkeypatch):

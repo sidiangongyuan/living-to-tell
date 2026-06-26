@@ -5,19 +5,29 @@ import {
   type Collection,
   type CollectionArticle,
   type CollectionExportFormat,
+  type CollectionOutlineItem,
+  type CollectionOutlineItemInput,
 } from '../../api/collections'
+import { isHttpStatus } from '../../api/base'
 import { saveBlobWithDialog } from '../../utils/exportFile'
 
 export const useCollectionsStore = defineStore('collections', () => {
   const collections = ref<Collection[]>([])
   const articles = ref<CollectionArticle[]>([])
+  const outline = ref<CollectionOutlineItem[]>([])
   const selectedCollectionId = ref<string | null>(null)
   const selectedArticleId = ref<string | null>(null)
+  const selectedOutlineItemId = ref<string | null>(null)
   const loading = ref(false)
   const articlesLoading = ref(false)
+  const outlineLoading = ref(false)
   const error = ref<string | null>(null)
   const exportMessage = ref<string | null>(null)
   const exportingFormat = ref<CollectionExportFormat | null>(null)
+
+  function collectionErrorMessage(error: unknown, fallback: string): string {
+    return isHttpStatus(error, 404) ? fallback : error instanceof Error ? error.message : String(error)
+  }
 
   const selectedCollection = computed(() =>
     collections.value.find((c) => c.id === selectedCollectionId.value) ?? null
@@ -25,6 +35,10 @@ export const useCollectionsStore = defineStore('collections', () => {
 
   const selectedArticle = computed(() =>
     articles.value.find((a) => a.id === selectedArticleId.value) ?? null
+  )
+
+  const selectedOutlineItem = computed(() =>
+    outline.value.find((item) => item.id === selectedOutlineItemId.value) ?? null
   )
 
   const collectionWordCount = computed(() =>
@@ -40,13 +54,18 @@ export const useCollectionsStore = defineStore('collections', () => {
         selectedCollectionId.value = collections.value[0].id
       }
       if (selectedCollectionId.value) {
-        await loadArticles(selectedCollectionId.value)
+        await Promise.all([
+          loadArticles(selectedCollectionId.value),
+          loadOutline(selectedCollectionId.value),
+        ])
       } else {
         articles.value = []
+        outline.value = []
         selectedArticleId.value = null
+        selectedOutlineItemId.value = null
       }
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = collectionErrorMessage(e, '当前后台版本不支持作品集大纲。请退出应用后安装最新版本。')
     } finally {
       loading.value = false
     }
@@ -75,6 +94,28 @@ export const useCollectionsStore = defineStore('collections', () => {
     }
   }
 
+  async function loadOutline(collectionId = selectedCollectionId.value) {
+    if (!collectionId) return
+    outlineLoading.value = true
+    error.value = null
+    try {
+      outline.value = await collectionsApi.listOutline(collectionId)
+      const selectedStillExists = Boolean(
+        selectedOutlineItemId.value
+        && outline.value.some((item) => item.id === selectedOutlineItemId.value)
+      )
+      if (outline.value.length && !selectedStillExists) {
+        selectedOutlineItemId.value = outline.value[0].id
+      } else if (!outline.value.length) {
+        selectedOutlineItemId.value = null
+      }
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+    } finally {
+      outlineLoading.value = false
+    }
+  }
+
   async function createCollection(title: string, description = '') {
     error.value = null
     try {
@@ -82,10 +123,12 @@ export const useCollectionsStore = defineStore('collections', () => {
       collections.value.unshift(created)
       selectedCollectionId.value = created.id
       articles.value = []
+      outline.value = []
       selectedArticleId.value = null
+      selectedOutlineItemId.value = null
       return created
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = collectionErrorMessage(e, '当前后台版本不支持作品集大纲。请退出应用后安装最新版本。')
       throw e
     }
   }
@@ -98,7 +141,7 @@ export const useCollectionsStore = defineStore('collections', () => {
       if (idx !== -1) collections.value[idx] = updated
       return updated
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = collectionErrorMessage(e, '这个大纲条目已不存在，已刷新列表。')
       throw e
     }
   }
@@ -111,14 +154,19 @@ export const useCollectionsStore = defineStore('collections', () => {
       if (selectedCollectionId.value === id) {
         selectedCollectionId.value = collections.value.length ? collections.value[0].id : null
         if (selectedCollectionId.value) {
-          await loadArticles(selectedCollectionId.value)
+          await Promise.all([
+            loadArticles(selectedCollectionId.value),
+            loadOutline(selectedCollectionId.value),
+          ])
         } else {
           articles.value = []
+          outline.value = []
           selectedArticleId.value = null
+          selectedOutlineItemId.value = null
         }
       }
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = collectionErrorMessage(e, '这个大纲条目已不存在，已刷新列表。')
       throw e
     }
   }
@@ -133,7 +181,7 @@ export const useCollectionsStore = defineStore('collections', () => {
         ?? null
       await refreshSelectedCollection()
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = collectionErrorMessage(e, '当前后台版本不支持作品集大纲。请退出应用后安装最新版本。')
       throw e
     }
   }
@@ -177,6 +225,63 @@ export const useCollectionsStore = defineStore('collections', () => {
     }
   }
 
+  async function createOutlineItem(data: CollectionOutlineItemInput) {
+    if (!selectedCollectionId.value) return null
+    error.value = null
+    try {
+      const created = await collectionsApi.createOutlineItem(selectedCollectionId.value, data)
+      outline.value = [...outline.value, created].sort((a, b) => a.sort_order - b.sort_order)
+      selectedOutlineItemId.value = created.id
+      await refreshSelectedCollection()
+      return created
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+      throw e
+    }
+  }
+
+  async function updateOutlineItem(itemId: string, data: CollectionOutlineItemInput) {
+    if (!selectedCollectionId.value) return null
+    error.value = null
+    try {
+      const updated = await collectionsApi.updateOutlineItem(selectedCollectionId.value, itemId, data)
+      const idx = outline.value.findIndex((item) => item.id === itemId)
+      if (idx !== -1) outline.value[idx] = updated
+      await refreshSelectedCollection()
+      return updated
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+      throw e
+    }
+  }
+
+  async function deleteOutlineItem(itemId: string) {
+    if (!selectedCollectionId.value) return
+    error.value = null
+    try {
+      await collectionsApi.deleteOutlineItem(selectedCollectionId.value, itemId)
+      outline.value = outline.value.filter((item) => item.id !== itemId)
+      if (selectedOutlineItemId.value === itemId) {
+        selectedOutlineItemId.value = outline.value[0]?.id ?? null
+      }
+      await refreshSelectedCollection()
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+      throw e
+    }
+  }
+
+  async function reorderOutline(itemIds: string[]) {
+    if (!selectedCollectionId.value) return
+    error.value = null
+    try {
+      outline.value = await collectionsApi.reorderOutline(selectedCollectionId.value, itemIds)
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+      throw e
+    }
+  }
+
   async function exportSelected(format: CollectionExportFormat) {
     if (!selectedCollectionId.value || !selectedCollection.value) return
     error.value = null
@@ -206,28 +311,41 @@ export const useCollectionsStore = defineStore('collections', () => {
     if (selectedCollectionId.value === id) return
     selectedCollectionId.value = id
     selectedArticleId.value = null
-    await loadArticles(id)
+    selectedOutlineItemId.value = null
+    await Promise.all([
+      loadArticles(id),
+      loadOutline(id),
+    ])
   }
 
   function selectArticle(id: string) {
     selectedArticleId.value = id
   }
 
+  function selectOutlineItem(id: string) {
+    selectedOutlineItemId.value = id
+  }
+
   return {
     collections,
     articles,
+    outline,
     selectedCollectionId,
     selectedArticleId,
+    selectedOutlineItemId,
     selectedCollection,
     selectedArticle,
+    selectedOutlineItem,
     collectionWordCount,
     loading,
     articlesLoading,
+    outlineLoading,
     error,
     exportMessage,
     exportingFormat,
     loadCollections,
     loadArticles,
+    loadOutline,
     createCollection,
     updateCollection,
     deleteCollection,
@@ -235,8 +353,13 @@ export const useCollectionsStore = defineStore('collections', () => {
     removeArticle,
     moveArticle,
     reorderArticles,
+    createOutlineItem,
+    updateOutlineItem,
+    deleteOutlineItem,
+    reorderOutline,
     exportSelected,
     selectCollection,
     selectArticle,
+    selectOutlineItem,
   }
 })

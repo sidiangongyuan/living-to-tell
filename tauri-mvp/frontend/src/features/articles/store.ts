@@ -102,6 +102,16 @@ export const useArticlesStore = defineStore('articles', () => {
     selectedId.value = id
   }
 
+  function replaceEntry(entry: Entry) {
+    const idx = entries.value.findIndex((item) => item.id === entry.id)
+    if (idx === -1) {
+      entries.value.unshift(entry)
+    } else {
+      entries.value[idx] = entry
+    }
+    selectedId.value = entry.id
+  }
+
   return {
     entries,
     selectedId,
@@ -118,5 +128,6 @@ export const useArticlesStore = defineStore('articles', () => {
     deleteEntry,
     archiveEntry,
     selectEntry,
+    replaceEntry,
   }
 })
