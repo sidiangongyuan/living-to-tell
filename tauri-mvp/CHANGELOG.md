@@ -1,5 +1,33 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.10 - Article Not-Found False Alarm Fix (2026-06-26)
+
+### Fixed
+
+- Fixed the article page falsely showing “这篇文章已不存在，已刷新文章列表。” when side-panel requests briefly returned `404` even though the current article still existed.
+- Fixed article-side `404` handling to verify the article itself before escalating the failure into a global “article missing” notice.
+- Fixed article note / collection actions so a disproved article `404` no longer turns into a misleading missing-article warning.
+
+### Changed
+
+- Update-notice testing now continues to work from `0.1.9` to `0.1.10`, so the current public build can verify the new update-check flow against a real newer release.
+
+### Verification
+
+- `python -m pytest`
+- `npm test -- --run`
+- `npm run test:e2e`
+- `npm run build`
+- `cargo check --manifest-path tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe python`
+
+### Release artifacts
+
+- `LivingToTell_0.1.10_x64-setup.exe`
+  - SHA256: `FC55CF8DAE97190224669D4852EEAA095CE6BAD837FA034E6B463CF346A2C01C`
+- `LivingToTell_0.1.10_x64_zh-CN.msi`
+  - SHA256: `1B0E81E6F5EB657B002F2A5B399FFF6CA9804F3FDD6FC08E3A6A77BE657B41C3`
+
 ## 0.1.9 - Update Notice And Release Flow Update (2026-06-25)
 
 ### Added

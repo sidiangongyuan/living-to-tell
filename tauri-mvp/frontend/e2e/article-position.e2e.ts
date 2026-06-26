@@ -41,7 +41,7 @@ async function mockWriterApi(page: MockedPage) {
     await route.fulfill({
       json: {
         app_name: 'Living to Tell',
-        version: '0.1.9',
+        version: '0.1.10',
         api_version: '2.0.0',
         capabilities: ['data_location', 'ai_chat_settings', 'ai_task_presets', 'update_check'],
       },
@@ -50,11 +50,11 @@ async function mockWriterApi(page: MockedPage) {
   await page.route('**/api/app/update-check*', async (route) => {
     await route.fulfill({
       json: {
-        current_version: '0.1.9',
-        latest_version: '0.1.9',
-        latest_tag: 'living-to-tell-v0.1.9',
-        release_name: 'Living to Tell Preview 0.1.9',
-        release_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.9',
+        current_version: '0.1.10',
+        latest_version: '0.1.10',
+        latest_tag: 'living-to-tell-v0.1.10',
+        release_name: 'Living to Tell Preview 0.1.10',
+        release_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.10',
         published_at: '2026-06-25T03:03:04Z',
         release_notes: '',
         source: 'github_releases_latest',
@@ -62,8 +62,8 @@ async function mockWriterApi(page: MockedPage) {
         message: '当前已是最新版本。',
         checked_at: '2026-06-25T03:05:06Z',
         cached: false,
-        download_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.9/LivingToTell_0.1.9_x64-setup.exe',
-        download_name: 'LivingToTell_0.1.9_x64-setup.exe',
+        download_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.10/LivingToTell_0.1.10_x64-setup.exe',
+        download_name: 'LivingToTell_0.1.10_x64-setup.exe',
       },
     })
   })
@@ -231,6 +231,30 @@ test('ignores stale side-panel not found responses after switching articles', as
   await expect(page.getByText('Source not found')).toHaveCount(0)
   await expect(page.getByText('这篇文章已不存在，已刷新文章列表。')).toHaveCount(0)
   await expect(page.getByText('B 的便签')).toBeVisible()
+})
+
+test('does not show article missing when a side-panel 404 is disproved by the article itself', async ({ page }) => {
+  let note404Count = 0
+
+  await page.unroute('**/api/articles/*/notes?**')
+  await page.route('**/api/articles/*/notes?**', async (route) => {
+    const parts = new URL(route.request().url()).pathname.split('/')
+    const articleId = parts.at(-2)
+    if (articleId === 'article-a' && note404Count === 0) {
+      note404Count += 1
+      await route.fulfill({ status: 404, json: { detail: 'Article not found' } })
+      return
+    }
+    await route.fulfill({ json: [] })
+  })
+
+  await page.goto('/articles?id=article-a')
+  await expectArticleBody(page, longBodyA)
+  await page.waitForTimeout(700)
+  await expect(page.getByText('这篇文章已不存在，已刷新文章列表。')).toHaveCount(0)
+
+  await page.getByTestId('article-entry-article-b').click()
+  await expect(page.getByTestId('article-body-editor')).toHaveValue(longBodyB)
 })
 
 test('restores editor scroll position after switching articles', async ({ page }) => {

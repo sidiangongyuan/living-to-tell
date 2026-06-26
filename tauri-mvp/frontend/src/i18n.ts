@@ -113,6 +113,7 @@ const translations = {
       hideDoneNotes: '隐藏已完成',
       notesDeleteConfirm: '确定删除这条文章便签吗？',
       articleMissingRefreshed: '这篇文章已不存在，已刷新文章列表。',
+      articleActionUnavailable: '当前文章操作暂时失败，请稍后重试。',
       writingNoteMissing: '这条便签已不存在，已刷新便签列表。',
     },
     // 作品集模块
@@ -893,6 +894,7 @@ const translations = {
       hideDoneNotes: 'Hide completed',
       notesDeleteConfirm: 'Delete this article note?',
       articleMissingRefreshed: 'This article no longer exists. The article list has been refreshed.',
+      articleActionUnavailable: 'The current article action failed temporarily. Please retry.',
       writingNoteMissing: 'This note no longer exists. The notes list has been refreshed.',
     },
     // Collections module

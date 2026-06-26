@@ -267,12 +267,20 @@ function resetArticleSideData() {
 }
 
 function friendlyArticleSideError(e: unknown): string {
-  if (isHttpStatus(e, 404)) return t('articles.articleMissingRefreshed')
   return errorMessage(e)
 }
 
-async function handleCurrentArticleMissing(articleId: string, token: number): Promise<boolean> {
-  if (isStaleArticleRequest(articleId, token)) return true
+async function verifyAndHandleCurrentArticleMissing(articleId: string, token: number): Promise<boolean> {
+  if (isStaleArticleRequest(articleId, token)) return false
+  try {
+    await articlesApi.get(articleId)
+    if (isStaleArticleRequest(articleId, token)) return false
+    return false
+  } catch (verificationError) {
+    if (!isHttpStatus(verificationError, 404) || isStaleArticleRequest(articleId, token)) {
+      return false
+    }
+  }
   articleSideNotice.value = t('articles.articleMissingRefreshed')
   collectionError.value = ''
   notesError.value = ''
@@ -303,10 +311,16 @@ async function handleCurrentArticleMissing(articleId: string, token: number): Pr
 async function handleArticleSideError(e: unknown, articleId: string, token: number): Promise<string | null> {
   if (isStaleArticleRequest(articleId, token)) return null
   if (isHttpStatus(e, 404)) {
-    await handleCurrentArticleMissing(articleId, token)
+    await verifyAndHandleCurrentArticleMissing(articleId, token)
     return null
   }
   return friendlyArticleSideError(e)
+}
+
+async function articleOperationErrorMessage(e: unknown, articleId: string): Promise<string> {
+  if (!isHttpStatus(e, 404)) return errorMessage(e)
+  const missing = await verifyAndHandleCurrentArticleMissing(articleId, articleSideDataToken)
+  return missing ? t('articles.articleMissingRefreshed') : t('articles.articleActionUnavailable')
 }
 
 function motifAttachPanelSize() {
@@ -1662,7 +1676,7 @@ async function addWritingNote() {
     newNoteBody.value = ''
   } catch (e) {
     if (store.selectedEntry?.id !== entryId) return
-    notesError.value = isHttpStatus(e, 404) ? t('articles.articleMissingRefreshed') : errorMessage(e)
+    notesError.value = await articleOperationErrorMessage(e, entryId)
   }
 }
 
@@ -1767,7 +1781,7 @@ async function openCollectionPicker() {
     collectionPickerOpen.value = true
   } catch (e) {
     if (store.selectedEntry?.id !== entryId) return
-    collectionError.value = isHttpStatus(e, 404) ? t('articles.articleMissingRefreshed') : errorMessage(e)
+    collectionError.value = await articleOperationErrorMessage(e, entryId)
   } finally {
     if (store.selectedEntry?.id === entryId) {
       collectionLoading.value = false
@@ -1800,7 +1814,7 @@ async function addToSelectedCollections() {
     collectionPickerOpen.value = false
   } catch (e) {
     if (store.selectedEntry?.id !== entryId) return
-    collectionError.value = isHttpStatus(e, 404) ? t('articles.articleMissingRefreshed') : errorMessage(e)
+    collectionError.value = await articleOperationErrorMessage(e, entryId)
   } finally {
     if (store.selectedEntry?.id === entryId) {
       collectionLoading.value = false
