@@ -43,7 +43,7 @@ async function mockAiCardsApi(page: Page) {
     await route.fulfill({
       json: {
         app_name: 'Living to Tell',
-        version: '0.1.12',
+        version: '0.1.13',
         api_version: '2.0.0',
         capabilities: ['data_location', 'ai_chat_settings', 'ai_task_presets', 'update_check'],
       },
@@ -52,11 +52,11 @@ async function mockAiCardsApi(page: Page) {
   await page.route('**/api/app/update-check*', async (route) => {
     await route.fulfill({
       json: {
-        current_version: '0.1.12',
-        latest_version: '0.1.12',
-        latest_tag: 'living-to-tell-v0.1.12',
-        release_name: 'Living to Tell Preview 0.1.12',
-        release_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.12',
+        current_version: '0.1.13',
+        latest_version: '0.1.13',
+        latest_tag: 'living-to-tell-v0.1.13',
+        release_name: 'Living to Tell Preview 0.1.13',
+        release_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.13',
         published_at: '2026-06-25T03:03:04Z',
         release_notes: '',
         source: 'github_releases_latest',
@@ -64,8 +64,8 @@ async function mockAiCardsApi(page: Page) {
         message: '当前已是最新版本。',
         checked_at: '2026-06-25T03:05:06Z',
         cached: false,
-        download_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.12/LivingToTell_0.1.12_x64-setup.exe',
-        download_name: 'LivingToTell_0.1.12_x64-setup.exe',
+        download_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.13/LivingToTell_0.1.13_x64-setup.exe',
+        download_name: 'LivingToTell_0.1.13_x64-setup.exe',
       },
     })
   })
@@ -183,8 +183,9 @@ test('AI Cards create, edit autosave, tags, filters, no sample restore, and dele
   })
 
   await page.goto('/ai-cards')
-  await expect(page.getByText('克制风格')).toBeVisible()
-  await expect(page.getByText('人物观察')).toBeVisible()
+  const listPane = page.getByTestId('ai-cards-list-pane')
+  await expect(listPane.getByText('克制风格')).toBeVisible()
+  await expect(listPane.getByText('人物观察')).toBeVisible()
   await expect(page.getByRole('button', { name: '恢复样例' })).toHaveCount(0)
   await expect(page.getByText('内置样例')).toHaveCount(0)
   expect(presetGenerateRequests).toBe(0)
@@ -205,13 +206,13 @@ test('AI Cards create, edit autosave, tags, filters, no sample restore, and dele
   }
 
   await page.getByPlaceholder('搜索卡片...').fill('人物')
-  await expect(page.getByText('人物观察')).toBeVisible()
-  await expect(page.getByText('克制风格')).toHaveCount(0)
+  await expect(listPane.getByText('人物观察')).toBeVisible()
+  await expect(listPane.getByText('克制风格')).toHaveCount(0)
   await page.getByPlaceholder('搜索卡片...').fill('')
 
   await page.getByRole('button', { name: '人物卡', exact: true }).click()
-  await expect(page.getByText('人物观察')).toBeVisible()
-  await expect(page.getByText('克制风格')).toHaveCount(0)
+  await expect(listPane.getByText('人物观察')).toBeVisible()
+  await expect(listPane.getByText('克制风格')).toHaveCount(0)
   await page.getByRole('button', { name: '全部', exact: true }).click()
 
   await page.getByRole('button', { name: '+ 新建' }).click()
@@ -290,7 +291,7 @@ test('AI Cards autosave failures show a visible unsaved-state error', async ({ p
   })
 
   await page.goto('/ai-cards')
-  await expect(page.getByText('克制风格')).toBeVisible()
+  await expect(page.getByTestId('ai-cards-list-pane').getByText('克制风格')).toBeVisible()
   await page.getByPlaceholder('例如：海明威式简洁').fill('保存失败的卡片')
   await expect(page.getByText('保存失败：卡片目录不可写')).toBeVisible()
 })

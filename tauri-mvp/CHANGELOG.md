@@ -1,5 +1,42 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.13 - Revision Workbench And App Workflow Upgrade (2026-06-27)
+
+### Added
+
+- Added an in-article AI revision workbench with selected-text, current-paragraph, and full-article scopes.
+- Added AI revision tasks for polish, compress, expand, restrained rewrite, and logic checking, with explicit preview before write-back.
+- Added automatic article history snapshots before AI revision workbench write-back.
+- Added manual AI context selection in the article revision workbench for article notes, AI cards, and reference passages.
+- Added collection outline progress summaries with total outline items, status counts, linked article count, target word total, and current linked-article word count.
+- Added collection outline filters by item type, status, and unlinked items.
+- Added Markdown export for the currently filtered collection outline.
+- Added global Ctrl+K search across articles, collections, reference passages, motifs, and AI cards while keeping existing quick commands.
+- Expanded the backup page into an Export & Backup center with data paths, backup/checkpoint paths, open-directory actions, and current article/collection export shortcuts.
+- Added AI card combination generation for manually selected style, character, and scene cards, with preview-only generation and explicit actions to copy, save as article, save as note, or save as card.
+
+### Changed
+
+- The backup navigation label now reflects the broader Export & Backup workflow.
+- AI card combination generation and article revision use the shared AI task API path instead of a private provider branch.
+- Collection outline export and filtering remain frontend-only and do not mutate user outline data.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest -q`
+- `npm test -- --run`
+- `npm run test:e2e`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.13_x64-setup.exe`
+  - SHA256: `6C2CBB7B89539EC8663066CDD1D2CA1891A3B591B33F716642A6AAF228470AFC`
+- `LivingToTell_0.1.13_x64_zh-CN.msi`
+  - SHA256: `5AA95D4ADA786B72CF9E346D7E2855E74F1CA6083A126110EAA2C98DB8A53BC0`
+
 ## 0.1.12 - Version History And Collection Outline (2026-06-26)
 
 ### Added

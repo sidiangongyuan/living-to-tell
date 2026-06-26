@@ -4,9 +4,9 @@
 
 ### A local-first writing studio for articles, collections, references, and scoped AI
 
-[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.12)
+[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.13)
 
-[![Version](https://img.shields.io/badge/preview-0.1.12-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.13-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **Writing, photography, singing, and speaking are all ways to tell. To live is to tell.**
 
-[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.12) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
+[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.13) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
 
 </div>
 
@@ -26,12 +26,13 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 
 | | |
 | --- | --- |
-| **Article Studio** | Draft long-form writing with autosave, tags, search, epigraphs, focus mode, notes, version history, and export. |
-| **Collections** | Arrange articles into a manuscript and plan longer projects with outline items. |
+| **Article Studio** | Draft long-form writing with autosave, tags, search, epigraphs, focus mode, notes, version history, AI revision workbench, and export. |
+| **Collections** | Arrange articles into a manuscript and plan longer projects with outline items, progress summaries, filters, and Markdown outline export. |
 | **Reference Library** | Keep quotes, source titles, authors, usage notes, and citation-ready snippets in one place. |
 | **Article AI** | Use focused AI tools and article-scoped chat while keeping every write-back explicit. |
-| **AI Cards** | Save reusable style, character, and scene cards for later prompts. |
+| **AI Cards** | Save reusable style, character, and scene cards, then combine them into preview-only drafts. |
 | **Motif Star Map** | Mark selected text as motifs, revisit source anchors, and explore how motifs co-occur. |
+| **Export & Backup** | Review the local data path, create backups/checkpoints, open storage folders, and export the recent article or collection. |
 | **Local First** | Store writing data locally and send text to AI only when you explicitly run an AI action. |
 
 ## Current Preview Status
@@ -122,15 +123,15 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.12).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.13).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.12_x64-setup.exe`
+- `LivingToTell_0.1.13_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.12_x64_zh-CN.msi`
+- `LivingToTell_0.1.13_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 

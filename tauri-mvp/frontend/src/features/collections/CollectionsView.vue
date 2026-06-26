@@ -8,6 +8,15 @@ import { useI18n } from '../../i18n'
 import ContextMenu from '../../components/ContextMenu.vue'
 import PaneResizeHandle from '../../components/PaneResizeHandle.vue'
 import { useResizablePane } from '../../composables/useResizablePane'
+import { saveBlobWithDialog } from '../../utils/exportFile'
+import {
+  buildOutlineMarkdown,
+  buildOutlineProgressSummary,
+  filterOutlineItems,
+  type OutlineFilters,
+} from './outlineEnhancements'
+
+const LAST_SELECTED_COLLECTION_KEY = 'living_to_tell_last_selected_collection_id'
 
 const store = useCollectionsStore()
 const { t } = useI18n()
@@ -39,6 +48,10 @@ const outlineDraftSetting = ref('')
 const outlineDraftTimeline = ref('')
 const outlineDraftTags = ref('')
 const outlineDraftTargetWords = ref<number | null>(null)
+const outlineFilterType = ref<OutlineFilters['type']>('all')
+const outlineFilterStatus = ref<OutlineFilters['status']>('all')
+const outlineFilterUnlinkedOnly = ref(false)
+const outlineExporting = ref(false)
 const collectionListPane = useResizablePane({
   key: 'collections:list',
   defaultSize: 240,
@@ -82,6 +95,15 @@ const outlineStatusOptions: { value: OutlineItemStatus; label: string }[] = [
   { value: 'done', label: t('collectionOutline.statusDone') },
   { value: 'parked', label: t('collectionOutline.statusParked') },
 ]
+const outlineProgress = computed(() => buildOutlineProgressSummary(store.outline, store.articles))
+const filteredOutline = computed(() => filterOutlineItems(store.outline, {
+  type: outlineFilterType.value,
+  status: outlineFilterStatus.value,
+  unlinkedOnly: outlineFilterUnlinkedOnly.value,
+}))
+const outlineLinkedArticleCount = computed(() =>
+  new Set(store.outline.map((item) => item.entry_id).filter(Boolean)).size
+)
 
 function articlePreview(body: string): string {
   const compact = body.trim().replace(/\s+/g, ' ')
@@ -95,8 +117,20 @@ function formatDate(value: string | null): string {
 
 onMounted(async () => {
   await store.loadCollections()
+  const lastCollectionId = localStorage.getItem(LAST_SELECTED_COLLECTION_KEY)
+  if (lastCollectionId && store.collections.some((collection) => collection.id === lastCollectionId)) {
+    await store.selectCollection(lastCollectionId)
+  }
   allArticles.value = await articlesApi.listArticles(500)
 })
+
+watch(
+  () => store.selectedCollectionId,
+  (id) => {
+    if (id) localStorage.setItem(LAST_SELECTED_COLLECTION_KEY, id)
+  },
+  { immediate: true }
+)
 
 watch(
   () => store.selectedCollection,
@@ -335,6 +369,42 @@ async function exportSelected(format: 'md' | 'txt' | 'docx') {
   const saved = await saveCollectionMetaIfNeeded()
   if (!saved) return
   await store.exportSelected(format)
+}
+
+function safeCollectionFilename(title: string, suffix: string): string {
+  const safe = (title || t('collections.untitled')).replace(/[<>:"/\\|?*]/g, '').trim() || 'collection'
+  return `${safe}.${suffix}`
+}
+
+async function exportOutlineMarkdown() {
+  if (!store.selectedCollection) return
+  const saved = await saveCollectionMetaIfNeeded()
+  if (!saved || !store.selectedCollection) return
+  outlineExporting.value = true
+  outlineActionError.value = null
+  try {
+    const markdown = buildOutlineMarkdown({
+      collectionTitle: store.selectedCollection.title,
+      collectionDescription: store.selectedCollection.description,
+      outline: filteredOutline.value,
+      typeLabel: outlineTypeLabel,
+      statusLabel: outlineStatusLabel,
+      articleTitleForId: (entryId) =>
+        allArticles.value.find((article) => article.id === entryId)?.title
+        || store.articles.find((article) => article.id === entryId)?.title
+        || entryId,
+    })
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
+    await saveBlobWithDialog(
+      blob,
+      safeCollectionFilename(`${store.selectedCollection.title}-大纲`, 'md'),
+      'md',
+    )
+  } catch (e) {
+    outlineActionError.value = e instanceof Error ? `导出大纲失败：${e.message}` : `导出大纲失败：${String(e)}`
+  } finally {
+    outlineExporting.value = false
+  }
 }
 
 async function removeArticle(entryId: string) {
@@ -771,6 +841,55 @@ async function openLinkedOutlineArticle() {
                 {{ t('collectionOutline.newChapter') }}
               </button>
             </div>
+            <div class="mb-4 rounded-2xl border border-stone-200 bg-white/80 p-3 text-xs text-stone-600">
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <div class="text-[11px] text-stone-400">大纲条目</div>
+                  <div class="mt-0.5 text-lg font-semibold text-stone-900">{{ outlineProgress.totalItems }}</div>
+                </div>
+                <div>
+                  <div class="text-[11px] text-stone-400">关联文章</div>
+                  <div class="mt-0.5 text-lg font-semibold text-stone-900">{{ outlineLinkedArticleCount }}</div>
+                </div>
+                <div>
+                  <div class="text-[11px] text-stone-400">目标字数</div>
+                  <div class="mt-0.5 text-lg font-semibold text-amber-700">{{ outlineProgress.targetWordTotal }}</div>
+                </div>
+                <div>
+                  <div class="text-[11px] text-stone-400">当前字数</div>
+                  <div class="mt-0.5 text-lg font-semibold text-emerald-700">{{ outlineProgress.linkedArticleWordCount }}</div>
+                </div>
+              </div>
+              <div class="mt-3 flex flex-wrap gap-1.5">
+                <span v-for="status in outlineStatusOptions" :key="status.value" class="rounded-full bg-stone-100 px-2 py-0.5">
+                  {{ status.label }} {{ outlineProgress.byStatus[status.value] || 0 }}
+                </span>
+              </div>
+            </div>
+            <div class="mb-4 space-y-2 rounded-2xl border border-stone-200 bg-white/70 p-3">
+              <div class="grid grid-cols-2 gap-2">
+                <select v-model="outlineFilterType" class="rounded-xl border border-stone-200 bg-white px-2 py-2 text-xs outline-none">
+                  <option value="all">全部类型</option>
+                  <option v-for="option in outlineTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                </select>
+                <select v-model="outlineFilterStatus" class="rounded-xl border border-stone-200 bg-white px-2 py-2 text-xs outline-none">
+                  <option value="all">全部状态</option>
+                  <option v-for="option in outlineStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                </select>
+              </div>
+              <label class="flex items-center gap-2 text-xs text-stone-600">
+                <input v-model="outlineFilterUnlinkedOnly" type="checkbox" class="h-4 w-4 rounded border-stone-300 text-indigo-600" />
+                只看未关联文章
+              </label>
+              <button
+                type="button"
+                class="w-full rounded-xl bg-white px-3 py-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200 hover:bg-stone-50 disabled:opacity-40"
+                :disabled="outlineExporting"
+                @click="exportOutlineMarkdown"
+              >
+                {{ outlineExporting ? '导出中…' : '导出当前筛选大纲 Markdown' }}
+              </button>
+            </div>
             <div v-if="outlineActionError || store.error" class="mb-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
               {{ outlineActionError || store.error }}
             </div>
@@ -781,9 +900,12 @@ async function openLinkedOutlineArticle() {
               <div class="text-sm font-semibold text-stone-700">{{ t('collectionOutline.emptyTitle') }}</div>
               <p class="mt-2 text-xs leading-5 text-stone-500">{{ t('collectionOutline.emptyHint') }}</p>
             </div>
+            <div v-else-if="!filteredOutline.length" class="rounded-2xl border border-dashed border-stone-300 bg-white/70 p-6 text-center text-sm text-stone-500">
+              当前筛选下没有大纲条目。
+            </div>
             <div v-else class="space-y-2">
               <article
-                v-for="(item, index) in store.outline"
+                v-for="(item, index) in filteredOutline"
                 :key="item.id"
                 draggable="true"
                 @dragstart="onOutlineDragStart(item.id)"
@@ -837,7 +959,7 @@ async function openLinkedOutlineArticle() {
                   </button>
                   <button
                     class="rounded-lg px-2 py-1 text-xs text-stone-500 hover:bg-stone-100 disabled:opacity-30"
-                    :disabled="index === store.outline.length - 1"
+                    :disabled="index === filteredOutline.length - 1"
                     @click.stop="moveOutlineItem(item.id, 1)"
                   >
                     ↓

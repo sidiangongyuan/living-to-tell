@@ -2,16 +2,27 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from '../../i18n'
 import { backupApi, type BackupInfo, type BackupStats, type CheckpointInfo } from './api'
+import { settingsApi, type DataLocationInfo } from '../../api/settings'
+import { articlesApi, type ArticleExportFormat } from '../../api/articles'
+import { collectionsApi, type CollectionExportFormat } from '../../api/collections'
+import { saveBlobWithDialog } from '../../utils/exportFile'
+import { LAST_SELECTED_ARTICLE_KEY } from '../articles/editorPosition'
 import ContextMenu from '../../components/ContextMenu.vue'
+
+const LAST_SELECTED_COLLECTION_KEY = 'living_to_tell_last_selected_collection_id'
 
 const { t } = useI18n()
 
 const backups = ref<BackupInfo[]>([])
 const checkpoints = ref<CheckpointInfo[]>([])
 const stats = ref<BackupStats | null>(null)
+const dataLocation = ref<DataLocationInfo | null>(null)
 const loading = ref(false)
 const error = ref('')
 const notice = ref('')
+const exportShortcutBusy = ref('')
+const articleExportFormats: ArticleExportFormat[] = ['md', 'txt', 'docx']
+const collectionExportFormats: CollectionExportFormat[] = ['md', 'txt', 'docx']
 
 const showCheckpointDialog = ref(false)
 const checkpointName = ref('')
@@ -38,14 +49,16 @@ async function loadData() {
   loading.value = true
   error.value = ''
   try {
-    const [b, c, s] = await Promise.all([
+    const [b, c, s, location] = await Promise.all([
       backupApi.listBackups(),
       backupApi.listCheckpoints(),
       backupApi.getStats(),
+      settingsApi.getDataLocation().catch(() => null),
     ])
     backups.value = b
     checkpoints.value = c
     stats.value = s
+    dataLocation.value = location
   } catch (e) {
     error.value = e instanceof Error ? e.message : t('common.error')
   } finally {
@@ -176,6 +189,70 @@ function formatSize(bytes: number): string {
 function formatDate(isoString: string): string {
   return new Date(isoString).toLocaleString()
 }
+
+function safeFilename(title: string, format: string): string {
+  const safe = (title || 'export').replace(/[<>:"/\\|?*]/g, '').trim() || 'export'
+  return `${safe}.${format}`
+}
+
+async function openPath(path: string | null | undefined) {
+  if (!path) {
+    notice.value = ''
+    error.value = '路径不存在，无法打开。'
+    return
+  }
+  error.value = ''
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('open_path', { path })
+  } catch (e) {
+    error.value = e instanceof Error ? `无法打开目录：${e.message}` : `无法打开目录：${String(e)}`
+  }
+}
+
+async function exportLastArticle(format: ArticleExportFormat) {
+  const articleId = localStorage.getItem(LAST_SELECTED_ARTICLE_KEY)
+  if (!articleId) {
+    notice.value = ''
+    error.value = '还没有最近使用的文章。请先在文章页选中一篇文章，再回到这里导出。'
+    return
+  }
+  exportShortcutBusy.value = `article-${format}`
+  error.value = ''
+  notice.value = ''
+  try {
+    const article = await articlesApi.get(articleId)
+    const blob = await articlesApi.exportArticle(articleId, format)
+    const result = await saveBlobWithDialog(blob, safeFilename(article.title || 'article', format), format)
+    notice.value = result.status === 'cancelled' ? '已取消文章导出。' : '已导出最近文章。'
+  } catch (e) {
+    error.value = e instanceof Error ? `导出最近文章失败：${e.message}` : `导出最近文章失败：${String(e)}`
+  } finally {
+    exportShortcutBusy.value = ''
+  }
+}
+
+async function exportLastCollection(format: CollectionExportFormat) {
+  const collectionId = localStorage.getItem(LAST_SELECTED_COLLECTION_KEY)
+  if (!collectionId) {
+    notice.value = ''
+    error.value = '还没有最近使用的作品集。请先在作品集页选中一个作品集，再回到这里导出。'
+    return
+  }
+  exportShortcutBusy.value = `collection-${format}`
+  error.value = ''
+  notice.value = ''
+  try {
+    const collection = await collectionsApi.getCollection(collectionId)
+    const blob = await collectionsApi.exportCollection(collectionId, format)
+    const result = await saveBlobWithDialog(blob, safeFilename(collection.title || 'collection', format), format)
+    notice.value = result.status === 'cancelled' ? '已取消作品集导出。' : '已导出最近作品集。'
+  } catch (e) {
+    error.value = e instanceof Error ? `导出最近作品集失败：${e.message}` : `导出最近作品集失败：${String(e)}`
+  } finally {
+    exportShortcutBusy.value = ''
+  }
+}
 </script>
 
 <template>
@@ -220,6 +297,88 @@ function formatDate(isoString: string): string {
           <div class="text-sm font-semibold text-orange-600">{{ t('backup.totalSize') }}</div>
           <div class="text-2xl font-bold text-orange-900">{{ formatSize(stats.total_size) }}</div>
         </div>
+      </div>
+
+      <div class="mt-4 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <section class="rounded-2xl border border-stone-200 bg-stone-50/70 p-4">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 class="text-sm font-semibold text-stone-900">数据位置</h2>
+              <p class="mt-1 text-xs text-stone-500">这里显示真实数据库、备份和检查点目录；打开目录不会修改数据。</p>
+            </div>
+            <button
+              type="button"
+              class="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200 hover:bg-stone-50"
+              @click="openPath(dataLocation?.data_dir)"
+            >
+              打开数据目录
+            </button>
+          </div>
+          <div v-if="dataLocation" class="space-y-2 text-xs text-stone-600">
+            <div class="rounded-xl bg-white px-3 py-2">
+              <div class="font-semibold text-stone-500">数据库</div>
+              <div class="mt-1 break-all font-mono text-[11px] text-stone-800">{{ dataLocation.database_path }}</div>
+            </div>
+            <div class="grid gap-2 md:grid-cols-2">
+              <button
+                type="button"
+                class="rounded-xl bg-white px-3 py-2 text-left ring-1 ring-stone-200 hover:bg-stone-50"
+                @click="openPath(dataLocation.backup_dir)"
+              >
+                <div class="font-semibold text-stone-500">备份目录</div>
+                <div class="mt-1 break-all font-mono text-[11px] text-stone-700">{{ dataLocation.backup_dir }}</div>
+              </button>
+              <button
+                type="button"
+                class="rounded-xl bg-white px-3 py-2 text-left ring-1 ring-stone-200 hover:bg-stone-50"
+                @click="openPath(dataLocation.checkpoint_dir)"
+              >
+                <div class="font-semibold text-stone-500">检查点目录</div>
+                <div class="mt-1 break-all font-mono text-[11px] text-stone-700">{{ dataLocation.checkpoint_dir }}</div>
+              </button>
+            </div>
+          </div>
+          <div v-else class="rounded-xl bg-white px-3 py-3 text-sm text-stone-500">
+            当前后台暂时无法读取数据路径；备份和检查点功能仍可按列表使用。
+          </div>
+        </section>
+
+        <section class="rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
+          <h2 class="text-sm font-semibold text-stone-900">导出快捷操作</h2>
+          <p class="mt-1 text-xs leading-5 text-stone-600">基于最近打开的文章或作品集。没有上下文时会提示你先去对应页面选择。</p>
+          <div class="mt-3 space-y-3">
+            <div>
+              <div class="mb-1 text-xs font-semibold text-stone-500">最近文章</div>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  v-for="format in articleExportFormats"
+                  :key="`article-${format}`"
+                  type="button"
+                  class="rounded-xl bg-white px-3 py-2 text-xs font-semibold uppercase text-stone-700 ring-1 ring-amber-100 hover:bg-amber-50 disabled:opacity-40"
+                  :disabled="Boolean(exportShortcutBusy)"
+                  @click="exportLastArticle(format)"
+                >
+                  {{ exportShortcutBusy === `article-${format}` ? '...' : format }}
+                </button>
+              </div>
+            </div>
+            <div>
+              <div class="mb-1 text-xs font-semibold text-stone-500">最近作品集</div>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  v-for="format in collectionExportFormats"
+                  :key="`collection-${format}`"
+                  type="button"
+                  class="rounded-xl bg-white px-3 py-2 text-xs font-semibold uppercase text-stone-700 ring-1 ring-amber-100 hover:bg-amber-50 disabled:opacity-40"
+                  :disabled="Boolean(exportShortcutBusy)"
+                  @click="exportLastCollection(format)"
+                >
+                  {{ exportShortcutBusy === `collection-${format}` ? '...' : format }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
 
       <div v-if="error" class="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">

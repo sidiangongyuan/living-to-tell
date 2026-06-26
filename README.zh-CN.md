@@ -4,9 +4,9 @@
 
 ### 本地优先的写作工作室：文章、作品集、文脉标本与边界清晰的 AI
 
-中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.12)
+中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.13)
 
-[![Version](https://img.shields.io/badge/preview-0.1.12-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.13-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **写作、拍照、唱歌、讲话，都是为了讲述。活着，就是为了讲述。**
 
-[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.12) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
+[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.13) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
 
 </div>
 
@@ -26,12 +26,13 @@
 
 | | |
 | --- | --- |
-| **文章工作台** | 写长文，自动保存，管理标签、搜索、题记、专注模式、文章便签、历史版本和导出。 |
-| **作品集** | 把多篇文章编排成合集，也能在作品集层面规划长篇项目大纲。 |
+| **文章工作台** | 写长文，自动保存，管理标签、搜索、题记、专注模式、文章便签、历史版本、AI 修订工作台和导出。 |
+| **作品集** | 把多篇文章编排成合集，也能在作品集层面规划长篇项目大纲、查看进度、筛选并导出大纲。 |
 | **文脉标本库** | 保存摘录、书名、作者、用途、笔记和可复制引用。 |
 | **文章 AI** | 围绕当前文章使用 AI 工具和文章对话，所有写回都需要明确确认。 |
-| **AI Cards** | 保存可复用的风格、角色、场景卡片，作为后续提示词上下文。 |
+| **AI Cards** | 保存可复用的风格、人物、场景卡片，并手动组合生成可预览草稿。 |
 | **意象星图** | 把选中文字标记为意象，回到原文锚点，并查看意象之间的共现关系。 |
+| **导出与备份** | 查看本地数据路径，创建备份/检查点，打开存储目录，并导出最近文章或作品集。 |
 | **本地优先** | 写作数据保存在本地，只有主动运行 AI 时才发送文本。 |
 
 ## 当前预览状态
@@ -122,15 +123,15 @@
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.12) 下载最新公开预览版。
+从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.13) 下载最新公开预览版。
 
 推荐 Windows 资产：
 
-- `LivingToTell_0.1.12_x64-setup.exe`
+- `LivingToTell_0.1.13_x64-setup.exe`
 
 可选资产：
 
-- `LivingToTell_0.1.12_x64_zh-CN.msi`
+- `LivingToTell_0.1.13_x64_zh-CN.msi`
 
 预览版暂未签名，Windows SmartScreen 可能会提示风险。请只运行来自本仓库 Release 页的安装包。
 

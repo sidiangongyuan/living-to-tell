@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   motifsApi,
   type MotifExcerpt,
@@ -16,6 +16,7 @@ import PaneResizeHandle from '../../components/PaneResizeHandle.vue'
 import { useResizablePane } from '../../composables/useResizablePane'
 import { densityToLimit, filterMotifGraphByLimit, layoutMotifGraph } from './graphLayout'
 
+const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 
@@ -100,7 +101,15 @@ const motifPalette = [
 
 onMounted(async () => {
   await loadMotifs()
+  applyRouteMotif()
 })
+
+watch(
+  () => route.query.id,
+  () => {
+    applyRouteMotif()
+  }
+)
 
 watch(query, () => {
   if (searchTimer) window.clearTimeout(searchTimer)
@@ -113,6 +122,13 @@ watch(selectedMotifId, async () => {
   syncFormFromSelected()
   await loadSelectedMotifDetail()
 })
+
+function applyRouteMotif() {
+  const motifId = typeof route.query.id === 'string' ? route.query.id : ''
+  if (motifId && motifs.value.some((motif) => motif.id === motifId)) {
+    selectedMotifId.value = motifId
+  }
+}
 
 function hashText(text: string): number {
   let hash = 0

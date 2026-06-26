@@ -34,7 +34,7 @@ def test_tauri_app_version_capabilities(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["app_name"] == "Living to Tell"
-    assert payload["version"] == "0.1.12"
+    assert payload["version"] == "0.1.13"
     assert payload["api_version"] == "2.0.0"
     assert {
         "data_location",
@@ -67,19 +67,19 @@ def test_tauri_app_update_check_reports_latest_release(monkeypatch):
         def read(self):
             return json.dumps(
                 {
-                    "tag_name": "living-to-tell-v0.1.13",
-                    "name": "Living to Tell Preview 0.1.13",
-                    "html_url": "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.13",
+                    "tag_name": "living-to-tell-v0.1.14",
+                    "name": "Living to Tell Preview 0.1.14",
+                    "html_url": "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.14",
                     "published_at": "2026-06-26T01:02:03Z",
-                    "body": "## 0.1.13\n\nAdded update notifications.",
+                    "body": "## 0.1.14\n\nAdded update notifications.",
                     "assets": [
                         {
-                            "name": "LivingToTell_0.1.13_x64_zh-CN.msi",
-                            "browser_download_url": "https://example.test/LivingToTell_0.1.13_x64_zh-CN.msi",
+                            "name": "LivingToTell_0.1.14_x64_zh-CN.msi",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.14_x64_zh-CN.msi",
                         },
                         {
-                            "name": "LivingToTell_0.1.13_x64-setup.exe",
-                            "browser_download_url": "https://example.test/LivingToTell_0.1.13_x64-setup.exe",
+                            "name": "LivingToTell_0.1.14_x64-setup.exe",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.14_x64-setup.exe",
                         },
                     ],
                 }
@@ -102,11 +102,11 @@ def test_tauri_app_update_check_reports_latest_release(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "update_available"
-    assert payload["current_version"] == "0.1.12"
-    assert payload["latest_version"] == "0.1.13"
-    assert payload["release_name"] == "Living to Tell Preview 0.1.13"
-    assert payload["download_name"] == "LivingToTell_0.1.13_x64-setup.exe"
-    assert payload["download_url"] == "https://example.test/LivingToTell_0.1.13_x64-setup.exe"
+    assert payload["current_version"] == "0.1.13"
+    assert payload["latest_version"] == "0.1.14"
+    assert payload["release_name"] == "Living to Tell Preview 0.1.14"
+    assert payload["download_name"] == "LivingToTell_0.1.14_x64-setup.exe"
+    assert payload["download_url"] == "https://example.test/LivingToTell_0.1.14_x64-setup.exe"
     assert "下载安装包" in payload["message"]
     assert calls == [
         {
@@ -134,7 +134,7 @@ def test_tauri_app_update_check_returns_friendly_error(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "error"
-    assert payload["current_version"] == "0.1.12"
+    assert payload["current_version"] == "0.1.13"
     assert "暂时无法检查更新" in payload["message"]
 
 

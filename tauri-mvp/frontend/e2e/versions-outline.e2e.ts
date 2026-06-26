@@ -72,7 +72,7 @@ async function installBaseMocks(page: Page) {
     await route.fulfill({
       json: {
         app_name: 'Living to Tell',
-        version: '0.1.12',
+        version: '0.1.13',
         api_version: '2.0.0',
         capabilities: [
           'data_location',
@@ -89,11 +89,11 @@ async function installBaseMocks(page: Page) {
   await page.route('**/api/app/update-check*', async (route) => {
     await route.fulfill({
       json: {
-        current_version: '0.1.12',
-        latest_version: '0.1.12',
-        latest_tag: 'living-to-tell-v0.1.12',
-        release_name: 'Living to Tell Preview 0.1.12',
-        release_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.12',
+        current_version: '0.1.13',
+        latest_version: '0.1.13',
+        latest_tag: 'living-to-tell-v0.1.13',
+        release_name: 'Living to Tell Preview 0.1.13',
+        release_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.13',
         published_at: '2026-06-25T03:03:04Z',
         release_notes: '',
         source: 'github_releases_latest',
