@@ -1,9 +1,9 @@
 """OpenAI-compatible provider adapter.
 
 Uses the ``responses`` API shape recommended in
-``docs/codex-style-integration.md`` so the same configuration that powers a
-local Codex setup can drive the writer app. Only ``responses`` is implemented
-in M3; other wire APIs raise :class:`AiError`.
+``docs/codex-style-integration.md`` by default so the same configuration that
+powers a local Codex setup can drive the writer app. ``chat_completions`` is
+also supported for OpenAI-compatible relays such as DeepSeek-style gateways.
 """
 from __future__ import annotations
 
@@ -89,13 +89,15 @@ class OpenAiProvider(AiProvider):
         return self._client
 
     def rewrite(self, request: RewriteRequest) -> RewriteResponse:
-        if self._config.wire_api != "responses":
+        if self._config.wire_api not in {"responses", "chat_completions"}:
             raise AiError(
                 f"Unsupported wire_api '{self._config.wire_api}'. "
-                "M3 only supports 'responses'."
+                "Supported values: responses, chat_completions."
             )
         client = self._ensure_client()
         messages = self._prompts.build_messages(request)
+        if self._config.wire_api == "chat_completions":
+            return self._chat_completions(messages, self._config.model)
         try:
             response = client.responses.create(
                 model=self._config.model,
@@ -125,13 +127,15 @@ class OpenAiProvider(AiProvider):
     # M10A: generic chat — used by AiTaskService for the new task engine.
     # ------------------------------------------------------------------
     def chat(self, messages, *, model=None) -> ChatResponse:
-        if self._config.wire_api != "responses":
+        if self._config.wire_api not in {"responses", "chat_completions"}:
             raise AiError(
                 f"Unsupported wire_api '{self._config.wire_api}'. "
-                "M10A only supports 'responses'."
+                "Supported values: responses, chat_completions."
             )
         client = self._ensure_client()
         used_model = model or self._config.model
+        if self._config.wire_api == "chat_completions":
+            return self._chat_completions(list(messages), used_model)
         try:
             response = client.responses.create(
                 model=used_model,
@@ -159,6 +163,33 @@ class OpenAiProvider(AiProvider):
 
     def _provider_name(self) -> str:
         return self._config.provider_key()
+
+    def _chat_completions(self, messages, model: str) -> ChatResponse:
+        client = self._ensure_client()
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=list(messages),
+            )
+        except AiError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise AiError(f"AI request failed: {exc}") from exc
+
+        text = _extract_chat_completion_text(response)
+        if not text:
+            raise AiError("AI response contained no text output.")
+
+        usage = getattr(response, "usage", None)
+        return ChatResponse(
+            content=text,
+            model=model,
+            provider=self._provider_name(),
+            transport="openai_chat_completions",
+            input_tokens=_safe_int(usage, "prompt_tokens"),
+            output_tokens=_safe_int(usage, "completion_tokens"),
+            finish_reason=_chat_finish_reason(response),
+        )
 
 
 def _safe_int(obj, name: str) -> Optional[int]:
@@ -194,3 +225,35 @@ def _extract_output_text(response) -> str:
             elif isinstance(block, dict) and isinstance(block.get("text"), str):
                 parts.append(block["text"])
     return "".join(parts).strip()
+
+
+def _extract_chat_completion_text(response) -> str:
+    choices = getattr(response, "choices", None) or []
+    parts: list[str] = []
+    for choice in choices:
+        message = getattr(choice, "message", None)
+        content = getattr(message, "content", None)
+        if isinstance(content, str):
+            parts.append(content)
+        elif isinstance(message, dict) and isinstance(message.get("content"), str):
+            parts.append(message["content"])
+        elif isinstance(choice, dict):
+            raw_message = choice.get("message")
+            if isinstance(raw_message, dict) and isinstance(raw_message.get("content"), str):
+                parts.append(raw_message["content"])
+    return "".join(parts).strip()
+
+
+def _chat_finish_reason(response) -> Optional[str]:
+    choices = getattr(response, "choices", None) or []
+    if not choices:
+        return None
+    first = choices[0]
+    value = getattr(first, "finish_reason", None)
+    if isinstance(value, str):
+        return value
+    if isinstance(first, dict):
+        raw = first.get("finish_reason")
+        if isinstance(raw, str):
+            return raw
+    return None

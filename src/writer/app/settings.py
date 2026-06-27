@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from writer.app.locale import SUPPORTED_LOCALES
 from writer.domain.models.ai_config import AiConfig
@@ -25,6 +25,7 @@ KEY_AI_WIRE_API = "ai.wire_api"
 KEY_AI_PROVIDER = "ai.provider"
 KEY_AI_GEMINI_CLI_PROXY = "ai.gemini_cli_proxy"
 KEY_AI_CUSTOM_TASK_PRESETS = "ai.custom_task_presets"
+KEY_AI_PROVIDER_PROFILES = "ai.provider_profiles.v1"
 
 DEFAULT_GEMINI_CLI_MODEL = "gemini-cli-default"
 DEFAULT_OPENCODE_MODEL = "opencode/deepseek-v4-flash-free"
@@ -103,7 +104,7 @@ LEGACY_QUICK_CAPTURE_GLOBAL_HOTKEY = "Ctrl+Alt+W"
 DEFAULT_QUICK_CAPTURE_GLOBAL_HOTKEY = "Ctrl+Alt+`"
 DEFAULT_QUICK_CAPTURE_MAIN_WINDOW_HOTKEY = "Ctrl+Alt+M"
 
-SUPPORTED_WIRE_APIS = ("responses",)
+SUPPORTED_WIRE_APIS = ("responses", "chat_completions")
 DEFAULT_WIRE_API = "responses"
 
 
@@ -248,6 +249,27 @@ class Settings:
             self._repo.set(KEY_AI_GEMINI_CLI_PROXY, proxy)
         else:
             self._repo.delete(KEY_AI_GEMINI_CLI_PROXY)
+
+    def load_ai_provider_profiles(self) -> list[dict[str, Any]]:
+        raw = self._repo.get(KEY_AI_PROVIDER_PROFILES)
+        if not raw:
+            return []
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return []
+        if not isinstance(data, list):
+            return []
+        return [item for item in data if isinstance(item, dict)]
+
+    def save_ai_provider_profiles(self, profiles: list[dict[str, Any]]) -> None:
+        if not profiles:
+            self._repo.delete(KEY_AI_PROVIDER_PROFILES)
+            return
+        self._repo.set(
+            KEY_AI_PROVIDER_PROFILES,
+            json.dumps(profiles, ensure_ascii=False, sort_keys=True),
+        )
 
     def load_ai_custom_task_presets(self) -> dict[str, list[str]]:
         raw = self._repo.get(KEY_AI_CUSTOM_TASK_PRESETS)

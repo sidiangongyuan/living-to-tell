@@ -2,12 +2,20 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { appApi } from '../../api/app'
-import { aiApi, type AiContextAttachment, type AiTaskPreset, type AiTaskPresetMap, type Message } from '../../api/ai'
+import {
+  aiApi,
+  type AiContextAttachment,
+  type AiTaskCompareResult,
+  type AiTaskPreset,
+  type AiTaskPresetMap,
+  type Message,
+} from '../../api/ai'
 import { articlesApi, type Entry } from '../../api/articles'
 import { aiCardApi, type AiCard, type AiCardType } from '../../api/aiCards'
 import { errorMessage, isHttpStatus } from '../../api/base'
 import { libraryApi, type Reference } from '../../api/library'
 import { notesApi, type WritingNote } from '../../api/notes'
+import { settingsApi, type AiProfile } from '../../api/settings'
 import { useI18n } from '../../i18n'
 import ContextMenu from '../../components/ContextMenu.vue'
 import PaneResizeHandle from '../../components/PaneResizeHandle.vue'
@@ -67,6 +75,9 @@ const contextNotesError = ref('')
 const articles = ref<Entry[]>([])
 const taskPresets = ref<AiTaskPresetMap>({})
 const taskPresetsSupported = ref(true)
+const aiProfiles = ref<AiProfile[]>([])
+const aiProfilesSupported = ref(true)
+const aiProfilesLoading = ref(false)
 const presetName = ref('')
 const CHAT_SYSTEM_PROMPT_LIMIT = 4000
 const chatSystemPrompt = ref('')
@@ -114,6 +125,24 @@ const taskResult = computed({
   get: () => currentTaskState.value.taskResult,
   set: (value: string) => {
     currentTaskState.value.taskResult = value
+  },
+})
+const compareResults = computed({
+  get: () => currentTaskState.value.compareResults,
+  set: (value: AiTaskCompareResult[]) => {
+    currentTaskState.value.compareResults = value
+  },
+})
+const selectedCompareProfileId = computed({
+  get: () => currentTaskState.value.selectedCompareProfileId,
+  set: (value: string | null) => {
+    currentTaskState.value.selectedCompareProfileId = value
+  },
+})
+const selectedProfileIds = computed({
+  get: () => currentTaskState.value.selectedProfileIds,
+  set: (value: string[]) => {
+    currentTaskState.value.selectedProfileIds = value
   },
 })
 const showComparison = computed({
@@ -307,6 +336,43 @@ const contextSourceOptions = computed<Array<{ value: ContextSource; label: strin
   },
 ])
 
+const aiProfileOptions = computed(() => [
+  {
+    id: 'default',
+    name: t('ai.defaultProfile'),
+    provider: t('ai.defaultProfileProvider'),
+    model: '',
+    enabled: true,
+  },
+  ...aiProfiles.value
+    .filter((profile) => profile.enabled)
+    .map((profile) => ({
+      id: profile.id,
+      name: profile.name,
+      provider: profile.provider_name,
+      model: profile.model,
+      enabled: profile.enabled,
+    })),
+])
+
+const successfulCompareResults = computed(() =>
+  compareResults.value.filter((result) => result.status === 'success' && result.result.trim())
+)
+
+const selectedCompareResult = computed(() => {
+  if (!selectedCompareProfileId.value) return null
+  return successfulCompareResults.value.find((result) => result.profile_id === selectedCompareProfileId.value) ?? null
+})
+
+const selectedResultText = computed(() => selectedCompareResult.value?.result ?? taskResult.value)
+
+const runTaskLabel = computed(() => {
+  const count = selectedProfileIds.value.length
+  if (store.taskRunning) return t('ai.running')
+  if (count > 1) return t('ai.runModels', { count })
+  return t('ai.runTask')
+})
+
 const chatScopeLabel = computed(() => {
   return selectedChatArticle.value?.title || t('ai.chatNoArticleSelected')
 })
@@ -319,7 +385,7 @@ const cardTypeLabels = computed<Record<string, string>>(() => ({
 
 onMounted(async () => {
   await loadBackendCapabilities()
-  await Promise.all([loadAiCards(), loadArticles(), loadTaskPresets(), loadChatSettings()])
+  await Promise.all([loadAiCards(), loadArticles(), loadTaskPresets(), loadAiProfiles(), loadChatSettings()])
   applyRouteScope()
   await loadChatThread()
 })
@@ -429,6 +495,34 @@ async function loadTaskPresets() {
   }
 }
 
+async function loadAiProfiles() {
+  if (backendCapabilityMissing('ai_profiles')) {
+    aiProfilesSupported.value = false
+    aiProfiles.value = []
+    return
+  }
+  aiProfilesLoading.value = true
+  try {
+    const result = await settingsApi.listAiProfiles()
+    aiProfiles.value = result.profiles
+    aiProfilesSupported.value = true
+    selectedProfileIds.value = selectedProfileIds.value.filter((id) =>
+      id === 'default' || result.profiles.some((profile) => profile.id === id && profile.enabled)
+    )
+    if (!selectedProfileIds.value.length) selectedProfileIds.value = ['default']
+  } catch (e) {
+    if (isHttpStatus(e, 404)) {
+      aiProfilesSupported.value = false
+      aiProfiles.value = []
+      selectedProfileIds.value = ['default']
+    } else {
+      error.value = errorMessage(e)
+    }
+  } finally {
+    aiProfilesLoading.value = false
+  }
+}
+
 async function loadChatSettings() {
   if (backendCapabilityMissing('ai_chat_settings')) {
     chatSettingsSupported.value = false
@@ -527,6 +621,44 @@ async function openChatTab() {
   await loadChatThread()
 }
 
+function toggleTaskProfile(profileId: string) {
+  if (selectedProfileIds.value.includes(profileId)) {
+    if (selectedProfileIds.value.length === 1) return
+    selectedProfileIds.value = selectedProfileIds.value.filter((id) => id !== profileId)
+    return
+  }
+  if (selectedProfileIds.value.length >= 3) {
+    error.value = t('ai.profileLimit')
+    return
+  }
+  error.value = ''
+  selectedProfileIds.value = [...selectedProfileIds.value, profileId]
+}
+
+function selectCompareResult(result: AiTaskCompareResult) {
+  if (result.status !== 'success' || !result.result.trim()) return
+  selectedCompareProfileId.value = result.profile_id
+  taskResult.value = result.result
+}
+
+function formatDelta(value: number): string {
+  return value > 0 ? `+${value}` : String(value)
+}
+
+function formatElapsed(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
+function formatRatio(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '-'
+  return `${Math.round(value * 100)}%`
+}
+
+async function openAiProfileSettings() {
+  await router.push({ name: 'settings', query: { section: 'ai_profiles' } })
+}
+
 async function handleRunTask() {
   error.value = ''
   notice.value = ''
@@ -540,17 +672,25 @@ async function handleRunTask() {
   try {
     const controls = controlsByTask.value[taskType.value].controls
     const taskOptions = buildTaskRequestOptions(taskType.value, controls)
-    taskResult.value = await store.runTask({
+    const response = await store.compareTask({
       task_type: taskType.value,
       text: subject,
       target_kind: scopeType.value === 'article' ? (hasArticleSelection.value ? 'selection' : 'article') : 'paste',
       target_ref_id: selectedArticleId.value,
       attachments: contextAttachments.value,
+      profile_ids: selectedProfileIds.value,
       ...taskOptions,
     })
+    compareResults.value = response.results
+    const firstSuccess = response.results.find((result) => result.status === 'success' && result.result.trim())
+    selectedCompareProfileId.value = firstSuccess?.profile_id ?? null
+    taskResult.value = firstSuccess?.result ?? ''
     showComparison.value = true
   } catch (e) {
-    taskResult.value = `${t('common.error')}: ${e instanceof Error ? e.message : String(e)}`
+    compareResults.value = []
+    selectedCompareProfileId.value = null
+    taskResult.value = ''
+    error.value = errorMessage(e)
     showComparison.value = true
   }
 }
@@ -637,8 +777,10 @@ function openChatArticle() {
 }
 
 async function copyResult() {
+  const resultText = selectedResultText.value.trim()
+  if (!resultText) return
   try {
-    await navigator.clipboard.writeText(taskResult.value)
+    await navigator.clipboard.writeText(selectedResultText.value)
     notice.value = t('ai.copied')
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -646,7 +788,8 @@ async function copyResult() {
 }
 
 async function applyResultToArticle(mode: 'replace' | 'insert_after') {
-  if (scopeType.value !== 'article' || !selectedArticleId.value || !taskResult.value.trim()) return
+  const resultText = selectedResultText.value
+  if (scopeType.value !== 'article' || !selectedArticleId.value || !resultText.trim()) return
   error.value = ''
   notice.value = ''
   try {
@@ -656,7 +799,7 @@ async function applyResultToArticle(mode: 'replace' | 'insert_after') {
     const start = selection ? selection.start : 0
     const end = selection ? selection.end : bodyText.length
     if (!selection && mode === 'replace' && !confirm(t('ai.confirmReplace'))) return
-    const edit = applyArticleBodyEdit(article.body || '', start, end, taskResult.value, mode)
+    const edit = applyArticleBodyEdit(article.body || '', start, end, resultText, mode)
     await articlesApi.createVersion(article.id, {
       version_type: 'ai_before_apply',
       label: t('ai.beforeApplyVersionLabel'),
@@ -1340,17 +1483,57 @@ function makeId(): string {
             <p v-else class="text-xs leading-5 text-gray-400">{{ t('ai.noContext') }}</p>
           </section>
 
+          <section class="rounded-2xl border border-gray-200 p-3">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h3 class="text-sm font-semibold text-gray-700">{{ t('ai.modelCompare') }}</h3>
+                <p class="mt-1 text-xs text-gray-400">{{ t('ai.modelCompareHint') }}</p>
+              </div>
+              <button
+                type="button"
+                @click="openAiProfileSettings"
+                class="text-xs font-semibold text-blue-600 hover:text-blue-800"
+              >
+                {{ t('ai.manageProfiles') }}
+              </button>
+            </div>
+            <div v-if="!aiProfilesSupported" class="rounded-lg bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+              {{ t('ai.aiProfilesUnsupported') }}
+            </div>
+            <div v-else class="space-y-2">
+              <label
+                v-for="profile in aiProfileOptions"
+                :key="profile.id"
+                class="flex cursor-pointer items-start gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-sm hover:bg-gray-100"
+              >
+                <input
+                  type="checkbox"
+                  class="mt-0.5 h-4 w-4 rounded border-gray-300"
+                  :checked="selectedProfileIds.includes(profile.id)"
+                  @change="toggleTaskProfile(profile.id)"
+                />
+                <span class="min-w-0 flex-1">
+                  <span class="block font-semibold text-gray-800">{{ profile.name }}</span>
+                  <span class="block truncate text-xs text-gray-500">
+                    {{ profile.model || profile.provider }}
+                  </span>
+                </span>
+              </label>
+              <p v-if="aiProfilesLoading" class="text-xs text-gray-400">{{ t('common.loading') }}</p>
+            </div>
+          </section>
+
           <button
             @click="handleRunTask"
             :disabled="store.taskRunning"
             class="w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white transition-colors hover:bg-blue-700 disabled:bg-gray-400"
           >
-            {{ store.taskRunning ? t('ai.running') : t('ai.runTask') }}
+            {{ runTaskLabel }}
           </button>
           <div class="grid grid-cols-3 gap-2">
             <button
               @click="clearCurrentResult"
-              :disabled="!taskResult.trim() && !showComparison"
+              :disabled="!taskResult.trim() && !compareResults.length && !showComparison"
               class="rounded-lg bg-gray-100 px-2 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-200 disabled:opacity-40"
             >
               {{ t('ai.clearCurrentResult') }}
@@ -1383,16 +1566,22 @@ function makeId(): string {
         <div class="flex items-center justify-between border-b border-gray-200 bg-white p-4">
           <div>
             <h2 class="text-lg font-bold">{{ t('ai.comparison') }}</h2>
-            <p class="text-xs text-gray-500">{{ t('ai.previewOnlyHint') }}</p>
+            <p class="text-xs text-gray-500">
+              {{ selectedCompareResult ? t('ai.winningResultSelected', { name: selectedCompareResult.profile_name }) : t('ai.chooseWinningResult') }}
+            </p>
           </div>
           <div class="flex flex-wrap justify-end gap-2">
-            <button @click="copyResult" class="rounded-lg bg-green-600 px-4 py-2 text-sm text-white transition-colors hover:bg-green-700">
+            <button
+              @click="copyResult"
+              :disabled="!selectedResultText.trim()"
+              class="rounded-lg bg-green-600 px-4 py-2 text-sm text-white transition-colors hover:bg-green-700 disabled:opacity-40"
+            >
               {{ t('ai.copyResult') }}
             </button>
             <button
               v-if="scopeType === 'article' && selectedArticleId"
               @click="applyResultToArticle('replace')"
-              :disabled="!taskResult.trim()"
+              :disabled="!selectedResultText.trim()"
               class="rounded-lg bg-orange-600 px-4 py-2 text-sm text-white transition-colors hover:bg-orange-700 disabled:opacity-40"
             >
               {{ hasArticleSelection ? t('ai.replaceSelection') : t('ai.replaceOriginal') }}
@@ -1400,7 +1589,7 @@ function makeId(): string {
             <button
               v-if="scopeType === 'article' && selectedArticleId"
               @click="applyResultToArticle('insert_after')"
-              :disabled="!taskResult.trim()"
+              :disabled="!selectedResultText.trim()"
               class="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white transition-colors hover:bg-blue-700 disabled:opacity-40"
             >
               {{ hasArticleSelection ? t('ai.insertAfterSelection') : t('ai.insertAtEnd') }}
@@ -1411,20 +1600,93 @@ function makeId(): string {
           </div>
         </div>
 
-        <div class="flex flex-1 flex-col overflow-hidden min-[1180px]:flex-row">
-          <section class="flex min-w-0 flex-1 flex-col border-r border-gray-200">
-            <div class="border-b border-gray-200 bg-gray-100 p-3 text-sm font-semibold">{{ t('ai.original') }}</div>
-            <div class="flex-1 overflow-y-auto p-6">
-              <pre class="whitespace-pre-wrap font-sans leading-relaxed text-gray-700">{{ originalText }}</pre>
+        <div class="min-h-0 flex-1 overflow-y-auto bg-gray-50 p-5">
+          <section class="mb-4 rounded-xl border border-gray-200 bg-white p-4">
+            <div class="mb-2 flex items-center justify-between gap-3">
+              <h3 class="text-sm font-semibold text-gray-800">{{ t('ai.original') }}</h3>
+              <span class="text-xs text-gray-500">
+                {{ originalText.length }} {{ t('ai.chars') }} · {{ countParagraphs(originalText) }} {{ t('ai.paragraphs') }}
+              </span>
             </div>
+            <pre class="max-h-40 overflow-y-auto whitespace-pre-wrap font-sans text-sm leading-6 text-gray-700">{{ originalText }}</pre>
           </section>
 
-          <section class="flex min-w-0 flex-1 flex-col">
-            <div class="border-b border-gray-200 bg-blue-100 p-3 text-sm font-semibold">{{ t('ai.result') }}</div>
-            <div class="flex-1 overflow-y-auto bg-blue-50 p-6">
-              <pre class="whitespace-pre-wrap font-sans leading-relaxed text-gray-900">{{ taskResult }}</pre>
-            </div>
-          </section>
+          <div v-if="!compareResults.length" class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            {{ error || t('ai.noCompareResults') }}
+          </div>
+
+          <div v-else class="grid gap-4 xl:grid-cols-2">
+            <article
+              v-for="result in compareResults"
+              :key="result.profile_id"
+              :class="[
+                'rounded-xl border bg-white p-4 shadow-sm',
+                selectedCompareProfileId === result.profile_id ? 'border-blue-400 ring-2 ring-blue-100' : 'border-gray-200',
+              ]"
+            >
+              <div class="mb-3 flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <h3 class="font-semibold text-gray-900">{{ result.profile_name }}</h3>
+                    <span
+                      :class="[
+                        'rounded-full px-2 py-0.5 text-xs font-semibold',
+                        result.status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700',
+                      ]"
+                    >
+                      {{ result.status === 'success' ? t('ai.resultSuccess') : t('ai.resultFailed') }}
+                    </span>
+                  </div>
+                  <p class="mt-1 break-all text-xs text-gray-500">
+                    {{ result.provider }} · {{ result.model }}
+                    <span v-if="result.transport"> · {{ result.transport }}</span>
+                  </p>
+                </div>
+                <button
+                  v-if="result.status === 'success'"
+                  @click="selectCompareResult(result)"
+                  :class="[
+                    'shrink-0 rounded-lg px-3 py-2 text-xs font-semibold',
+                    selectedCompareProfileId === result.profile_id
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-blue-50 text-blue-700 hover:bg-blue-100',
+                  ]"
+                >
+                  {{ selectedCompareProfileId === result.profile_id ? t('ai.winningResult') : t('ai.chooseResult') }}
+                </button>
+              </div>
+
+              <div class="mb-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
+                <div class="rounded-lg bg-gray-50 p-2">
+                  <div class="text-gray-400">{{ t('ai.charDelta') }}</div>
+                  <div class="mt-1 font-semibold text-gray-800">{{ formatDelta(result.stats.delta_chars) }}</div>
+                </div>
+                <div class="rounded-lg bg-gray-50 p-2">
+                  <div class="text-gray-400">{{ t('ai.outputRatio') }}</div>
+                  <div class="mt-1 font-semibold text-gray-800">{{ formatRatio(result.stats.output_ratio) }}</div>
+                </div>
+                <div class="rounded-lg bg-gray-50 p-2">
+                  <div class="text-gray-400">{{ t('ai.elapsed') }}</div>
+                  <div class="mt-1 font-semibold text-gray-800">{{ formatElapsed(result.elapsed_ms) }}</div>
+                </div>
+                <div class="rounded-lg bg-gray-50 p-2">
+                  <div class="text-gray-400">{{ t('ai.tokens') }}</div>
+                  <div class="mt-1 font-semibold text-gray-800">
+                    {{ result.input_tokens ?? '-' }} / {{ result.output_tokens ?? '-' }}
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="result.cost !== undefined && result.cost !== null" class="mb-3 text-xs text-gray-500">
+                {{ t('ai.cost') }}：{{ result.cost }}
+              </div>
+
+              <div v-if="result.status === 'error'" class="rounded-lg bg-red-50 p-3 text-sm leading-6 text-red-800">
+                {{ result.error }}
+              </div>
+              <pre v-else class="max-h-[48vh] overflow-y-auto whitespace-pre-wrap rounded-lg bg-[#fbfaf7] p-4 font-sans text-sm leading-7 text-gray-900">{{ result.result }}</pre>
+            </article>
+          </div>
         </div>
       </main>
     </div>

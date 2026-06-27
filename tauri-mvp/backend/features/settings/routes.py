@@ -6,6 +6,8 @@ import json
 import shutil
 import sqlite3
 import time
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 from urllib import error as urlerror
@@ -16,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 
 from deps import get_container
+from writer.app.settings import RUNTIME_AUTH_SOURCES, SUPPORTED_WIRE_APIS
 from writer.app.paths import (
     DATABASE_FILENAME,
     ENV_DATA_DIR,
@@ -39,7 +42,6 @@ from writer.services.ai.gemini_cli_provider import (
     find_gemini_cli,
     gemini_cli_oauth_status,
 )
-from writer.services.ai.gemini_provider import GeminiProvider
 from writer.services.ai.interfaces import AiError, AiProvider
 from writer.services.ai.opencode_cli_provider import (
     OPENCODE_AUTH_SOURCE,
@@ -49,8 +51,8 @@ from writer.services.ai.opencode_cli_provider import (
     list_opencode_models,
     opencode_auth_status,
 )
-from writer.services.ai.openai_provider import OpenAiProvider
 from writer.services.ai.preflight import format_issues, preflight_rewrite
+from writer.services.ai.provider_factory import provider_for_config
 from writer.services.ai.prompt_builder import PromptBuilder
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -108,6 +110,46 @@ class AiSettingsUpdate(BaseModel):
     model: str
     api_key_source: str = "env:OPENAI_API_KEY"
     gemini_cli_proxy: Optional[str] = None
+
+
+class AiProfileBase(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    name: str
+    provider_name: str
+    base_url: Optional[str] = None
+    wire_api: str = "responses"
+    model: str
+    api_key_source: str = "env:OPENAI_API_KEY"
+    gemini_cli_proxy: Optional[str] = None
+    enabled: bool = True
+
+
+class AiProfileCreate(AiProfileBase):
+    pass
+
+
+class AiProfileUpdate(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    name: Optional[str] = None
+    provider_name: Optional[str] = None
+    base_url: Optional[str] = None
+    wire_api: Optional[str] = None
+    model: Optional[str] = None
+    api_key_source: Optional[str] = None
+    gemini_cli_proxy: Optional[str] = None
+    enabled: Optional[bool] = None
+
+
+class AiProfileOut(AiProfileBase):
+    id: str
+    created_at: str
+    updated_at: str
+
+
+class AiProfileListOut(BaseModel):
+    profiles: list[AiProfileOut]
 
 
 class AiImportOut(BaseModel):
@@ -386,6 +428,12 @@ def _request_to_config(data: AiSettingsUpdate) -> AiConfig:
     api_key_source = data.api_key_source.strip()
     model = data.model.strip()
     base_url = (data.base_url or "").strip() or None
+    wire_api = (data.wire_api or "responses").strip().lower()
+    if wire_api not in SUPPORTED_WIRE_APIS:
+        raise HTTPException(
+            400,
+            f"Unsupported wire_api: {data.wire_api}. Supported values: {', '.join(SUPPORTED_WIRE_APIS)}",
+        )
     if provider == "gemini_cli":
         api_key_source = GEMINI_CLI_AUTH_SOURCE
         base_url = None
@@ -396,25 +444,130 @@ def _request_to_config(data: AiSettingsUpdate) -> AiConfig:
         base_url = None
         if not model or model.lower() in {"gpt-4o-mini", "default", "auto"}:
             model = OPENCODE_DEFAULT_MODEL
+    if api_key_source.startswith("literal:"):
+        raise HTTPException(400, "literal:<key> is not supported. Use an environment variable or a local auth source.")
+    if (
+        api_key_source
+        and api_key_source.lower() not in RUNTIME_AUTH_SOURCES
+        and not api_key_source.startswith("env:")
+    ):
+        raise HTTPException(400, "Unsupported api_key_source. Use env:VARNAME, codex, gemini, gemini-cli, or opencode.")
     return AiConfig(
         provider_name=provider,
         base_url=base_url,
-        wire_api=(data.wire_api or "responses").strip().lower(),
+        wire_api=wire_api,
         model=model,
         api_key_source=api_key_source,
         gemini_cli_proxy=(data.gemini_cli_proxy or "").strip() or None,
     )
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _config_to_profile_payload(
+    *,
+    profile_id: str,
+    name: str,
+    config: AiConfig,
+    enabled: bool,
+    created_at: str,
+    updated_at: str,
+) -> dict[str, Any]:
+    return {
+        "id": profile_id,
+        "name": name.strip()[:80],
+        "provider_name": config.provider_key(),
+        "base_url": config.base_url,
+        "wire_api": config.wire_api,
+        "model": config.model,
+        "api_key_source": config.api_key_source,
+        "gemini_cli_proxy": config.gemini_cli_proxy,
+        "enabled": bool(enabled),
+        "created_at": created_at,
+        "updated_at": updated_at,
+    }
+
+
+def _profile_base_to_payload(
+    data: AiProfileBase,
+    *,
+    profile_id: str,
+    created_at: str,
+    updated_at: str,
+) -> dict[str, Any]:
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(400, "Profile name is required")
+    config = _request_to_config(
+        AiSettingsUpdate(
+            provider_name=data.provider_name,
+            base_url=data.base_url,
+            wire_api=data.wire_api,
+            model=data.model,
+            api_key_source=data.api_key_source,
+            gemini_cli_proxy=data.gemini_cli_proxy,
+        )
+    )
+    if not (config.model or "").strip():
+        raise HTTPException(400, "Model is required")
+    return _config_to_profile_payload(
+        profile_id=profile_id,
+        name=name,
+        config=config,
+        enabled=data.enabled,
+        created_at=created_at,
+        updated_at=updated_at,
+    )
+
+
+def _profile_out_from_raw(raw: dict[str, Any]) -> Optional[AiProfileOut]:
+    profile_id = str(raw.get("id") or "").strip()
+    name = str(raw.get("name") or "").strip()
+    if not profile_id or not name:
+        return None
+    try:
+        payload = _profile_base_to_payload(
+            AiProfileBase(
+                name=name,
+                provider_name=str(raw.get("provider_name") or "openai"),
+                base_url=raw.get("base_url") if raw.get("base_url") is not None else None,
+                wire_api=str(raw.get("wire_api") or "responses"),
+                model=str(raw.get("model") or ""),
+                api_key_source=str(raw.get("api_key_source") or "env:OPENAI_API_KEY"),
+                gemini_cli_proxy=raw.get("gemini_cli_proxy")
+                if raw.get("gemini_cli_proxy") is not None
+                else None,
+                enabled=bool(raw.get("enabled", True)),
+            ),
+            profile_id=profile_id,
+            created_at=str(raw.get("created_at") or _utc_now()),
+            updated_at=str(raw.get("updated_at") or raw.get("created_at") or _utc_now()),
+        )
+    except HTTPException:
+        return None
+    return AiProfileOut(**payload)
+
+
+def _load_ai_profiles(container: AppContainer) -> list[AiProfileOut]:
+    profiles: list[AiProfileOut] = []
+    seen: set[str] = set()
+    for raw in container.settings.load_ai_provider_profiles():
+        profile = _profile_out_from_raw(raw)
+        if profile is None or profile.id in seen:
+            continue
+        seen.add(profile.id)
+        profiles.append(profile)
+    return profiles
+
+
+def _save_ai_profiles(container: AppContainer, profiles: list[AiProfileOut]) -> None:
+    container.settings.save_ai_provider_profiles([profile.model_dump() for profile in profiles])
+
+
 def _provider_for_config(config: AiConfig) -> AiProvider:
-    prompt_builder = PromptBuilder()
-    if config.provider_key() == "opencode" or config.uses_opencode_auth():
-        return OpenCodeCliProvider(config, prompt_builder)
-    if config.provider_key() == "gemini_cli":
-        return GeminiCliProvider(config, prompt_builder)
-    if config.provider_key() == "gemini" or config.uses_gemini_auth():
-        return GeminiProvider(config, prompt_builder)
-    return OpenAiProvider(config, prompt_builder)
+    return provider_for_config(config, PromptBuilder())
 
 
 def _friendly_ai_test_error(exc: Exception) -> str:
@@ -593,6 +746,80 @@ def get_ai_settings(
     container: AppContainer = Depends(get_container),
 ) -> AiSettingsOut:
     return _config_to_out(container.settings.load_ai_config())
+
+
+@router.get("/ai/profiles", response_model=AiProfileListOut)
+def list_ai_profiles(
+    container: AppContainer = Depends(get_container),
+) -> AiProfileListOut:
+    return AiProfileListOut(profiles=_load_ai_profiles(container))
+
+
+@router.post("/ai/profiles", response_model=AiProfileOut, status_code=201)
+def create_ai_profile(
+    data: AiProfileCreate,
+    container: AppContainer = Depends(get_container),
+) -> AiProfileOut:
+    profiles = _load_ai_profiles(container)
+    now = _utc_now()
+    payload = _profile_base_to_payload(
+        data,
+        profile_id=uuid.uuid4().hex,
+        created_at=now,
+        updated_at=now,
+    )
+    profile = AiProfileOut(**payload)
+    profiles.append(profile)
+    _save_ai_profiles(container, profiles)
+    return profile
+
+
+@router.put("/ai/profiles/{profile_id}", response_model=AiProfileOut)
+def update_ai_profile(
+    profile_id: str,
+    data: AiProfileUpdate,
+    container: AppContainer = Depends(get_container),
+) -> AiProfileOut:
+    profiles = _load_ai_profiles(container)
+    existing_index = next((index for index, item in enumerate(profiles) if item.id == profile_id), -1)
+    if existing_index < 0:
+        raise HTTPException(404, "AI profile not found")
+
+    existing = profiles[existing_index]
+    merged = existing.model_dump()
+    for field in data.model_fields_set:
+        merged[field] = getattr(data, field)
+    payload = _profile_base_to_payload(
+        AiProfileBase(
+            name=str(merged.get("name") or ""),
+            provider_name=str(merged.get("provider_name") or "openai"),
+            base_url=merged.get("base_url"),
+            wire_api=str(merged.get("wire_api") or "responses"),
+            model=str(merged.get("model") or ""),
+            api_key_source=str(merged.get("api_key_source") or "env:OPENAI_API_KEY"),
+            gemini_cli_proxy=merged.get("gemini_cli_proxy"),
+            enabled=bool(merged.get("enabled", True)),
+        ),
+        profile_id=existing.id,
+        created_at=existing.created_at,
+        updated_at=_utc_now(),
+    )
+    updated = AiProfileOut(**payload)
+    profiles[existing_index] = updated
+    _save_ai_profiles(container, profiles)
+    return updated
+
+
+@router.delete("/ai/profiles/{profile_id}", status_code=204)
+def delete_ai_profile(
+    profile_id: str,
+    container: AppContainer = Depends(get_container),
+):
+    profiles = _load_ai_profiles(container)
+    remaining = [item for item in profiles if item.id != profile_id]
+    if len(remaining) == len(profiles):
+        raise HTTPException(404, "AI profile not found")
+    _save_ai_profiles(container, remaining)
 
 
 @router.get("/ai/models", response_model=AiModelListOut)

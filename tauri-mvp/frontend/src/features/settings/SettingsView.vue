@@ -2,7 +2,15 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { appApi } from '../../api/app'
 import { errorMessage, isHttpStatus } from '../../api/base'
-import { settingsApi, type AiProviderName, type AiSettings, type AiSettingsUpdate, type DataLocationInfo } from '../../api/settings'
+import {
+  settingsApi,
+  type AiProfile,
+  type AiProfileCreate,
+  type AiProviderName,
+  type AiSettings,
+  type AiSettingsUpdate,
+  type DataLocationInfo,
+} from '../../api/settings'
 import { useI18n } from '../../i18n'
 import { useAppUpdateStore } from '../../stores/appUpdate'
 import { useSettingsStore } from '../../stores/settings'
@@ -38,6 +46,20 @@ const saveError = ref('')
 const fetchedModelPresets = ref<Partial<Record<AiProviderName, string[]>>>({})
 let applyingAiSettings = false
 
+const aiProfiles = ref<AiProfile[]>([])
+const loadingProfiles = ref(false)
+const savingProfile = ref(false)
+const testingProfile = ref(false)
+const fetchingProfileModels = ref(false)
+const profileEditorOpen = ref(false)
+const editingProfileId = ref<string | null>(null)
+const profileDraft = ref<AiProfileCreate>(createEmptyProfileDraft())
+const profileNotice = ref('')
+const profileError = ref('')
+const profileTestResult = ref<{ success: boolean; message: string; preview?: string; cost?: number | null } | null>(null)
+const profileModelFetchResult = ref<{ success: boolean; message: string } | null>(null)
+const profileModelPresets = ref<Partial<Record<AiProviderName, string[]>>>({})
+
 const closeBehaviorNotice = ref('')
 const dataLocation = ref<DataLocationInfo | null>(null)
 const dataOverride = ref<DataDirectoryOverrideState | null>(null)
@@ -56,28 +78,37 @@ const providerOptions = computed<Array<{ value: AiProviderName; label: string }>
   { value: 'opencode', label: t('settings.providers.opencode') },
 ])
 
-const credentialOptions = computed<Array<{ value: string; label: string }>>(() => {
-  if (aiProvider.value === 'gemini') {
+function credentialOptionsFor(provider: AiProviderName): Array<{ value: string; label: string }> {
+  if (provider === 'gemini') {
     return [
       { value: 'env:GEMINI_API_KEY', label: 'env:GEMINI_API_KEY' },
       { value: 'gemini', label: t('settings.credentialGemini') },
     ]
   }
-  if (aiProvider.value === 'gemini_cli') {
+  if (provider === 'gemini_cli') {
     return [{ value: 'gemini-cli', label: t('settings.credentialGeminiCli') }]
   }
-  if (aiProvider.value === 'opencode') {
+  if (provider === 'opencode') {
     return [{ value: 'opencode', label: t('settings.credentialOpenCode') }]
   }
   return [
     { value: 'env:OPENAI_API_KEY', label: 'env:OPENAI_API_KEY' },
     { value: 'codex', label: t('settings.credentialCodex') },
   ]
-})
+}
+
+const credentialOptions = computed<Array<{ value: string; label: string }>>(() => credentialOptionsFor(aiProvider.value))
 
 const modelPresets = computed(() =>
   fetchedModelPresets.value[aiProvider.value]
   ?? aiSettings.value?.model_presets?.[aiProvider.value]
+  ?? []
+)
+
+const profileModelOptions = computed(() =>
+  profileModelPresets.value[profileDraft.value.provider_name]
+  ?? fetchedModelPresets.value[profileDraft.value.provider_name]
+  ?? aiSettings.value?.model_presets?.[profileDraft.value.provider_name]
   ?? []
 )
 
@@ -132,6 +163,7 @@ const statusDetail = computed(() => {
 
 onMounted(() => {
   void loadSettings()
+  void loadProfiles()
   void loadDataLocation()
   void settings.loadNativePreferences()
   void appUpdate.ensureVersionLoaded()
@@ -200,6 +232,233 @@ function buildAiSettingsUpdate(): AiSettingsUpdate {
     model: model.value.trim() || (aiProvider.value === 'gemini_cli' ? 'gemini-cli-default' : aiProvider.value === 'opencode' ? OPENCODE_DEFAULT_MODEL : ''),
     api_key_source: aiProvider.value === 'gemini_cli' ? 'gemini-cli' : aiProvider.value === 'opencode' ? 'opencode' : apiKeySource.value.trim(),
     gemini_cli_proxy: aiProvider.value === 'gemini_cli' ? geminiCliProxy.value.trim() || null : null,
+  }
+}
+
+function createEmptyProfileDraft(): AiProfileCreate {
+  return {
+    name: '',
+    provider_name: 'openai',
+    base_url: '',
+    wire_api: 'chat_completions',
+    model: '',
+    api_key_source: 'env:OPENAI_API_KEY',
+    gemini_cli_proxy: null,
+    enabled: true,
+  }
+}
+
+function profileToDraft(profile: AiProfile): AiProfileCreate {
+  return {
+    name: profile.name,
+    provider_name: profile.provider_name,
+    base_url: profile.base_url ?? '',
+    wire_api: profile.wire_api || 'responses',
+    model: profile.model,
+    api_key_source: profile.api_key_source,
+    gemini_cli_proxy: profile.gemini_cli_proxy,
+    enabled: profile.enabled,
+  }
+}
+
+function profileDraftToSettingsUpdate(draft = profileDraft.value): AiSettingsUpdate {
+  const provider = draft.provider_name
+  return {
+    provider_name: provider,
+    base_url: provider === 'gemini_cli' || provider === 'opencode' ? null : (draft.base_url || '').trim() || null,
+    wire_api: provider === 'openai' ? (draft.wire_api || 'chat_completions') : 'responses',
+    model: (draft.model || '').trim() || (provider === 'gemini_cli' ? 'gemini-cli-default' : provider === 'opencode' ? OPENCODE_DEFAULT_MODEL : ''),
+    api_key_source: provider === 'gemini_cli' ? 'gemini-cli' : provider === 'opencode' ? 'opencode' : (draft.api_key_source || '').trim(),
+    gemini_cli_proxy: provider === 'gemini_cli' ? (draft.gemini_cli_proxy || '').trim() || null : null,
+  }
+}
+
+function normalizeProfileDraftForProvider() {
+  const draft = profileDraft.value
+  if (draft.provider_name === 'openai') {
+    if (!draft.api_key_source || ['gemini', 'gemini-cli', 'opencode'].includes(draft.api_key_source)) {
+      draft.api_key_source = 'env:OPENAI_API_KEY'
+    }
+    if (!draft.wire_api) draft.wire_api = 'chat_completions'
+    if (draft.model.startsWith('gemini') || draft.model.startsWith('opencode/')) draft.model = ''
+    return
+  }
+  if (draft.provider_name === 'gemini') {
+    if (!draft.api_key_source || ['codex', 'gemini-cli', 'opencode'].includes(draft.api_key_source)) {
+      draft.api_key_source = 'env:GEMINI_API_KEY'
+    }
+    draft.wire_api = 'responses'
+    if (draft.model.startsWith('gpt-') || draft.model.startsWith('opencode/')) draft.model = ''
+    return
+  }
+  if (draft.provider_name === 'gemini_cli') {
+    draft.api_key_source = 'gemini-cli'
+    draft.base_url = null
+    draft.wire_api = 'responses'
+    if (!draft.model || draft.model.startsWith('gpt-') || draft.model.startsWith('opencode/')) {
+      draft.model = 'gemini-cli-default'
+    }
+    return
+  }
+  draft.api_key_source = 'opencode'
+  draft.base_url = null
+  draft.wire_api = 'responses'
+  if (!draft.model || draft.model.startsWith('gpt-') || draft.model.startsWith('gemini')) {
+    draft.model = OPENCODE_DEFAULT_MODEL
+  }
+}
+
+async function loadProfiles() {
+  loadingProfiles.value = true
+  profileError.value = ''
+  try {
+    const result = await settingsApi.listAiProfiles()
+    aiProfiles.value = result.profiles
+  } catch (e) {
+    profileError.value = errorMessage(e)
+  } finally {
+    loadingProfiles.value = false
+  }
+}
+
+function startCreateProfile() {
+  profileEditorOpen.value = true
+  editingProfileId.value = null
+  profileDraft.value = createEmptyProfileDraft()
+  profileNotice.value = ''
+  profileError.value = ''
+  profileTestResult.value = null
+  profileModelFetchResult.value = null
+}
+
+function startEditProfile(profile: AiProfile) {
+  profileEditorOpen.value = true
+  editingProfileId.value = profile.id
+  profileDraft.value = profileToDraft(profile)
+  profileNotice.value = ''
+  profileError.value = ''
+  profileTestResult.value = null
+  profileModelFetchResult.value = null
+}
+
+function cancelProfileEdit() {
+  profileEditorOpen.value = false
+  editingProfileId.value = null
+  profileDraft.value = createEmptyProfileDraft()
+  profileTestResult.value = null
+  profileModelFetchResult.value = null
+}
+
+async function saveProfile() {
+  savingProfile.value = true
+  profileNotice.value = ''
+  profileError.value = ''
+  profileTestResult.value = null
+  profileModelFetchResult.value = null
+  try {
+    const update = profileDraftToSettingsUpdate()
+    const payload: AiProfileCreate = {
+      name: profileDraft.value.name.trim(),
+      provider_name: update.provider_name,
+      base_url: update.base_url,
+      wire_api: update.wire_api,
+      model: update.model,
+      api_key_source: update.api_key_source,
+      gemini_cli_proxy: update.gemini_cli_proxy,
+      enabled: profileDraft.value.enabled ?? true,
+    }
+    if (!payload.name) {
+      profileError.value = t('settings.aiProfileNameRequired')
+      return
+    }
+    if (!payload.model) {
+      profileError.value = t('settings.aiProfileModelRequired')
+      return
+    }
+    if (editingProfileId.value) {
+      await settingsApi.updateAiProfile(editingProfileId.value, payload)
+      profileNotice.value = t('settings.aiProfileUpdated')
+    } else {
+      await settingsApi.createAiProfile(payload)
+      profileNotice.value = t('settings.aiProfileCreated')
+    }
+    await loadProfiles()
+    cancelProfileEdit()
+  } catch (e) {
+    profileError.value = errorMessage(e)
+  } finally {
+    savingProfile.value = false
+  }
+}
+
+async function deleteProfile(profile: AiProfile) {
+  if (!window.confirm(t('settings.aiProfileDeleteConfirm', { name: profile.name }))) return
+  profileError.value = ''
+  profileNotice.value = ''
+  try {
+    await settingsApi.deleteAiProfile(profile.id)
+    aiProfiles.value = aiProfiles.value.filter((item) => item.id !== profile.id)
+    if (editingProfileId.value === profile.id) cancelProfileEdit()
+    profileNotice.value = t('settings.aiProfileDeleted')
+  } catch (e) {
+    profileError.value = errorMessage(e)
+  }
+}
+
+async function toggleProfileEnabled(profile: AiProfile) {
+  profileError.value = ''
+  profileNotice.value = ''
+  try {
+    const updated = await settingsApi.updateAiProfile(profile.id, { enabled: !profile.enabled })
+    aiProfiles.value = aiProfiles.value.map((item) => item.id === updated.id ? updated : item)
+  } catch (e) {
+    profileError.value = errorMessage(e)
+  }
+}
+
+async function testProfileLive() {
+  testingProfile.value = true
+  profileTestResult.value = null
+  profileError.value = ''
+  profileNotice.value = ''
+  try {
+    const result = await settingsApi.testAiSettingsLive(profileDraftToSettingsUpdate())
+    profileTestResult.value = {
+      success: result.ok,
+      message: result.message,
+      preview: result.preview,
+      cost: result.cost,
+    }
+  } catch (e) {
+    profileTestResult.value = { success: false, message: errorMessage(e) }
+  } finally {
+    testingProfile.value = false
+  }
+}
+
+async function fetchProfileModels() {
+  fetchingProfileModels.value = true
+  profileModelFetchResult.value = null
+  profileError.value = ''
+  profileNotice.value = ''
+  try {
+    const update = profileDraftToSettingsUpdate()
+    const result = await settingsApi.getAiModels(update.provider_name, true, update)
+    profileModelPresets.value = {
+      ...profileModelPresets.value,
+      [update.provider_name]: result.models,
+    }
+    profileModelFetchResult.value = {
+      success: result.source === 'live',
+      message: result.message,
+    }
+    if (!profileDraft.value.model.trim() && result.models.length > 0) {
+      profileDraft.value.model = result.models[0]
+    }
+  } catch (e) {
+    profileModelFetchResult.value = { success: false, message: errorMessage(e) }
+  } finally {
+    fetchingProfileModels.value = false
   }
 }
 
@@ -671,6 +930,239 @@ async function openReleasePage() {
                 {{ t('settings.liveTestCost') }}：{{ liveTestResult.cost }}
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <div class="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-bold text-gray-900">{{ t('settings.aiProfiles') }}</h2>
+            <p class="mt-1 text-sm leading-6 text-gray-500">{{ t('settings.aiProfilesHelp') }}</p>
+          </div>
+          <button
+            @click="startCreateProfile"
+            class="shrink-0 rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-700"
+          >
+            {{ t('settings.addAiProfile') }}
+          </button>
+        </div>
+
+        <div v-if="profileError" class="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ profileError }}</div>
+        <div v-if="profileNotice" class="mb-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">{{ profileNotice }}</div>
+
+        <div v-if="loadingProfiles" class="rounded-lg bg-gray-50 p-4 text-sm text-gray-500">{{ t('common.loading') }}</div>
+        <div v-else-if="!aiProfiles.length" class="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4 text-sm leading-6 text-gray-500">
+          {{ t('settings.noAiProfiles') }}
+        </div>
+        <div v-else class="grid gap-3">
+          <article
+            v-for="profile in aiProfiles"
+            :key="profile.id"
+            class="rounded-xl border border-gray-200 bg-gray-50 p-4"
+          >
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <h3 class="font-semibold text-gray-900">{{ profile.name }}</h3>
+                  <span
+                    :class="[
+                      'rounded-full px-2 py-0.5 text-xs font-semibold',
+                      profile.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600',
+                    ]"
+                  >
+                    {{ profile.enabled ? t('settings.enabled') : t('settings.disabled') }}
+                  </span>
+                </div>
+                <p class="mt-1 break-all text-sm text-gray-600">
+                  {{ providerOptions.find((item) => item.value === profile.provider_name)?.label || profile.provider_name }}
+                  · {{ profile.model }}
+                  <span v-if="profile.provider_name === 'openai'"> · {{ profile.wire_api === 'chat_completions' ? 'Chat Completions' : 'Responses' }}</span>
+                </p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  @click="toggleProfileEnabled(profile)"
+                  class="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-white"
+                >
+                  {{ profile.enabled ? t('settings.disable') : t('settings.enable') }}
+                </button>
+                <button
+                  @click="startEditProfile(profile)"
+                  class="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-gray-700 ring-1 ring-gray-200 hover:bg-gray-100"
+                >
+                  {{ t('common.edit') }}
+                </button>
+                <button
+                  @click="deleteProfile(profile)"
+                  class="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100"
+                >
+                  {{ t('common.delete') }}
+                </button>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div v-if="profileEditorOpen" class="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-4">
+          <div class="mb-4 flex items-center justify-between gap-3">
+            <h3 class="font-semibold text-blue-950">
+              {{ editingProfileId ? t('settings.editAiProfile') : t('settings.newAiProfile') }}
+            </h3>
+            <button
+              v-if="editingProfileId || profileDraft.name || profileDraft.model || profileDraft.base_url"
+              @click="cancelProfileEdit"
+              class="text-sm font-semibold text-blue-700 hover:text-blue-900"
+            >
+              {{ t('common.cancel') }}
+            </button>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <div>
+              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.aiProfileName') }}</label>
+              <input
+                v-model="profileDraft.name"
+                type="text"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                :placeholder="t('settings.aiProfileNamePlaceholder')"
+              />
+            </div>
+
+            <div>
+              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.provider') }}</label>
+              <select
+                v-model="profileDraft.provider_name"
+                @change="normalizeProfileDraftForProvider"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option v-for="provider in providerOptions" :key="provider.value" :value="provider.value">
+                  {{ provider.label }}
+                </option>
+              </select>
+            </div>
+
+            <div v-if="profileDraft.provider_name !== 'gemini_cli' && profileDraft.provider_name !== 'opencode'" class="md:col-span-2">
+              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.baseUrl') }}</label>
+              <input
+                v-model="profileDraft.base_url"
+                type="text"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                :placeholder="profileDraft.provider_name === 'gemini' ? 'https://generativelanguage.googleapis.com' : 'https://api.openai.com/v1'"
+              />
+            </div>
+
+            <div v-if="profileDraft.provider_name === 'openai'">
+              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.wireApi') }}</label>
+              <select
+                v-model="profileDraft.wire_api"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="chat_completions">Chat Completions</option>
+                <option value="responses">Responses</option>
+              </select>
+            </div>
+
+            <div :class="profileDraft.provider_name === 'openai' ? '' : 'md:col-span-2'">
+              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.model') }}</label>
+              <div class="grid gap-2 md:grid-cols-[1fr_auto]">
+                <input
+                  v-model="profileDraft.model"
+                  type="text"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                  :placeholder="profileDraft.provider_name === 'openai' ? 'deepseek-chat / gpt-4o-mini' : profileDraft.provider_name === 'gemini' ? 'gemini-2.5-flash' : profileDraft.provider_name === 'opencode' ? OPENCODE_DEFAULT_MODEL : 'gemini-cli-default'"
+                />
+                <button
+                  @click="fetchProfileModels"
+                  :disabled="fetchingProfileModels"
+                  class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                >
+                  {{ fetchingProfileModels ? t('settings.fetchingModels') : t('settings.fetchModels') }}
+                </button>
+              </div>
+              <select
+                :value="profileModelOptions.includes(profileDraft.model) ? profileDraft.model : ''"
+                @change="profileDraft.model = ($event.target as HTMLSelectElement).value || profileDraft.model"
+                class="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">{{ t('settings.customModel') }}</option>
+                <option v-for="preset in profileModelOptions" :key="preset" :value="preset">{{ preset }}</option>
+              </select>
+              <div
+                v-if="profileModelFetchResult"
+                :class="[
+                  'mt-2 rounded-lg p-3 text-sm',
+                  profileModelFetchResult.success ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800',
+                ]"
+              >
+                {{ profileModelFetchResult.message }}
+              </div>
+            </div>
+
+            <div v-if="profileDraft.provider_name !== 'gemini_cli' && profileDraft.provider_name !== 'opencode'" class="md:col-span-2">
+              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.credentialSource') }}</label>
+              <select
+                v-model="profileDraft.api_key_source"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option v-for="option in credentialOptionsFor(profileDraft.provider_name)" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+              <p class="mt-1 text-xs text-gray-500">{{ t('settings.credentialHelp') }}</p>
+            </div>
+
+            <div v-else-if="profileDraft.provider_name === 'gemini_cli'" class="md:col-span-2">
+              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.geminiCliProxy') }}</label>
+              <input
+                v-model="profileDraft.gemini_cli_proxy"
+                type="text"
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="http://127.0.0.1:7890"
+              />
+            </div>
+
+            <div v-else class="rounded-lg border border-blue-100 bg-white p-3 text-sm leading-6 text-blue-900 md:col-span-2">
+              {{ t('settings.openCodeHelp') }}
+            </div>
+          </div>
+
+          <label class="mt-4 flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <input v-model="profileDraft.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
+            {{ t('settings.aiProfileEnabled') }}
+          </label>
+
+          <div
+            v-if="profileTestResult"
+            :class="[
+              'mt-3 rounded-lg p-3 text-sm',
+              profileTestResult.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800',
+            ]"
+          >
+            <div>{{ profileTestResult.message }}</div>
+            <div v-if="profileTestResult.preview" class="mt-1 text-xs opacity-80">
+              {{ t('settings.liveTestPreview') }}：{{ profileTestResult.preview }}
+            </div>
+            <div v-if="profileTestResult.cost !== undefined && profileTestResult.cost !== null" class="mt-1 text-xs opacity-80">
+              {{ t('settings.liveTestCost') }}：{{ profileTestResult.cost }}
+            </div>
+          </div>
+
+          <div class="mt-4 flex flex-wrap justify-end gap-2">
+            <button
+              @click="testProfileLive"
+              :disabled="testingProfile"
+              class="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
+            >
+              {{ testingProfile ? t('settings.liveTesting') : t('settings.testLiveConnection') }}
+            </button>
+            <button
+              @click="saveProfile"
+              :disabled="savingProfile"
+              class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
+            >
+              {{ savingProfile ? t('common.saving') : t('settings.saveAiProfile') }}
+            </button>
           </div>
         </div>
       </section>

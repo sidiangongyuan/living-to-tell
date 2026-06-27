@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import type { AiTaskCompareResult } from '../../api/ai'
 import { cloneControls, createDefaultControls, type TaskControls } from './taskControls'
 
 export type TaskType = 'polish' | 'rewrite' | 'expand' | 'continue' | 'style_transfer' | 'summarize' | 'outline' | 'title'
@@ -25,6 +26,9 @@ export interface RouteSelection {
 export interface AiTaskWorkspaceState {
   taskInput: string
   taskResult: string
+  compareResults: AiTaskCompareResult[]
+  selectedCompareProfileId: string | null
+  selectedProfileIds: string[]
   showComparison: boolean
   selectedCardIds: string[]
   manualContextItems: ContextItem[]
@@ -52,6 +56,9 @@ function createTaskState(): AiTaskWorkspaceState {
   return {
     taskInput: '',
     taskResult: '',
+    compareResults: [],
+    selectedCompareProfileId: null,
+    selectedProfileIds: ['default'],
     showComparison: false,
     selectedCardIds: [],
     manualContextItems: [],
@@ -96,6 +103,8 @@ export const useAiWorkspaceStore = defineStore('ai-workspace', () => {
   function clearCurrentResult() {
     const task = currentTask()
     task.taskResult = ''
+    task.compareResults = []
+    task.selectedCompareProfileId = null
     task.showComparison = false
     task.notice = ''
   }

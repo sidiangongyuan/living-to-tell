@@ -27,6 +27,41 @@ export interface AiTaskResponse {
   task_type: string
 }
 
+export interface AiTaskResultStats {
+  input_chars: number
+  output_chars: number
+  delta_chars: number
+  output_ratio: number | null
+  input_paragraphs: number
+  output_paragraphs: number
+}
+
+export interface AiTaskCompareResult {
+  profile_id: string
+  profile_name: string
+  provider: string
+  model: string
+  transport?: string | null
+  status: 'success' | 'error'
+  result: string
+  error: string
+  elapsed_ms: number
+  input_tokens?: number | null
+  output_tokens?: number | null
+  cost?: number | null
+  finish_reason?: string | null
+  stats: AiTaskResultStats
+}
+
+export interface AiTaskCompareRequest extends AiTaskRequest {
+  profile_ids: string[]
+}
+
+export interface AiTaskCompareResponse {
+  task_type: string
+  results: AiTaskCompareResult[]
+}
+
 export interface AiContextAttachment {
   kind: string
   ref_id: string
@@ -98,6 +133,16 @@ export const aiApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
       // Extended timeout for long AI operations
+      signal: AbortSignal.timeout(120000),
+    })
+    return handleResponse(res)
+  },
+
+  async compareTask(request: AiTaskCompareRequest): Promise<AiTaskCompareResponse> {
+    const res = await apiFetch('/api/ai/task/compare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
       signal: AbortSignal.timeout(120000),
     })
     return handleResponse(res)

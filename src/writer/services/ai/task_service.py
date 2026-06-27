@@ -78,7 +78,12 @@ class AiTaskService:
         return self.estimate_context_chars(request) > SOFT_CONTEXT_BUDGET_CHARS
 
     # ---- public API ---------------------------------------------------
-    def generate(self, request: AiTaskRequest) -> AiTaskResponse:
+    def generate(
+        self,
+        request: AiTaskRequest,
+        *,
+        model_override: Optional[str] = None,
+    ) -> AiTaskResponse:
         """Run a task and return a structured response.
 
         Library QA: if no attachments were provided AND a library search
@@ -97,7 +102,7 @@ class AiTaskService:
 
         provider = self._provider_factory()
         messages = self._prompts.build_messages(request)
-        model = self.model_for_tier(request.cost_tier)
+        model = model_override if model_override is not None else self.model_for_tier(request.cost_tier)
         response = provider.chat(messages, model=model)
 
         structured: Optional[Dict[str, Any]] = None
@@ -132,6 +137,7 @@ class AiTaskService:
         messages: List[dict],
         *,
         cost_tier: AiCostTier = AiCostTier.BALANCED,
+        model_override: Optional[str] = None,
     ) -> AiTaskResponse:
         """Run a fixed prompt that is not part of the task taxonomy.
 
@@ -139,7 +145,7 @@ class AiTaskService:
         UI needs a strict artifact instead of a general writing task.
         """
         provider = self._provider_factory()
-        model = self.model_for_tier(cost_tier)
+        model = model_override if model_override is not None else self.model_for_tier(cost_tier)
         response = provider.chat(messages, model=model)
         return AiTaskResponse(
             content=response.content,

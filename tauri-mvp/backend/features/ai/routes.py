@@ -6,7 +6,10 @@ Long-running AI calls are synchronous with extended timeout (handled by frontend
 from __future__ import annotations
 
 import json
+import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from typing import Any
 from typing import Optional
 
@@ -14,10 +17,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from deps import get_container
+from writer.app.settings import SUPPORTED_AI_PROVIDERS, SUPPORTED_WIRE_APIS
 from writer.app.container import AppContainer
 from writer.domain.enums import AiCostTier, AiTargetKind, AiTaskType
+from writer.domain.models.ai_config import AiConfig
 from writer.domain.models.ai_thread import AiThread as DomainThread
 from writer.domain.models.ai_thread import AiMessage as DomainMessage
+from writer.services.ai.interfaces import AiError
+from writer.services.ai.preflight import format_issues, preflight_rewrite
+from writer.services.ai.provider_factory import provider_for_config
+from writer.services.ai.prompt_builder import PromptBuilder
+from writer.services.ai.task_prompt_builder import TaskPromptBuilder
+from writer.services.ai.task_service import AiTaskService
 from writer.services.ai.task_types import (
     AiContextAttachment as DomainContextAttachment,
 )
@@ -86,6 +97,49 @@ class AiTaskRequest(BaseModel):
 class AiTaskResponse(BaseModel):
     result: str
     task_type: str
+
+
+class AiTaskCompareRequest(AiTaskRequest):
+    profile_ids: list[str] = Field(default_factory=lambda: ["default"])
+
+
+class AiTaskResultStats(BaseModel):
+    input_chars: int
+    output_chars: int
+    delta_chars: int
+    output_ratio: Optional[float] = None
+    input_paragraphs: int
+    output_paragraphs: int
+
+
+class AiTaskCompareResult(BaseModel):
+    profile_id: str
+    profile_name: str
+    provider: str
+    model: str
+    transport: Optional[str] = None
+    status: str
+    result: str = ""
+    error: str = ""
+    elapsed_ms: int = 0
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    cost: Optional[float] = None
+    finish_reason: Optional[str] = None
+    stats: AiTaskResultStats
+
+
+class AiTaskCompareResponse(BaseModel):
+    task_type: str
+    results: list[AiTaskCompareResult]
+
+
+@dataclass(frozen=True)
+class _ProfileRuntime:
+    profile_id: str
+    profile_name: str
+    config: Optional[AiConfig]
+    error: str = ""
 
 
 class ThreadOut(BaseModel):
@@ -264,6 +318,143 @@ def _task_attachments(request: AiTaskRequest) -> list[DomainContextAttachment]:
     return attachments
 
 
+def _domain_task_request(request: AiTaskRequest) -> DomainAiTaskRequest:
+    task_enum = TASK_TYPE_MAP.get(request.task_type)
+    if not task_enum:
+        raise HTTPException(400, f"Unknown task_type: {request.task_type}")
+    return DomainAiTaskRequest(
+        task_type=task_enum,
+        target_kind=_target_kind(request.target_kind),
+        text=request.text,
+        target_ref_id=request.target_ref_id,
+        style=request.style,
+        intensity=request.intensity,
+        extra_instructions=_task_extra_instructions(request),
+        max_output_chars=request.max_output_chars,
+        preserve_meaning=request.preserve_meaning,
+        preserve_voice=request.preserve_voice,
+        forbid_terms=_clean_terms(request.forbid_terms),
+        must_keep_terms=_clean_terms(request.must_keep_terms),
+        attachments=_task_attachments(request),
+        cost_tier=_cost_tier(request.cost_tier),
+    )
+
+
+def _paragraph_count(value: str) -> int:
+    return len([part for part in (value or "").splitlines() if part.strip()])
+
+
+def _task_stats(input_text: str, output_text: str) -> AiTaskResultStats:
+    input_chars = len(input_text or "")
+    output_chars = len(output_text or "")
+    return AiTaskResultStats(
+        input_chars=input_chars,
+        output_chars=output_chars,
+        delta_chars=output_chars - input_chars,
+        output_ratio=round(output_chars / input_chars, 3) if input_chars else None,
+        input_paragraphs=_paragraph_count(input_text),
+        output_paragraphs=_paragraph_count(output_text),
+    )
+
+
+def _friendly_ai_error(exc: Exception) -> str:
+    raw = str(exc).strip()
+    lowered = raw.lower()
+    if not raw:
+        return "AI 请求失败，请稍后重试。"
+    if "<!doctype html" in lowered or "<html" in lowered:
+        return "AI 服务返回了网页错误页，请检查接口协议、模型权限和密钥。"
+    if "http 403" in lowered or "forbidden" in lowered:
+        return "AI 服务拒绝了当前请求，可能是模型无权限、密钥无效或接口协议不匹配。"
+    if "failed to fetch" in lowered:
+        return "后台服务正在启动或连接中，请稍后重试；如果持续出现，请重启应用。"
+    if "traceback" in lowered:
+        return "AI 请求失败，后台返回了异常信息。请检查模型配置后重试。"
+    if len(raw) > 240:
+        return raw[:240].rstrip() + "..."
+    return raw
+
+
+def _profile_config_from_raw(raw: dict[str, Any]) -> Optional[_ProfileRuntime]:
+    profile_id = str(raw.get("id") or "").strip()
+    name = str(raw.get("name") or "").strip()
+    if not profile_id or not name or not bool(raw.get("enabled", True)):
+        return None
+    provider = str(raw.get("provider_name") or "").strip().lower()
+    wire_api = str(raw.get("wire_api") or "responses").strip().lower()
+    if provider not in SUPPORTED_AI_PROVIDERS or wire_api not in SUPPORTED_WIRE_APIS:
+        return _ProfileRuntime(
+            profile_id=profile_id,
+            profile_name=name,
+            config=None,
+            error="这个 AI 配置档案已失效，请到设置页重新保存。",
+        )
+    model = str(raw.get("model") or "").strip()
+    if not model:
+        return _ProfileRuntime(
+            profile_id=profile_id,
+            profile_name=name,
+            config=None,
+            error="这个 AI 配置档案没有填写模型。",
+        )
+    config = AiConfig(
+        provider_name=provider,
+        base_url=str(raw.get("base_url") or "").strip() or None,
+        wire_api=wire_api,
+        model=model,
+        api_key_source=str(raw.get("api_key_source") or "env:OPENAI_API_KEY").strip(),
+        gemini_cli_proxy=str(raw.get("gemini_cli_proxy") or "").strip() or None,
+    )
+    return _ProfileRuntime(profile_id=profile_id, profile_name=name, config=config)
+
+
+def _resolve_compare_profiles(
+    profile_ids: list[str],
+    container: AppContainer,
+) -> list[_ProfileRuntime]:
+    unique_ids: list[str] = []
+    for raw in profile_ids or ["default"]:
+        value = str(raw or "").strip()
+        if not value or value in unique_ids:
+            continue
+        unique_ids.append(value)
+    if not unique_ids:
+        unique_ids = ["default"]
+    if len(unique_ids) > 3:
+        raise HTTPException(400, "一次最多只能对比 3 个 AI 配置。")
+
+    stored: dict[str, _ProfileRuntime] = {}
+    for raw in container.settings.load_ai_provider_profiles():
+        profile = _profile_config_from_raw(raw)
+        if profile is not None:
+            stored[profile.profile_id] = profile
+
+    resolved: list[_ProfileRuntime] = []
+    for profile_id in unique_ids:
+        if profile_id == "default":
+            resolved.append(
+                _ProfileRuntime(
+                    profile_id="default",
+                    profile_name="默认配置",
+                    config=container.settings.load_ai_config(),
+                )
+            )
+            continue
+        profile = stored.get(profile_id)
+        if profile is None:
+            resolved.append(
+                _ProfileRuntime(
+                    profile_id=profile_id,
+                    profile_name="已删除的配置档案",
+                    config=None,
+                    error="这个 AI 配置档案已不存在，请在设置页刷新配置。",
+                )
+            )
+        else:
+            resolved.append(profile)
+    return resolved
+
+
 def _default_thread_title(
     scope_kind: str,
     scope_id: Optional[str],
@@ -375,32 +566,112 @@ def run_ai_task(
     This is SYNCHRONOUS and may take 30-120s. The frontend must set a long
     timeout when calling this endpoint.
     """
-    task_enum = TASK_TYPE_MAP.get(request.task_type)
-    if not task_enum:
-        raise HTTPException(400, f"Unknown task_type: {request.task_type}")
-
     try:
-        result = container.ai_task_service.generate(
-            DomainAiTaskRequest(
-                task_type=task_enum,
-                target_kind=_target_kind(request.target_kind),
-                text=request.text,
-                target_ref_id=request.target_ref_id,
-                style=request.style,
-                intensity=request.intensity,
-                extra_instructions=_task_extra_instructions(request),
-                max_output_chars=request.max_output_chars,
-                preserve_meaning=request.preserve_meaning,
-                preserve_voice=request.preserve_voice,
-                forbid_terms=_clean_terms(request.forbid_terms),
-                must_keep_terms=_clean_terms(request.must_keep_terms),
-                attachments=_task_attachments(request),
-                cost_tier=_cost_tier(request.cost_tier),
-            )
-        )
+        result = container.ai_task_service.generate(_domain_task_request(request))
         return AiTaskResponse(result=result.content, task_type=request.task_type)
     except Exception as e:
-        raise HTTPException(500, f"AI task failed: {str(e)}")
+        raise HTTPException(500, f"AI task failed: {_friendly_ai_error(e)}")
+
+
+def _run_compare_profile(
+    runtime: _ProfileRuntime,
+    domain_request: DomainAiTaskRequest,
+    input_text: str,
+    container: AppContainer,
+) -> AiTaskCompareResult:
+    started = time.perf_counter()
+    config = runtime.config
+    if config is None:
+        return AiTaskCompareResult(
+            profile_id=runtime.profile_id,
+            profile_name=runtime.profile_name,
+            provider="",
+            model="",
+            status="error",
+            error=runtime.error or "这个 AI 配置档案不可用。",
+            elapsed_ms=0,
+            stats=_task_stats(input_text, ""),
+        )
+
+    issues = preflight_rewrite(config, input_text, has_entry=True)
+    if issues:
+        return AiTaskCompareResult(
+            profile_id=runtime.profile_id,
+            profile_name=runtime.profile_name,
+            provider=config.provider_key(),
+            model=config.model,
+            transport=None,
+            status="error",
+            error=format_issues(issues),
+            elapsed_ms=int((time.perf_counter() - started) * 1000),
+            stats=_task_stats(input_text, ""),
+        )
+
+    prompt_builder = PromptBuilder()
+    task_service = AiTaskService(
+        provider_factory=lambda: provider_for_config(config, prompt_builder),
+        settings=container.settings,
+        prompt_builder=TaskPromptBuilder(),
+    )
+    try:
+        response = task_service.generate(domain_request, model_override=config.model)
+    except Exception as exc:  # noqa: BLE001
+        return AiTaskCompareResult(
+            profile_id=runtime.profile_id,
+            profile_name=runtime.profile_name,
+            provider=config.provider_key(),
+            model=config.model,
+            transport=None,
+            status="error",
+            error=_friendly_ai_error(exc),
+            elapsed_ms=int((time.perf_counter() - started) * 1000),
+            stats=_task_stats(input_text, ""),
+        )
+
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    return AiTaskCompareResult(
+        profile_id=runtime.profile_id,
+        profile_name=runtime.profile_name,
+        provider=response.provider or config.provider_key(),
+        model=response.model or config.model,
+        transport=response.transport,
+        status="success",
+        result=response.content,
+        error="",
+        elapsed_ms=elapsed_ms,
+        input_tokens=response.input_tokens,
+        output_tokens=response.output_tokens,
+        cost=response.cost,
+        finish_reason=response.finish_reason,
+        stats=_task_stats(input_text, response.content),
+    )
+
+
+@router.post("/task/compare", response_model=AiTaskCompareResponse)
+def compare_ai_task(
+    request: AiTaskCompareRequest,
+    container: AppContainer = Depends(get_container),
+) -> AiTaskCompareResponse:
+    """Run the same AI task against up to three configured AI profiles."""
+
+    domain_request = _domain_task_request(request)
+    profiles = _resolve_compare_profiles(request.profile_ids, container)
+    if len(profiles) == 1:
+        results = [_run_compare_profile(profiles[0], domain_request, request.text, container)]
+    else:
+        with ThreadPoolExecutor(max_workers=len(profiles)) as executor:
+            futures = [
+                executor.submit(
+                    _run_compare_profile,
+                    profile,
+                    domain_request,
+                    request.text,
+                    container,
+                )
+                for profile in profiles
+            ]
+            results = [future.result() for future in futures]
+    return AiTaskCompareResponse(task_type=request.task_type, results=results)
 
 
 def _clean_task_presets(raw: Any) -> dict[str, list[AiTaskPreset]]:

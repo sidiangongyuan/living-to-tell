@@ -125,6 +125,8 @@ async function mockVisibleActionApi(page: Page) {
           'data_location',
           'ai_chat_settings',
           'ai_task_presets',
+          'ai_profiles',
+          'ai_task_compare',
           'update_check',
           'article_versions',
           'collection_outline',
@@ -422,6 +424,58 @@ async function mockVisibleActionApi(page: Page) {
     await route.fulfill({ json: cards })
   })
   await page.route('**/api/ai/task-presets', async (route) => route.fulfill({ json: {} }))
+  await page.route('**/api/settings/ai/profiles', async (route) => {
+    await route.fulfill({
+      json: {
+        profiles: [
+          {
+            id: 'profile-gemini',
+            name: 'Gemini 测试',
+            provider_name: 'gemini',
+            base_url: 'https://relay.example',
+            wire_api: 'responses',
+            model: 'gemini-test-model',
+            api_key_source: 'env:GEMINI_API_KEY',
+            gemini_cli_proxy: null,
+            enabled: true,
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+          },
+        ],
+      },
+    })
+  })
+  await page.route('**/api/ai/task/compare', async (route) => {
+    const body = route.request().postDataJSON() as { task_type?: string; text?: string; profile_ids?: string[] }
+    await route.fulfill({
+      json: {
+        task_type: body.task_type ?? 'polish',
+        results: (body.profile_ids?.length ? body.profile_ids : ['default']).map((profileId) => ({
+          profile_id: profileId,
+          profile_name: profileId === 'default' ? '默认配置' : 'Gemini 测试',
+          provider: profileId === 'default' ? 'openai' : 'gemini',
+          model: profileId === 'default' ? 'gpt-4o-mini' : 'gemini-test-model',
+          transport: 'fake',
+          status: 'success',
+          result: profileId === 'default' ? 'AI 生成结果' : 'Gemini 生成结果',
+          error: '',
+          elapsed_ms: 120,
+          input_tokens: 10,
+          output_tokens: 20,
+          cost: null,
+          finish_reason: 'stop',
+          stats: {
+            input_chars: body.text?.length ?? 0,
+            output_chars: profileId === 'default' ? 'AI 生成结果'.length : 'Gemini 生成结果'.length,
+            delta_chars: (profileId === 'default' ? 'AI 生成结果'.length : 'Gemini 生成结果'.length) - (body.text?.length ?? 0),
+            output_ratio: body.text?.length ? ((profileId === 'default' ? 'AI 生成结果'.length : 'Gemini 生成结果'.length) / body.text.length) : null,
+            input_paragraphs: 1,
+            output_paragraphs: 1,
+          },
+        })),
+      },
+    })
+  })
   await page.route('**/api/ai/task', async (route) => {
     await route.fulfill({ json: { result: 'AI 生成结果', task_type: (route.request().postDataJSON() as { task_type?: string }).task_type ?? 'polish' } })
   })
@@ -1506,10 +1560,39 @@ test('library autosave failures show a visible unsaved-state error', async ({ pa
 test('AI tools run tasks, attach contexts, and keep generated outputs actionable', async ({ page }) => {
   const taskBodies: Array<Record<string, unknown>> = []
 
-  await page.route('**/api/ai/task', async (route) => {
+  await page.route('**/api/ai/task/compare', async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>
     taskBodies.push(body)
-    await route.fulfill({ json: { result: 'AI 生成结果', task_type: body.task_type ?? 'polish' } })
+    await route.fulfill({
+      json: {
+        task_type: body.task_type ?? 'polish',
+        results: [
+          {
+            profile_id: 'default',
+            profile_name: '默认配置',
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+            transport: 'fake',
+            status: 'success',
+            result: 'AI 生成结果',
+            error: '',
+            elapsed_ms: 120,
+            input_tokens: 10,
+            output_tokens: 20,
+            cost: null,
+            finish_reason: 'stop',
+            stats: {
+              input_chars: String(body.text ?? '').length,
+              output_chars: 'AI 生成结果'.length,
+              delta_chars: 'AI 生成结果'.length - String(body.text ?? '').length,
+              output_ratio: String(body.text ?? '').length ? 'AI 生成结果'.length / String(body.text ?? '').length : null,
+              input_paragraphs: 1,
+              output_paragraphs: 1,
+            },
+          },
+        ],
+      },
+    })
   })
 
   await page.goto('/ai?tab=tools&scope_kind=article&scope_id=article-a')

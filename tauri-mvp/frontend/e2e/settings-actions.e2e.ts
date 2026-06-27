@@ -73,6 +73,7 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
   }
   const state = {
     aiSaves: [] as Array<Record<string, unknown>>,
+    aiProfiles: [] as Array<Record<string, unknown>>,
     aiTests: [] as Array<Record<string, unknown>>,
     aiLiveTests: [] as Array<Record<string, unknown>>,
     codexImports: 0,
@@ -128,8 +129,8 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
         version: '0.1.13',
         api_version: '2.0.0',
         capabilities: dataLocationCapability
-          ? ['data_location', 'ai_chat_settings', 'ai_task_presets', 'update_check']
-          : ['ai_chat_settings', 'ai_task_presets', 'update_check'],
+          ? ['data_location', 'ai_chat_settings', 'ai_task_presets', 'ai_profiles', 'ai_task_compare', 'update_check']
+          : ['ai_chat_settings', 'ai_task_presets', 'ai_profiles', 'ai_task_compare', 'update_check'],
       },
     })
   })
@@ -183,6 +184,30 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
       return
     }
     await route.fulfill({ json: aiSettings })
+  })
+
+  await page.route('http://backend.test/api/settings/ai/profiles', async (route) => {
+    const request = route.request()
+    if (request.method() === 'POST') {
+      const body = request.postDataJSON() as Record<string, unknown>
+      const created = {
+        id: `profile-${state.aiProfiles.length + 1}`,
+        name: body.name,
+        provider_name: body.provider_name,
+        base_url: body.base_url ?? null,
+        wire_api: body.wire_api ?? 'responses',
+        model: body.model,
+        api_key_source: body.api_key_source,
+        gemini_cli_proxy: body.gemini_cli_proxy ?? null,
+        enabled: body.enabled ?? true,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      }
+      state.aiProfiles.push(created)
+      await route.fulfill({ status: 201, json: created })
+      return
+    }
+    await route.fulfill({ json: { profiles: state.aiProfiles } })
   })
 
   await page.route('http://backend.test/api/settings/ai/test', async (route) => {
@@ -283,7 +308,7 @@ test('settings AI buttons import, test, save, and reset with visible feedback', 
   const state = await mockSettingsPage(page)
 
   await page.goto('/settings')
-  await expect(page.getByText('AI 配置')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'AI 配置', exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: '导入 Codex 配置' }).click()
   await expect.poll(() => state.codexImports).toBe(1)

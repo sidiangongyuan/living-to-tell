@@ -34,12 +34,14 @@ def test_tauri_app_version_capabilities(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["app_name"] == "Living to Tell"
-    assert payload["version"] == "0.1.13"
+    assert payload["version"] == "0.1.14"
     assert payload["api_version"] == "2.0.0"
     assert {
         "data_location",
         "ai_chat_settings",
         "ai_task_presets",
+        "ai_profiles",
+        "ai_task_compare",
         "motif_star_map",
         "update_check",
         "article_versions",
@@ -67,19 +69,19 @@ def test_tauri_app_update_check_reports_latest_release(monkeypatch):
         def read(self):
             return json.dumps(
                 {
-                    "tag_name": "living-to-tell-v0.1.14",
-                    "name": "Living to Tell Preview 0.1.14",
-                    "html_url": "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.14",
+                    "tag_name": "living-to-tell-v0.1.15",
+                    "name": "Living to Tell Preview 0.1.15",
+                    "html_url": "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.15",
                     "published_at": "2026-06-26T01:02:03Z",
-                    "body": "## 0.1.14\n\nAdded update notifications.",
+                    "body": "## 0.1.15\n\nAdded update notifications.",
                     "assets": [
                         {
-                            "name": "LivingToTell_0.1.14_x64_zh-CN.msi",
-                            "browser_download_url": "https://example.test/LivingToTell_0.1.14_x64_zh-CN.msi",
+                            "name": "LivingToTell_0.1.15_x64_zh-CN.msi",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.15_x64_zh-CN.msi",
                         },
                         {
-                            "name": "LivingToTell_0.1.14_x64-setup.exe",
-                            "browser_download_url": "https://example.test/LivingToTell_0.1.14_x64-setup.exe",
+                            "name": "LivingToTell_0.1.15_x64-setup.exe",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.15_x64-setup.exe",
                         },
                     ],
                 }
@@ -102,11 +104,11 @@ def test_tauri_app_update_check_reports_latest_release(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "update_available"
-    assert payload["current_version"] == "0.1.13"
-    assert payload["latest_version"] == "0.1.14"
-    assert payload["release_name"] == "Living to Tell Preview 0.1.14"
-    assert payload["download_name"] == "LivingToTell_0.1.14_x64-setup.exe"
-    assert payload["download_url"] == "https://example.test/LivingToTell_0.1.14_x64-setup.exe"
+    assert payload["current_version"] == "0.1.14"
+    assert payload["latest_version"] == "0.1.15"
+    assert payload["release_name"] == "Living to Tell Preview 0.1.15"
+    assert payload["download_name"] == "LivingToTell_0.1.15_x64-setup.exe"
+    assert payload["download_url"] == "https://example.test/LivingToTell_0.1.15_x64-setup.exe"
     assert "下载安装包" in payload["message"]
     assert calls == [
         {
@@ -134,7 +136,7 @@ def test_tauri_app_update_check_returns_friendly_error(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "error"
-    assert payload["current_version"] == "0.1.13"
+    assert payload["current_version"] == "0.1.14"
     assert "暂时无法检查更新" in payload["message"]
 
 
@@ -1364,6 +1366,166 @@ def test_tauri_ai_task_presets_roundtrip(monkeypatch):
     assert restored.json()["polish"][0]["controls"]["polishIntensity"] == "light"
 
 
+def test_tauri_ai_task_compare_uses_profile_models(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.ai import routes as ai_routes
+    from writer.services.ai.interfaces import ChatResponse
+
+    monkeypatch.setenv("WRITER_TEST_PRESENT_KEY", "test-key")
+
+    saved_default = client.put(
+        "/api/settings/ai",
+        json={
+            "provider_name": "openai",
+            "base_url": "https://api.example/v1",
+            "wire_api": "chat_completions",
+            "model": "default-model",
+            "api_key_source": "env:WRITER_TEST_PRESENT_KEY",
+        },
+    )
+    assert saved_default.status_code == 200, saved_default.text
+
+    profile_a = client.post(
+        "/api/settings/ai/profiles",
+        json={
+            "name": "Profile A",
+            "provider_name": "openai",
+            "base_url": "https://api-a.example/v1",
+            "wire_api": "chat_completions",
+            "model": "profile-a-model",
+            "api_key_source": "env:WRITER_TEST_PRESENT_KEY",
+        },
+    ).json()
+    profile_b = client.post(
+        "/api/settings/ai/profiles",
+        json={
+            "name": "Profile B",
+            "provider_name": "gemini",
+            "base_url": "https://relay.example",
+            "wire_api": "responses",
+            "model": "profile-b-model",
+            "api_key_source": "env:WRITER_TEST_PRESENT_KEY",
+        },
+    ).json()
+
+    class FakeProvider:
+        def __init__(self, config):
+            self.config = config
+
+        def chat(self, messages, *, model=None):
+            used_model = model or self.config.model
+            return ChatResponse(
+                content=f"{used_model}: ok",
+                model=used_model,
+                provider=self.config.provider_key(),
+                transport=f"fake_{self.config.wire_api}",
+                input_tokens=3,
+                output_tokens=4,
+                cost=0.01,
+            )
+
+    monkeypatch.setattr(
+        ai_routes,
+        "provider_for_config",
+        lambda config, prompt_builder=None: FakeProvider(config),
+    )
+
+    response = client.post(
+        "/api/ai/task/compare",
+        json={
+            "task_type": "polish",
+            "text": "雨夜里，两个人在车站告别。",
+            "target_kind": "paste",
+            "profile_ids": ["default", profile_a["id"], profile_b["id"]],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert [item["model"] for item in payload["results"]] == [
+        "default-model",
+        "profile-a-model",
+        "profile-b-model",
+    ]
+    assert all(item["status"] == "success" for item in payload["results"])
+    assert payload["results"][0]["stats"]["input_chars"] == len("雨夜里，两个人在车站告别。")
+    assert payload["results"][0]["input_tokens"] == 3
+    assert payload["results"][0]["cost"] == 0.01
+
+
+def test_tauri_ai_task_compare_limits_and_sanitizes_partial_failure(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.ai import routes as ai_routes
+    from writer.services.ai.interfaces import AiError, ChatResponse
+
+    monkeypatch.setenv("WRITER_TEST_PRESENT_KEY", "test-key")
+
+    created_profiles = []
+    for index, model in enumerate(["ok-model", "bad-model", "extra-model"], start=1):
+        response = client.post(
+            "/api/settings/ai/profiles",
+            json={
+                "name": f"Profile {index}",
+                "provider_name": "openai",
+                "base_url": "https://api.example/v1",
+                "wire_api": "chat_completions",
+                "model": model,
+                "api_key_source": "env:WRITER_TEST_PRESENT_KEY",
+            },
+        )
+        assert response.status_code == 201, response.text
+        created_profiles.append(response.json())
+
+    too_many = client.post(
+        "/api/ai/task/compare",
+        json={
+            "task_type": "polish",
+            "text": "hello",
+            "target_kind": "paste",
+            "profile_ids": ["default", *[profile["id"] for profile in created_profiles]],
+        },
+    )
+    assert too_many.status_code == 400
+    assert "最多" in too_many.text
+
+    class FakeProvider:
+        def __init__(self, config):
+            self.config = config
+
+        def chat(self, messages, *, model=None):
+            used_model = model or self.config.model
+            if used_model == "bad-model":
+                raise AiError("AI request failed: <!doctype html><html>403 forbidden</html>")
+            return ChatResponse(
+                content="ok",
+                model=used_model,
+                provider="openai",
+                transport="fake",
+            )
+
+    monkeypatch.setattr(
+        ai_routes,
+        "provider_for_config",
+        lambda config, prompt_builder=None: FakeProvider(config),
+    )
+
+    response = client.post(
+        "/api/ai/task/compare",
+        json={
+            "task_type": "polish",
+            "text": "hello",
+            "target_kind": "paste",
+            "profile_ids": [created_profiles[0]["id"], created_profiles[1]["id"]],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    results = response.json()["results"]
+    assert [item["status"] for item in results] == ["success", "error"]
+    assert "网页错误页" in results[1]["error"]
+    assert "<!doctype html>" not in results[1]["error"]
+
+
 def test_tauri_ai_settings_read_save_and_validate(monkeypatch):
     client = _tauri_client(monkeypatch)
 
@@ -1438,6 +1600,56 @@ def test_tauri_ai_settings_read_save_and_validate(monkeypatch):
         },
     )
     assert invalid.status_code == 400
+
+
+def test_tauri_ai_profiles_crud_and_validation(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    literal = client.post(
+        "/api/settings/ai/profiles",
+        json={
+            "name": "Bad literal key",
+            "provider_name": "openai",
+            "base_url": "https://api.example/v1",
+            "wire_api": "chat_completions",
+            "model": "deepseek-chat",
+            "api_key_source": "literal:secret",
+        },
+    )
+    assert literal.status_code == 400
+
+    created = client.post(
+        "/api/settings/ai/profiles",
+        json={
+            "name": "DeepSeek test",
+            "provider_name": "openai",
+            "base_url": "https://api.deepseek.com/v1",
+            "wire_api": "chat_completions",
+            "model": "deepseek-chat",
+            "api_key_source": "env:WRITER_TEST_PRESENT_KEY",
+            "enabled": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    profile = created.json()
+    assert profile["id"]
+    assert profile["wire_api"] == "chat_completions"
+    assert profile["api_key_source"] == "env:WRITER_TEST_PRESENT_KEY"
+
+    listed = client.get("/api/settings/ai/profiles")
+    assert listed.status_code == 200
+    assert any(item["id"] == profile["id"] for item in listed.json()["profiles"])
+
+    updated = client.put(
+        f"/api/settings/ai/profiles/{profile['id']}",
+        json={"enabled": False, "name": "DeepSeek disabled"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["enabled"] is False
+    assert updated.json()["name"] == "DeepSeek disabled"
+
+    deleted = client.delete(f"/api/settings/ai/profiles/{profile['id']}")
+    assert deleted.status_code == 204
 
 
 def test_tauri_ai_settings_models_endpoint_fetches_opencode_live(monkeypatch):

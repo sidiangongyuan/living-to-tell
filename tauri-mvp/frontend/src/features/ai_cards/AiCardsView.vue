@@ -2,20 +2,12 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { aiCardApi, type AiCard, type AiCardDraft, type AiCardType } from '../../api/aiCards'
-import { aiApi } from '../../api/ai'
-import { articlesApi, type Entry } from '../../api/articles'
-import { notesApi } from '../../api/notes'
 import { errorMessage } from '../../api/base'
 import { useI18n } from '../../i18n'
 import TagSelector from '../../components/TagSelector.vue'
 import PaneResizeHandle from '../../components/PaneResizeHandle.vue'
 import ContextMenu from '../../components/ContextMenu.vue'
 import { useResizablePane } from '../../composables/useResizablePane'
-import {
-  CARD_COMBINATION_TARGETS,
-  buildCardCombinationTaskRequest,
-  type CardCombinationTarget,
-} from './cardCombination'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -116,26 +108,8 @@ const generatorLoading = ref(false)
 const generatorError = ref('')
 const draftPreview = ref<AiCardDraft | null>(null)
 const draftMode = ref<'new' | 'upgrade'>('new')
-const combinationStyleId = ref('')
-const combinationCharacterId = ref('')
-const combinationSceneId = ref('')
-const combinationTarget = ref<CardCombinationTarget>('scene_draft')
-const combinationBrief = ref('')
-const combinationResult = ref('')
-const combinationLoading = ref(false)
-const combinationError = ref('')
-const combinationNotice = ref('')
-const combinationArticles = ref<Entry[]>([])
-const combinationNoteArticleId = ref('')
-const combinationSaveCardType = ref<AiCardType>('scene')
 
 const selectedCard = computed(() => cards.value.find(c => c.id === selectedCardId.value) || null)
-const styleCards = computed(() => cards.value.filter((card) => card.card_type === 'style'))
-const characterCards = computed(() => cards.value.filter((card) => card.card_type === 'character'))
-const sceneCards = computed(() => cards.value.filter((card) => card.card_type === 'scene'))
-const combinationSelectedStyle = computed(() => cards.value.find((card) => card.id === combinationStyleId.value) ?? null)
-const combinationSelectedCharacter = computed(() => cards.value.find((card) => card.id === combinationCharacterId.value) ?? null)
-const combinationSelectedScene = computed(() => cards.value.find((card) => card.id === combinationSceneId.value) ?? null)
 
 const allCardTags = computed(() =>
   Array.from(new Set(cards.value.flatMap((card) => card.tags))).sort((a, b) => a.localeCompare(b, 'zh-CN'))
@@ -198,28 +172,12 @@ async function loadCards() {
       selectedCardId.value = cards.value[0].id
     }
     if (!cards.value.length) selectedCardId.value = null
-    syncCombinationDefaults()
   } catch (e) {
     console.error('Load cards failed:', e)
     error.value = errorMessage(e)
   } finally {
     loading.value = false
   }
-}
-
-function syncCombinationDefaults() {
-  if (combinationStyleId.value && !styleCards.value.some((card) => card.id === combinationStyleId.value)) {
-    combinationStyleId.value = ''
-  }
-  if (combinationCharacterId.value && !characterCards.value.some((card) => card.id === combinationCharacterId.value)) {
-    combinationCharacterId.value = ''
-  }
-  if (combinationSceneId.value && !sceneCards.value.some((card) => card.id === combinationSceneId.value)) {
-    combinationSceneId.value = ''
-  }
-  combinationStyleId.value ||= styleCards.value[0]?.id ?? ''
-  combinationCharacterId.value ||= characterCards.value[0]?.id ?? ''
-  combinationSceneId.value ||= sceneCards.value[0]?.id ?? ''
 }
 
 function applyRouteCard() {
@@ -446,122 +404,6 @@ async function applyDraftToCurrent() {
   if (saved) draftPreview.value = null
 }
 
-function friendlyCombinationError(e: unknown): string {
-  const raw = errorMessage(e)
-  if (/failed to fetch|backend|connect/i.test(raw)) {
-    return '后台服务正在启动或连接中，请稍后重试；如果持续出现，请重启应用。'
-  }
-  if (/<html|<!doctype/i.test(raw)) {
-    return 'AI 服务返回了网页错误页，请检查当前 AI 配置和模型权限。'
-  }
-  return raw ? `AI 卡片组合生成失败：${raw.replace(/^AI task failed:\s*/i, '')}` : 'AI 卡片组合生成失败，请稍后重试。'
-}
-
-function combinationTitle(): string {
-  const target = CARD_COMBINATION_TARGETS.find((item) => item.id === combinationTarget.value)?.label ?? 'AI 组合生成'
-  const scene = combinationSelectedScene.value?.title || ''
-  return scene ? `${target}｜${scene}` : `AI ${target}`
-}
-
-async function runCardCombination() {
-  combinationLoading.value = true
-  combinationError.value = ''
-  combinationNotice.value = ''
-  combinationResult.value = ''
-  try {
-    const request = buildCardCombinationTaskRequest({
-      target: combinationTarget.value,
-      userBrief: combinationBrief.value,
-      selection: {
-        style: combinationSelectedStyle.value,
-        character: combinationSelectedCharacter.value,
-        scene: combinationSelectedScene.value,
-      },
-    })
-    if (!request.attachments?.length) {
-      combinationError.value = '请至少选择一张风格、人物或场景卡。'
-      return
-    }
-    const response = await aiApi.runTask(request)
-    combinationResult.value = response.result.trim()
-    if (!combinationResult.value) {
-      combinationError.value = 'AI 没有返回可预览的组合结果。'
-      return
-    }
-    combinationNotice.value = '已生成组合预览，尚未写入任何位置。'
-  } catch (e) {
-    combinationError.value = friendlyCombinationError(e)
-  } finally {
-    combinationLoading.value = false
-  }
-}
-
-async function copyCombinationResult() {
-  if (!combinationResult.value.trim()) return
-  try {
-    await navigator.clipboard.writeText(combinationResult.value)
-    combinationNotice.value = '已复制组合结果。'
-  } catch {
-    combinationError.value = '复制失败，请手动选择预览内容复制。'
-  }
-}
-
-async function saveCombinationAsArticle() {
-  if (!combinationResult.value.trim()) return
-  try {
-    const article = await articlesApi.create({
-      title: combinationTitle(),
-      body: combinationResult.value,
-      tags: ['AI组合生成'],
-    })
-    combinationNotice.value = `已保存为新文章：《${article.title || '无标题'}》。`
-  } catch (e) {
-    combinationError.value = e instanceof Error ? `保存为文章失败：${e.message}` : `保存为文章失败：${String(e)}`
-  }
-}
-
-async function ensureCombinationArticles() {
-  if (combinationArticles.value.length) return
-  combinationArticles.value = await articlesApi.listArticles(200)
-  combinationNoteArticleId.value ||= combinationArticles.value[0]?.id ?? ''
-}
-
-async function saveCombinationAsNote() {
-  if (!combinationResult.value.trim()) return
-  try {
-    await ensureCombinationArticles()
-    if (!combinationNoteArticleId.value) {
-      combinationError.value = '没有可保存便签的文章，请先创建或选择文章。'
-      return
-    }
-    await notesApi.createNote(
-      combinationNoteArticleId.value,
-      `【AI 卡片组合生成】\n${combinationTitle()}\n\n${combinationResult.value}`,
-      false,
-    )
-    combinationNotice.value = '已保存为文章便签。'
-  } catch (e) {
-    combinationError.value = e instanceof Error ? `保存为便签失败：${e.message}` : `保存为便签失败：${String(e)}`
-  }
-}
-
-async function saveCombinationAsCard() {
-  if (!combinationResult.value.trim()) return
-  try {
-    const card = await aiCardApi.createCard({
-      title: combinationTitle(),
-      content: combinationResult.value,
-      card_type: combinationSaveCardType.value,
-      tags: ['AI组合生成'],
-    })
-    cards.value.unshift(card)
-    selectedCardId.value = card.id
-    combinationNotice.value = '已保存为新 AI 卡片。'
-  } catch (e) {
-    combinationError.value = e instanceof Error ? `保存为 AI 卡片失败：${e.message}` : `保存为 AI 卡片失败：${String(e)}`
-  }
-}
-
 function updateSelectedTags(tags: string[]) {
   const card = selectedCard.value
   if (!card) return
@@ -753,98 +595,6 @@ function handleContextMenuSelect(item: { key: string }) {
               </div>
             </div>
             <pre class="max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-xs leading-6 text-gray-700">{{ draftPreview.content }}</pre>
-          </div>
-        </section>
-
-        <section class="mb-6 rounded-xl border border-indigo-100 bg-indigo-50/60 p-5" data-testid="ai-card-combination-panel">
-          <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3 class="text-sm font-semibold text-indigo-950">AI 卡片组合生成</h3>
-              <p class="mt-1 text-xs leading-5 text-indigo-800">手动选择风格、人物、场景卡，生成结果先进入预览，确认后再保存到文章、便签或卡片。</p>
-            </div>
-            <select
-              v-model="combinationTarget"
-              class="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400"
-            >
-              <option v-for="target in CARD_COMBINATION_TARGETS" :key="target.id" :value="target.id">{{ target.label }}</option>
-            </select>
-          </div>
-          <div class="grid gap-3 md:grid-cols-3">
-            <label>
-              <span class="mb-1 block text-xs font-semibold text-indigo-700">风格卡</span>
-              <select v-model="combinationStyleId" class="w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm outline-none">
-                <option value="">不使用</option>
-                <option v-for="card in styleCards" :key="card.id" :value="card.id">{{ card.title || t('aiCards.untitled') }}</option>
-              </select>
-            </label>
-            <label>
-              <span class="mb-1 block text-xs font-semibold text-indigo-700">人物卡</span>
-              <select v-model="combinationCharacterId" class="w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm outline-none">
-                <option value="">不使用</option>
-                <option v-for="card in characterCards" :key="card.id" :value="card.id">{{ card.title || t('aiCards.untitled') }}</option>
-              </select>
-            </label>
-            <label>
-              <span class="mb-1 block text-xs font-semibold text-indigo-700">场景卡</span>
-              <select v-model="combinationSceneId" class="w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm outline-none">
-                <option value="">不使用</option>
-                <option v-for="card in sceneCards" :key="card.id" :value="card.id">{{ card.title || t('aiCards.untitled') }}</option>
-              </select>
-            </label>
-          </div>
-          <textarea
-            v-model="combinationBrief"
-            rows="3"
-            class="mt-3 w-full resize-none rounded-lg border border-indigo-200 bg-white p-3 text-sm leading-6 outline-none focus:ring-2 focus:ring-indigo-400"
-            placeholder="写下这次想生成什么，例如：写一场久别重逢后的克制对话，主角试探对方是否还记得过去。"
-          />
-          <div class="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              class="rounded-lg bg-indigo-700 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-800 disabled:opacity-50"
-              :disabled="combinationLoading"
-              @click="runCardCombination"
-            >
-              {{ combinationLoading ? '生成中…' : '生成组合预览' }}
-            </button>
-            <span class="text-xs text-indigo-800">未勾选/选择的卡片不会进入本次 AI 上下文。</span>
-          </div>
-          <div v-if="combinationError" class="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ combinationError }}</div>
-          <div v-if="combinationNotice" class="mt-3 rounded-lg bg-blue-50 p-3 text-sm text-blue-700">{{ combinationNotice }}</div>
-          <div v-if="combinationResult" class="mt-4 rounded-xl border border-indigo-200 bg-white p-4">
-            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <div class="text-sm font-semibold text-gray-900">{{ combinationTitle() }}</div>
-                <div class="text-xs text-gray-500">组合结果预览</div>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <button type="button" class="rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-200" @click="copyCombinationResult">
-                  复制
-                </button>
-                <button type="button" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700" @click="saveCombinationAsArticle">
-                  存为新文章
-                </button>
-                <button type="button" class="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700" @click="ensureCombinationArticles">
-                  选择文章便签
-                </button>
-                <select v-model="combinationSaveCardType" class="rounded-lg border border-gray-200 px-2 py-2 text-xs outline-none">
-                  <option v-for="type in CARD_TYPES" :key="type" :value="type">{{ cardTypeLabels[type] }}</option>
-                </select>
-                <button type="button" class="rounded-lg bg-stone-900 px-3 py-2 text-xs font-semibold text-white hover:bg-stone-700" @click="saveCombinationAsCard">
-                  存为新卡
-                </button>
-              </div>
-            </div>
-            <div v-if="combinationArticles.length" class="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 p-2 text-xs">
-              <span class="font-semibold text-amber-800">保存到便签：</span>
-              <select v-model="combinationNoteArticleId" class="min-w-[220px] rounded-lg border border-amber-200 bg-white px-2 py-1 outline-none">
-                <option v-for="article in combinationArticles" :key="article.id" :value="article.id">{{ article.title || t('articles.untitled') }}</option>
-              </select>
-              <button type="button" class="rounded-lg bg-amber-600 px-3 py-1.5 font-semibold text-white hover:bg-amber-700" @click="saveCombinationAsNote">
-                保存便签
-              </button>
-            </div>
-            <pre class="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-sm leading-7 text-gray-800">{{ combinationResult }}</pre>
           </div>
         </section>
 

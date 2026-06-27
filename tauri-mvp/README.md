@@ -4,7 +4,7 @@
 
 ### The current Windows desktop preview for 活着为了讲述 / Living to Tell
 
-[![Version](https://img.shields.io/badge/version-0.1.13-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.14-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-preview-orange.svg)](#download)
@@ -39,7 +39,6 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 - Article editor with autosave, tags, full-text search, find/replace, and a collapsible context pane.
 - Article notes live beside the current article without entering the manuscript.
 - Article version history supports manual checkpoints, AI-before-apply snapshots, pre-restore snapshots, paragraph comparison, restore, clone, copy, and delete.
-- The in-article AI revision workbench can revise selected text, the current paragraph, or the full article, then writes back only after preview and confirmation.
 - Epigraphs can be edited as a separate section at the top of an article.
 - Focus mode hides the surrounding interface and leaves only the writing area.
 - Single-article export to Markdown, TXT, and DOCX.
@@ -76,10 +75,11 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 - Focused AI tools for polishing, rewriting, expanding, and continuing.
 - Per-tool personal presets.
 - AI results are reviewed before writing back, with explicit replace, insert, and copy actions.
+- AI Tools can run one task across up to three saved provider profiles and compare result size, paragraph changes, latency, tokens, and cost when available.
 - Article-scoped chat with one ongoing conversation per article.
 - Standing chat instructions, copy actions, and save-reply-as-article-note actions.
 - AI Cards for style, character, and scene context, with type/source filters and keyword search.
-- AI card combination generation manually combines selected style, character, and scene cards into preview-only scene, paragraph, or outline drafts.
+- AI card generation creates template-based style, character, and scene drafts for review before saving.
 - Supports OpenAI-compatible APIs, Codex local auth, Gemini API/local config, Gemini CLI / OAuth, and OpenCode local auth.
 - Raw API keys are not stored in app settings; only the selected credential source is saved.
 
@@ -98,15 +98,15 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.13).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.14).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.13_x64-setup.exe`
+- `LivingToTell_0.1.14_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.13_x64_zh-CN.msi`
+- `LivingToTell_0.1.14_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 
@@ -127,6 +127,8 @@ Open Settings and choose one provider:
 - Gemini API: use `env:GEMINI_API_KEY` or import local Gemini configuration.
 - Gemini CLI / OAuth: reuse a local Gemini CLI login. No API key field is required.
 - OpenCode: reuse a local `opencode auth login` session. No API key field is required, and Settings can fetch the current OpenCode model list.
+
+The global provider remains the default for every AI feature. Settings can also store additional AI profiles without raw keys; AI Tools can select up to three profiles for a side-by-side model comparison.
 
 OpenCode model fetching is live. On the current local OpenCode setup, the available models include:
 

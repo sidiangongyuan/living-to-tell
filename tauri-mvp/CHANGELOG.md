@@ -1,5 +1,39 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.14 - AI Model Comparison And Workflow Rollback (2026-06-27)
+
+### Added
+
+- Added AI provider profiles in Settings, stored as local JSON settings without raw API keys.
+- Added AI Tools multi-model comparison for up to three selected profiles, including per-result size, paragraph, latency, token, and cost statistics when available.
+- Added OpenAI-compatible `chat_completions` wire support for profile-based providers such as DeepSeek-style endpoints while keeping the existing global default behavior intact.
+
+### Removed
+
+- Removed the article-side AI revision workbench from the article context pane.
+- Removed AI card combination generation from the AI Cards page.
+
+### Changed
+
+- AI Tools now require selecting a winning model result before copy, replace, or insert actions use generated text.
+- Single-model AI Tool runs now use the same compare-result path as multi-model runs so result handling stays consistent.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest -q`
+- `npm test -- --run`
+- `npm run test:e2e`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.14_x64-setup.exe`
+  - SHA256: `8A36A48B123C88C526E01CA933378D046681AE877FC690D67B4B15E08CDFABCA`
+- `LivingToTell_0.1.14_x64_zh-CN.msi`
+  - SHA256: `24C4024641FC6239DB42429207CBCBEA29B4344E6C73BBC924878CCB1185EE16`
+
 ## 0.1.13 - Revision Workbench And App Workflow Upgrade (2026-06-27)
 
 ### Added

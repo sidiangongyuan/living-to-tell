@@ -47,7 +47,7 @@ def test_empty_string_base_url_also_clears(container):
 def test_invalid_wire_api_is_rejected(container):
     with pytest.raises(ValueError):
         container.settings.save_ai_config(
-            AiConfig(wire_api="chat_completions", model="m")
+            AiConfig(wire_api="chat", model="m")
         )
     # Nothing should have been persisted.
     assert container.settings.ai_wire_api is None

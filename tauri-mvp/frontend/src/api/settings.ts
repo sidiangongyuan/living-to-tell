@@ -39,6 +39,37 @@ export interface AiSettingsUpdate {
   gemini_cli_proxy?: string | null
 }
 
+export interface AiProfile {
+  id: string
+  name: string
+  provider_name: AiProviderName
+  base_url: string | null
+  wire_api: string
+  model: string
+  api_key_source: string
+  gemini_cli_proxy: string | null
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface AiProfileCreate {
+  name: string
+  provider_name: AiProviderName
+  base_url?: string | null
+  wire_api?: string
+  model: string
+  api_key_source: string
+  gemini_cli_proxy?: string | null
+  enabled?: boolean
+}
+
+export type AiProfileUpdate = Partial<AiProfileCreate>
+
+export interface AiProfileListResult {
+  profiles: AiProfile[]
+}
+
 export interface AiImportResult {
   config: AiSettings
   imported: Record<string, unknown>
@@ -102,6 +133,36 @@ export const settingsApi = {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async listAiProfiles(): Promise<AiProfileListResult> {
+    const res = await apiFetch('/api/settings/ai/profiles')
+    return handleResponse(res)
+  },
+
+  async createAiProfile(data: AiProfileCreate): Promise<AiProfile> {
+    const res = await apiFetch('/api/settings/ai/profiles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async updateAiProfile(id: string, data: AiProfileUpdate): Promise<AiProfile> {
+    const res = await apiFetch(`/api/settings/ai/profiles/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async deleteAiProfile(id: string): Promise<void> {
+    const res = await apiFetch(`/api/settings/ai/profiles/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
     })
     return handleResponse(res)
   },

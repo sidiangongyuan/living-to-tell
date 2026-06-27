@@ -7,9 +7,6 @@ import { collectionsApi, type Collection } from '../../api/collections'
 import { articlesApi, type ArticleExportFormat, type Entry } from '../../api/articles'
 import { notesApi, type WritingNote } from '../../api/notes'
 import { motifsApi, type MotifExcerpt, type MotifNode } from '../../api/motifs'
-import { aiApi, type AiContextAttachment } from '../../api/ai'
-import { aiCardApi, type AiCard } from '../../api/aiCards'
-import { libraryApi, type Reference } from '../../api/library'
 import { errorMessage, isHttpStatus } from '../../api/base'
 import {
   addUniqueMotifName,
@@ -39,16 +36,6 @@ import {
   saveArticleEditorPosition,
   shouldRecenterCaret,
 } from './editorPosition'
-import {
-  AI_REVISION_TASKS,
-  applyRevisionToBody,
-  buildRevisionTaskRequest,
-  normalizeAiRevisionResult,
-  resolveRevisionRange,
-  type AiRevisionScope,
-  type AiRevisionTask,
-  type RevisionRange,
-} from './aiRevision'
 
 const store = useArticlesStore()
 const settings = useSettingsStore()
@@ -93,25 +80,6 @@ const notesLoading = ref(false)
 const showDoneNotes = ref(false)
 const motifAnchorsExpanded = ref(true)
 const writingNotesExpanded = ref(true)
-const revisionExpanded = ref(true)
-const revisionScope = ref<AiRevisionScope>('selection')
-const revisionTask = ref<AiRevisionTask>('polish')
-const revisionExtraInstructions = ref('')
-const revisionIncludeNotes = ref(true)
-const revisionOriginalRange = ref<RevisionRange | null>(null)
-const revisionOriginalText = ref('')
-const revisionResult = ref('')
-const revisionRunning = ref(false)
-const revisionApplying = ref(false)
-const revisionError = ref('')
-const revisionNotice = ref('')
-const revisionCardQuery = ref('')
-const revisionReferenceQuery = ref('')
-const revisionCardResults = ref<AiCard[]>([])
-const revisionReferenceResults = ref<Reference[]>([])
-const revisionSelectedCardIds = ref<string[]>([])
-const revisionSelectedReferenceIds = ref<string[]>([])
-const revisionContextLoading = ref<'cards' | 'references' | ''>('')
 const articleListPane = useResizablePane({
   key: 'articles:list',
   defaultSize: 300,
@@ -240,17 +208,6 @@ const charCount = computed(() => currentBodyText.value.length)
 const paragraphCount = computed(() => countParagraphs(currentBodyText.value))
 const openWritingNotes = computed(() => writingNotes.value.filter((note) => note.status === 'open'))
 const doneWritingNotes = computed(() => writingNotes.value.filter((note) => note.status === 'done'))
-const revisionTaskOptions = computed(() => AI_REVISION_TASKS)
-const revisionScopeOptions: AiRevisionScope[] = ['selection', 'paragraph', 'article']
-const revisionSelectedCards = computed(() =>
-  revisionCardResults.value.filter((card) => revisionSelectedCardIds.value.includes(card.id))
-)
-const revisionSelectedReferences = computed(() =>
-  revisionReferenceResults.value.filter((reference) => revisionSelectedReferenceIds.value.includes(reference.id))
-)
-const revisionCanApply = computed(() =>
-  Boolean(store.selectedEntry && revisionOriginalRange.value && revisionResult.value.trim() && !revisionRunning.value)
-)
 const hasSearchQuery = computed(() => Boolean(searchInput.value.trim()))
 const allTags = computed(() => collectArticleTags(store.entries))
 const activeBaseList = computed(() => hasSearchQuery.value ? store.searchResults : store.entries)
@@ -1179,213 +1136,6 @@ async function openAiToolsForArticle() {
   })
 }
 
-function friendlyRevisionError(e: unknown): string {
-  const raw = errorMessage(e)
-  if (isHttpStatus(e, 404) || /not found/i.test(raw)) {
-    return 'AI 修订所需的文章或上下文已不存在，请刷新后重试。'
-  }
-  if (/failed to fetch|backend|connect/i.test(raw)) {
-    return '后台服务正在启动或连接中，请稍后重试；如果持续出现，请重启应用。'
-  }
-  if (/<html|<!doctype/i.test(raw)) {
-    return 'AI 服务返回了网页错误页，请检查当前 AI 配置和模型权限。'
-  }
-  if (/AI task failed/i.test(raw)) {
-    return raw.replace(/^AI task failed:\s*/i, 'AI 修订失败：')
-  }
-  return raw ? `AI 修订失败：${raw}` : 'AI 修订失败，请稍后重试。'
-}
-
-function revisionSelectionBounds(): { start: number; end: number } {
-  return {
-    start: bodyRef.value?.selectionStart ?? 0,
-    end: bodyRef.value?.selectionEnd ?? 0,
-  }
-}
-
-function revisionScopeLabel(scope: AiRevisionScope): string {
-  if (scope === 'article') return '全文'
-  if (scope === 'paragraph') return '当前段落'
-  return '选中文字'
-}
-
-function revisionPreview(text: string, limit = 700): string {
-  const value = text.trim()
-  if (value.length <= limit) return value
-  return `${value.slice(0, limit)}...`
-}
-
-function buildRevisionAttachments(): AiContextAttachment[] {
-  const attachments: AiContextAttachment[] = []
-  if (revisionIncludeNotes.value) {
-    for (const note of openWritingNotes.value) {
-      if (!note.body.trim()) continue
-      attachments.push({
-        kind: 'writing_note',
-        ref_id: note.id,
-        name: '文章便签',
-        body: note.body.trim(),
-      })
-    }
-  }
-  for (const card of revisionSelectedCards.value) {
-    attachments.push({
-      kind: `ai_card:${card.card_type}`,
-      ref_id: card.id,
-      name: card.title || 'AI 卡片',
-      body: card.content,
-    })
-  }
-  for (const reference of revisionSelectedReferences.value) {
-    attachments.push({
-      kind: 'reference',
-      ref_id: reference.id,
-      name: reference.source_title || reference.source_author || '文脉标本',
-      body: [
-        reference.source_author ? `作者：${reference.source_author}` : '',
-        reference.content,
-        reference.personal_note ? `个人笔记：${reference.personal_note}` : '',
-      ].filter(Boolean).join('\n\n'),
-    })
-  }
-  return attachments
-}
-
-async function searchRevisionCards() {
-  const query = revisionCardQuery.value.trim()
-  if (!query) {
-    revisionCardResults.value = []
-    return
-  }
-  revisionContextLoading.value = 'cards'
-  revisionError.value = ''
-  try {
-    revisionCardResults.value = await aiCardApi.searchCards(query, undefined, 12)
-  } catch (e) {
-    revisionError.value = friendlyRevisionError(e)
-  } finally {
-    if (revisionContextLoading.value === 'cards') revisionContextLoading.value = ''
-  }
-}
-
-async function searchRevisionReferences() {
-  const query = revisionReferenceQuery.value.trim()
-  if (!query) {
-    revisionReferenceResults.value = []
-    return
-  }
-  revisionContextLoading.value = 'references'
-  revisionError.value = ''
-  try {
-    revisionReferenceResults.value = await libraryApi.searchReferences(query, 12)
-  } catch (e) {
-    revisionError.value = friendlyRevisionError(e)
-  } finally {
-    if (revisionContextLoading.value === 'references') revisionContextLoading.value = ''
-  }
-}
-
-function toggleRevisionCard(id: string) {
-  revisionSelectedCardIds.value = revisionSelectedCardIds.value.includes(id)
-    ? revisionSelectedCardIds.value.filter((item) => item !== id)
-    : [...revisionSelectedCardIds.value, id]
-}
-
-function toggleRevisionReference(id: string) {
-  revisionSelectedReferenceIds.value = revisionSelectedReferenceIds.value.includes(id)
-    ? revisionSelectedReferenceIds.value.filter((item) => item !== id)
-    : [...revisionSelectedReferenceIds.value, id]
-}
-
-function resetRevisionPreview() {
-  revisionOriginalRange.value = null
-  revisionOriginalText.value = ''
-  revisionResult.value = ''
-  revisionError.value = ''
-  revisionNotice.value = ''
-}
-
-async function runArticleRevision() {
-  const entry = store.selectedEntry
-  if (!entry) return
-  const bounds = revisionSelectionBounds()
-  const range = resolveRevisionRange(bodyDraft.value, revisionScope.value, bounds.start, bounds.end)
-  if (!range.text.trim()) {
-    revisionError.value = revisionScope.value === 'selection'
-      ? '请先选中需要修订的文字，或切换到当前段落/全文。'
-      : '当前范围没有可修订的正文。'
-    return
-  }
-  revisionRunning.value = true
-  revisionError.value = ''
-  revisionNotice.value = ''
-  revisionOriginalRange.value = range
-  revisionOriginalText.value = range.text
-  revisionResult.value = ''
-  try {
-    const saved = await saveNow()
-    if (!saved || store.selectedEntry?.id !== entry.id) return
-    const response = await aiApi.runTask(buildRevisionTaskRequest({
-      revisionTask: revisionTask.value,
-      text: range.text,
-      articleId: entry.id,
-      scope: range.scope,
-      extraInstructions: revisionExtraInstructions.value,
-      attachments: buildRevisionAttachments(),
-    }))
-    if (store.selectedEntry?.id !== entry.id) return
-    const result = normalizeAiRevisionResult(response.result)
-    if (!result.trim()) {
-      revisionError.value = 'AI 没有返回可写回的修订结果，请调整任务后重试。'
-      return
-    }
-    revisionResult.value = result
-    revisionNotice.value = '已生成修订预览，确认后再写回正文。'
-  } catch (e) {
-    revisionError.value = friendlyRevisionError(e)
-  } finally {
-    revisionRunning.value = false
-  }
-}
-
-async function applyArticleRevision() {
-  const entry = store.selectedEntry
-  const range = revisionOriginalRange.value
-  const proposed = revisionResult.value
-  if (!entry || !range || !proposed.trim()) return
-  revisionApplying.value = true
-  revisionError.value = ''
-  revisionNotice.value = ''
-  try {
-    const currentSegment = bodyDraft.value.slice(range.start, range.end)
-    if (currentSegment !== revisionOriginalText.value) {
-      revisionError.value = '原文在 AI 返回后已经改变。为避免覆盖你的新修改，请重新生成修订。'
-      return
-    }
-    const saved = await saveNow()
-    if (!saved || store.selectedEntry?.id !== entry.id) return
-    await articlesApi.createVersion(entry.id, {
-      version_type: 'ai_before_apply',
-      label: `AI 修订工作台：${AI_REVISION_TASKS.find((task) => task.id === revisionTask.value)?.label ?? '修订'}`,
-    })
-    const nextBody = applyRevisionToBody(bodyDraft.value, range, proposed)
-    bodyDraft.value = nextBody
-    const updated = await store.updateEntry(entry.id, entry.title, composeCurrentBody(), entry.tags)
-    store.replaceEntry(updated)
-    revisionNotice.value = '已写回正文，并在历史版本中保存了写回前快照。'
-    revisionResult.value = ''
-    revisionOriginalRange.value = null
-    revisionOriginalText.value = ''
-    await nextTick()
-    bodyRef.value?.focus({ preventScroll: true })
-    bodyRef.value?.setSelectionRange(range.start, range.start + proposed.length)
-  } catch (e) {
-    revisionError.value = friendlyRevisionError(e)
-  } finally {
-    revisionApplying.value = false
-  }
-}
-
 async function archiveSelectedEntry() {
   if (!store.selectedEntry) return
   const entryId = store.selectedEntry.id
@@ -2122,7 +1872,6 @@ watch(
     saveLastKnownEditorPositionForArticle(oldId)
     const saved = await flushPendingArticleSave()
     if (!saved) return
-    resetRevisionPreview()
     syncDraftFromSelected()
     void refreshArticleSideData(_newId ?? undefined)
     await restoreEditorPositionIfNeeded(_newId ?? undefined)
@@ -2142,7 +1891,6 @@ watch(
     const saved = await flushPendingArticleSave()
     if (!saved) return
     await applyRouteArticle()
-    resetRevisionPreview()
     syncDraftFromSelected()
     await restoreEditorPositionIfNeeded()
     updateTailSpace()
@@ -2582,183 +2330,6 @@ watch(
             @restored="handleVersionRestored"
             @cloned="handleVersionCloned"
           />
-
-          <section data-testid="article-ai-revision-workbench">
-            <button
-              type="button"
-              class="mb-2 flex w-full items-center justify-between gap-2 rounded-xl px-2 py-1 text-left hover:bg-stone-50"
-              @click="revisionExpanded = !revisionExpanded"
-            >
-              <span class="text-sm font-semibold text-stone-700">
-                {{ revisionExpanded ? '⌄' : '›' }} AI 修订工作台
-              </span>
-              <span class="rounded-full bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700">
-                预览写回
-              </span>
-            </button>
-            <div v-show="revisionExpanded" class="space-y-3 rounded-2xl border border-indigo-100 bg-indigo-50/35 p-3">
-              <div class="grid grid-cols-3 gap-1 rounded-xl bg-white p-1 text-xs">
-                <button
-                  v-for="scope in revisionScopeOptions"
-                  :key="scope"
-                  type="button"
-                  @click="revisionScope = scope"
-                  :class="[
-                    'rounded-lg px-2 py-1.5 font-semibold transition-colors',
-                    revisionScope === scope ? 'bg-indigo-600 text-white' : 'text-stone-600 hover:bg-stone-100',
-                  ]"
-                >
-                  {{ revisionScopeLabel(scope) }}
-                </button>
-              </div>
-              <div class="grid grid-cols-2 gap-2">
-                <button
-                  v-for="task in revisionTaskOptions"
-                  :key="task.id"
-                  type="button"
-                  @click="revisionTask = task.id"
-                  :class="[
-                    'rounded-xl border px-3 py-2 text-left text-xs font-semibold transition-colors',
-                    revisionTask === task.id
-                      ? 'border-indigo-300 bg-white text-indigo-800 shadow-sm'
-                      : 'border-stone-200 bg-white/80 text-stone-600 hover:border-stone-300',
-                  ]"
-                >
-                  {{ task.label }}
-                </button>
-              </div>
-              <label class="block">
-                <span class="mb-1 block text-xs font-semibold text-stone-500">补充要求</span>
-                <textarea
-                  v-model="revisionExtraInstructions"
-                  rows="2"
-                  class="w-full resize-none rounded-xl border border-indigo-100 bg-white px-3 py-2 text-sm leading-6 outline-none focus:ring-2 focus:ring-indigo-200"
-                  placeholder="例如：保留第一人称，不要改动专有名词。"
-                />
-              </label>
-              <label class="flex items-center gap-2 text-xs text-stone-600">
-                <input v-model="revisionIncludeNotes" type="checkbox" class="h-4 w-4 rounded border-stone-300 text-indigo-600" />
-                带入当前文章未完成便签
-              </label>
-              <div class="grid gap-2">
-                <div>
-                  <div class="flex gap-2">
-                    <input
-                      v-model="revisionCardQuery"
-                      class="min-w-0 flex-1 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-200"
-                      placeholder="搜索 AI 卡片"
-                      @keydown.enter.prevent="searchRevisionCards"
-                    />
-                    <button
-                      type="button"
-                      class="rounded-xl bg-stone-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
-                      :disabled="revisionContextLoading === 'cards'"
-                      @click="searchRevisionCards"
-                    >
-                      {{ revisionContextLoading === 'cards' ? '搜索中' : '搜索' }}
-                    </button>
-                  </div>
-                  <div v-if="revisionCardResults.length" class="mt-2 flex flex-wrap gap-1.5">
-                    <button
-                      v-for="card in revisionCardResults"
-                      :key="card.id"
-                      type="button"
-                      @click="toggleRevisionCard(card.id)"
-                      :class="[
-                        'rounded-full px-2 py-1 text-[11px] ring-1',
-                        revisionSelectedCardIds.includes(card.id)
-                          ? 'bg-indigo-600 text-white ring-indigo-600'
-                          : 'bg-white text-stone-600 ring-stone-200 hover:ring-indigo-200',
-                      ]"
-                    >
-                      {{ card.title || '未命名卡片' }}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <div class="flex gap-2">
-                    <input
-                      v-model="revisionReferenceQuery"
-                      class="min-w-0 flex-1 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-200"
-                      placeholder="搜索文脉标本"
-                      @keydown.enter.prevent="searchRevisionReferences"
-                    />
-                    <button
-                      type="button"
-                      class="rounded-xl bg-stone-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
-                      :disabled="revisionContextLoading === 'references'"
-                      @click="searchRevisionReferences"
-                    >
-                      {{ revisionContextLoading === 'references' ? '搜索中' : '搜索' }}
-                    </button>
-                  </div>
-                  <div v-if="revisionReferenceResults.length" class="mt-2 flex flex-wrap gap-1.5">
-                    <button
-                      v-for="reference in revisionReferenceResults"
-                      :key="reference.id"
-                      type="button"
-                      @click="toggleRevisionReference(reference.id)"
-                      :class="[
-                        'rounded-full px-2 py-1 text-[11px] ring-1',
-                        revisionSelectedReferenceIds.includes(reference.id)
-                          ? 'bg-teal-600 text-white ring-teal-600'
-                          : 'bg-white text-stone-600 ring-stone-200 hover:ring-teal-200',
-                      ]"
-                    >
-                      {{ reference.source_title || reference.content.slice(0, 18) || '文脉标本' }}
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                class="w-full rounded-xl bg-indigo-700 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-800 disabled:opacity-40"
-                :disabled="revisionRunning"
-                @click="runArticleRevision"
-              >
-                {{ revisionRunning ? '生成修订中…' : '生成修订预览' }}
-              </button>
-              <div v-if="revisionError" class="rounded-xl bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">
-                {{ revisionError }}
-              </div>
-              <div v-if="revisionNotice" class="rounded-xl bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-700">
-                {{ revisionNotice }}
-              </div>
-              <div v-if="revisionResult && revisionOriginalRange" class="space-y-2 rounded-2xl border border-stone-200 bg-white p-3">
-                <div class="flex items-center justify-between gap-2 text-xs text-stone-500">
-                  <span>范围：{{ revisionScopeLabel(revisionOriginalRange.scope) }}</span>
-                  <span>{{ revisionOriginalText.length }} → {{ revisionResult.length }}</span>
-                </div>
-                <div class="grid gap-2">
-                  <div>
-                    <div class="mb-1 text-[11px] font-semibold text-stone-500">原文</div>
-                    <pre class="max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-stone-50 p-2 text-xs leading-5 text-stone-600">{{ revisionPreview(revisionOriginalText) }}</pre>
-                  </div>
-                  <div>
-                    <div class="mb-1 text-[11px] font-semibold text-indigo-700">AI 建议</div>
-                    <pre class="max-h-52 overflow-auto whitespace-pre-wrap rounded-xl bg-indigo-50 p-2 text-xs leading-5 text-stone-800">{{ revisionPreview(revisionResult, 1200) }}</pre>
-                  </div>
-                </div>
-                <div class="flex gap-2">
-                  <button
-                    type="button"
-                    class="flex-1 rounded-xl bg-stone-900 px-3 py-2 text-xs font-semibold text-white hover:bg-stone-700 disabled:opacity-40"
-                    :disabled="revisionApplying || !revisionCanApply"
-                    @click="applyArticleRevision"
-                  >
-                    {{ revisionApplying ? '写回中…' : '确认写回正文' }}
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded-xl bg-stone-100 px-3 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-200"
-                    @click="revisionResult = ''; revisionOriginalRange = null; revisionOriginalText = ''"
-                  >
-                    丢弃
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
 
           <section data-testid="article-motif-anchors">
             <button

@@ -31,6 +31,24 @@ class _FakeClient:
         self.responses = _FakeResponses(output_text)
 
 
+class _FakeChatCompletions:
+    def __init__(self, output_text: str = "chat result"):
+        self._text = output_text
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        message = type("M", (), {"content": self._text})()
+        choice = type("C", (), {"message": message, "finish_reason": "stop"})()
+        usage = type("U", (), {"prompt_tokens": 7, "completion_tokens": 9})()
+        return type("R", (), {"choices": [choice], "usage": usage})()
+
+
+class _FakeChatClient:
+    def __init__(self, output_text: str = "chat result"):
+        self.chat = type("Chat", (), {"completions": _FakeChatCompletions(output_text)})()
+
+
 def test_rewrite_uses_responses_api_and_returns_text():
     client = _FakeClient("polished output")
     config = AiConfig(model="m", base_url="https://x", api_key_source="env:NOPE")
@@ -47,6 +65,27 @@ def test_rewrite_uses_responses_api_and_returns_text():
     assert response.output_tokens == 5
     assert client.responses.calls[0]["model"] == "m"
     assert client.responses.calls[0]["input"][0]["role"] == "system"
+
+
+def test_chat_completions_wire_api_returns_text_and_usage():
+    client = _FakeChatClient("chat output")
+    config = AiConfig(
+        wire_api="chat_completions",
+        model="deepseek-chat",
+        base_url="https://api.deepseek.com/v1",
+        api_key_source="env:NOPE",
+    )
+    provider = OpenAiProvider(config, PromptBuilder(), client=client)
+
+    response = provider.chat([{"role": "user", "content": "hi"}])
+
+    assert response.content == "chat output"
+    assert response.model == "deepseek-chat"
+    assert response.transport == "openai_chat_completions"
+    assert response.input_tokens == 7
+    assert response.output_tokens == 9
+    assert response.finish_reason == "stop"
+    assert client.chat.completions.calls[0]["messages"] == [{"role": "user", "content": "hi"}]
 
 
 def test_rewrite_rejects_unsupported_wire_api():
