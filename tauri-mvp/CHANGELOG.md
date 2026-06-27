@@ -1,5 +1,43 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.15 - AI Profile Discovery And Comparison Polish (2026-06-28)
+
+### Added
+
+- Added local AI profile discovery for OpenCode, Codex/OpenAI, and Gemini local configuration sources.
+- Added one-click import/update for discovered local AI profiles without storing raw API keys.
+- Added AI Tools profile refresh so newly saved profiles can be picked up before running a comparison.
+
+### Changed
+
+- AI profile cards now preserve a `source_key` so repeated local imports update existing profiles instead of creating duplicates.
+- Settings now labels discovered local configs as importable rather than remotely verified; real provider availability remains checked by the explicit live test request.
+- The AI profile setup surface is more compact, with discovered profiles, import/update actions, and manual editing in one place.
+
+### Fixed
+
+- Settings writes now explicitly commit key/value changes so profile saves persist across new SQLite connections and app restarts.
+- Added regression coverage for profile persistence across connections and local profile import/update behavior.
+
+### Verification
+
+- Real local OpenCode probe with `opencode/deepseek-v4-flash-free`: success, `transport=opencode_cli`, `cost=0`.
+- Real local Codex/OpenAI probe from `~/.codex/config.toml`: success, `transport=openai_responses`.
+- Real local Gemini probe from `~/.gemini/.env` with `https://elysia.h-e.top`: remote rejected the request; the app surfaces a Chinese diagnostic instead of raw HTML/403.
+- `D:\anaconda\envs\writer\python.exe -m pytest -q`
+- `npm test -- --run`
+- `npm run test:e2e`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.15_x64-setup.exe`
+  - SHA256: `1F1481F331AD11967DDDD7C00DEC359F32785CAB1EC5A27E7272940C384E3584`
+- `LivingToTell_0.1.15_x64_zh-CN.msi`
+  - SHA256: `D42DF58B95AD827AF4FAA62BC1ABAC22EF0B1D14CB9DF0163795FFDF690387FE`
+
 ## 0.1.14 - AI Model Comparison And Workflow Rollback (2026-06-27)
 
 ### Added

@@ -4,9 +4,9 @@
 
 ### 本地优先的写作工作室：文章、作品集、文脉标本与边界清晰的 AI
 
-中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.14)
+中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.15)
 
-[![Version](https://img.shields.io/badge/preview-0.1.14-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.15-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **写作、拍照、唱歌、讲话，都是为了讲述。活着，就是为了讲述。**
 
-[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.14) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
+[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.15) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
 
 </div>
 
@@ -124,15 +124,15 @@
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.14) 下载最新公开预览版。
+从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.15) 下载最新公开预览版。
 
 推荐 Windows 资产：
 
-- `LivingToTell_0.1.14_x64-setup.exe`
+- `LivingToTell_0.1.15_x64-setup.exe`
 
 可选资产：
 
-- `LivingToTell_0.1.14_x64_zh-CN.msi`
+- `LivingToTell_0.1.15_x64_zh-CN.msi`
 
 预览版暂未签名，Windows SmartScreen 可能会提示风险。请只运行来自本仓库 Release 页的安装包。
 
@@ -152,6 +152,8 @@
 - Gemini API：使用 `env:GEMINI_API_KEY` 或导入本地 Gemini 配置。
 - Gemini CLI / OAuth：复用本机 Gemini CLI 登录，不需要 API Key 输入框。
 - OpenCode：复用本机 `opencode auth login` 登录状态，不需要 API Key 输入框；设置页可以真实获取当前 OpenCode 模型列表。
+
+如果要做多模型对比，在 **AI 配置档案 → 扫描本机配置** 中查找本机 OpenCode、Codex/OpenAI、Gemini 配置，并一键导入为可选档案。扫描只确认本机配置和凭据来源存在；远端模型是否真的可用，请用 **发送真实测试请求** 验证。
 
 OpenCode 的模型获取是实时调用。本机当前 OpenCode 可拉取的模型包括：
 

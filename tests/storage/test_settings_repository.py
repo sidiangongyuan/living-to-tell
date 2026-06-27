@@ -44,3 +44,31 @@ def test_delete_removes_key(repo: SettingsRepository) -> None:
     repo.set("tmp", "x")
     repo.delete("tmp")
     assert repo.get("tmp") is None
+
+
+def test_set_persists_across_connections(tmp_path: Path) -> None:
+    db_path = tmp_path / "persistent.sqlite3"
+    conn = open_and_initialize(db_path)
+    SettingsRepository(conn).set("ai.provider_profiles.v1", "[{\"id\":\"p1\"}]")
+    conn.close()
+
+    reopened = open_and_initialize(db_path)
+    try:
+        assert SettingsRepository(reopened).get("ai.provider_profiles.v1") == '[{"id":"p1"}]'
+    finally:
+        reopened.close()
+
+
+def test_delete_persists_across_connections(tmp_path: Path) -> None:
+    db_path = tmp_path / "delete.sqlite3"
+    conn = open_and_initialize(db_path)
+    repo = SettingsRepository(conn)
+    repo.set("tmp", "x")
+    repo.delete("tmp")
+    conn.close()
+
+    reopened = open_and_initialize(db_path)
+    try:
+        assert SettingsRepository(reopened).get("tmp") is None
+    finally:
+        reopened.close()

@@ -659,6 +659,11 @@ async function openAiProfileSettings() {
   await router.push({ name: 'settings', query: { section: 'ai_profiles' } })
 }
 
+async function refreshAiProfiles() {
+  await loadAiProfiles()
+  notice.value = t('ai.profilesRefreshed')
+}
+
 async function handleRunTask() {
   error.value = ''
   notice.value = ''
@@ -1489,13 +1494,23 @@ function makeId(): string {
                 <h3 class="text-sm font-semibold text-gray-700">{{ t('ai.modelCompare') }}</h3>
                 <p class="mt-1 text-xs text-gray-400">{{ t('ai.modelCompareHint') }}</p>
               </div>
-              <button
-                type="button"
-                @click="openAiProfileSettings"
-                class="text-xs font-semibold text-blue-600 hover:text-blue-800"
-              >
-                {{ t('ai.manageProfiles') }}
-              </button>
+              <div class="flex shrink-0 gap-2">
+                <button
+                  type="button"
+                  @click="refreshAiProfiles"
+                  :disabled="aiProfilesLoading"
+                  class="rounded-lg border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                >
+                  {{ aiProfilesLoading ? t('common.loading') : t('ai.refreshProfiles') }}
+                </button>
+                <button
+                  type="button"
+                  @click="openAiProfileSettings"
+                  class="rounded-lg bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                >
+                  {{ t('ai.manageProfiles') }}
+                </button>
+              </div>
             </div>
             <div v-if="!aiProfilesSupported" class="rounded-lg bg-amber-50 p-3 text-xs leading-5 text-amber-800">
               {{ t('ai.aiProfilesUnsupported') }}
@@ -1504,7 +1519,12 @@ function makeId(): string {
               <label
                 v-for="profile in aiProfileOptions"
                 :key="profile.id"
-                class="flex cursor-pointer items-start gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-sm hover:bg-gray-100"
+                :class="[
+                  'flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-2 text-sm transition-colors',
+                  selectedProfileIds.includes(profile.id)
+                    ? 'border-blue-200 bg-blue-50'
+                    : 'border-gray-100 bg-gray-50 hover:bg-gray-100',
+                ]"
               >
                 <input
                   type="checkbox"

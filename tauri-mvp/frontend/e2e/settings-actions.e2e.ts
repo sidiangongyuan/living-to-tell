@@ -74,6 +74,41 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
   const state = {
     aiSaves: [] as Array<Record<string, unknown>>,
     aiProfiles: [] as Array<Record<string, unknown>>,
+    discoveredProfiles: [
+      {
+        name: 'OpenCode · DeepSeek v4 Flash Free',
+        provider_name: 'opencode',
+        base_url: null,
+        wire_api: 'responses',
+        model: 'opencode/deepseek-v4-flash-free',
+        api_key_source: 'opencode',
+        gemini_cli_proxy: null,
+        enabled: true,
+        source_key: 'local:opencode',
+        source_label: 'OpenCode 本机登录',
+        available: true,
+        reason: '',
+        existing_profile_id: null,
+        live_test_supported: true,
+      },
+      {
+        name: 'Codex / OpenAI · gpt-5.4',
+        provider_name: 'openai',
+        base_url: 'https://api.example.test/v1',
+        wire_api: 'responses',
+        model: 'gpt-5.4',
+        api_key_source: 'codex',
+        gemini_cli_proxy: null,
+        enabled: true,
+        source_key: 'local:codex',
+        source_label: 'Codex 本机配置',
+        available: true,
+        reason: '',
+        existing_profile_id: null,
+        live_test_supported: true,
+      },
+    ] as Array<Record<string, unknown>>,
+    localProfileImports: [] as Array<Record<string, unknown>>,
     aiTests: [] as Array<Record<string, unknown>>,
     aiLiveTests: [] as Array<Record<string, unknown>>,
     codexImports: 0,
@@ -186,6 +221,55 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
     await route.fulfill({ json: aiSettings })
   })
 
+  await page.route('http://backend.test/api/settings/ai/profiles/discover', async (route) => {
+    await route.fulfill({ json: state.discoveredProfiles })
+  })
+
+  await page.route('http://backend.test/api/settings/ai/profiles/import-local', async (route) => {
+    const body = route.request().postDataJSON() as { source_keys?: string[]; update_existing?: boolean }
+    state.localProfileImports.push(body)
+    const selected = new Set(body.source_keys?.length ? body.source_keys : state.discoveredProfiles.map((item) => String(item.source_key)))
+    let imported = 0
+    let updated = 0
+    for (const candidate of state.discoveredProfiles) {
+      if (!selected.has(String(candidate.source_key)) || candidate.available === false) continue
+      const existingIndex = state.aiProfiles.findIndex((profile) => profile.source_key === candidate.source_key)
+      const payload = {
+        id: existingIndex >= 0 ? state.aiProfiles[existingIndex].id : `profile-${state.aiProfiles.length + 1}`,
+        name: candidate.name,
+        provider_name: candidate.provider_name,
+        base_url: candidate.base_url ?? null,
+        wire_api: candidate.wire_api ?? 'responses',
+        model: candidate.model,
+        api_key_source: candidate.api_key_source,
+        gemini_cli_proxy: candidate.gemini_cli_proxy ?? null,
+        enabled: candidate.enabled ?? true,
+        source_key: candidate.source_key,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      }
+      if (existingIndex >= 0) {
+        state.aiProfiles[existingIndex] = payload
+        updated += 1
+      } else {
+        state.aiProfiles.push(payload)
+        imported += 1
+      }
+    }
+    state.discoveredProfiles = state.discoveredProfiles.map((candidate) => ({
+      ...candidate,
+      existing_profile_id: state.aiProfiles.find((profile) => profile.source_key === candidate.source_key)?.id ?? null,
+    }))
+    await route.fulfill({
+      json: {
+        profiles: state.aiProfiles,
+        imported_count: imported,
+        updated_count: updated,
+        skipped: [],
+      },
+    })
+  })
+
   await page.route('http://backend.test/api/settings/ai/profiles', async (route) => {
     const request = route.request()
     if (request.method() === 'POST') {
@@ -200,6 +284,7 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
         api_key_source: body.api_key_source,
         gemini_cli_proxy: body.gemini_cli_proxy ?? null,
         enabled: body.enabled ?? true,
+        source_key: body.source_key ?? null,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
       }
@@ -308,7 +393,7 @@ test('settings AI buttons import, test, save, and reset with visible feedback', 
   const state = await mockSettingsPage(page)
 
   await page.goto('/settings')
-  await expect(page.getByRole('heading', { name: 'AI 配置', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'AI 配置', exact: true })).toBeVisible({ timeout: 15000 })
 
   await page.getByRole('button', { name: '导入 Codex 配置' }).click()
   await expect.poll(() => state.codexImports).toBe(1)
@@ -352,6 +437,13 @@ test('settings supports OpenCode model refresh and local login config', async ({
   const state = await mockSettingsPage(page)
 
   await page.goto('/settings')
+  await expect(page.getByText('本机配置发现')).toBeVisible()
+  await expect(page.getByText('OpenCode · DeepSeek v4 Flash Free')).toBeVisible()
+  await page.getByRole('button', { name: '导入可用配置' }).click()
+  await expect.poll(() => state.localProfileImports.length).toBe(1)
+  await expect(page.getByText('本机配置已导入：新增 2 个，更新 0 个。')).toBeVisible()
+  await expect(page.locator('section').filter({ hasText: 'AI 配置档案' }).getByRole('heading', { name: 'Codex / OpenAI · gpt-5.4', level: 3 })).toBeVisible()
+
   await page.locator('section').filter({ hasText: 'AI 配置' }).locator('select').first().selectOption('opencode')
   const aiSection = page.locator('section').filter({ hasText: 'AI 配置' })
   const modelInput = aiSection.locator('input').first()

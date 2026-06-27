@@ -34,7 +34,7 @@ def test_tauri_app_version_capabilities(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["app_name"] == "Living to Tell"
-    assert payload["version"] == "0.1.14"
+    assert payload["version"] == "0.1.15"
     assert payload["api_version"] == "2.0.0"
     assert {
         "data_location",
@@ -69,19 +69,19 @@ def test_tauri_app_update_check_reports_latest_release(monkeypatch):
         def read(self):
             return json.dumps(
                 {
-                    "tag_name": "living-to-tell-v0.1.15",
-                    "name": "Living to Tell Preview 0.1.15",
-                    "html_url": "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.15",
+                    "tag_name": "living-to-tell-v0.1.16",
+                    "name": "Living to Tell Preview 0.1.16",
+                    "html_url": "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.16",
                     "published_at": "2026-06-26T01:02:03Z",
-                    "body": "## 0.1.15\n\nAdded update notifications.",
+                    "body": "## 0.1.16\n\nAdded update notifications.",
                     "assets": [
                         {
-                            "name": "LivingToTell_0.1.15_x64_zh-CN.msi",
-                            "browser_download_url": "https://example.test/LivingToTell_0.1.15_x64_zh-CN.msi",
+                            "name": "LivingToTell_0.1.16_x64_zh-CN.msi",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.16_x64_zh-CN.msi",
                         },
                         {
-                            "name": "LivingToTell_0.1.15_x64-setup.exe",
-                            "browser_download_url": "https://example.test/LivingToTell_0.1.15_x64-setup.exe",
+                            "name": "LivingToTell_0.1.16_x64-setup.exe",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.16_x64-setup.exe",
                         },
                     ],
                 }
@@ -104,11 +104,11 @@ def test_tauri_app_update_check_reports_latest_release(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "update_available"
-    assert payload["current_version"] == "0.1.14"
-    assert payload["latest_version"] == "0.1.15"
-    assert payload["release_name"] == "Living to Tell Preview 0.1.15"
-    assert payload["download_name"] == "LivingToTell_0.1.15_x64-setup.exe"
-    assert payload["download_url"] == "https://example.test/LivingToTell_0.1.15_x64-setup.exe"
+    assert payload["current_version"] == "0.1.15"
+    assert payload["latest_version"] == "0.1.16"
+    assert payload["release_name"] == "Living to Tell Preview 0.1.16"
+    assert payload["download_name"] == "LivingToTell_0.1.16_x64-setup.exe"
+    assert payload["download_url"] == "https://example.test/LivingToTell_0.1.16_x64-setup.exe"
     assert "下载安装包" in payload["message"]
     assert calls == [
         {
@@ -136,7 +136,7 @@ def test_tauri_app_update_check_returns_friendly_error(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "error"
-    assert payload["current_version"] == "0.1.14"
+    assert payload["current_version"] == "0.1.15"
     assert "暂时无法检查更新" in payload["message"]
 
 
@@ -1650,6 +1650,76 @@ def test_tauri_ai_profiles_crud_and_validation(monkeypatch):
 
     deleted = client.delete(f"/api/settings/ai/profiles/{profile['id']}")
     assert deleted.status_code == 204
+
+
+def test_tauri_ai_profiles_discover_and_import_local(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.settings import routes as settings_routes
+    from deps import get_container
+
+    get_container().settings.save_ai_provider_profiles([])
+
+    def fake_discover(container):
+        return [
+            settings_routes.AiDiscoveredProfileOut(
+                name="OpenCode · DeepSeek v4 Flash Free",
+                provider_name="opencode",
+                base_url=None,
+                wire_api="responses",
+                model="opencode/deepseek-v4-flash-free",
+                api_key_source="opencode",
+                gemini_cli_proxy=None,
+                enabled=True,
+                source_key="local:opencode",
+                source_label="OpenCode 本机登录",
+                available=True,
+                reason="",
+            ),
+            settings_routes.AiDiscoveredProfileOut(
+                name="Gemini · gemini-3.1-pro",
+                provider_name="gemini",
+                base_url="https://elysia.h-e.top",
+                wire_api="responses",
+                model="gemini-3.1-pro",
+                api_key_source="gemini",
+                gemini_cli_proxy=None,
+                enabled=True,
+                source_key="local:gemini",
+                source_label="Gemini .env",
+                available=False,
+                reason="AI 服务拒绝了当前请求。",
+            ),
+        ]
+
+    monkeypatch.setattr(settings_routes, "_discover_local_ai_profiles", fake_discover)
+
+    discovered = client.get("/api/settings/ai/profiles/discover")
+    assert discovered.status_code == 200, discovered.text
+    assert [item["source_key"] for item in discovered.json()] == [
+        "local:opencode",
+        "local:gemini",
+    ]
+
+    imported = client.post(
+        "/api/settings/ai/profiles/import-local",
+        json={"source_keys": [], "update_existing": True},
+    )
+    assert imported.status_code == 200, imported.text
+    payload = imported.json()
+    assert payload["imported_count"] == 1
+    assert payload["updated_count"] == 0
+    assert payload["profiles"][0]["source_key"] == "local:opencode"
+    assert "Gemini .env" in payload["skipped"][0]
+
+    imported_again = client.post(
+        "/api/settings/ai/profiles/import-local",
+        json={"source_keys": ["local:opencode"], "update_existing": True},
+    )
+    assert imported_again.status_code == 200, imported_again.text
+    payload_again = imported_again.json()
+    assert payload_again["imported_count"] == 0
+    assert payload_again["updated_count"] == 1
+    assert len([p for p in payload_again["profiles"] if p["source_key"] == "local:opencode"]) == 1
 
 
 def test_tauri_ai_settings_models_endpoint_fetches_opencode_live(monkeypatch):

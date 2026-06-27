@@ -49,6 +49,7 @@ export interface AiProfile {
   api_key_source: string
   gemini_cli_proxy: string | null
   enabled: boolean
+  source_key?: string | null
   created_at: string
   updated_at: string
 }
@@ -62,12 +63,29 @@ export interface AiProfileCreate {
   api_key_source: string
   gemini_cli_proxy?: string | null
   enabled?: boolean
+  source_key?: string | null
 }
 
 export type AiProfileUpdate = Partial<AiProfileCreate>
 
 export interface AiProfileListResult {
   profiles: AiProfile[]
+}
+
+export interface AiDiscoveredProfile extends AiProfileCreate {
+  source_key: string
+  source_label: string
+  available: boolean
+  reason: string
+  existing_profile_id?: string | null
+  live_test_supported: boolean
+}
+
+export interface AiProfileImportLocalResult {
+  profiles: AiProfile[]
+  imported_count: number
+  updated_count: number
+  skipped: string[]
 }
 
 export interface AiImportResult {
@@ -139,6 +157,20 @@ export const settingsApi = {
 
   async listAiProfiles(): Promise<AiProfileListResult> {
     const res = await apiFetch('/api/settings/ai/profiles')
+    return handleResponse(res)
+  },
+
+  async discoverAiProfiles(): Promise<AiDiscoveredProfile[]> {
+    const res = await apiFetch('/api/settings/ai/profiles/discover')
+    return handleResponse(res)
+  },
+
+  async importLocalAiProfiles(sourceKeys: string[] = [], updateExisting = true): Promise<AiProfileImportLocalResult> {
+    const res = await apiFetch('/api/settings/ai/profiles/import-local', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_keys: sourceKeys, update_existing: updateExisting }),
+    })
     return handleResponse(res)
   },
 

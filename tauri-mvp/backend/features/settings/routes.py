@@ -123,6 +123,7 @@ class AiProfileBase(BaseModel):
     api_key_source: str = "env:OPENAI_API_KEY"
     gemini_cli_proxy: Optional[str] = None
     enabled: bool = True
+    source_key: Optional[str] = None
 
 
 class AiProfileCreate(AiProfileBase):
@@ -140,6 +141,7 @@ class AiProfileUpdate(BaseModel):
     api_key_source: Optional[str] = None
     gemini_cli_proxy: Optional[str] = None
     enabled: Optional[bool] = None
+    source_key: Optional[str] = None
 
 
 class AiProfileOut(AiProfileBase):
@@ -150,6 +152,27 @@ class AiProfileOut(AiProfileBase):
 
 class AiProfileListOut(BaseModel):
     profiles: list[AiProfileOut]
+
+
+class AiDiscoveredProfileOut(AiProfileBase):
+    source_key: str
+    source_label: str
+    available: bool
+    reason: str = ""
+    existing_profile_id: Optional[str] = None
+    live_test_supported: bool = True
+
+
+class AiProfileImportLocalRequest(BaseModel):
+    source_keys: list[str] = []
+    update_existing: bool = True
+
+
+class AiProfileImportLocalOut(BaseModel):
+    profiles: list[AiProfileOut]
+    imported_count: int
+    updated_count: int
+    skipped: list[str] = []
 
 
 class AiImportOut(BaseModel):
@@ -474,7 +497,9 @@ def _config_to_profile_payload(
     enabled: bool,
     created_at: str,
     updated_at: str,
+    source_key: Optional[str] = None,
 ) -> dict[str, Any]:
+    cleaned_source_key = (source_key or "").strip() or None
     return {
         "id": profile_id,
         "name": name.strip()[:80],
@@ -485,6 +510,7 @@ def _config_to_profile_payload(
         "api_key_source": config.api_key_source,
         "gemini_cli_proxy": config.gemini_cli_proxy,
         "enabled": bool(enabled),
+        "source_key": cleaned_source_key,
         "created_at": created_at,
         "updated_at": updated_at,
     }
@@ -519,6 +545,7 @@ def _profile_base_to_payload(
         enabled=data.enabled,
         created_at=created_at,
         updated_at=updated_at,
+        source_key=data.source_key,
     )
 
 
@@ -540,6 +567,7 @@ def _profile_out_from_raw(raw: dict[str, Any]) -> Optional[AiProfileOut]:
                 if raw.get("gemini_cli_proxy") is not None
                 else None,
                 enabled=bool(raw.get("enabled", True)),
+                source_key=str(raw.get("source_key") or "").strip() or None,
             ),
             profile_id=profile_id,
             created_at=str(raw.get("created_at") or _utc_now()),
@@ -564,6 +592,151 @@ def _load_ai_profiles(container: AppContainer) -> list[AiProfileOut]:
 
 def _save_ai_profiles(container: AppContainer, profiles: list[AiProfileOut]) -> None:
     container.settings.save_ai_provider_profiles([profile.model_dump() for profile in profiles])
+
+
+def _profile_signature(profile: AiProfileOut) -> tuple[str, str, str, str, str]:
+    return (
+        profile.provider_name,
+        profile.base_url or "",
+        profile.wire_api or "",
+        profile.model or "",
+        profile.api_key_source or "",
+    )
+
+
+def _existing_profile_id_for_candidate(
+    candidate: AiDiscoveredProfileOut,
+    profiles: list[AiProfileOut],
+) -> Optional[str]:
+    if candidate.source_key:
+        for profile in profiles:
+            if (profile.source_key or "") == candidate.source_key:
+                return profile.id
+    candidate_sig = _profile_signature(AiProfileOut(
+        id="candidate",
+        created_at=_utc_now(),
+        updated_at=_utc_now(),
+        **candidate.model_dump(),
+    ))
+    for profile in profiles:
+        if _profile_signature(profile) == candidate_sig:
+            return profile.id
+    return None
+
+
+def _discovery_reason(prefix: str, exc: Exception) -> str:
+    text = str(exc).strip()
+    if not text:
+        text = exc.__class__.__name__
+    return f"{prefix}：{text[:180]}"
+
+
+def _discovered_opencode_profile() -> AiDiscoveredProfileOut:
+    status = opencode_auth_status()
+    return AiDiscoveredProfileOut(
+        name="OpenCode · DeepSeek v4 Flash Free",
+        provider_name="opencode",
+        base_url=None,
+        wire_api="responses",
+        model=OPENCODE_DEFAULT_MODEL,
+        api_key_source=OPENCODE_AUTH_SOURCE,
+        gemini_cli_proxy=None,
+        enabled=True,
+        source_key="local:opencode",
+        source_label="OpenCode 本机登录",
+        available=status.available,
+        reason="" if status.available else f"OpenCode 不可用：{status.reason or 'missing_login'}",
+    )
+
+
+def _discovered_codex_profile() -> AiDiscoveredProfileOut:
+    importer = CodexConfigImporter()
+    auth_status = CodexAuthResolver().status()
+    try:
+        result = importer.import_from(importer.default_path())
+    except Exception as exc:  # noqa: BLE001
+        return AiDiscoveredProfileOut(
+            name="Codex / OpenAI 本机配置",
+            provider_name="openai",
+            base_url=None,
+            wire_api="responses",
+            model="gpt-4o-mini",
+            api_key_source=CODEX_AUTH_SOURCE,
+            gemini_cli_proxy=None,
+            enabled=True,
+            source_key="local:codex",
+            source_label="Codex 本机配置",
+            available=False,
+            reason=_discovery_reason("未找到可导入的 Codex 配置", exc),
+        )
+    model = result.model or "gpt-4o-mini"
+    wire_api = result.wire_api if result.wire_api in SUPPORTED_WIRE_APIS else "responses"
+    return AiDiscoveredProfileOut(
+        name=f"Codex / OpenAI · {model}",
+        provider_name="openai",
+        base_url=result.base_url,
+        wire_api=wire_api,
+        model=model,
+        api_key_source=CODEX_AUTH_SOURCE if auth_status.available else "env:OPENAI_API_KEY",
+        gemini_cli_proxy=None,
+        enabled=True,
+        source_key="local:codex",
+        source_label="Codex 本机配置",
+        available=auth_status.available and not result.is_empty(),
+        reason="" if auth_status.available else f"Codex auth 不可用：{auth_status.reason or 'missing_key'}",
+    )
+
+
+def _discovered_gemini_profile() -> AiDiscoveredProfileOut:
+    importer = GeminiConfigImporter()
+    auth_status = GeminiAuthResolver().status()
+    try:
+        result = importer.import_default()
+    except Exception as exc:  # noqa: BLE001
+        return AiDiscoveredProfileOut(
+            name="Gemini 本机配置",
+            provider_name="gemini",
+            base_url=None,
+            wire_api="responses",
+            model="gemini-2.5-flash",
+            api_key_source=GEMINI_AUTH_SOURCE,
+            gemini_cli_proxy=None,
+            enabled=True,
+            source_key="local:gemini",
+            source_label="Gemini .env",
+            available=False,
+            reason=_discovery_reason("未找到可导入的 Gemini 配置", exc),
+        )
+    model = result.model or "gemini-2.5-flash"
+    return AiDiscoveredProfileOut(
+        name=f"Gemini · {model}",
+        provider_name="gemini",
+        base_url=result.base_url,
+        wire_api=result.wire_api or "responses",
+        model=model,
+        api_key_source=GEMINI_AUTH_SOURCE,
+        gemini_cli_proxy=None,
+        enabled=True,
+        source_key="local:gemini",
+        source_label="Gemini .env",
+        available=auth_status.available and not result.is_empty(),
+        reason="" if auth_status.available else f"Gemini auth 不可用：{auth_status.reason or 'missing_key'}",
+    )
+
+
+def _discover_local_ai_profiles(container: AppContainer) -> list[AiDiscoveredProfileOut]:
+    profiles = _load_ai_profiles(container)
+    discovered = [
+        _discovered_opencode_profile(),
+        _discovered_codex_profile(),
+        _discovered_gemini_profile(),
+    ]
+    out: list[AiDiscoveredProfileOut] = []
+    for candidate in discovered:
+        payload = candidate.model_dump()
+        payload["existing_profile_id"] = _existing_profile_id_for_candidate(candidate, profiles)
+        out.append(AiDiscoveredProfileOut(**payload))
+    return out
 
 
 def _provider_for_config(config: AiConfig) -> AiProvider:
@@ -753,6 +926,71 @@ def list_ai_profiles(
     container: AppContainer = Depends(get_container),
 ) -> AiProfileListOut:
     return AiProfileListOut(profiles=_load_ai_profiles(container))
+
+
+@router.get("/ai/profiles/discover", response_model=list[AiDiscoveredProfileOut])
+def discover_ai_profiles(
+    container: AppContainer = Depends(get_container),
+) -> list[AiDiscoveredProfileOut]:
+    return _discover_local_ai_profiles(container)
+
+
+@router.post("/ai/profiles/import-local", response_model=AiProfileImportLocalOut)
+def import_local_ai_profiles(
+    data: AiProfileImportLocalRequest,
+    container: AppContainer = Depends(get_container),
+) -> AiProfileImportLocalOut:
+    selected = {item.strip() for item in data.source_keys if item.strip()}
+    discovered = [
+        item for item in _discover_local_ai_profiles(container)
+        if (not selected or item.source_key in selected)
+    ]
+    profiles = _load_ai_profiles(container)
+    now = _utc_now()
+    imported_count = 0
+    updated_count = 0
+    skipped: list[str] = []
+
+    for candidate in discovered:
+        if not candidate.available:
+            skipped.append(f"{candidate.source_label}: {candidate.reason or '不可用'}")
+            continue
+        payload = _profile_base_to_payload(
+            AiProfileBase(**candidate.model_dump()),
+            profile_id=candidate.existing_profile_id or uuid.uuid4().hex,
+            created_at=now,
+            updated_at=now,
+        )
+        next_profile = AiProfileOut(**payload)
+        existing_index = next(
+            (
+                index for index, profile in enumerate(profiles)
+                if profile.id == next_profile.id
+                or ((profile.source_key or "") and profile.source_key == next_profile.source_key)
+            ),
+            -1,
+        )
+        if existing_index >= 0:
+            if not data.update_existing:
+                skipped.append(f"{candidate.source_label}: 已存在")
+                continue
+            existing = profiles[existing_index]
+            payload["id"] = existing.id
+            payload["created_at"] = existing.created_at
+            payload["updated_at"] = now
+            profiles[existing_index] = AiProfileOut(**payload)
+            updated_count += 1
+        else:
+            profiles.append(next_profile)
+            imported_count += 1
+
+    _save_ai_profiles(container, profiles)
+    return AiProfileImportLocalOut(
+        profiles=_load_ai_profiles(container),
+        imported_count=imported_count,
+        updated_count=updated_count,
+        skipped=skipped,
+    )
 
 
 @router.post("/ai/profiles", response_model=AiProfileOut, status_code=201)

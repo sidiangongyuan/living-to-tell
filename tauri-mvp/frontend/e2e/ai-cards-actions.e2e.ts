@@ -144,6 +144,13 @@ async function mockAiCardsApi(page: Page) {
   })
 }
 
+async function expectInitialCardsVisible(page: Page) {
+  const listPane = page.getByTestId('ai-cards-list-pane')
+  await expect(listPane.getByText('克制风格')).toBeVisible({ timeout: 15000 })
+  await expect(listPane.getByText('人物观察')).toBeVisible()
+  return listPane
+}
+
 test.beforeEach(async ({ page }) => {
   await mockAiCardsApi(page)
 })
@@ -183,9 +190,7 @@ test('AI Cards create, edit autosave, tags, filters, no sample restore, and dele
   })
 
   await page.goto('/ai-cards')
-  const listPane = page.getByTestId('ai-cards-list-pane')
-  await expect(listPane.getByText('克制风格')).toBeVisible()
-  await expect(listPane.getByText('人物观察')).toBeVisible()
+  const listPane = await expectInitialCardsVisible(page)
   await expect(page.getByRole('button', { name: '恢复样例' })).toHaveCount(0)
   await expect(page.getByText('内置样例')).toHaveCount(0)
   expect(presetGenerateRequests).toBe(0)
@@ -291,7 +296,7 @@ test('AI Cards autosave failures show a visible unsaved-state error', async ({ p
   })
 
   await page.goto('/ai-cards')
-  await expect(page.getByTestId('ai-cards-list-pane').getByText('克制风格')).toBeVisible()
+  await expectInitialCardsVisible(page)
   await page.getByPlaceholder('例如：海明威式简洁').fill('保存失败的卡片')
   await expect(page.getByText('保存失败：卡片目录不可写')).toBeVisible()
 })

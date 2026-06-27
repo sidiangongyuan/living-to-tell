@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { appApi } from '../../api/app'
 import { errorMessage, isHttpStatus } from '../../api/base'
 import {
   settingsApi,
+  type AiDiscoveredProfile,
   type AiProfile,
   type AiProfileCreate,
   type AiProviderName,
@@ -22,6 +24,7 @@ interface DataDirectoryOverrideState {
 }
 
 const { t } = useI18n()
+const route = useRoute()
 const settings = useSettingsStore()
 const appUpdate = useAppUpdateStore()
 const OPENCODE_DEFAULT_MODEL = 'opencode/deepseek-v4-flash-free'
@@ -59,6 +62,10 @@ const profileError = ref('')
 const profileTestResult = ref<{ success: boolean; message: string; preview?: string; cost?: number | null } | null>(null)
 const profileModelFetchResult = ref<{ success: boolean; message: string } | null>(null)
 const profileModelPresets = ref<Partial<Record<AiProviderName, string[]>>>({})
+const discoveredProfiles = ref<AiDiscoveredProfile[]>([])
+const discoveringProfiles = ref(false)
+const importingLocalProfiles = ref(false)
+const aiProfilesSectionRef = ref<HTMLElement | null>(null)
 
 const closeBehaviorNotice = ref('')
 const dataLocation = ref<DataLocationInfo | null>(null)
@@ -164,9 +171,15 @@ const statusDetail = computed(() => {
 onMounted(() => {
   void loadSettings()
   void loadProfiles()
+  void discoverProfiles()
   void loadDataLocation()
   void settings.loadNativePreferences()
   void appUpdate.ensureVersionLoaded()
+  void focusRequestedSection()
+})
+
+watch(() => route.query.section, () => {
+  void focusRequestedSection()
 })
 
 watch(aiProvider, (provider, previous) => {
@@ -245,6 +258,7 @@ function createEmptyProfileDraft(): AiProfileCreate {
     api_key_source: 'env:OPENAI_API_KEY',
     gemini_cli_proxy: null,
     enabled: true,
+    source_key: null,
   }
 }
 
@@ -258,6 +272,7 @@ function profileToDraft(profile: AiProfile): AiProfileCreate {
     api_key_source: profile.api_key_source,
     gemini_cli_proxy: profile.gemini_cli_proxy,
     enabled: profile.enabled,
+    source_key: profile.source_key ?? null,
   }
 }
 
@@ -366,6 +381,7 @@ async function saveProfile() {
       api_key_source: update.api_key_source,
       gemini_cli_proxy: update.gemini_cli_proxy,
       enabled: profileDraft.value.enabled ?? true,
+      source_key: profileDraft.value.source_key ?? null,
     }
     if (!payload.name) {
       profileError.value = t('settings.aiProfileNameRequired')
@@ -383,6 +399,7 @@ async function saveProfile() {
       profileNotice.value = t('settings.aiProfileCreated')
     }
     await loadProfiles()
+    await discoverProfiles()
     cancelProfileEdit()
   } catch (e) {
     profileError.value = errorMessage(e)
@@ -398,11 +415,76 @@ async function deleteProfile(profile: AiProfile) {
   try {
     await settingsApi.deleteAiProfile(profile.id)
     aiProfiles.value = aiProfiles.value.filter((item) => item.id !== profile.id)
+    await discoverProfiles()
     if (editingProfileId.value === profile.id) cancelProfileEdit()
     profileNotice.value = t('settings.aiProfileDeleted')
   } catch (e) {
     profileError.value = errorMessage(e)
   }
+}
+
+async function discoverProfiles() {
+  discoveringProfiles.value = true
+  try {
+    discoveredProfiles.value = await settingsApi.discoverAiProfiles()
+  } catch (e) {
+    profileError.value = errorMessage(e)
+    discoveredProfiles.value = []
+  } finally {
+    discoveringProfiles.value = false
+  }
+}
+
+async function importLocalProfiles(sourceKeys: string[] = []) {
+  importingLocalProfiles.value = true
+  profileError.value = ''
+  profileNotice.value = ''
+  try {
+    const result = await settingsApi.importLocalAiProfiles(sourceKeys, true)
+    aiProfiles.value = result.profiles
+    await discoverProfiles()
+    const changed = result.imported_count + result.updated_count
+    if (changed > 0) {
+      profileNotice.value = t('settings.localProfilesImported', {
+        imported: result.imported_count,
+        updated: result.updated_count,
+      })
+    } else if (result.skipped.length) {
+      profileNotice.value = result.skipped.join('；')
+    } else {
+      profileNotice.value = t('settings.localProfilesNoChanges')
+    }
+  } catch (e) {
+    profileError.value = errorMessage(e)
+  } finally {
+    importingLocalProfiles.value = false
+  }
+}
+
+function fillDraftFromDiscovered(candidate: AiDiscoveredProfile) {
+  profileEditorOpen.value = true
+  editingProfileId.value = candidate.existing_profile_id ?? null
+  profileDraft.value = {
+    name: candidate.name,
+    provider_name: candidate.provider_name,
+    base_url: candidate.base_url ?? '',
+    wire_api: candidate.wire_api || (candidate.provider_name === 'openai' ? 'chat_completions' : 'responses'),
+    model: candidate.model,
+    api_key_source: candidate.api_key_source,
+    gemini_cli_proxy: candidate.gemini_cli_proxy ?? null,
+    enabled: candidate.enabled,
+    source_key: candidate.source_key,
+  }
+  profileNotice.value = ''
+  profileError.value = ''
+  profileTestResult.value = null
+  profileModelFetchResult.value = null
+}
+
+async function focusRequestedSection() {
+  if (route.query.section !== 'ai_profiles') return
+  await nextTick()
+  aiProfilesSectionRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 async function toggleProfileEnabled(profile: AiProfile) {
@@ -934,22 +1016,94 @@ async function openReleasePage() {
         </div>
       </section>
 
-      <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <section ref="aiProfilesSectionRef" class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <div class="mb-4 flex items-start justify-between gap-3">
           <div>
             <h2 class="text-lg font-bold text-gray-900">{{ t('settings.aiProfiles') }}</h2>
             <p class="mt-1 text-sm leading-6 text-gray-500">{{ t('settings.aiProfilesHelp') }}</p>
           </div>
-          <button
-            @click="startCreateProfile"
-            class="shrink-0 rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-700"
-          >
-            {{ t('settings.addAiProfile') }}
-          </button>
+          <div class="flex shrink-0 flex-wrap justify-end gap-2">
+            <button
+              @click="discoverProfiles"
+              :disabled="discoveringProfiles"
+              class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            >
+              {{ discoveringProfiles ? t('settings.scanningLocalProfiles') : t('settings.scanLocalProfiles') }}
+            </button>
+            <button
+              @click="startCreateProfile"
+              class="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-700"
+            >
+              {{ t('settings.addAiProfile') }}
+            </button>
+          </div>
         </div>
 
         <div v-if="profileError" class="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ profileError }}</div>
         <div v-if="profileNotice" class="mb-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">{{ profileNotice }}</div>
+
+        <div class="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 class="text-sm font-semibold text-slate-900">{{ t('settings.localProfileDiscovery') }}</h3>
+              <p class="mt-1 text-xs leading-5 text-slate-500">{{ t('settings.localProfileDiscoveryHelp') }}</p>
+            </div>
+            <button
+              @click="importLocalProfiles()"
+              :disabled="importingLocalProfiles || !discoveredProfiles.some((item) => item.available)"
+              class="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-40"
+            >
+              {{ importingLocalProfiles ? t('common.saving') : t('settings.importAllLocalProfiles') }}
+            </button>
+          </div>
+          <div v-if="discoveringProfiles && !discoveredProfiles.length" class="rounded-lg bg-white p-3 text-sm text-slate-500">
+            {{ t('settings.scanningLocalProfiles') }}
+          </div>
+          <div v-else class="grid gap-3 lg:grid-cols-3">
+            <article
+              v-for="candidate in discoveredProfiles"
+              :key="candidate.source_key"
+              :class="[
+                'rounded-xl border bg-white p-3 shadow-sm',
+                candidate.available ? 'border-emerald-100' : 'border-amber-100',
+              ]"
+            >
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">{{ candidate.source_label }}</div>
+                  <h4 class="mt-1 truncate text-sm font-semibold text-slate-900">{{ candidate.name }}</h4>
+                  <p class="mt-1 break-all text-xs leading-5 text-slate-500">
+                    {{ candidate.provider_name }} · {{ candidate.model }}
+                  </p>
+                </div>
+                <span
+                  :class="[
+                    'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
+                    candidate.available ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800',
+                  ]"
+                >
+                  {{ candidate.available ? t('settings.importable') : t('settings.unavailable') }}
+                </span>
+              </div>
+              <p v-if="candidate.reason" class="mt-2 line-clamp-2 text-xs leading-5 text-amber-800">{{ candidate.reason }}</p>
+              <div class="mt-3 flex flex-wrap gap-2">
+                <button
+                  @click="importLocalProfiles([candidate.source_key])"
+                  :disabled="importingLocalProfiles || !candidate.available"
+                  class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
+                >
+                  {{ candidate.existing_profile_id ? t('settings.updateProfile') : t('settings.importProfile') }}
+                </button>
+                <button
+                  @click="fillDraftFromDiscovered(candidate)"
+                  class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  {{ t('settings.fillProfileDraft') }}
+                </button>
+              </div>
+            </article>
+          </div>
+        </div>
 
         <div v-if="loadingProfiles" class="rounded-lg bg-gray-50 p-4 text-sm text-gray-500">{{ t('common.loading') }}</div>
         <div v-else-if="!aiProfiles.length" class="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4 text-sm leading-6 text-gray-500">

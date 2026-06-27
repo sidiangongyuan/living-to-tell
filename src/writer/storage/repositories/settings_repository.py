@@ -29,9 +29,11 @@ class SettingsRepository:
             """,
             (key, value),
         )
+        self._conn.commit()
 
     def delete(self, key: str) -> None:
         self._conn.execute("DELETE FROM app_settings WHERE key = ?", (key,))
+        self._conn.commit()
 
     def get_all(self) -> Dict[str, str]:
         rows = self._conn.execute("SELECT key, value FROM app_settings").fetchall()

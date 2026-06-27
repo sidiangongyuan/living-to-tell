@@ -4,7 +4,7 @@
 
 ### The current Windows desktop preview for 活着为了讲述 / Living to Tell
 
-[![Version](https://img.shields.io/badge/version-0.1.14-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.15-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-preview-orange.svg)](#download)
@@ -98,15 +98,15 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.14).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.15).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.14_x64-setup.exe`
+- `LivingToTell_0.1.15_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.14_x64_zh-CN.msi`
+- `LivingToTell_0.1.15_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 
@@ -129,6 +129,8 @@ Open Settings and choose one provider:
 - OpenCode: reuse a local `opencode auth login` session. No API key field is required, and Settings can fetch the current OpenCode model list.
 
 The global provider remains the default for every AI feature. Settings can also store additional AI profiles without raw keys; AI Tools can select up to three profiles for a side-by-side model comparison.
+
+Use **AI profiles → Scan Local Configs** to discover local OpenCode, Codex/OpenAI, and Gemini configs and import them as comparison profiles. Discovery is local only; use the real test request button to verify the remote provider/model/base URL/key path.
 
 OpenCode model fetching is live. On the current local OpenCode setup, the available models include:
 
