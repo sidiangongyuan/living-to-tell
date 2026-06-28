@@ -53,8 +53,8 @@ This list tracks product-facing work that would make Living to Tell more reliabl
 
 ## Documentation
 
-- [ ] Keep English and Chinese user guides in sync.
-- [ ] Add short tutorial videos or GIFs after clean demo screenshots are available.
+- [x] Keep English and Chinese user guides in sync.
+- [x] Add short tutorial videos or GIFs after clean demo screenshots are available.
 - [ ] Add a troubleshooting page for AI provider setup.
 
 ## Completed recently

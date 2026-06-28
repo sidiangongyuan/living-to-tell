@@ -14,7 +14,7 @@
 
 **Writing, photography, singing, and speaking are all ways to tell. To live is to tell.**
 
-[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.24) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
+[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.24) · [User Guide](docs/user-guide.md) · [GIF Tutorials](docs/tutorials.md) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
 
 </div>
 
@@ -50,6 +50,8 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 | macOS / Linux packages | Planned after Windows stabilizes |
 
 ## Screenshots
+
+For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They cover the sample project, article writing, collection planning, references and motifs, AI with AI Cards, and Export & Backup.
 
 | Article Writing | Focus Mode |
 | :---: | :---: |
@@ -147,11 +149,13 @@ Windows SmartScreen may warn because preview builds are unsigned. Only run insta
 ## Quick Start
 
 1. Install Living to Tell from the latest Release.
-2. Use the Date view checklist to create a first article, review backups, or create the optional sample project.
-3. Open Articles and start writing, or open the sample collection to inspect the long-form workflow.
-4. Use Collections to arrange multiple articles into a reading order and plan outlines.
-5. Save quotes and sources in the Reference Library.
-6. Configure AI in Settings if you want AI tools or scoped chat.
+2. Follow the [official user guide](docs/user-guide.md) for installation, data path, and backup checks.
+3. Use the Date view checklist to create a first article, review backups, or create the optional sample project.
+4. Open the [GIF tutorials](docs/tutorials.md) if you want to see the six core workflows first.
+5. Open Articles and start writing, or open the sample collection to inspect the long-form workflow.
+6. Use Collections to arrange multiple articles into a reading order and plan outlines.
+7. Save quotes and sources in the Reference Library.
+8. Configure AI in Settings if you want AI tools or scoped chat.
 
 ## AI Setup
 

@@ -8,7 +8,7 @@
 - [ ] Improve first-run onboarding with language, data location, backups, and AI provider setup.
 - [x] Add a small sample project for new users.
 - [ ] Rework the full dark theme, then re-enable the theme switcher.
-- [ ] Add short demo videos or GIFs after the static screenshots settle.
+- [x] Add short demo videos or GIFs after the static screenshots settle.
 
 ## Writing
 
