@@ -252,6 +252,91 @@ async function installDemoApi(page) {
     if (pathname === '/api/ai-cards') return json(route, aiCards)
     if (pathname === '/api/ai-cards/presets/list') return json(route, aiCards)
     if (pathname === '/api/ai/task-presets') return json(route, {})
+    if (pathname === '/api/ai/task/compare' && method === 'POST') {
+      const request = route.request().postDataJSON()
+      const inputText = request.text || ''
+      const inputParagraphs = inputText.split(/\n\s*\n/).filter(Boolean).length || 1
+      return json(route, {
+        task_type: request.task_type || 'polish',
+        results: [
+          {
+            profile_id: 'default',
+            profile_name: '默认配置',
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+            transport: 'responses',
+            status: 'success',
+            result:
+              '风从堤岸那边吹来，裹着盐意和潮湿的晨光。\n\n' +
+              '我重新读完昨天搁下的段落，才意识到真正应该留下的不是事件本身，而是它慢慢亮起来的过程。\n\n' +
+              '只要一个段落还能让人听见脚步、闻到雨后石头的气味，它就还值得继续往前写。',
+            error: '',
+            elapsed_ms: 1280,
+            input_tokens: 72,
+            output_tokens: 118,
+            cost: 0.0004,
+            finish_reason: 'stop',
+            stats: {
+              input_chars: inputText.length,
+              output_chars: 112,
+              delta_chars: 24,
+              output_ratio: inputText.length ? 112 / inputText.length : null,
+              input_paragraphs: inputParagraphs,
+              output_paragraphs: 3,
+            },
+          },
+          {
+            profile_id: 'demo-profile-opencode',
+            profile_name: 'OpenCode · DeepSeek Flash',
+            provider: 'opencode',
+            model: 'opencode/deepseek-v4-flash-free',
+            transport: 'opencode_cli',
+            status: 'success',
+            result:
+              '风越过堤岸，带来盐、潮气和一点清晨的亮。\n\n' +
+              '我把昨天没写完的段落又读了一遍，发现该留下的并不是发生过什么，而是那种被光一点点托起来的感觉。\n\n' +
+              '如果一段文字仍能留下脚步声和雨后石头的气味，它就还有继续生长的余地。',
+            error: '',
+            elapsed_ms: 2140,
+            input_tokens: 76,
+            output_tokens: 109,
+            cost: 0,
+            finish_reason: 'stop',
+            stats: {
+              input_chars: inputText.length,
+              output_chars: 106,
+              delta_chars: 18,
+              output_ratio: inputText.length ? 106 / inputText.length : null,
+              input_paragraphs: inputParagraphs,
+              output_paragraphs: 3,
+            },
+          },
+          {
+            profile_id: 'demo-profile-codex',
+            profile_name: 'Codex 本地登录',
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+            transport: 'responses',
+            status: 'error',
+            result: '',
+            error: '演示环境未连接真实账户；实际使用时只会影响这一张结果卡。',
+            elapsed_ms: 930,
+            input_tokens: null,
+            output_tokens: null,
+            cost: null,
+            finish_reason: null,
+            stats: {
+              input_chars: inputText.length,
+              output_chars: 0,
+              delta_chars: -inputText.length,
+              output_ratio: null,
+              input_paragraphs: inputParagraphs,
+              output_paragraphs: 0,
+            },
+          },
+        ],
+      })
+    }
     if (pathname === '/api/ai/threads/current') {
       return json(route, {
         thread: {
@@ -294,6 +379,19 @@ async function installDemoApi(page) {
         models: aiSettings.model_presets[provider] || [],
         source: 'preset',
         message: '当前 provider 暂未启用真实模型拉取，已显示内置预设。',
+      })
+    }
+    if (pathname === '/api/settings/data-location') {
+      return json(route, {
+        data_dir: 'D:\\LivingToTellDemo\\Data',
+        default_data_dir: 'D:\\LivingToTellDemo\\Data',
+        database_path: 'D:\\LivingToTellDemo\\Data\\living-to-tell.sqlite3',
+        default_database_path: 'D:\\LivingToTellDemo\\Data\\living-to-tell.sqlite3',
+        backup_dir: 'D:\\LivingToTellDemo\\Data\\backups',
+        checkpoint_dir: 'D:\\LivingToTellDemo\\Data\\checkpoints',
+        is_custom: false,
+        database_exists: true,
+        warning: null,
       })
     }
     if (pathname === '/api/backup/stats') return json(route, { total_size: 0 })
@@ -343,8 +441,24 @@ async function main() {
   })
   await shot(page, '/collections', 'collections.png')
   await shot(page, '/library?ref=demo-reference-1&group=source', 'reference-library.png')
-  await shot(page, '/ai?tab=chat', 'ai-workspace.png')
-  await shot(page, '/settings', 'settings.png')
+  await shot(page, '/ai?tab=tools', 'ai-workspace.png', {
+    before: async (page) => {
+      await page.getByPlaceholder('粘贴需要处理的文本...').fill(
+        '风从堤岸那边过来，带着一点盐和潮湿的光。\n\n' +
+        '我把昨天没有写完的一段重新读了一遍，发现真正要留下的不是事件，而是那种慢慢亮起来的感觉。\n\n' +
+        '如果一个段落还能让人听见脚步声、闻到雨后的石头，它就还有继续往前走的可能。'
+      )
+      await page.locator('label').filter({ hasText: 'OpenCode · DeepSeek Flash' }).click()
+      await page.locator('label').filter({ hasText: 'Codex 本地登录' }).click()
+      await page.getByRole('button', { name: /运行/ }).click()
+      await page.getByText('风从堤岸那边吹来').waitFor({ timeout: 5000 })
+    },
+  })
+  await shot(page, '/settings?section=ai_profiles', 'settings.png', {
+    before: async (page) => {
+      await page.evaluate(() => window.scrollTo({ top: 560, behavior: 'instant' }))
+    },
+  })
 
   await browser.close()
 }
