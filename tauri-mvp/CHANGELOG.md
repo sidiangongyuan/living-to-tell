@@ -1,5 +1,26 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.17 - AI Profile State Race Fix (2026-06-28)
+
+### Fixed
+
+- Fixed an AI profile state race where an older `/api/settings/ai/profiles` response could overwrite newly imported local profiles with an empty list.
+- AI Tools now ignores stale AI profile refresh responses, so Settings -> AI Tools -> Manage Config -> AI Tools keeps imported model comparison profiles visible.
+
+### Verification
+
+- `npm run test:e2e -- e2e/settings-actions.e2e.ts --workers=1`
+- `npm test -- --run`
+- `npm run build`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.17_x64-setup.exe`
+  - SHA256: `6A4CCEA6EDEFADCF18BE2B1C6A831DD0BA03299FF6281E762C8635A41E67D5C7`
+- `LivingToTell_0.1.17_x64_zh-CN.msi`
+  - SHA256: `0023FA511DBBAA3496E6C7BD5A50830028F78C34E6E7C733E65AB0DC3672C46F`
+
 ## 0.1.16 - AI Profile Workflow Polish (2026-06-28)
 
 ### Changed
