@@ -156,6 +156,46 @@ const resolvedMotifSourceExcerpts = computed(() =>
     range: resolveMotifExcerptRange(store.selectedReference?.content ?? '', excerpt),
   }))
 )
+const uniqueSourceCount = computed(() =>
+  new Set(store.references.map((reference) => reference.source_title.trim()).filter(Boolean)).size
+)
+const duplicateReferenceGroups = computed(() => {
+  const buckets = new Map<string, Reference[]>()
+  for (const reference of store.references) {
+    const normalizedContent = reference.content.replace(/\s+/g, ' ').trim().toLowerCase()
+    if (!normalizedContent) continue
+    const key = [
+      reference.source_title.trim().toLowerCase(),
+      reference.source_author.trim().toLowerCase(),
+      normalizedContent,
+    ].join('::')
+    const bucket = buckets.get(key) ?? []
+    bucket.push(reference)
+    buckets.set(key, bucket)
+  }
+  return [...buckets.values()].filter((group) => group.length > 1)
+})
+const activeGroupUsageSummary = computed(() => {
+  const counts = new Map<string, number>()
+  for (const reference of activeGroup.value?.references ?? []) {
+    const key = reference.usage_kind || 'other'
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+})
+const activeGroupCharCount = computed(() =>
+  (activeGroup.value?.references ?? []).reduce((total, reference) => total + reference.content.length, 0)
+)
+const activeSourceAuthors = computed(() => {
+  const authors = new Set(
+    (activeGroup.value?.references ?? [])
+      .map((reference) => reference.source_author.trim())
+      .filter(Boolean),
+  )
+  return [...authors].slice(0, 3)
+})
 
 function isStaleReferenceRequest(referenceId: string, token: number): boolean {
   return token !== motifSourceRefreshToken || store.selectedReference?.id !== referenceId
@@ -828,6 +868,24 @@ function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string 
           :placeholder="t('library.search')"
           class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
+
+        <section class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3" data-testid="library-overview">
+          <div class="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{{ t('library.overview') }}</div>
+          <div class="grid grid-cols-3 gap-2 text-center">
+            <div class="rounded-xl bg-white p-2">
+              <div class="text-sm font-bold text-slate-900">{{ store.references.length }}</div>
+              <div class="mt-0.5 whitespace-nowrap text-[10px] text-slate-400">{{ t('library.overviewReferences') }}</div>
+            </div>
+            <div class="rounded-xl bg-white p-2">
+              <div class="text-sm font-bold text-slate-900">{{ uniqueSourceCount }}</div>
+              <div class="mt-0.5 whitespace-nowrap text-[10px] text-slate-400">{{ t('library.overviewSources') }}</div>
+            </div>
+            <div class="rounded-xl bg-white p-2">
+              <div :class="['text-sm font-bold', duplicateReferenceGroups.length ? 'text-amber-700' : 'text-slate-900']">{{ duplicateReferenceGroups.length }}</div>
+              <div class="mt-0.5 whitespace-nowrap text-[10px] text-slate-400">{{ t('library.overviewDuplicates') }}</div>
+            </div>
+          </div>
+        </section>
       </div>
 
       <div class="flex-1 overflow-y-auto">
@@ -885,6 +943,30 @@ function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string 
             {{ t('library.newInCurrentBook') }}
           </button>
         </div>
+        <section v-if="activeGroup" class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3" data-testid="library-active-group-summary">
+          <div class="grid gap-2 text-xs text-slate-600">
+            <div class="flex items-center justify-between gap-3">
+              <span>{{ t('library.groupChars') }}</span>
+              <span class="font-semibold text-slate-900">{{ activeGroupCharCount }}</span>
+            </div>
+            <div v-if="store.groupMode === 'source' && activeSourceAuthors.length" class="flex items-start justify-between gap-3">
+              <span>{{ t('library.groupAuthors') }}</span>
+              <span class="text-right font-semibold text-slate-900">{{ activeSourceAuthors.join(' / ') }}</span>
+            </div>
+          </div>
+          <div v-if="activeGroupUsageSummary.length" class="mt-3 flex flex-wrap gap-1.5">
+            <span
+              v-for="[usage, count] in activeGroupUsageSummary"
+              :key="usage"
+              class="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200"
+            >
+              {{ usageLabel(usage) }} · {{ count }}
+            </span>
+          </div>
+          <div v-if="duplicateReferenceGroups.length" class="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+            {{ t('library.duplicateHint', { count: duplicateReferenceGroups.length }) }}
+          </div>
+        </section>
       </div>
 
       <div class="flex-1 overflow-y-auto p-4">

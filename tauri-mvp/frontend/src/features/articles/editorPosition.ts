@@ -132,7 +132,12 @@ export function getPreferredArticleEditorPosition(
   if (!slots) return null
   if (slots.edit && slots.read) {
     if (slots.read.updatedAt > slots.edit.updatedAt) {
-      return { ...slots.read, interaction: 'read' }
+      return {
+        ...slots.read,
+        selectionStart: slots.edit.selectionStart,
+        selectionEnd: slots.edit.selectionEnd,
+        interaction: 'read',
+      }
     }
     return { ...slots.edit, interaction: 'edit' }
   }

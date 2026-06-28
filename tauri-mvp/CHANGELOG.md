@@ -1,5 +1,46 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.21 - Onboarding, Command Palette, and Reference Capture (2026-06-28)
+
+### Added
+
+- Added a first-run checklist on the Date view that reads local app state without creating sample data.
+- Added AI settings diagnostics that distinguish provider, model, transport, credential source, local config checks, real request checks, and model-list source.
+- Added AI request-size diagnostics in AI Tools, including character count, paragraph count, estimated tokens, selected model count, and long-request warnings.
+- Added honest pending result cards while AI model comparison requests are still in flight.
+- Reworked the command palette into grouped commands and search results for articles, collections, references, motifs, AI Cards, settings, backup, and common actions.
+- Added reference-library overview cards and active-group summaries for source count, possible duplicate groups, usage distribution, authors, and character totals.
+- Added AI chat capture previews so assistant replies can be reviewed and edited before saving as reference material or a new article.
+
+### Changed
+
+- AI chat assistant-message actions now use a quieter action row; article-note saving remains direct, while reference/article capture requires confirmation.
+- Reference-library overview labels are kept compact in narrow panes to avoid broken Chinese text.
+- The updated documentation screenshots now show the current AI Workspace, Reference Library, and Settings diagnostics surfaces.
+
+### Verification
+
+- Visual browser screenshots:
+  - `output/playwright/0.1.21-visual/dates-onboarding.png`
+  - `output/playwright/0.1.21-visual/settings-ai-diagnostics.png`
+  - `output/playwright/0.1.21-visual/library-overview-after-nowrap.png`
+  - `output/playwright/0.1.21-visual/ai-chat-capture-reference.png`
+  - `output/playwright/0.1.21-visual/ai-tools-compare-result.png`
+  - `output/playwright/0.1.21-visual/command-palette-ai.png`
+- Real OpenCode smoke test: `opencode/deepseek-v4-flash-free` returned `OK`, `cost=0`.
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py tests\services\ai -q`
+- `npm test -- --run`
+- `npm run test:e2e`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+
+### Release artifacts
+
+- `LivingToTell_0.1.21_x64-setup.exe`
+  - SHA256: `9F33EF9B784B79E7143C520BF29244EFA9FEA9533BF01D28295AD7FE9CE19DBD`
+- `LivingToTell_0.1.21_x64_zh-CN.msi`
+  - SHA256: `B0D745AB1800E623364DC0B500146D3A2D029EA67CC66DD7BE88D280C8DC7AFB`
+
 ## 0.1.18 - In-App Update Flow (2026-06-28)
 
 ### Fixed

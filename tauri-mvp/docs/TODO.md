@@ -4,6 +4,7 @@
 
 - [ ] Optional cloud sync for writers who want the same local-first workspace across devices.
 - [ ] Add signed Windows builds or published checksums for preview installers.
+- [x] Add a first-run checklist that reads local state without creating sample data.
 - [ ] Improve first-run onboarding with language, data location, backups, and AI provider setup.
 - [ ] Add a small sample project for new users.
 - [ ] Rework the full dark theme, then re-enable the theme switcher.
@@ -26,6 +27,7 @@
 
 ## Reference library
 
+- [x] Compact overview and active-group summaries.
 - [ ] More flexible custom views beyond source/usage grouping.
 - [ ] Better duplicate detection and merge flow.
 - [ ] Source-level notes for books.
@@ -35,9 +37,11 @@
 - [x] Safe AI writeback with original/result review, replace, insert, and copy actions.
 - [x] Focused controls for polish, rewrite, expand, and continue.
 - [x] Per-tool AI writing presets.
+- [x] Chat capture preview for saving assistant replies as reference material or new drafts.
+- [x] Clearer long-text request size and wait-state feedback.
 - [ ] AI report items that can locate source text or open an editable action.
 - [ ] More chat actions to turn discussion into article notes, reference material, or a new draft.
-- [ ] Safer long-text progress feedback and cancellation controls.
+- [ ] Cancellation controls for long-running AI requests.
 
 ## Completed recently
 

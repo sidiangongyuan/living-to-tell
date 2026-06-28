@@ -40,7 +40,7 @@ function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'F11') {
     e.preventDefault()
     settings.toggleFocusMode()
-  } else if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
     commandPaletteRef.value?.open()
   } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'N') {

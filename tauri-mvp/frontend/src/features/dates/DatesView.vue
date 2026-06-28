@@ -2,6 +2,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { articlesApi } from '../../api/articles'
+import { libraryApi } from '../../api/library'
+import { settingsApi, type AiSettings } from '../../api/settings'
 import { buildDailyQuoteLibraryQuery } from './quoteLink'
 import { formatDateKey, useDatesStore } from './store'
 import { useI18n } from '../../i18n'
@@ -13,10 +15,101 @@ const router = useRouter()
 const { t } = useI18n()
 const calendarRef = ref<HTMLDivElement | null>(null)
 const createError = ref('')
+const onboardingLoading = ref(false)
+const onboardingError = ref('')
+const onboardingState = ref({
+  hasArticle: false,
+  hasReference: false,
+  aiConfigured: false,
+})
 
 onMounted(() => {
-  store.goToToday()
+  void store.goToToday()
+  void loadOnboardingProgress()
 })
+
+const onboardingTasks = computed(() => {
+  const hasArticle = onboardingState.value.hasArticle || store.entriesForSelectedDate.length > 0
+  const hasReference = onboardingState.value.hasReference
+  const aiReady = onboardingState.value.aiConfigured || settings.onboardingAiReviewed
+  const storageReviewed = settings.onboardingStorageReviewed
+  const chatReady = hasArticle && aiReady
+
+  return [
+    {
+      id: 'article',
+      title: t('welcome.firstArticle'),
+      detail: t('welcome.firstArticleDetail'),
+      done: hasArticle,
+      actionLabel: hasArticle ? t('welcome.openArticles') : t('welcome.startNow'),
+      action: startWritingForSelectedDate,
+    },
+    {
+      id: 'reference',
+      title: t('welcome.firstReference'),
+      detail: t('welcome.firstReferenceDetail'),
+      done: hasReference,
+      actionLabel: hasReference ? t('welcome.openLibrary') : t('welcome.startNow'),
+      action: createFirstReference,
+    },
+    {
+      id: 'ai',
+      title: t('welcome.aiSetup'),
+      detail: t('welcome.aiSetupDetail'),
+      done: aiReady,
+      actionLabel: aiReady ? t('welcome.reviewAgain') : t('welcome.startNow'),
+      action: openAiSettings,
+    },
+    {
+      id: 'backup',
+      title: t('welcome.backup'),
+      detail: t('welcome.backupDetail'),
+      done: storageReviewed,
+      actionLabel: storageReviewed ? t('welcome.reviewAgain') : t('welcome.startNow'),
+      action: openBackup,
+    },
+    {
+      id: 'chat',
+      title: t('welcome.articleChat'),
+      detail: t('welcome.articleChatDetail'),
+      done: chatReady,
+      actionLabel: chatReady ? t('welcome.openChat') : t('welcome.afterArticle'),
+      action: openArticleChatFromWelcome,
+      disabled: !hasArticle,
+    },
+  ]
+})
+
+const onboardingCompletedCount = computed(() => onboardingTasks.value.filter((task) => task.done).length)
+
+async function loadOnboardingProgress() {
+  onboardingLoading.value = true
+  onboardingError.value = ''
+  try {
+    const [articles, stats, ai] = await Promise.all([
+      articlesApi.listArticles(1).catch(() => []),
+      libraryApi.getStats().catch(() => ({ total: 0, by_usage_kind: {} })),
+      settingsApi.getAiSettings().catch(() => null),
+    ])
+    onboardingState.value = {
+      hasArticle: articles.length > 0,
+      hasReference: stats.total > 0,
+      aiConfigured: ai ? aiSettingsHasUsableCredential(ai) : false,
+    }
+  } catch (e) {
+    onboardingError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    onboardingLoading.value = false
+  }
+}
+
+function aiSettingsHasUsableCredential(ai: AiSettings): boolean {
+  if (ai.provider_name === 'opencode') return ai.status.opencode.available
+  if (ai.provider_name === 'gemini_cli') return ai.status.gemini_cli.available
+  if (ai.api_key_source === 'codex') return ai.status.codex.available
+  if (ai.api_key_source === 'gemini') return ai.status.gemini.available
+  return ai.status.env.available
+}
 
 const calendarDays = computed(() => {
   const year = store.currentYear
@@ -117,10 +210,12 @@ function openArticleChatFromWelcome() {
 }
 
 function openAiSettings() {
+  settings.markOnboardingAiReviewed()
   router.push({ name: 'settings' })
 }
 
 function openBackup() {
+  settings.markOnboardingStorageReviewed()
   router.push({ name: 'backup' })
 }
 
@@ -212,51 +307,79 @@ async function startWritingForSelectedDate() {
       <div class="flex-1 overflow-y-auto p-6">
         <section
           v-if="!settings.welcomeChecklistDismissed"
-          class="mb-6 rounded-3xl border border-amber-200 bg-amber-50 p-5 shadow-sm"
+          class="mb-6 overflow-hidden rounded-3xl border border-amber-200 bg-[#fff8ed] shadow-sm"
         >
-          <div class="flex items-start justify-between gap-4">
-            <div>
-              <h3 class="text-lg font-bold text-amber-950">{{ t('welcome.title') }}</h3>
-              <p class="mt-1 text-sm leading-6 text-amber-800">{{ t('welcome.subtitle') }}</p>
+          <div class="border-b border-amber-100 bg-white/60 p-5">
+            <div class="flex items-start justify-between gap-4">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-3">
+                  <h3 class="text-lg font-bold text-amber-950">{{ t('welcome.title') }}</h3>
+                  <span class="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900">
+                    {{ t('welcome.progress', { done: onboardingCompletedCount, total: onboardingTasks.length }) }}
+                  </span>
+                </div>
+                <p class="mt-1 max-w-3xl text-sm leading-6 text-amber-800">{{ t('welcome.subtitle') }}</p>
+              </div>
+              <button
+                @click="settings.dismissWelcomeChecklist"
+                class="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-amber-800 shadow-sm hover:bg-amber-50"
+              >
+                {{ t('common.close') }}
+              </button>
             </div>
-            <button
-              @click="settings.dismissWelcomeChecklist"
-              class="rounded-xl bg-white/80 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-white"
-            >
-              {{ t('common.close') }}
-            </button>
+            <div class="mt-4 h-2 overflow-hidden rounded-full bg-amber-100">
+              <div
+                class="h-full rounded-full bg-amber-500 transition-all"
+                :style="{ width: `${Math.round((onboardingCompletedCount / onboardingTasks.length) * 100)}%` }"
+              ></div>
+            </div>
           </div>
-          <div class="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            <button
-              @click="startWritingForSelectedDate"
-              class="rounded-2xl bg-white px-4 py-3 text-left text-sm font-semibold text-stone-800 shadow-sm hover:bg-amber-100"
+          <div class="grid gap-3 p-5 lg:grid-cols-2">
+            <article
+              v-for="task in onboardingTasks"
+              :key="task.id"
+              :class="[
+                'flex min-h-24 items-start gap-3 rounded-2xl border bg-white p-4 shadow-sm transition-colors',
+                task.done ? 'border-emerald-100' : 'border-amber-100',
+              ]"
             >
-              {{ t('welcome.firstArticle') }}
-            </button>
-            <button
-              @click="createFirstReference"
-              class="rounded-2xl bg-white px-4 py-3 text-left text-sm font-semibold text-stone-800 shadow-sm hover:bg-amber-100"
-            >
-              {{ t('welcome.firstReference') }}
-            </button>
-            <button
-              @click="openAiSettings"
-              class="rounded-2xl bg-white px-4 py-3 text-left text-sm font-semibold text-stone-800 shadow-sm hover:bg-amber-100"
-            >
-              {{ t('welcome.aiSetup') }}
-            </button>
-            <button
-              @click="openArticleChatFromWelcome"
-              class="rounded-2xl bg-white px-4 py-3 text-left text-sm font-semibold text-stone-800 shadow-sm hover:bg-amber-100"
-            >
-              {{ t('welcome.articleChat') }}
-            </button>
-            <button
-              @click="openBackup"
-              class="rounded-2xl bg-white px-4 py-3 text-left text-sm font-semibold text-stone-800 shadow-sm hover:bg-amber-100"
-            >
-              {{ t('welcome.backup') }}
-            </button>
+              <div
+                :class="[
+                  'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold',
+                  task.done ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800',
+                ]"
+              >
+                {{ task.done ? '✓' : '·' }}
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 class="text-sm font-semibold text-stone-900">{{ task.title }}</h4>
+                    <p class="mt-1 text-xs leading-5 text-stone-500">{{ task.detail }}</p>
+                  </div>
+                  <span
+                    :class="[
+                      'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
+                      task.done ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700',
+                    ]"
+                  >
+                    {{ task.done ? t('welcome.done') : t('welcome.todo') }}
+                  </span>
+                </div>
+                <button
+                  @click="task.action"
+                  :disabled="task.disabled"
+                  :aria-label="task.title"
+                  class="mt-3 rounded-lg bg-stone-900 px-3 py-2 text-xs font-semibold text-white hover:bg-stone-700 disabled:bg-stone-200 disabled:text-stone-500"
+                >
+                  {{ task.actionLabel }}
+                </button>
+              </div>
+            </article>
+          </div>
+          <div v-if="onboardingLoading || onboardingError" class="border-t border-amber-100 px-5 py-3 text-xs text-amber-700">
+            <span v-if="onboardingLoading">{{ t('welcome.checking') }}</span>
+            <span v-else>{{ t('welcome.checkUnavailable') }}</span>
           </div>
         </section>
 

@@ -76,7 +76,7 @@ describe('article editor position helpers', () => {
     expect(slots?.read).toMatchObject({ selectionStart: 0, selectionEnd: 0, scrollTop: 900 })
   })
 
-  it('restores the most recent position slot', () => {
+  it('restores newer read scroll while preserving the last edit cursor', () => {
     const storage = new MemoryStorage()
 
     saveArticleEditorPosition('a1', {
@@ -94,6 +94,8 @@ describe('article editor position helpers', () => {
 
     expect(getPreferredArticleEditorPosition('a1', storage)).toMatchObject({
       interaction: 'read',
+      selectionStart: 50,
+      selectionEnd: 50,
       scrollTop: 900,
     })
   })

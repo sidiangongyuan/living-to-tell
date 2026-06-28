@@ -4,7 +4,7 @@
 
 ### The current Windows desktop preview for 活着为了讲述 / Living to Tell
 
-[![Version](https://img.shields.io/badge/version-0.1.18-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.21-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-preview-orange.svg)](#download)
@@ -75,9 +75,10 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 - Focused AI tools for polishing, rewriting, expanding, and continuing.
 - Per-tool personal presets.
 - AI results are reviewed before writing back, with explicit replace, insert, and copy actions.
+- AI Tools show request size and selected-model diagnostics before running, then show honest pending cards while model comparison is in flight.
 - AI Tools can run one task across up to three saved provider profiles and compare result size, paragraph changes, latency, tokens, and cost when available.
 - Article-scoped chat with one ongoing conversation per article.
-- Standing chat instructions, copy actions, and save-reply-as-article-note actions.
+- Standing chat instructions, copy actions, save-reply-as-article-note actions, and reviewed capture to reference material or new articles.
 - AI Cards for style, character, and scene context, with type/source filters and keyword search.
 - AI card generation creates template-based style, character, and scene drafts for review before saving.
 - Supports OpenAI-compatible APIs, Codex local auth, Gemini API/local config, Gemini CLI / OAuth, and OpenCode local auth.
@@ -89,6 +90,7 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 - Release builds discover the sidecar port automatically, so users do not need to run a backend manually.
 - The Export & Backup center shows data, backup, and checkpoint paths, opens storage folders, creates backups/checkpoints, and exports the recent article or collection.
 - Ctrl+K opens a command palette that now searches articles, collections, references, motifs, and AI cards as well as commands.
+- The Date view includes a first-run checklist that reads local state without creating sample data.
 - Startup uses a light splash window so users see progress while the backend sidecar starts.
 - The app checks GitHub Releases in the background after startup and shows a clear update notice when a newer public build is available.
 - Close behavior can be set to ask every time, minimize to tray, or exit directly.
@@ -98,15 +100,15 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.18).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.21).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.18_x64-setup.exe`
+- `LivingToTell_0.1.21_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.18_x64_zh-CN.msi`
+- `LivingToTell_0.1.21_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 
@@ -208,10 +210,10 @@ cargo check --manifest-path src-tauri\Cargo.toml
 ## Roadmap
 
 - Full dark theme pass before re-enabling the theme switcher.
-- First-run onboarding and sample project.
+- Broader first-run onboarding and a sample project.
 - Optional cloud sync for writers who want the same local-first workspace across devices.
 - Signed Windows builds or published checksums for preview installers.
-- Richer reference-library views, AI report actions, and easier chat-to-note / chat-to-reference flows.
+- Richer reference-library views and AI report actions.
 - More manuscript-level outline/export workflows on top of collection planning.
 - Richer graph views for themes, character links, arguments, references, and AI-generated ideas.
 - macOS and Linux packages after the Windows workflow is mature.

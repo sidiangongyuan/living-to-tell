@@ -1029,6 +1029,8 @@ test('dates calendar buttons, daily quote, welcome close, and start writing acti
   await expect.poll(() => statsQueries.length).toBeGreaterThanOrEqual(4)
 
   const welcomePanel = page.locator('section').filter({ hasText: '开始使用活着为了讲述' }).first()
+  await expect(welcomePanel.getByText(/\/5 已完成/)).toBeVisible()
+  await expect(welcomePanel.getByText('待完成').first()).toBeVisible()
   await welcomePanel.getByRole('button', { name: '查看备份与数据说明' }).click()
   await expect(page).toHaveURL(/\/backup/)
 
@@ -1051,6 +1053,27 @@ test('date article cards open the selected article from the calendar', async ({ 
 
   await page.locator('article').filter({ hasText: '导出测试文章' }).click()
 
+  await expect(page).toHaveURL(/\/articles\?.*id=article-a/)
+  await expect(page.getByTestId('article-body-editor')).toHaveValue(article.body)
+})
+
+test('command palette groups commands and searches local writing content', async ({ page }) => {
+  await page.unroute('**/api/articles/search?**')
+  await page.route('**/api/articles/search?**', async (route) => route.fulfill({ json: [article] }))
+
+  await page.goto('/dates')
+
+  await page.keyboard.press('Control+K')
+  await expect(page.getByPlaceholder('搜索命令、文章、作品集、文脉、意象或 AI 卡片...')).toBeVisible()
+  await expect(page.getByText('常用命令', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: /今天写作/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /新建文脉标本/ })).toBeVisible()
+
+  await page.getByPlaceholder('搜索命令、文章、作品集、文脉、意象或 AI 卡片...').fill('导出测试')
+  await expect(page.getByText('文章').first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /导出测试文章/ })).toBeVisible()
+
+  await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/\/articles\?.*id=article-a/)
   await expect(page.getByTestId('article-body-editor')).toHaveValue(article.body)
 })
@@ -1140,7 +1163,7 @@ test('command palette does not expose misleading search or unsafe reload command
   await page.keyboard.press('KeyK')
   await page.keyboard.up('Control')
 
-  await expect(page.getByPlaceholder(/输入命令|Type a command/)).toBeVisible()
+  await expect(page.getByPlaceholder(/搜索命令|Search commands/)).toBeVisible()
   await expect(page.getByText('新建文章')).toBeVisible()
   await expect(page.getByText('搜索文章')).toHaveCount(0)
   await expect(page.getByText('重新加载应用')).toHaveCount(0)
@@ -1473,6 +1496,11 @@ test('library create, grouping, search, and autosave actions are real and visibl
 
   await page.goto('/library')
   await expect(page.getByText('已有标本正文')).toBeVisible()
+  const overview = page.getByTestId('library-overview')
+  await expect(overview.getByText('标本')).toBeVisible()
+  await expect(overview.getByText('来源')).toBeVisible()
+  await expect(overview.getByText('疑似重复')).toBeVisible()
+  await expect(page.getByTestId('library-active-group-summary').getByText('当前分组字数')).toBeVisible()
 
   await page.getByRole('button', { name: '按用途' }).click()
   await page.getByRole('button', { name: /意象\s+共 1 条/ }).click()
@@ -1715,6 +1743,55 @@ test('AI presets, card contexts, and clear controls update the workspace visibly
   await expect(page.getByRole('button', { name: '粘贴文本' })).toBeVisible()
 })
 
+test('AI tools show long request diagnostics and honest pending state while models run', async ({ page }) => {
+  await page.unroute('**/api/ai/task/compare')
+  await page.route('**/api/ai/task/compare', async (route) => {
+    const body = route.request().postDataJSON() as { task_type?: string; text?: string; profile_ids?: string[] }
+    await new Promise((resolve) => setTimeout(resolve, 450))
+    await route.fulfill({
+      json: {
+        task_type: body.task_type ?? 'polish',
+        results: (body.profile_ids?.length ? body.profile_ids : ['default']).map((profileId) => ({
+          profile_id: profileId,
+          profile_name: profileId === 'default' ? '默认配置' : 'Gemini 测试',
+          provider: profileId === 'default' ? 'openai' : 'gemini',
+          model: profileId === 'default' ? 'gpt-4o-mini' : 'gemini-test-model',
+          transport: 'fake',
+          status: 'success',
+          result: profileId === 'default' ? '长文本默认模型结果' : '长文本 Gemini 结果',
+          error: '',
+          elapsed_ms: 450,
+          input_tokens: 1200,
+          output_tokens: 300,
+          cost: null,
+          finish_reason: 'stop',
+          stats: {
+            input_chars: body.text?.length ?? 0,
+            output_chars: profileId === 'default' ? '长文本默认模型结果'.length : '长文本 Gemini 结果'.length,
+            delta_chars: (profileId === 'default' ? '长文本默认模型结果'.length : '长文本 Gemini 结果'.length) - (body.text?.length ?? 0),
+            output_ratio: body.text?.length ? ((profileId === 'default' ? '长文本默认模型结果'.length : '长文本 Gemini 结果'.length) / body.text.length) : null,
+            input_paragraphs: 1,
+            output_paragraphs: 1,
+          },
+        })),
+      },
+    })
+  })
+
+  await page.goto('/ai?tab=tools')
+  await page.getByRole('button', { name: '粘贴文本' }).click()
+  await page.getByPlaceholder('粘贴需要处理的文本...').fill('段落。'.repeat(2200))
+  await expect(page.getByText('请求规模')).toBeVisible()
+  await expect(page.getByText('较长', { exact: true })).toBeVisible()
+
+  await page.getByLabel('Gemini 测试').check()
+  await page.getByRole('button', { name: '运行 2 个模型' }).click()
+  await expect(page.getByText('正在等待 2 个模型返回')).toBeVisible()
+  await expect(page.getByText('等待中')).toHaveCount(2)
+  await expect(page.getByText('长文本默认模型结果')).toBeVisible()
+  await expect(page.getByText('长文本 Gemini 结果')).toBeVisible()
+})
+
 test('AI result replace cancel does not update the selected article', async ({ page }) => {
   const updates: Array<{ title?: string; body?: string; tags?: string[] }> = []
 
@@ -1803,6 +1880,8 @@ test('AI result insert appends to the selected article', async ({ page }) => {
 
 test('AI article chat can copy assistant replies and save them as article notes', async ({ page }) => {
   const noteBodies: string[] = []
+  const referenceBodies: Array<Record<string, unknown>> = []
+  const createdArticleBodies: Array<Record<string, unknown>> = []
 
   await page.route('**/api/articles/article-a/notes', async (route) => {
     if (route.request().method() === 'POST') {
@@ -1812,6 +1891,24 @@ test('AI article chat can copy assistant replies and save them as article notes'
       return
     }
     await route.fulfill({ json: [openNote] })
+  })
+  await page.route('**/api/library/references', async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      referenceBodies.push(body)
+      await route.fulfill({ status: 201, json: { ...reference, ...body, id: 'ref-from-chat' } })
+      return
+    }
+    await route.fulfill({ json: [existingReference] })
+  })
+  await page.route('**/api/articles', async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      createdArticleBodies.push(body)
+      await route.fulfill({ status: 201, json: { ...article, ...body, id: 'article-from-chat' } })
+      return
+    }
+    await route.fulfill({ json: [article, articleB] })
   })
 
   await page.goto('/ai?tab=chat&scope_kind=article&scope_id=article-a')
@@ -1827,6 +1924,37 @@ test('AI article chat can copy assistant replies and save them as article notes'
   await page.getByRole('button', { name: '保存为文章便签' }).click()
   await expect.poll(() => noteBodies).toEqual(['这是 AI 回复。'])
   await expect(page.getByText('已保存为文章便签')).toBeVisible()
+
+  await page.getByRole('button', { name: '保存为文脉标本' }).click()
+  await expect(page.getByTestId('ai-chat-capture-dialog')).toBeVisible()
+  await expect(page.getByText('确认保存为文脉标本')).toBeVisible()
+  await expect.poll(() => referenceBodies.length).toBe(0)
+  await expect(page.getByLabel('标题 / 出处')).toHaveValue('AI 对话｜导出测试文章')
+  await expect(page.getByLabel('正文')).toHaveValue('这是 AI 回复。')
+  await expect(page.getByLabel('标签')).toHaveValue('AI')
+  await page.getByRole('button', { name: '确认保存' }).click()
+  await expect.poll(() => referenceBodies.length).toBe(1)
+  expect(referenceBodies[0]).toEqual(expect.objectContaining({
+    content: '这是 AI 回复。',
+    source_title: 'AI 对话｜导出测试文章',
+    usage_kind: 'reflection',
+    tags: ['AI'],
+  }))
+  await expect(page.getByText('已保存为文脉标本')).toBeVisible()
+
+  await page.getByRole('button', { name: '另存为新文章' }).click()
+  await expect(page.getByTestId('ai-chat-capture-dialog')).toBeVisible()
+  await expect(page.getByText('确认另存为新文章')).toBeVisible()
+  await expect.poll(() => createdArticleBodies.length).toBe(0)
+  await expect(page.getByLabel('标题 / 出处')).toHaveValue('AI 对话草稿｜导出测试文章')
+  await page.getByRole('button', { name: '确认保存' }).click()
+  await expect.poll(() => createdArticleBodies.length).toBe(1)
+  expect(createdArticleBodies[0]).toEqual(expect.objectContaining({
+    title: 'AI 对话草稿｜导出测试文章',
+    body: '这是 AI 回复。',
+    tags: ['AI'],
+  }))
+  await expect(page).toHaveURL(/\/articles\?.*id=article-from-chat/)
 })
 
 test('AI article chat keeps the draft message when sending fails', async ({ page }) => {

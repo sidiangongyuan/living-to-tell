@@ -1284,7 +1284,9 @@ function saveLastKnownEditorPosition() {
 function saveLastKnownEditorPositionForArticle(articleId: string | null | undefined) {
   if (!articleId) return
   if (bodyRef.value && hasSavedEditInteraction.value) {
-    saveEditorPositionForArticle(articleId, 'edit')
+    if (lastEditorInteraction.value !== 'read') {
+      saveEditorPositionForArticle(articleId, 'edit')
+    }
     if (lastEditorInteraction.value === 'read') {
       saveEditorPositionForArticle(articleId, 'read')
     }
@@ -1449,6 +1451,8 @@ async function restoreSavedEditorPosition(articleId = store.selectedEntry?.id) {
       current.focus({ preventScroll: true })
       current.setSelectionRange(safeStart, safeEnd)
       resizeBodyEditor()
+    } else {
+      current.setSelectionRange(safeStart, safeEnd)
     }
     const nextScrollTop = restoreAsReadPosition
       ? Math.max(0, position.scrollTop)

@@ -6,6 +6,8 @@ export type Language = 'zh' | 'en'
 export type CloseBehavior = 'ask' | 'tray' | 'exit'
 
 export const WELCOME_CHECKLIST_DISMISSED_KEY = 'living_to_tell_welcome_checklist_dismissed'
+export const ONBOARDING_AI_REVIEWED_KEY = 'living_to_tell_onboarding_ai_reviewed'
+export const ONBOARDING_STORAGE_REVIEWED_KEY = 'living_to_tell_onboarding_storage_reviewed'
 
 export const useSettingsStore = defineStore('settings', () => {
   // 从 localStorage 读取保存的设置
@@ -17,6 +19,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const closeBehavior = ref<CloseBehavior>('ask')
   const closeBehaviorLoaded = ref(false)
   const welcomeChecklistDismissed = ref(localStorage.getItem(WELCOME_CHECKLIST_DISMISSED_KEY) === 'true')
+  const onboardingAiReviewed = ref(localStorage.getItem(ONBOARDING_AI_REVIEWED_KEY) === 'true')
+  const onboardingStorageReviewed = ref(localStorage.getItem(ONBOARDING_STORAGE_REVIEWED_KEY) === 'true')
 
   function toggleTheme() {
     theme.value = 'light'
@@ -72,6 +76,20 @@ export const useSettingsStore = defineStore('settings', () => {
   function resetWelcomeChecklist() {
     welcomeChecklistDismissed.value = false
     localStorage.removeItem(WELCOME_CHECKLIST_DISMISSED_KEY)
+    onboardingAiReviewed.value = false
+    onboardingStorageReviewed.value = false
+    localStorage.removeItem(ONBOARDING_AI_REVIEWED_KEY)
+    localStorage.removeItem(ONBOARDING_STORAGE_REVIEWED_KEY)
+  }
+
+  function markOnboardingAiReviewed() {
+    onboardingAiReviewed.value = true
+    localStorage.setItem(ONBOARDING_AI_REVIEWED_KEY, 'true')
+  }
+
+  function markOnboardingStorageReviewed() {
+    onboardingStorageReviewed.value = true
+    localStorage.setItem(ONBOARDING_STORAGE_REVIEWED_KEY, 'true')
   }
 
   function applyTheme() {
@@ -104,6 +122,8 @@ export const useSettingsStore = defineStore('settings', () => {
     closeBehavior,
     closeBehaviorLoaded,
     welcomeChecklistDismissed,
+    onboardingAiReviewed,
+    onboardingStorageReviewed,
     toggleTheme,
     toggleLanguage,
     toggleFocusMode,
@@ -112,5 +132,7 @@ export const useSettingsStore = defineStore('settings', () => {
     saveCloseBehavior,
     dismissWelcomeChecklist,
     resetWelcomeChecklist,
+    markOnboardingAiReviewed,
+    markOnboardingStorageReviewed,
   }
 })

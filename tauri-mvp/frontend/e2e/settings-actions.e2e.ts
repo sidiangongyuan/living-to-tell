@@ -485,7 +485,7 @@ test('settings AI buttons import, test, save, and reset with visible feedback', 
     model: 'gemini-2.5-flash',
     api_key_source: 'gemini',
   }))
-  await expect(page.getByText(/本地配置检查通过/)).toBeVisible()
+  await expect(page.locator('div').filter({ hasText: /^本地配置检查通过。/ }).first()).toBeVisible()
 
   await page.getByRole('button', { name: '发送真实测试请求' }).click()
   await expect.poll(() => state.aiLiveTests.length).toBe(1)
@@ -496,6 +496,13 @@ test('settings AI buttons import, test, save, and reset with visible feedback', 
   }))
   await expect(page.getByText(/真实 AI 请求成功/)).toBeVisible()
   await expect(page.getByText(/响应预览：雨夜车站，两个人就此告别。/)).toBeVisible()
+  const diagnostics = page.getByTestId('ai-diagnostics-panel')
+  await expect(diagnostics.getByText('已真实验证')).toBeVisible()
+  await expect(diagnostics.getByText('Gemini 接口 / 中转')).toBeVisible()
+  await expect(diagnostics.getByText('gemini-2.5-flash', { exact: true })).toBeVisible()
+  await expect(diagnostics.getByText('gateway_compatible')).toBeVisible()
+  await expect(diagnostics.getByText(/真实请求成功 · 120ms/)).toBeVisible()
+  await expect(diagnostics.getByText('雨夜车站，两个人就此告别。')).toBeVisible()
 
   await page.locator('section').filter({ hasText: '界面设置' }).locator('select').nth(1).selectOption('tray')
   await page.getByRole('button', { name: '保存设置' }).click()
@@ -550,7 +557,7 @@ test('settings supports OpenCode model refresh and local login config', async ({
 
   await page.getByRole('button', { name: '获取模型' }).click()
   await expect.poll(() => state.modelFetches).toContain('opencode')
-  await expect(page.getByText('已从 OpenCode 真实拉取模型列表。')).toBeVisible()
+  await expect(page.locator('div').filter({ hasText: /^已从 OpenCode 真实拉取模型列表。$/ }).first()).toBeVisible()
   await aiSection.locator('select').nth(1).selectOption('opencode/mimo-v2.5-free')
   await expect(modelInput).toHaveValue('opencode/mimo-v2.5-free')
 

@@ -6,6 +6,8 @@ import { errorMessage, isHttpStatus } from '../../api/base'
 import {
   settingsApi,
   type AiDiscoveredProfile,
+  type AiLiveTestResult,
+  type AiModelListResult,
   type AiProfile,
   type AiProfileCreate,
   type AiProviderName,
@@ -21,6 +23,16 @@ interface DataDirectoryOverrideState {
   override_path?: string | null
   active_path?: string | null
   warning?: string | null
+}
+
+type UiLiveTestResult = AiLiveTestResult & { success: boolean }
+type UiModelFetchResult = AiModelListResult & { success: boolean }
+
+interface DiagnosticRow {
+  label: string
+  value: string
+  detail?: string
+  tone: 'default' | 'good' | 'warn' | 'bad'
 }
 
 const { t } = useI18n()
@@ -42,8 +54,8 @@ const testingLiveConnection = ref(false)
 const fetchingModels = ref(false)
 const importing = ref<'codex' | 'gemini' | null>(null)
 const testResult = ref<{ success: boolean; message: string } | null>(null)
-const liveTestResult = ref<{ success: boolean; message: string; preview?: string; cost?: number | null } | null>(null)
-const modelFetchResult = ref<{ success: boolean; message: string } | null>(null)
+const liveTestResult = ref<UiLiveTestResult | null>(null)
+const modelFetchResult = ref<UiModelFetchResult | null>(null)
 const saveNotice = ref('')
 const saveError = ref('')
 const fetchedModelPresets = ref<Partial<Record<AiProviderName, string[]>>>({})
@@ -59,8 +71,8 @@ const editingProfileId = ref<string | null>(null)
 const profileDraft = ref<AiProfileCreate>(createEmptyProfileDraft())
 const profileNotice = ref('')
 const profileError = ref('')
-const profileTestResult = ref<{ success: boolean; message: string; preview?: string; cost?: number | null } | null>(null)
-const profileModelFetchResult = ref<{ success: boolean; message: string } | null>(null)
+const profileTestResult = ref<UiLiveTestResult | null>(null)
+const profileModelFetchResult = ref<UiModelFetchResult | null>(null)
 const profileModelPresets = ref<Partial<Record<AiProviderName, string[]>>>({})
 const discoveredProfiles = ref<AiDiscoveredProfile[]>([])
 const discoveringProfiles = ref(false)
@@ -168,6 +180,96 @@ const statusDetail = computed(() => {
   }
   return status.path ? `${t('settings.credentialPath')}: ${status.path}` : ''
 })
+
+const diagnosticRows = computed<DiagnosticRow[]>(() => {
+  const providerLabel = providerOptions.value.find((provider) => provider.value === aiProvider.value)?.label ?? aiProvider.value
+  const modelListSource = modelFetchResult.value
+    ? modelFetchResult.value.source === 'live'
+      ? t('settings.diagnostics.modelSourceLive')
+      : t('settings.diagnostics.modelSourcePreset')
+    : t('settings.diagnostics.notFetched')
+  const localCheck = testResult.value
+    ? testResult.value.success
+      ? t('settings.diagnostics.localCheckPassed')
+      : t('settings.diagnostics.localCheckFailed')
+    : statusMatchesSavedConfig.value && activeStatus.value
+      ? statusLabel.value
+      : t('settings.diagnostics.notChecked')
+  const liveStatus = liveTestResult.value
+    ? liveTestResult.value.success
+      ? t('settings.diagnostics.liveTestPassed')
+      : t('settings.diagnostics.liveTestFailed')
+    : t('settings.diagnostics.notTested')
+  const elapsed = liveTestResult.value?.elapsed_ms ?? null
+
+  return [
+    {
+      label: t('settings.diagnostics.provider'),
+      value: providerLabel,
+      detail: aiProvider.value,
+      tone: 'default',
+    },
+    {
+      label: t('settings.diagnostics.model'),
+      value: model.value.trim() || t('settings.diagnostics.empty'),
+      tone: model.value.trim() ? 'default' : 'warn',
+    },
+    {
+      label: t('settings.diagnostics.transport'),
+      value: liveTestResult.value?.transport || inferredTransportLabel(),
+      detail: liveTestResult.value?.provider ? `${liveTestResult.value.provider} · ${liveTestResult.value.model}` : undefined,
+      tone: liveTestResult.value?.success ? 'good' : 'default',
+    },
+    {
+      label: t('settings.diagnostics.credential'),
+      value: diagnosticCredentialSource(),
+      detail: activeStatus.value?.command || undefined,
+      tone: activeStatus.value?.available ? 'good' : 'warn',
+    },
+    {
+      label: t('settings.diagnostics.localCheck'),
+      value: localCheck,
+      detail: testResult.value?.message,
+      tone: testResult.value ? (testResult.value.success ? 'good' : 'bad') : activeStatus.value?.available ? 'good' : 'warn',
+    },
+    {
+      label: t('settings.diagnostics.realRequest'),
+      value: elapsed !== null && elapsed !== undefined ? `${liveStatus} · ${elapsed}ms` : liveStatus,
+      detail: liveTestResult.value?.preview || liveTestResult.value?.message,
+      tone: liveTestResult.value ? (liveTestResult.value.success ? 'good' : 'bad') : 'warn',
+    },
+    {
+      label: t('settings.diagnostics.modelList'),
+      value: modelListSource,
+      detail: modelFetchResult.value?.message,
+      tone: modelFetchResult.value?.source === 'live' ? 'good' : modelFetchResult.value ? 'warn' : 'default',
+    },
+  ]
+})
+
+function inferredTransportLabel(): string {
+  if (aiProvider.value === 'opencode') return 'opencode_cli'
+  if (aiProvider.value === 'gemini_cli') return 'gemini_cli'
+  if (aiProvider.value === 'gemini') {
+    if (baseUrl.value.trim() && apiKeySource.value.trim().startsWith('sk-')) return 'chat_completions'
+    return baseUrl.value.trim() ? t('settings.diagnostics.autoTransport') : 'gemini_native'
+  }
+  return baseUrl.value.trim() ? (aiSettings.value?.wire_api || 'chat_completions') : 'chat_completions'
+}
+
+function diagnosticCredentialSource(): string {
+  if (aiProvider.value === 'opencode') return t('settings.credentialOpenCode')
+  if (aiProvider.value === 'gemini_cli') return t('settings.credentialGeminiCli')
+  const option = credentialOptions.value.find((item) => item.value === apiKeySource.value)
+  return option?.label ?? apiKeySource.value.trim() ?? t('settings.diagnostics.empty')
+}
+
+function diagnosticToneClass(tone: DiagnosticRow['tone']): string {
+  if (tone === 'good') return 'border-emerald-100 bg-emerald-50 text-emerald-900'
+  if (tone === 'bad') return 'border-red-100 bg-red-50 text-red-900'
+  if (tone === 'warn') return 'border-amber-100 bg-amber-50 text-amber-900'
+  return 'border-slate-100 bg-slate-50 text-slate-900'
+}
 
 onMounted(() => {
   void loadSettings()
@@ -553,13 +655,21 @@ async function testProfileLive() {
   try {
     const result = await settingsApi.testAiSettingsLive(profileDraftToSettingsUpdate())
     profileTestResult.value = {
+      ...result,
       success: result.ok,
-      message: result.message,
-      preview: result.preview,
-      cost: result.cost,
     }
   } catch (e) {
-    profileTestResult.value = { success: false, message: errorMessage(e) }
+    profileTestResult.value = {
+      ok: false,
+      success: false,
+      message: errorMessage(e),
+      provider: profileDraft.value.provider_name,
+      model: profileDraft.value.model,
+      transport: null,
+      elapsed_ms: null,
+      preview: '',
+      cost: null,
+    }
   } finally {
     testingProfile.value = false
   }
@@ -578,14 +688,20 @@ async function fetchProfileModels() {
       [update.provider_name]: result.models,
     }
     profileModelFetchResult.value = {
+      ...result,
       success: result.source === 'live',
-      message: result.message,
     }
     if (!profileDraft.value.model.trim() && result.models.length > 0) {
       profileDraft.value.model = result.models[0]
     }
   } catch (e) {
-    profileModelFetchResult.value = { success: false, message: errorMessage(e) }
+    profileModelFetchResult.value = {
+      provider: profileDraft.value.provider_name,
+      models: [],
+      source: 'preset',
+      success: false,
+      message: errorMessage(e),
+    }
   } finally {
     fetchingProfileModels.value = false
   }
@@ -646,13 +762,22 @@ async function testLiveConnection() {
   try {
     const result = await settingsApi.testAiSettingsLive(buildAiSettingsUpdate())
     liveTestResult.value = {
+      ...result,
       success: result.ok,
-      message: result.message,
-      preview: result.preview,
-      cost: result.cost,
     }
+    if (result.ok) settings.markOnboardingAiReviewed()
   } catch (e) {
-    liveTestResult.value = { success: false, message: errorMessage(e) }
+    liveTestResult.value = {
+      ok: false,
+      success: false,
+      message: errorMessage(e),
+      provider: aiProvider.value,
+      model: model.value,
+      transport: null,
+      elapsed_ms: null,
+      preview: '',
+      cost: null,
+    }
   } finally {
     testingLiveConnection.value = false
   }
@@ -704,14 +829,20 @@ async function fetchModels() {
       [aiProvider.value]: result.models,
     }
     modelFetchResult.value = {
+      ...result,
       success: result.source === 'live',
-      message: result.message,
     }
     if (!model.value.trim() && result.models.length > 0) {
       model.value = result.models[0]
     }
   } catch (e) {
-    modelFetchResult.value = { success: false, message: errorMessage(e) }
+    modelFetchResult.value = {
+      provider: aiProvider.value,
+      models: [],
+      source: 'preset',
+      success: false,
+      message: errorMessage(e),
+    }
   } finally {
     fetchingModels.value = false
   }
@@ -1069,6 +1200,29 @@ async function openReleasePage() {
               </div>
             </div>
           </div>
+
+          <section data-testid="ai-diagnostics-panel" class="rounded-2xl border border-slate-200 bg-white p-4">
+            <div class="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h3 class="text-sm font-semibold text-slate-900">{{ t('settings.diagnostics.title') }}</h3>
+                <p class="mt-1 text-xs leading-5 text-slate-500">{{ t('settings.diagnostics.help') }}</p>
+              </div>
+              <span class="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                {{ liveTestResult?.success ? t('settings.diagnostics.ready') : t('settings.diagnostics.needsTest') }}
+              </span>
+            </div>
+            <div class="grid gap-2 md:grid-cols-2">
+              <article
+                v-for="row in diagnosticRows"
+                :key="row.label"
+                :class="['rounded-xl border p-3', diagnosticToneClass(row.tone)]"
+              >
+                <div class="text-xs font-semibold opacity-70">{{ row.label }}</div>
+                <div class="mt-1 break-words text-sm font-semibold">{{ row.value }}</div>
+                <p v-if="row.detail" class="mt-1 line-clamp-2 break-words text-xs leading-5 opacity-70">{{ row.detail }}</p>
+              </article>
+            </div>
+          </section>
         </div>
       </section>
 

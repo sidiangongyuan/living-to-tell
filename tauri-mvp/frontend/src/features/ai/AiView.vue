@@ -37,9 +37,11 @@ import {
   cloneControls,
   mergeControls,
 } from './taskControls'
+import { buildAiRequestDiagnostics, type AiRequestSizeLevel } from './requestDiagnostics'
 
 type ChatScopeKind = 'global' | 'article' | 'collection'
 type ContextSource = 'cards' | 'notes' | 'references'
+type ChatCaptureKind = 'reference' | 'article'
 
 interface TaskOption {
   value: TaskType
@@ -50,6 +52,15 @@ interface TaskOption {
 interface TaskGroup {
   name: string
   tasks: TaskOption[]
+}
+
+interface ChatCaptureDraft {
+  kind: ChatCaptureKind
+  title: string
+  content: string
+  personalNote: string
+  usageKind: string
+  tagsText: string
 }
 
 const store = useAiStore()
@@ -81,6 +92,9 @@ const aiProfilesLoading = ref(false)
 const aiProfilesNotice = ref('')
 let aiProfilesNoticeTimer: number | null = null
 let aiProfilesLoadSeq = 0
+const taskRunStartedAt = ref<number | null>(null)
+const taskRunElapsedMs = ref(0)
+let taskRunTimer: number | null = null
 const presetName = ref('')
 const CHAT_SYSTEM_PROMPT_LIMIT = 4000
 const chatSystemPrompt = ref('')
@@ -88,6 +102,17 @@ const chatSystemPromptDraft = ref('')
 const chatSettingsSupported = ref(true)
 const savingChatSettings = ref(false)
 const chatNotice = ref('')
+const chatCaptureOpen = ref(false)
+const chatCaptureSaving = ref(false)
+const chatCaptureError = ref('')
+const chatCaptureDraft = ref<ChatCaptureDraft>({
+  kind: 'reference',
+  title: '',
+  content: '',
+  personalNote: '',
+  usageKind: 'reflection',
+  tagsText: 'AI',
+})
 const backendCapabilities = ref<string[] | null>(null)
 const toolsPane = useResizablePane({
   key: 'ai:tools',
@@ -272,6 +297,14 @@ const selectedChatArticleChars = computed(() => selectedChatArticle.value?.body?
 
 const selectedChatArticleParagraphs = computed(() => countParagraphs(selectedChatArticle.value?.body ?? ''))
 
+const chatCaptureSummary = computed(() => {
+  const content = chatCaptureDraft.value.content.trim()
+  return {
+    chars: content.length,
+    paragraphs: countParagraphs(content),
+  }
+})
+
 const taskDescription = computed(() =>
   taskGroups.value.flatMap((group) => group.tasks).find((task) => task.value === taskType.value)?.desc ?? ''
 )
@@ -292,6 +325,10 @@ const selectedArticleSubject = computed(() => {
 
 const originalText = computed(() =>
   scopeType.value === 'article' ? selectedArticleSubject.value : taskInput.value
+)
+
+const requestDiagnostics = computed(() =>
+  buildAiRequestDiagnostics(originalText.value, selectedProfileIds.value.length)
 )
 
 const hasArticleSelection = computed(() =>
@@ -358,6 +395,12 @@ const aiProfileOptions = computed(() => [
     })),
 ])
 
+const selectedPendingProfiles = computed(() =>
+  selectedProfileIds.value
+    .map((id) => aiProfileOptions.value.find((profile) => profile.id === id))
+    .filter((profile): profile is NonNullable<typeof profile> => Boolean(profile))
+)
+
 const successfulCompareResults = computed(() =>
   compareResults.value.filter((result) => result.status === 'success' && result.result.trim())
 )
@@ -403,6 +446,7 @@ onUnmounted(() => {
     window.clearTimeout(aiProfilesNoticeTimer)
     aiProfilesNoticeTimer = null
   }
+  stopTaskRunTimer()
 })
 
 watch(
@@ -686,6 +730,39 @@ function formatRatio(value: number | null | undefined): string {
   return `${Math.round(value * 100)}%`
 }
 
+function formatTokenEstimate(value: number): string {
+  if (value >= 10000) return `${(value / 1000).toFixed(1)}k`
+  return String(value)
+}
+
+function requestSizeToneClass(level: AiRequestSizeLevel): string {
+  if (level === 'very_long') return 'border-red-200 bg-red-50 text-red-900'
+  if (level === 'long') return 'border-amber-200 bg-amber-50 text-amber-900'
+  return 'border-emerald-100 bg-emerald-50 text-emerald-900'
+}
+
+function startTaskRunTimer() {
+  taskRunStartedAt.value = Date.now()
+  taskRunElapsedMs.value = 0
+  if (taskRunTimer !== null) window.clearInterval(taskRunTimer)
+  taskRunTimer = window.setInterval(() => {
+    if (taskRunStartedAt.value) {
+      taskRunElapsedMs.value = Date.now() - taskRunStartedAt.value
+    }
+  }, 250)
+}
+
+function stopTaskRunTimer() {
+  if (taskRunTimer !== null) {
+    window.clearInterval(taskRunTimer)
+    taskRunTimer = null
+  }
+  if (taskRunStartedAt.value) {
+    taskRunElapsedMs.value = Date.now() - taskRunStartedAt.value
+  }
+  taskRunStartedAt.value = null
+}
+
 async function openAiProfileSettings() {
   await router.push({ name: 'settings', query: { section: 'ai_profiles' } })
 }
@@ -713,6 +790,11 @@ async function handleRunTask() {
   try {
     const controls = controlsByTask.value[taskType.value].controls
     const taskOptions = buildTaskRequestOptions(taskType.value, controls)
+    compareResults.value = []
+    selectedCompareProfileId.value = null
+    taskResult.value = ''
+    showComparison.value = true
+    startTaskRunTimer()
     const response = await store.compareTask({
       task_type: taskType.value,
       text: subject,
@@ -733,6 +815,8 @@ async function handleRunTask() {
     taskResult.value = ''
     error.value = errorMessage(e)
     showComparison.value = true
+  } finally {
+    stopTaskRunTimer()
   }
 }
 
@@ -801,7 +885,98 @@ async function saveAssistantReplyAsNote(message: Message) {
     await notesApi.createNote(messageScopeId, message.content.trim(), false)
     chatNotice.value = t('ai.chatSavedAsNote')
   } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
+    error.value = errorMessage(e)
+  }
+}
+
+async function saveAssistantReplyAsReference(message: Message) {
+  openAssistantCapture(message, 'reference')
+}
+
+async function saveAssistantReplyAsArticle(message: Message) {
+  openAssistantCapture(message, 'article')
+}
+
+function parseCaptureTags(value: string): string[] {
+  const seen = new Set<string>()
+  for (const tag of value.split(/[，,、]+/).map((part) => part.trim()).filter(Boolean)) {
+    seen.add(tag)
+  }
+  return [...seen]
+}
+
+function openAssistantCapture(message: Message, kind: ChatCaptureKind) {
+  const content = message.content.trim()
+  if (message.role !== 'assistant' || !content) return
+  error.value = ''
+  chatNotice.value = ''
+  chatCaptureError.value = ''
+  chatCaptureDraft.value = {
+    kind,
+    title: kind === 'reference'
+      ? t('ai.chatCaptureReferenceTitle', { title: chatScopeLabel.value })
+      : t('ai.chatCaptureArticleTitle', { title: chatScopeLabel.value }),
+    content,
+    personalNote: t('ai.chatCaptureReferenceNote', { title: chatScopeLabel.value }),
+    usageKind: 'reflection',
+    tagsText: 'AI',
+  }
+  chatCaptureOpen.value = true
+}
+
+function closeChatCapture() {
+  if (chatCaptureSaving.value) return
+  chatCaptureOpen.value = false
+  chatCaptureError.value = ''
+}
+
+async function confirmChatCapture() {
+  const draft = chatCaptureDraft.value
+  const content = draft.content.trim()
+  const title = draft.title.trim()
+  if (!content) {
+    chatCaptureError.value = t('ai.chatCaptureContentRequired')
+    return
+  }
+  if (!title) {
+    chatCaptureError.value = t('ai.chatCaptureTitleRequired')
+    return
+  }
+
+  chatCaptureSaving.value = true
+  chatCaptureError.value = ''
+  error.value = ''
+  chatNotice.value = ''
+  try {
+    const tags = parseCaptureTags(draft.tagsText)
+    if (draft.kind === 'reference') {
+      await libraryApi.createReference({
+        content,
+        source_title: title,
+        source_author: t('ai.chatAssistant'),
+        usage_kind: draft.usageKind || 'reflection',
+        personal_note: draft.personalNote.trim(),
+        tags,
+      })
+      chatNotice.value = t('ai.chatSavedAsReference')
+      chatCaptureOpen.value = false
+      chatCaptureError.value = ''
+      return
+    }
+
+    const created = await articlesApi.create({
+      title,
+      body: content,
+      tags,
+    })
+    chatNotice.value = t('ai.chatSavedAsArticle')
+    chatCaptureOpen.value = false
+    chatCaptureError.value = ''
+    await router.push({ name: 'articles', query: { id: created.id } })
+  } catch (e) {
+    chatCaptureError.value = errorMessage(e)
+  } finally {
+    chatCaptureSaving.value = false
   }
 }
 
@@ -1582,6 +1757,41 @@ function makeId(): string {
             </div>
           </section>
 
+          <section
+            :class="[
+              'rounded-2xl border p-3',
+              requestSizeToneClass(requestDiagnostics.level),
+            ]"
+          >
+            <div class="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h3 class="text-sm font-semibold">{{ t('ai.requestSize.title') }}</h3>
+                <p class="mt-1 text-xs leading-5 opacity-75">{{ t(requestDiagnostics.messageKey) }}</p>
+              </div>
+              <span class="shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-xs font-semibold">
+                {{ t(requestDiagnostics.labelKey) }}
+              </span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div class="rounded-lg bg-white/70 p-2">
+                <div class="opacity-60">{{ t('ai.requestSize.input') }}</div>
+                <div class="mt-1 font-semibold">{{ requestDiagnostics.chars }} {{ t('ai.chars') }}</div>
+              </div>
+              <div class="rounded-lg bg-white/70 p-2">
+                <div class="opacity-60">{{ t('ai.requestSize.paragraphs') }}</div>
+                <div class="mt-1 font-semibold">{{ requestDiagnostics.paragraphs }} {{ t('ai.paragraphs') }}</div>
+              </div>
+              <div class="rounded-lg bg-white/70 p-2">
+                <div class="opacity-60">{{ t('ai.requestSize.estimatedTokens') }}</div>
+                <div class="mt-1 font-semibold">~{{ formatTokenEstimate(requestDiagnostics.estimatedTokens) }}</div>
+              </div>
+              <div class="rounded-lg bg-white/70 p-2">
+                <div class="opacity-60">{{ t('ai.requestSize.models') }}</div>
+                <div class="mt-1 font-semibold">{{ requestDiagnostics.profileCount }}</div>
+              </div>
+            </div>
+          </section>
+
           <button
             @click="handleRunTask"
             :disabled="store.taskRunning"
@@ -1670,7 +1880,39 @@ function makeId(): string {
             <pre class="max-h-40 overflow-y-auto whitespace-pre-wrap font-sans text-sm leading-6 text-gray-700">{{ originalText }}</pre>
           </section>
 
-          <div v-if="!compareResults.length" class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div v-if="store.taskRunning" class="mb-4 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div class="font-semibold">{{ t('ai.waitingForModels', { count: selectedPendingProfiles.length }) }}</div>
+                <p class="mt-1 text-xs leading-5 text-blue-700">{{ t('ai.waitingForModelsHint') }}</p>
+              </div>
+              <span class="rounded-full bg-white px-3 py-1 text-xs font-semibold text-blue-700">
+                {{ formatElapsed(taskRunElapsedMs) }}
+              </span>
+            </div>
+            <div class="mt-3 grid gap-3 xl:grid-cols-2">
+              <article
+                v-for="profile in selectedPendingProfiles"
+                :key="profile.id"
+                class="rounded-xl border border-blue-100 bg-white p-4"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <h3 class="font-semibold text-gray-900">{{ profile.name }}</h3>
+                    <p class="mt-1 truncate text-xs text-gray-500">{{ profile.model || profile.provider }}</p>
+                  </div>
+                  <span class="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                    {{ t('ai.modelPending') }}
+                  </span>
+                </div>
+                <div class="mt-4 h-2 overflow-hidden rounded-full bg-blue-50">
+                  <div class="ai-pending-bar h-full w-1/3 rounded-full bg-blue-500"></div>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div v-else-if="!compareResults.length" class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
             {{ error || t('ai.noCompareResults') }}
           </div>
 
@@ -1845,19 +2087,32 @@ function makeId(): string {
                 {{ message.role === 'user' ? t('ai.chatYou') : t('ai.chatAssistant') }}
               </div>
               <p class="whitespace-pre-wrap leading-7">{{ message.content }}</p>
-              <div v-if="message.role === 'assistant'" class="mt-4 flex flex-wrap gap-2">
+              <div v-if="message.role === 'assistant'" class="mt-4 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-3">
                 <button
                   @click="copyChatMessage(message)"
-                  class="rounded-lg bg-stone-100 px-3 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-200"
+                  class="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 transition hover:border-stone-300 hover:bg-stone-50"
                 >
                   {{ t('ai.copyReply') }}
                 </button>
                 <button
                   v-if="canSaveAssistantReply(message)"
                   @click="saveAssistantReplyAsNote(message)"
-                  class="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-200"
+                  class="rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 transition hover:border-stone-300 hover:bg-stone-50"
                 >
                   {{ t('ai.saveReplyAsNote') }}
+                </button>
+                <span class="hidden text-xs text-stone-300 sm:inline">{{ t('ai.captureAs') }}</span>
+                <button
+                  @click="saveAssistantReplyAsReference(message)"
+                  class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:border-emerald-300 hover:bg-emerald-100"
+                >
+                  {{ t('ai.saveReplyAsReference') }}
+                </button>
+                <button
+                  @click="saveAssistantReplyAsArticle(message)"
+                  class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800 transition hover:border-blue-300 hover:bg-blue-100"
+                >
+                  {{ t('ai.saveReplyAsArticle') }}
                 </button>
               </div>
             </article>
@@ -1884,6 +2139,117 @@ function makeId(): string {
           </div>
         </div>
       </main>
+    </div>
+
+    <div
+      v-if="chatCaptureOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/45 p-4"
+      data-testid="ai-chat-capture-dialog"
+      @click.self="closeChatCapture"
+    >
+      <section class="flex max-h-[88vh] w-[min(760px,calc(100vw-32px))] flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <header class="border-b border-stone-200 px-6 py-5">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <div class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">
+                {{ chatCaptureDraft.kind === 'reference' ? t('ai.chatCaptureDestinationReference') : t('ai.chatCaptureDestinationArticle') }}
+              </div>
+              <h3 class="mt-1 text-xl font-bold text-stone-950">
+                {{ chatCaptureDraft.kind === 'reference' ? t('ai.chatCaptureReferenceDialogTitle') : t('ai.chatCaptureArticleDialogTitle') }}
+              </h3>
+              <p class="mt-1 text-sm leading-6 text-stone-500">{{ t('ai.chatCapturePreviewHint') }}</p>
+            </div>
+            <button
+              type="button"
+              class="rounded-full px-3 py-1 text-2xl leading-none text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+              :aria-label="t('common.close')"
+              @click="closeChatCapture"
+            >
+              ×
+            </button>
+          </div>
+        </header>
+
+        <div class="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+          <div v-if="chatCaptureError" class="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {{ chatCaptureError }}
+          </div>
+
+          <label class="block">
+            <span class="text-sm font-semibold text-stone-700">{{ t('ai.chatCaptureTitleField') }}</span>
+            <input
+              v-model="chatCaptureDraft.title"
+              class="mt-2 w-full rounded-xl border border-stone-300 px-4 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            />
+          </label>
+
+          <div v-if="chatCaptureDraft.kind === 'reference'" class="grid gap-4 md:grid-cols-[180px_1fr]">
+            <label class="block">
+              <span class="text-sm font-semibold text-stone-700">{{ t('ai.chatCaptureUsageField') }}</span>
+              <select
+                v-model="chatCaptureDraft.usageKind"
+                class="mt-2 w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="reflection">{{ t('library.reflection') }}</option>
+                <option value="style">{{ t('library.style') }}</option>
+                <option value="imagery">{{ t('library.imagery') }}</option>
+                <option value="structure">{{ t('library.structure') }}</option>
+                <option value="rhetoric">{{ t('library.rhetoric') }}</option>
+                <option value="technique">{{ t('library.technique') }}</option>
+                <option value="other">{{ t('library.other') }}</option>
+              </select>
+            </label>
+            <label class="block">
+              <span class="text-sm font-semibold text-stone-700">{{ t('ai.chatCaptureNoteField') }}</span>
+              <input
+                v-model="chatCaptureDraft.personalNote"
+                class="mt-2 w-full rounded-xl border border-stone-300 px-4 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+              />
+            </label>
+          </div>
+
+          <label class="block">
+            <span class="text-sm font-semibold text-stone-700">{{ t('ai.chatCaptureTagsField') }}</span>
+            <input
+              v-model="chatCaptureDraft.tagsText"
+              class="mt-2 w-full rounded-xl border border-stone-300 px-4 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+              :placeholder="t('ai.chatCaptureTagsPlaceholder')"
+            />
+          </label>
+
+          <label class="block">
+            <span class="text-sm font-semibold text-stone-700">{{ t('ai.chatCaptureContentField') }}</span>
+            <textarea
+              v-model="chatCaptureDraft.content"
+              rows="10"
+              class="mt-2 min-h-56 w-full resize-y rounded-2xl border border-stone-300 px-4 py-3 text-sm leading-7 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            />
+          </label>
+        </div>
+
+        <footer class="flex flex-wrap items-center justify-between gap-3 border-t border-stone-200 bg-stone-50 px-6 py-4">
+          <div class="text-xs text-stone-500">
+            {{ t('ai.chatCaptureStats', { chars: chatCaptureSummary.chars, paragraphs: chatCaptureSummary.paragraphs }) }}
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="rounded-xl px-4 py-2 text-sm font-semibold text-stone-600 hover:bg-stone-200"
+              @click="closeChatCapture"
+            >
+              {{ t('ai.chatCaptureCancel') }}
+            </button>
+            <button
+              type="button"
+              :disabled="chatCaptureSaving || !chatCaptureDraft.title.trim() || !chatCaptureDraft.content.trim()"
+              class="rounded-xl bg-stone-900 px-5 py-2 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-40"
+              @click="confirmChatCapture"
+            >
+              {{ chatCaptureSaving ? t('ai.chatCaptureSaving') : t('ai.chatCaptureConfirm') }}
+            </button>
+          </div>
+        </footer>
+      </section>
     </div>
 
     <div
@@ -2088,5 +2454,21 @@ function makeId(): string {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.ai-pending-bar {
+  animation: ai-pending-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes ai-pending-slide {
+  0% {
+    transform: translateX(-110%);
+  }
+  50% {
+    transform: translateX(90%);
+  }
+  100% {
+    transform: translateX(310%);
+  }
 }
 </style>

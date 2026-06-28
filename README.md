@@ -4,9 +4,9 @@
 
 ### A local-first writing studio for articles, collections, references, and scoped AI
 
-[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.18)
+[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.21)
 
-[![Version](https://img.shields.io/badge/preview-0.1.18-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.21-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **Writing, photography, singing, and speaking are all ways to tell. To live is to tell.**
 
-[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.18) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
+[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.21) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
 
 </div>
 
@@ -103,9 +103,10 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 
 - Focused task tools for polish, rewrite, expand, and continue, each with its own controls.
 - Article-scoped chat keeps one ongoing conversation per article.
-- AI replies in article chat can be copied or saved as article notes.
+- AI replies in article chat can be copied, saved as article notes, or reviewed in a capture dialog before saving as reference material or a new article.
 - Standing chat instructions let you keep long-term style preferences without rewriting them in every message.
 - AI results are previewed before writing back, with explicit replace, insert, and copy actions.
+- Long AI requests show size, paragraph, estimated-token, and selected-model diagnostics before running, then show honest pending cards while models are still working.
 - AI Tools can run the same task across up to three saved AI profiles and compare output length, paragraph changes, latency, tokens, and cost when available.
 - Personal presets for each writing tool.
 - AI Cards for reusable style, character, and scene modules, with fixed templates, AI-assisted draft generation, type/source filters, and keyword search.
@@ -124,15 +125,15 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.18).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.21).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.18_x64-setup.exe`
+- `LivingToTell_0.1.21_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.18_x64_zh-CN.msi`
+- `LivingToTell_0.1.21_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 
@@ -188,6 +189,9 @@ Long Gemini requests default to a 120 second wait. Advanced users can tune this 
 - Added a collection-level outline tab for long-form projects, with part/chapter/scene/note planning and linked article creation.
 - Added a motif star map with right-click text capture, source anchors, co-occurrence links, deduplication, and safer unlink behavior.
 - Added article-scoped AI chat, standing instructions, copy actions, and save-as-note actions.
+- Added first-run checklist progress, AI settings diagnostics, long-request size feedback, and grouped global command palette search.
+- Added reference-library overview cards and current-group summaries for source count, duplicate hints, usage distribution, and character totals.
+- Added AI chat capture previews so assistant replies can be reviewed before saving as reference material or new articles.
 - Upgraded AI Cards into style / character / scene templates, added AI draft generation, and added manual scene-module attachment for AI tasks.
 - Added AI provider profiles and multi-model comparison in AI Tools, with per-result statistics and explicit winner selection before write-back.
 - Added OpenCode local-auth support, live OpenCode model fetching, and real OpenCode test requests through the unified AI provider path.
@@ -209,6 +213,7 @@ The public TODO list is kept visible but folded so the README stays readable.
 
 ### First-Run Experience
 
+- [x] Add a first-run checklist that reads local state without creating sample data.
 - [ ] Improve first-run onboarding for language, data location, backups, and AI provider setup.
 - [ ] Add a sample project so new users can understand the workflow quickly.
 - [ ] Re-enable dark mode after a complete visual pass.
@@ -233,12 +238,13 @@ The public TODO list is kept visible but folded so the README stays readable.
 - [x] Add manual scene-module search and attachment for AI tasks.
 - [x] Add a real AI connectivity test that reports provider, model, transport, and response preview.
 - [x] Add OpenCode local-auth support with live model fetching for OpenCode models.
-- [ ] Add clearer long-text request size, wait-time, and timeout feedback.
-- [ ] Make it easier to turn AI chat ideas into articles, notes, or reference material.
+- [x] Add clearer long-text request size, wait-time, and timeout feedback.
+- [x] Make it easier to turn AI chat ideas into articles, notes, or reference material.
 
 ### Knowledge & Planning
 
 - [x] Add a motif star map for organizing recurring images, symbols, and source excerpts visually.
+- [x] Add compact reference-library overview and active-group summaries.
 - [ ] Add richer graph views for themes, character links, arguments, references, and AI-generated ideas.
 - [ ] Add richer reference-library views for large reading collections.
 
