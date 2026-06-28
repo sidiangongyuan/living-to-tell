@@ -1,5 +1,36 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.18 - In-App Update Flow (2026-06-28)
+
+### Fixed
+
+- Fixed version display mismatch after installing 0.1.17: the Tauri app binary was updated, but the bundled backend still reported `0.1.16` from `version_info.py`.
+- Tauri now passes the app package version to the backend sidecar on startup, and the backend default version is synchronized to this release.
+- Update-check failures now include safer diagnostics for proxy, timeout, SSL, and GitHub API failure cases.
+
+### Changed
+
+- Update checks still prefer GitHub Releases API, but now fall back to GitHub's `/releases/latest` redirect when the API fails.
+- Settings and the update banner now offer **Download and Install**: the app downloads the installer internally, verifies the GitHub SHA256 digest when available, launches the installer, and exits.
+- Browser download remains available as a fallback path.
+- Update check responses report detected proxy routing in a safe `scheme=host:port` form without exposing credentials.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py -q`
+- `npm test -- --run`
+- `npm run test:e2e`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.18_x64-setup.exe`
+  - SHA256: `E60937E71DF462943B0AFC540A5A6BEDB617D0DEB929112EA7731911555E0BD6`
+- `LivingToTell_0.1.18_x64_zh-CN.msi`
+  - SHA256: `19159AFBDDF7355217E5CD62730A429555F6EB414AAEB6BFBEB8F955CE608362`
+
 ## 0.1.17 - AI Profile State Race Fix (2026-06-28)
 
 ### Fixed

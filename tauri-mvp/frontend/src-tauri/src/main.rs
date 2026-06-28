@@ -207,6 +207,45 @@ fn open_external_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn install_update_and_exit(
+    installer_path: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let target = PathBuf::from(installer_path.trim());
+    if target.as_os_str().is_empty() {
+        return Err("Installer path is empty".to_string());
+    }
+    if !target.exists() || !target.is_file() {
+        return Err(format!("Installer does not exist: {}", target.display()));
+    }
+    let extension = target
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if extension != "exe" && extension != "msi" {
+        return Err("Only .exe and .msi installers are supported".to_string());
+    }
+
+    if extension == "msi" {
+        StdCommand::new("msiexec")
+            .arg("/i")
+            .arg(&target)
+            .spawn()
+            .map_err(|e| format!("Failed to launch MSI installer: {e}"))?;
+    } else {
+        StdCommand::new(&target)
+            .spawn()
+            .map_err(|e| format!("Failed to launch installer: {e}"))?;
+    }
+
+    kill_backend_child(&state);
+    app.exit(0);
+    Ok(())
+}
+
+#[tauri::command]
 fn get_data_directory_override(
     state: State<'_, AppState>,
 ) -> Result<DataDirectoryOverrideState, String> {
@@ -893,6 +932,7 @@ fn main() {
             write_export_file,
             open_path,
             open_external_url,
+            install_update_and_exit,
             get_data_directory_override,
             set_data_directory_override,
             clear_data_directory_override,
@@ -965,6 +1005,7 @@ fn main() {
                                 Some(path) => cmd.env("WRITER_DATA_DIR", path),
                                 None => cmd,
                             };
+                            let cmd = cmd.env("LIVING_TO_TELL_APP_VERSION", env!("CARGO_PKG_VERSION"));
                             match cmd.spawn() {
                                 Ok((mut rx, child)) => {
                                     let child_pid = child.pid();

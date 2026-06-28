@@ -25,6 +25,13 @@ export const useAppUpdateStore = defineStore('appUpdate', () => {
   const cached = ref(false)
   const downloadUrl = ref('')
   const downloadName = ref('')
+  const downloadSha256 = ref('')
+  const networkProxy = ref('')
+  const networkDetail = ref('')
+  const downloadStatus = ref<'idle' | 'downloading' | 'installing' | 'downloaded'>('idle')
+  const downloadMessage = ref('')
+  const downloadedFilePath = ref('')
+  const downloadedSha256 = ref('')
   const dismissedVersion = ref(localStorage.getItem(UPDATE_DISMISSED_VERSION_KEY) || '')
   const automaticCheckScheduled = ref(false)
 
@@ -69,6 +76,9 @@ export const useAppUpdateStore = defineStore('appUpdate', () => {
     cached.value = result.cached
     downloadUrl.value = result.download_url || ''
     downloadName.value = result.download_name || ''
+    downloadSha256.value = result.download_sha256 || ''
+    networkProxy.value = result.network_proxy || ''
+    networkDetail.value = result.network_detail || ''
     status.value = result.status
     if (result.status !== 'error') {
       localStorage.setItem(UPDATE_LAST_CHECKED_AT_KEY, String(Date.now()))
@@ -132,6 +142,31 @@ export const useAppUpdateStore = defineStore('appUpdate', () => {
     await openExternalUrl(target)
   }
 
+  async function downloadAndInstall() {
+    if (!downloadUrl.value) throw new Error('No release download URL is available.')
+    downloadStatus.value = 'downloading'
+    downloadMessage.value = '正在下载安装包…'
+    downloadedFilePath.value = ''
+    downloadedSha256.value = ''
+    try {
+      const downloaded = await appApi.downloadUpdate({
+        download_url: downloadUrl.value,
+        download_name: downloadName.value || null,
+        expected_sha256: downloadSha256.value || null,
+      })
+      downloadedFilePath.value = downloaded.file_path
+      downloadedSha256.value = downloaded.sha256
+      downloadStatus.value = 'installing'
+      downloadMessage.value = downloaded.message || '安装包已下载，正在启动安装器…'
+      const { invoke } = await import('@tauri-apps/api/core')
+      await invoke('install_update_and_exit', { installerPath: downloaded.file_path })
+    } catch (error) {
+      downloadStatus.value = 'idle'
+      downloadMessage.value = error instanceof Error ? error.message : String(error)
+      throw error
+    }
+  }
+
   async function openReleasePage() {
     const target = releaseUrl.value || downloadUrl.value
     if (!target) throw new Error('No release page URL is available.')
@@ -157,6 +192,13 @@ export const useAppUpdateStore = defineStore('appUpdate', () => {
     cached.value = false
     downloadUrl.value = ''
     downloadName.value = ''
+    downloadSha256.value = ''
+    networkProxy.value = ''
+    networkDetail.value = ''
+    downloadStatus.value = 'idle'
+    downloadMessage.value = ''
+    downloadedFilePath.value = ''
+    downloadedSha256.value = ''
     dismissedVersion.value = localStorage.getItem(UPDATE_DISMISSED_VERSION_KEY) || ''
   }
 
@@ -174,12 +216,20 @@ export const useAppUpdateStore = defineStore('appUpdate', () => {
     cached,
     downloadUrl,
     downloadName,
+    downloadSha256,
+    networkProxy,
+    networkDetail,
+    downloadStatus,
+    downloadMessage,
+    downloadedFilePath,
+    downloadedSha256,
     dismissedVersion,
     hasVisibleUpdate,
     ensureVersionLoaded,
     checkForUpdates,
     scheduleAutomaticCheck,
     dismissUpdate,
+    downloadAndInstall,
     openDownload,
     openReleasePage,
     resetForTests,

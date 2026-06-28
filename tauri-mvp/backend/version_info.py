@@ -1,8 +1,10 @@
 """Shared version metadata for the Tauri backend surface."""
 from __future__ import annotations
 
+import os
+
 APP_DISPLAY_NAME = "Living to Tell"
-APP_VERSION = "0.1.16"
+APP_VERSION = os.environ.get("LIVING_TO_TELL_APP_VERSION", "0.1.18")
 API_VERSION = "2.0.0"
 API_CAPABILITIES = [
     "data_location",

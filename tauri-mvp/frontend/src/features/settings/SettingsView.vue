@@ -878,6 +878,15 @@ async function openLatestInstaller() {
   }
 }
 
+async function downloadAndInstallLatest() {
+  updateActionError.value = ''
+  try {
+    await appUpdate.downloadAndInstall()
+  } catch (e) {
+    updateActionError.value = errorMessage(e)
+  }
+}
+
 async function openReleasePage() {
   updateActionError.value = ''
   try {
@@ -1606,11 +1615,18 @@ async function openReleasePage() {
             {{ appUpdate.status === 'checking' ? t('updates.checkingButton') : t('updates.checkNow') }}
           </button>
           <button
+            @click="downloadAndInstallLatest"
+            :disabled="!appUpdate.downloadUrl || appUpdate.downloadStatus === 'downloading' || appUpdate.downloadStatus === 'installing'"
+            class="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-700 disabled:opacity-40"
+          >
+            {{ appUpdate.downloadStatus === 'downloading' ? t('updates.downloadingInstaller') : appUpdate.downloadStatus === 'installing' ? t('updates.startingInstaller') : t('updates.downloadAndInstall') }}
+          </button>
+          <button
             @click="openLatestInstaller"
             :disabled="!appUpdate.downloadUrl && !appUpdate.releaseUrl"
             class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
           >
-            {{ t('updates.downloadInstaller') }}
+            {{ t('updates.downloadInBrowser') }}
           </button>
           <button
             @click="openReleasePage"
@@ -1640,6 +1656,15 @@ async function openReleasePage() {
           </div>
           <div v-if="appUpdate.downloadName">
             <span class="font-semibold text-gray-800">{{ t('updates.preferredInstaller') }}：</span>{{ appUpdate.downloadName }}
+          </div>
+          <div v-if="appUpdate.downloadSha256">
+            <span class="font-semibold text-gray-800">SHA256：</span>{{ appUpdate.downloadSha256 }}
+          </div>
+          <div v-if="appUpdate.networkProxy">
+            <span class="font-semibold text-gray-800">{{ t('updates.networkProxy') }}：</span>{{ appUpdate.networkProxy }}
+          </div>
+          <div v-if="appUpdate.downloadMessage">
+            <span class="font-semibold text-gray-800">{{ t('updates.updateProgress') }}：</span>{{ appUpdate.downloadMessage }}
           </div>
           <p class="leading-6 text-gray-500">{{ t('updates.manualInstallerHint') }}</p>
         </div>

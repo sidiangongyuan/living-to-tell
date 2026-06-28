@@ -24,6 +24,25 @@ export interface AppUpdateInfo {
   cached: boolean
   download_url: string | null
   download_name: string | null
+  download_sha256?: string | null
+  network_proxy?: string | null
+  network_detail?: string | null
+}
+
+export interface AppUpdateDownloadRequest {
+  download_url: string
+  download_name?: string | null
+  expected_sha256?: string | null
+}
+
+export interface AppUpdateDownloadResult {
+  status: string
+  message: string
+  file_path: string
+  file_name: string
+  size_bytes: number
+  sha256: string
+  downloaded_at: string
 }
 
 export const appApi = {
@@ -37,6 +56,16 @@ export const appApi = {
     if (force) params.set('force', 'true')
     const suffix = params.toString()
     const res = await apiFetch(`/api/app/update-check${suffix ? `?${suffix}` : ''}`)
+    return handleResponse(res)
+  },
+
+  async downloadUpdate(request: AppUpdateDownloadRequest): Promise<AppUpdateDownloadResult> {
+    const res = await apiFetch('/api/app/update-download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(180000),
+    })
     return handleResponse(res)
   },
 }

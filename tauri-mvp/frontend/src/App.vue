@@ -112,7 +112,7 @@ async function confirmCloseChoice() {
 async function openUpdateDownload() {
   updateBannerError.value = ''
   try {
-    await appUpdate.openDownload()
+    await appUpdate.downloadAndInstall()
   } catch (error) {
     updateBannerError.value = error instanceof Error ? error.message : String(error)
   }
@@ -161,9 +161,10 @@ async function openUpdateReleasePage() {
         <button
           type="button"
           class="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700"
+          :disabled="appUpdate.downloadStatus === 'downloading' || appUpdate.downloadStatus === 'installing'"
           @click="openUpdateDownload"
         >
-          {{ t('updates.downloadInstaller') }}
+          {{ appUpdate.downloadStatus === 'downloading' ? t('updates.downloadingInstaller') : appUpdate.downloadStatus === 'installing' ? t('updates.startingInstaller') : t('updates.downloadAndInstall') }}
         </button>
         <button
           type="button"

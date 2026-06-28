@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 from types import SimpleNamespace
 import sys
@@ -34,7 +35,7 @@ def test_tauri_app_version_capabilities(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["app_name"] == "Living to Tell"
-    assert payload["version"] == "0.1.16"
+    assert payload["version"] == "0.1.18"
     assert payload["api_version"] == "2.0.0"
     assert {
         "data_location",
@@ -69,19 +70,21 @@ def test_tauri_app_update_check_reports_latest_release(monkeypatch):
         def read(self):
             return json.dumps(
                 {
-                    "tag_name": "living-to-tell-v0.1.17",
-                    "name": "Living to Tell Preview 0.1.17",
-                    "html_url": "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.17",
+                    "tag_name": "living-to-tell-v0.1.19",
+                    "name": "Living to Tell Preview 0.1.19",
+                    "html_url": "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.19",
                     "published_at": "2026-06-26T01:02:03Z",
-                    "body": "## 0.1.17\n\nAdded update notifications.",
+                    "body": "## 0.1.19\n\nAdded update notifications.",
                     "assets": [
                         {
-                            "name": "LivingToTell_0.1.17_x64_zh-CN.msi",
-                            "browser_download_url": "https://example.test/LivingToTell_0.1.17_x64_zh-CN.msi",
+                            "name": "LivingToTell_0.1.19_x64_zh-CN.msi",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.19_x64_zh-CN.msi",
+                            "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                         },
                         {
-                            "name": "LivingToTell_0.1.17_x64-setup.exe",
-                            "browser_download_url": "https://example.test/LivingToTell_0.1.17_x64-setup.exe",
+                            "name": "LivingToTell_0.1.19_x64-setup.exe",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.19_x64-setup.exe",
+                            "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                         },
                     ],
                 }
@@ -104,12 +107,13 @@ def test_tauri_app_update_check_reports_latest_release(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "update_available"
-    assert payload["current_version"] == "0.1.16"
-    assert payload["latest_version"] == "0.1.17"
-    assert payload["release_name"] == "Living to Tell Preview 0.1.17"
-    assert payload["download_name"] == "LivingToTell_0.1.17_x64-setup.exe"
-    assert payload["download_url"] == "https://example.test/LivingToTell_0.1.17_x64-setup.exe"
-    assert "下载安装包" in payload["message"]
+    assert payload["current_version"] == "0.1.18"
+    assert payload["latest_version"] == "0.1.19"
+    assert payload["release_name"] == "Living to Tell Preview 0.1.19"
+    assert payload["download_name"] == "LivingToTell_0.1.19_x64-setup.exe"
+    assert payload["download_url"] == "https://example.test/LivingToTell_0.1.19_x64-setup.exe"
+    assert payload["download_sha256"] == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    assert "应用内" in payload["message"]
     assert calls == [
         {
             "url": app_routes.GITHUB_LATEST_RELEASE_URL,
@@ -136,8 +140,95 @@ def test_tauri_app_update_check_returns_friendly_error(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "error"
-    assert payload["current_version"] == "0.1.16"
+    assert payload["current_version"] == "0.1.18"
     assert "暂时无法检查更新" in payload["message"]
+
+
+def test_tauri_app_update_check_falls_back_to_latest_redirect(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.app_meta import routes as app_routes
+
+    app_routes.UPDATE_CACHE["payload"] = None
+    app_routes.UPDATE_CACHE["expires_at"] = 0.0
+
+    class FakeRedirectResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def geturl(self):
+            return "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.19"
+
+    def fake_urlopen(req, timeout):
+        if req.full_url == app_routes.GITHUB_LATEST_RELEASE_URL:
+            raise urlerror.URLError("api offline")
+        return FakeRedirectResponse()
+
+    monkeypatch.setattr(app_routes.urlrequest, "urlopen", fake_urlopen)
+
+    response = client.get("/api/app/update-check?force=true")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "update_available"
+    assert payload["source"] == "github_releases_latest_redirect"
+    assert payload["latest_version"] == "0.1.19"
+    assert payload["download_name"] == "LivingToTell_0.1.19_x64-setup.exe"
+    assert payload["download_url"].endswith(
+        "/releases/download/living-to-tell-v0.1.19/LivingToTell_0.1.19_x64-setup.exe"
+    )
+
+
+def test_tauri_app_update_download_saves_and_verifies_installer(monkeypatch, tmp_path):
+    client = _tauri_client(monkeypatch)
+    from features.app_meta import routes as app_routes
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    installer_bytes = b"fake installer bytes"
+    expected_sha = hashlib.sha256(installer_bytes).hexdigest()
+
+    class FakeDownloadResponse:
+        def __init__(self):
+            self._offset = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self, size=-1):
+            if self._offset >= len(installer_bytes):
+                return b""
+            if size is None or size < 0:
+                size = len(installer_bytes)
+            chunk = installer_bytes[self._offset : self._offset + size]
+            self._offset += len(chunk)
+            return chunk
+
+    def fake_open_url(req, timeout):
+        assert req.full_url.endswith("/LivingToTell_0.1.19_x64-setup.exe")
+        assert timeout == 120
+        return FakeDownloadResponse()
+
+    monkeypatch.setattr(app_routes, "_open_url", fake_open_url)
+
+    response = client.post(
+        "/api/app/update-download",
+        json={
+            "download_url": "https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.19/LivingToTell_0.1.19_x64-setup.exe",
+            "download_name": "LivingToTell_0.1.19_x64-setup.exe",
+            "expected_sha256": expected_sha,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "downloaded"
+    assert payload["sha256"] == expected_sha.upper()
+    assert Path(payload["file_path"]).read_bytes() == installer_bytes
 
 
 def test_tauri_article_versions_create_restore_clone(monkeypatch):

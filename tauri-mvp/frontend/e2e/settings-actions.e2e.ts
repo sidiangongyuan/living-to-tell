@@ -127,6 +127,7 @@ async function mockSettingsPage(
     modelFetches: [] as Array<string>,
     migrations: [] as Array<Record<string, unknown>>,
     updateChecks: 0,
+    updateDownloads: [] as Array<Record<string, unknown>>,
   }
 
   await page.addInitScript(() => {
@@ -150,6 +151,7 @@ async function mockSettingsPage(
             if (typeof args?.url === 'string') window.__openedUrls?.push(args.url)
             return null
           }
+          if (command === 'install_update_and_exit') return null
           if (command === 'get_data_directory_override') {
             return { override_path: null, active_path: null, warning: null }
           }
@@ -195,11 +197,14 @@ async function mockSettingsPage(
             release_notes: '## 0.1.14\n\nAdded update notifications.',
             source: 'github_releases_latest',
             status: 'update_available',
-            message: '发现新版本。请下载最新安装包或点击下载安装包完成更新。',
+            message: '发现新版本。可以在应用内下载安装包并启动安装。',
             checked_at: '2026-06-26T01:05:06Z',
             cached: false,
             download_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.14/LivingToTell_0.1.14_x64-setup.exe',
             download_name: 'LivingToTell_0.1.14_x64-setup.exe',
+            download_sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            network_proxy: 'https=127.0.0.1:7890',
+            network_detail: null,
           }
         : {
             current_version: '0.1.13',
@@ -216,7 +221,26 @@ async function mockSettingsPage(
             cached: false,
             download_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.13/LivingToTell_0.1.13_x64-setup.exe',
             download_name: 'LivingToTell_0.1.13_x64-setup.exe',
+            download_sha256: null,
+            network_proxy: null,
+            network_detail: null,
           },
+    })
+  })
+
+  await page.route('http://backend.test/api/app/update-download', async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>
+    state.updateDownloads.push(body)
+    await route.fulfill({
+      json: {
+        status: 'downloaded',
+        message: '安装包已下载，准备启动安装器。',
+        file_path: 'C:\\Temp\\LivingToTell_0.1.14_x64-setup.exe',
+        file_name: 'LivingToTell_0.1.14_x64-setup.exe',
+        size_bytes: 123456,
+        sha256: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        downloaded_at: '2026-06-26T01:06:06Z',
+      },
     })
   })
 
@@ -629,7 +653,7 @@ test('settings data storage degrades cleanly when backend capability is missing'
   await expect.poll(() => page.evaluate(() => window.__settingsInvokes?.some((item) => item.command === 'restart_app'))).toBe(true)
 })
 
-test('settings can check for updates and open the latest installer link', async ({ page }) => {
+test('settings can check for updates, download internally, and launch installer', async ({ page }) => {
   const state = await mockSettingsPage(page, { updateAvailable: true })
 
   await page.goto('/settings')
@@ -638,11 +662,27 @@ test('settings can check for updates and open the latest installer link', async 
 
   await updateSection.getByRole('button', { name: '检查更新' }).click()
   await expect.poll(() => state.updateChecks).toBe(1)
-  await expect(page.getByText('发现新版本。请下载最新安装包或点击下载安装包完成更新。')).toBeVisible()
+  await expect(page.getByText('发现新版本。可以在应用内下载安装包并启动安装。')).toBeVisible()
   await expect(page.getByText('Living to Tell Preview 0.1.14')).toBeVisible()
   await expect(page.getByText('LivingToTell_0.1.14_x64-setup.exe')).toBeVisible()
+  await expect(page.getByText('https=127.0.0.1:7890')).toBeVisible()
 
-  await updateSection.getByRole('button', { name: '下载安装包' }).click()
+  await updateSection.getByRole('button', { name: '下载并安装' }).click()
+  await expect.poll(() => state.updateDownloads).toEqual([
+    {
+      download_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.14/LivingToTell_0.1.14_x64-setup.exe',
+      download_name: 'LivingToTell_0.1.14_x64-setup.exe',
+      expected_sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    },
+  ])
+  await expect.poll(() => page.evaluate(() =>
+    window.__settingsInvokes?.some((item) =>
+      item.command === 'install_update_and_exit'
+      && item.args?.installerPath === 'C:\\Temp\\LivingToTell_0.1.14_x64-setup.exe'
+    )
+  )).toBe(true)
+
+  await updateSection.getByRole('button', { name: '浏览器下载' }).click()
   await expect.poll(() => page.evaluate(() => window.__openedUrls)).toContain(
     'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.14/LivingToTell_0.1.14_x64-setup.exe',
   )
