@@ -237,3 +237,19 @@ def test_opencode_auth_status_uses_auth_list_without_reading_key_file(tmp_path):
 
     assert status.available is True
     assert status.command == "opencode"
+
+
+def test_opencode_auth_status_warns_but_allows_existing_auth_file(monkeypatch, tmp_path):
+    auth_dir = tmp_path / "opencode"
+    auth_dir.mkdir()
+    (auth_dir / "auth.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+
+    def runner(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="auth list failed")
+
+    status = opencode_auth_status(command="opencode", runner=runner)
+
+    assert status.available is True
+    assert status.reason == "auth_list_failed"
+    assert status.path == auth_dir / "auth.json"

@@ -34,7 +34,7 @@ def test_tauri_app_version_capabilities(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["app_name"] == "Living to Tell"
-    assert payload["version"] == "0.1.15"
+    assert payload["version"] == "0.1.16"
     assert payload["api_version"] == "2.0.0"
     assert {
         "data_location",
@@ -69,19 +69,19 @@ def test_tauri_app_update_check_reports_latest_release(monkeypatch):
         def read(self):
             return json.dumps(
                 {
-                    "tag_name": "living-to-tell-v0.1.16",
-                    "name": "Living to Tell Preview 0.1.16",
-                    "html_url": "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.16",
+                    "tag_name": "living-to-tell-v0.1.17",
+                    "name": "Living to Tell Preview 0.1.17",
+                    "html_url": "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.17",
                     "published_at": "2026-06-26T01:02:03Z",
-                    "body": "## 0.1.16\n\nAdded update notifications.",
+                    "body": "## 0.1.17\n\nAdded update notifications.",
                     "assets": [
                         {
-                            "name": "LivingToTell_0.1.16_x64_zh-CN.msi",
-                            "browser_download_url": "https://example.test/LivingToTell_0.1.16_x64_zh-CN.msi",
+                            "name": "LivingToTell_0.1.17_x64_zh-CN.msi",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.17_x64_zh-CN.msi",
                         },
                         {
-                            "name": "LivingToTell_0.1.16_x64-setup.exe",
-                            "browser_download_url": "https://example.test/LivingToTell_0.1.16_x64-setup.exe",
+                            "name": "LivingToTell_0.1.17_x64-setup.exe",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.17_x64-setup.exe",
                         },
                     ],
                 }
@@ -104,11 +104,11 @@ def test_tauri_app_update_check_reports_latest_release(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "update_available"
-    assert payload["current_version"] == "0.1.15"
-    assert payload["latest_version"] == "0.1.16"
-    assert payload["release_name"] == "Living to Tell Preview 0.1.16"
-    assert payload["download_name"] == "LivingToTell_0.1.16_x64-setup.exe"
-    assert payload["download_url"] == "https://example.test/LivingToTell_0.1.16_x64-setup.exe"
+    assert payload["current_version"] == "0.1.16"
+    assert payload["latest_version"] == "0.1.17"
+    assert payload["release_name"] == "Living to Tell Preview 0.1.17"
+    assert payload["download_name"] == "LivingToTell_0.1.17_x64-setup.exe"
+    assert payload["download_url"] == "https://example.test/LivingToTell_0.1.17_x64-setup.exe"
     assert "下载安装包" in payload["message"]
     assert calls == [
         {
@@ -136,7 +136,7 @@ def test_tauri_app_update_check_returns_friendly_error(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "error"
-    assert payload["current_version"] == "0.1.15"
+    assert payload["current_version"] == "0.1.16"
     assert "暂时无法检查更新" in payload["message"]
 
 
@@ -1628,6 +1628,7 @@ def test_tauri_ai_profiles_crud_and_validation(monkeypatch):
             "model": "deepseek-chat",
             "api_key_source": "env:WRITER_TEST_PRESENT_KEY",
             "enabled": True,
+            "source_key": "local:codex",
         },
     )
     assert created.status_code == 201, created.text
@@ -1635,6 +1636,7 @@ def test_tauri_ai_profiles_crud_and_validation(monkeypatch):
     assert profile["id"]
     assert profile["wire_api"] == "chat_completions"
     assert profile["api_key_source"] == "env:WRITER_TEST_PRESENT_KEY"
+    assert profile["source_key"] == "local:codex"
 
     listed = client.get("/api/settings/ai/profiles")
     assert listed.status_code == 200
@@ -1647,6 +1649,7 @@ def test_tauri_ai_profiles_crud_and_validation(monkeypatch):
     assert updated.status_code == 200, updated.text
     assert updated.json()["enabled"] is False
     assert updated.json()["name"] == "DeepSeek disabled"
+    assert updated.json()["source_key"] == "local:codex"
 
     deleted = client.delete(f"/api/settings/ai/profiles/{profile['id']}")
     assert deleted.status_code == 204

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { appApi } from '../../api/app'
 import {
@@ -78,6 +78,8 @@ const taskPresetsSupported = ref(true)
 const aiProfiles = ref<AiProfile[]>([])
 const aiProfilesSupported = ref(true)
 const aiProfilesLoading = ref(false)
+const aiProfilesNotice = ref('')
+let aiProfilesNoticeTimer: number | null = null
 const presetName = ref('')
 const CHAT_SYSTEM_PROMPT_LIMIT = 4000
 const chatSystemPrompt = ref('')
@@ -386,8 +388,20 @@ const cardTypeLabels = computed<Record<string, string>>(() => ({
 onMounted(async () => {
   await loadBackendCapabilities()
   await Promise.all([loadAiCards(), loadArticles(), loadTaskPresets(), loadAiProfiles(), loadChatSettings()])
+  if (notice.value === t('ai.profilesRefreshed')) notice.value = ''
+  window.addEventListener('focus', refreshAiProfilesSilently)
+  document.addEventListener('visibilitychange', refreshAiProfilesWhenVisible)
   applyRouteScope()
   await loadChatThread()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('focus', refreshAiProfilesSilently)
+  document.removeEventListener('visibilitychange', refreshAiProfilesWhenVisible)
+  if (aiProfilesNoticeTimer !== null) {
+    window.clearTimeout(aiProfilesNoticeTimer)
+    aiProfilesNoticeTimer = null
+  }
 })
 
 watch(
@@ -521,6 +535,17 @@ async function loadAiProfiles() {
   } finally {
     aiProfilesLoading.value = false
   }
+}
+
+function refreshAiProfilesWhenVisible() {
+  if (document.visibilityState === 'visible') {
+    void refreshAiProfilesSilently()
+  }
+}
+
+async function refreshAiProfilesSilently() {
+  if (!aiProfilesSupported.value || aiProfilesLoading.value) return
+  await loadAiProfiles()
 }
 
 async function loadChatSettings() {
@@ -661,7 +686,12 @@ async function openAiProfileSettings() {
 
 async function refreshAiProfiles() {
   await loadAiProfiles()
-  notice.value = t('ai.profilesRefreshed')
+  aiProfilesNotice.value = t('ai.profilesRefreshed')
+  if (aiProfilesNoticeTimer !== null) window.clearTimeout(aiProfilesNoticeTimer)
+  aiProfilesNoticeTimer = window.setTimeout(() => {
+    aiProfilesNotice.value = ''
+    aiProfilesNoticeTimer = null
+  }, 2400)
 }
 
 async function handleRunTask() {
@@ -1516,6 +1546,9 @@ function makeId(): string {
               {{ t('ai.aiProfilesUnsupported') }}
             </div>
             <div v-else class="space-y-2">
+              <div v-if="aiProfilesNotice" class="rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">
+                {{ aiProfilesNotice }}
+              </div>
               <label
                 v-for="profile in aiProfileOptions"
                 :key="profile.id"

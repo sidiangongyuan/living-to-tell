@@ -253,12 +253,18 @@ def opencode_auth_status(
     except FileNotFoundError:
         return OpenCodeAuthStatus(False, command=resolved, path=path, reason="missing_command")
     except subprocess.TimeoutExpired:
+        if path.exists():
+            return OpenCodeAuthStatus(True, command=resolved, path=path, reason="auth_list_timeout")
         return OpenCodeAuthStatus(False, command=resolved, path=path, reason="auth_list_timeout")
     except Exception:  # noqa: BLE001
+        if path.exists():
+            return OpenCodeAuthStatus(True, command=resolved, path=path, reason="auth_list_failed")
         return OpenCodeAuthStatus(False, command=resolved, path=path, reason="auth_list_failed")
 
     text = _clean_output((completed.stdout or "") + "\n" + (completed.stderr or ""))
     if completed.returncode != 0:
+        if path.exists():
+            return OpenCodeAuthStatus(True, command=resolved, path=path, reason="auth_list_failed")
         return OpenCodeAuthStatus(False, command=resolved, path=path, reason="auth_list_failed")
     if "opencode" not in text.lower() and not path.exists():
         return OpenCodeAuthStatus(False, command=resolved, path=path, reason="missing_login")

@@ -1,5 +1,40 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.16 - AI Profile Workflow Polish (2026-06-28)
+
+### Changed
+
+- Settings no longer scans local AI configurations automatically when opening the page. Local OpenCode, Codex/OpenAI, and Gemini discovery now runs only when the user clicks the scan action.
+- AI profile creation and editing now open in a modal dialog with an explicit cancel path instead of expanding an inline form at the bottom of the settings page.
+- Discovered local AI profile candidates can be removed one by one or cleared from the current scan results without touching local auth/config files.
+- AI Tools now refresh saved AI profiles when the page regains focus or visibility, reducing the need to press Refresh after changing profiles in Settings.
+- The AI profile refresh notice is now scoped to the model comparison area and auto-clears instead of staying in the global task notice region.
+
+### Fixed
+
+- Fixed profile updates dropping `source_key`, which could make future local imports create duplicate profiles instead of updating the existing imported profile.
+- Fixed OpenCode local credential checks so a temporary `opencode auth list` failure is not shown as hard unavailable when the known local auth file exists and real `opencode run` requests still work.
+- Kept Gemini local discovery honest: unavailable Gemini configurations remain marked unavailable and are not reported as working.
+
+### Verification
+
+- Real local OpenCode probe with `opencode/deepseek-v4-flash-free`: success, `transport=opencode_cli`, `cost=0`.
+- Real local Codex/OpenAI probe from `~/.codex/config.toml`: success, `transport=openai_responses`.
+- Real local Gemini probe: unavailable; the app reports the failure as a diagnostic instead of presenting fake success.
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\services\ai\test_opencode_cli_provider.py tests\services\ai\test_preflight.py tests\test_tauri_mvp_api.py::test_tauri_ai_profiles_crud_and_validation tests\test_tauri_mvp_api.py::test_tauri_ai_profiles_discover_and_import_local -q`
+- `npm test -- --run`
+- `npm run test:e2e -- --workers=1`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.16_x64-setup.exe`
+  - SHA256: `94649DE2A466D32DE287DB2F71180990B06D95E31E9FE2515F805C0583F11B88`
+- `LivingToTell_0.1.16_x64_zh-CN.msi`
+  - SHA256: `FA13E700542BDE741E3B1DBE6020EA0630D4E3E9443289A8A8448CFD304521F2`
+
 ## 0.1.15 - AI Profile Discovery And Comparison Polish (2026-06-28)
 
 ### Added

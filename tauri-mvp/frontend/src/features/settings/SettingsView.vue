@@ -171,7 +171,6 @@ const statusDetail = computed(() => {
 onMounted(() => {
   void loadSettings()
   void loadProfiles()
-  void discoverProfiles()
   void loadDataLocation()
   void settings.loadNativePreferences()
   void appUpdate.ensureVersionLoaded()
@@ -360,6 +359,7 @@ function cancelProfileEdit() {
   profileEditorOpen.value = false
   editingProfileId.value = null
   profileDraft.value = createEmptyProfileDraft()
+  profileError.value = ''
   profileTestResult.value = null
   profileModelFetchResult.value = null
 }
@@ -399,7 +399,7 @@ async function saveProfile() {
       profileNotice.value = t('settings.aiProfileCreated')
     }
     await loadProfiles()
-    await discoverProfiles()
+    syncDiscoveredProfilesWithSavedProfiles()
     cancelProfileEdit()
   } catch (e) {
     profileError.value = errorMessage(e)
@@ -415,7 +415,7 @@ async function deleteProfile(profile: AiProfile) {
   try {
     await settingsApi.deleteAiProfile(profile.id)
     aiProfiles.value = aiProfiles.value.filter((item) => item.id !== profile.id)
-    await discoverProfiles()
+    syncDiscoveredProfilesWithSavedProfiles()
     if (editingProfileId.value === profile.id) cancelProfileEdit()
     profileNotice.value = t('settings.aiProfileDeleted')
   } catch (e) {
@@ -425,8 +425,10 @@ async function deleteProfile(profile: AiProfile) {
 
 async function discoverProfiles() {
   discoveringProfiles.value = true
+  profileError.value = ''
   try {
     discoveredProfiles.value = await settingsApi.discoverAiProfiles()
+    syncDiscoveredProfilesWithSavedProfiles()
   } catch (e) {
     profileError.value = errorMessage(e)
     discoveredProfiles.value = []
@@ -442,7 +444,7 @@ async function importLocalProfiles(sourceKeys: string[] = []) {
   try {
     const result = await settingsApi.importLocalAiProfiles(sourceKeys, true)
     aiProfiles.value = result.profiles
-    await discoverProfiles()
+    syncDiscoveredProfilesWithSavedProfiles()
     const changed = result.imported_count + result.updated_count
     if (changed > 0) {
       profileNotice.value = t('settings.localProfilesImported', {
@@ -459,6 +461,32 @@ async function importLocalProfiles(sourceKeys: string[] = []) {
   } finally {
     importingLocalProfiles.value = false
   }
+}
+
+function syncDiscoveredProfilesWithSavedProfiles() {
+  if (!discoveredProfiles.value.length) return
+  discoveredProfiles.value = discoveredProfiles.value.map((candidate) => ({
+    ...candidate,
+    existing_profile_id:
+      aiProfiles.value.find((profile) =>
+        (profile.source_key && profile.source_key === candidate.source_key)
+        || (
+          profile.provider_name === candidate.provider_name
+          && (profile.base_url ?? '') === (candidate.base_url ?? '')
+          && (profile.wire_api ?? '') === (candidate.wire_api ?? '')
+          && profile.model === candidate.model
+          && profile.api_key_source === candidate.api_key_source
+        )
+      )?.id ?? null,
+  }))
+}
+
+function removeDiscoveredProfile(sourceKey: string) {
+  discoveredProfiles.value = discoveredProfiles.value.filter((candidate) => candidate.source_key !== sourceKey)
+}
+
+function clearDiscoveredProfiles() {
+  discoveredProfiles.value = []
 }
 
 function fillDraftFromDiscovered(candidate: AiDiscoveredProfile) {
@@ -1048,16 +1076,28 @@ async function openReleasePage() {
               <h3 class="text-sm font-semibold text-slate-900">{{ t('settings.localProfileDiscovery') }}</h3>
               <p class="mt-1 text-xs leading-5 text-slate-500">{{ t('settings.localProfileDiscoveryHelp') }}</p>
             </div>
-            <button
-              @click="importLocalProfiles()"
-              :disabled="importingLocalProfiles || !discoveredProfiles.some((item) => item.available)"
-              class="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-40"
-            >
-              {{ importingLocalProfiles ? t('common.saving') : t('settings.importAllLocalProfiles') }}
-            </button>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-if="discoveredProfiles.length"
+                @click="clearDiscoveredProfiles"
+                class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                {{ t('settings.clearDiscoveredProfiles') }}
+              </button>
+              <button
+                @click="importLocalProfiles()"
+                :disabled="importingLocalProfiles || !discoveredProfiles.some((item) => item.available)"
+                class="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-40"
+              >
+                {{ importingLocalProfiles ? t('common.saving') : t('settings.importAllLocalProfiles') }}
+              </button>
+            </div>
           </div>
           <div v-if="discoveringProfiles && !discoveredProfiles.length" class="rounded-lg bg-white p-3 text-sm text-slate-500">
             {{ t('settings.scanningLocalProfiles') }}
+          </div>
+          <div v-else-if="!discoveredProfiles.length" class="rounded-lg border border-dashed border-slate-200 bg-white p-4 text-sm leading-6 text-slate-500">
+            {{ t('settings.noDiscoveredProfiles') }}
           </div>
           <div v-else class="grid gap-3 lg:grid-cols-3">
             <article
@@ -1099,6 +1139,12 @@ async function openReleasePage() {
                   class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   {{ t('settings.fillProfileDraft') }}
+                </button>
+                <button
+                  @click="removeDiscoveredProfile(candidate.source_key)"
+                  class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+                >
+                  {{ t('settings.removeDiscoveredProfile') }}
                 </button>
               </div>
             </article>
@@ -1158,19 +1204,35 @@ async function openReleasePage() {
           </article>
         </div>
 
-        <div v-if="profileEditorOpen" class="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-4">
-          <div class="mb-4 flex items-center justify-between gap-3">
-            <h3 class="font-semibold text-blue-950">
-              {{ editingProfileId ? t('settings.editAiProfile') : t('settings.newAiProfile') }}
-            </h3>
-            <button
-              v-if="editingProfileId || profileDraft.name || profileDraft.model || profileDraft.base_url"
-              @click="cancelProfileEdit"
-              class="text-sm font-semibold text-blue-700 hover:text-blue-900"
+        <Teleport to="body">
+          <div
+            v-if="profileEditorOpen"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-5"
+            @click.self="cancelProfileEdit"
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              :aria-label="editingProfileId ? t('settings.editAiProfile') : t('settings.newAiProfile')"
+              class="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
             >
-              {{ t('common.cancel') }}
-            </button>
-          </div>
+              <div class="flex items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
+                <div>
+                  <h3 class="text-lg font-bold text-gray-950">
+                    {{ editingProfileId ? t('settings.editAiProfile') : t('settings.newAiProfile') }}
+                  </h3>
+                  <p class="mt-1 text-sm text-gray-500">{{ t('settings.aiProfileDialogHelp') }}</p>
+                </div>
+                <button
+                  @click="cancelProfileEdit"
+                  class="rounded-lg px-3 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                >
+                  {{ t('common.cancel') }}
+                </button>
+              </div>
+
+              <div class="overflow-y-auto px-5 py-4">
+                <div v-if="profileError" class="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ profileError }}</div>
 
           <div class="grid gap-4 md:grid-cols-2">
             <div>
@@ -1304,6 +1366,12 @@ async function openReleasePage() {
 
           <div class="mt-4 flex flex-wrap justify-end gap-2">
             <button
+              @click="cancelProfileEdit"
+              class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              {{ t('common.cancel') }}
+            </button>
+            <button
               @click="testProfileLive"
               :disabled="testingProfile"
               class="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
@@ -1318,7 +1386,10 @@ async function openReleasePage() {
               {{ savingProfile ? t('common.saving') : t('settings.saveAiProfile') }}
             </button>
           </div>
-        </div>
+              </div>
+            </div>
+          </div>
+        </Teleport>
       </section>
 
       <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">

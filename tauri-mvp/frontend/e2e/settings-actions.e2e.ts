@@ -109,6 +109,7 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
       },
     ] as Array<Record<string, unknown>>,
     localProfileImports: [] as Array<Record<string, unknown>>,
+    localProfileDiscoveries: 0,
     aiTests: [] as Array<Record<string, unknown>>,
     aiLiveTests: [] as Array<Record<string, unknown>>,
     codexImports: 0,
@@ -222,6 +223,7 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
   })
 
   await page.route('http://backend.test/api/settings/ai/profiles/discover', async (route) => {
+    state.localProfileDiscoveries += 1
     await route.fulfill({ json: state.discoveredProfiles })
   })
 
@@ -438,11 +440,32 @@ test('settings supports OpenCode model refresh and local login config', async ({
 
   await page.goto('/settings')
   await expect(page.getByText('本机配置发现')).toBeVisible()
+  await expect.poll(() => state.localProfileDiscoveries).toBe(0)
+  await expect(page.getByText('OpenCode · DeepSeek v4 Flash Free')).toHaveCount(0)
+  await expect(page.getByText(/点击“扫描本机配置”/)).toBeVisible()
+
+  await page.getByRole('button', { name: '扫描本机配置' }).click()
+  await expect.poll(() => state.localProfileDiscoveries).toBe(1)
   await expect(page.getByText('OpenCode · DeepSeek v4 Flash Free')).toBeVisible()
+
+  await page.locator('article').filter({ hasText: 'OpenCode · DeepSeek v4 Flash Free' }).getByRole('button', { name: '移除' }).click()
+  await expect(page.getByText('OpenCode · DeepSeek v4 Flash Free')).toHaveCount(0)
+  await expect(page.getByText('Codex / OpenAI · gpt-5.4')).toBeVisible()
+
+  await page.getByRole('button', { name: '扫描本机配置' }).click()
+  await expect.poll(() => state.localProfileDiscoveries).toBe(2)
+  await expect(page.getByText('OpenCode · DeepSeek v4 Flash Free')).toBeVisible()
+
   await page.getByRole('button', { name: '导入可用配置' }).click()
   await expect.poll(() => state.localProfileImports.length).toBe(1)
   await expect(page.getByText('本机配置已导入：新增 2 个，更新 0 个。')).toBeVisible()
   await expect(page.locator('section').filter({ hasText: 'AI 配置档案' }).getByRole('heading', { name: 'Codex / OpenAI · gpt-5.4', level: 3 })).toBeVisible()
+
+  await page.getByRole('button', { name: '新增档案' }).click()
+  const profileDialog = page.getByRole('dialog', { name: '新建配置档案' })
+  await expect(profileDialog.getByRole('heading', { name: '新建配置档案' })).toBeVisible()
+  await profileDialog.getByRole('button', { name: '取消' }).first().click()
+  await expect(page.getByRole('heading', { name: '新建配置档案' })).toHaveCount(0)
 
   await page.locator('section').filter({ hasText: 'AI 配置' }).locator('select').first().selectOption('opencode')
   const aiSection = page.locator('section').filter({ hasText: 'AI 配置' })

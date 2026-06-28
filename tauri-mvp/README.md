@@ -4,7 +4,7 @@
 
 ### The current Windows desktop preview for 活着为了讲述 / Living to Tell
 
-[![Version](https://img.shields.io/badge/version-0.1.15-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.16-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-preview-orange.svg)](#download)
@@ -98,15 +98,15 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.15).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.16).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.15_x64-setup.exe`
+- `LivingToTell_0.1.16_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.15_x64_zh-CN.msi`
+- `LivingToTell_0.1.16_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 

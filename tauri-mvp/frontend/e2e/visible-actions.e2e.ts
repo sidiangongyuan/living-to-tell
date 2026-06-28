@@ -1597,6 +1597,10 @@ test('AI tools run tasks, attach contexts, and keep generated outputs actionable
 
   await page.goto('/ai?tab=tools&scope_kind=article&scope_id=article-a')
   await expect(page.getByRole('button', { name: '运行任务' })).toBeVisible()
+  const modelCompareSection = page.locator('section').filter({ hasText: '模型对比' })
+  await modelCompareSection.getByRole('button', { name: '刷新' }).click()
+  await expect(modelCompareSection.getByText('AI 配置档案已刷新')).toBeVisible()
+  await expect(modelCompareSection.getByText('AI 配置档案已刷新')).toHaveCount(0, { timeout: 4000 })
 
   await page.getByRole('button', { name: '添加文章便签' }).click()
   await page.getByRole('button', { name: '加入全部未完成' }).click()

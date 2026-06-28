@@ -1037,6 +1037,7 @@ def update_ai_profile(
             api_key_source=str(merged.get("api_key_source") or "env:OPENAI_API_KEY"),
             gemini_cli_proxy=merged.get("gemini_cli_proxy"),
             enabled=bool(merged.get("enabled", True)),
+            source_key=str(merged.get("source_key") or "").strip() or None,
         ),
         profile_id=existing.id,
         created_at=existing.created_at,
