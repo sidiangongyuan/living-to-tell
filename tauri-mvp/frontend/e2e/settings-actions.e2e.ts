@@ -55,7 +55,15 @@ const defaultDataLocation = {
   warning: null,
 }
 
-async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; dataLocationCapability?: boolean; updateAvailable?: boolean } = {}) {
+async function mockSettingsPage(
+  page: Page,
+  options: {
+    customDataDir?: boolean
+    dataLocationCapability?: boolean
+    updateAvailable?: boolean
+    staleInitialProfileListDelayMs?: number
+  } = {},
+) {
   const dataLocationCapability = options.dataLocationCapability ?? true
   const updateAvailable = options.updateAvailable ?? false
   const aiSettings = { ...baseAiSettings }
@@ -110,6 +118,8 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
     ] as Array<Record<string, unknown>>,
     localProfileImports: [] as Array<Record<string, unknown>>,
     localProfileDiscoveries: 0,
+    profileListGets: 0,
+    profileListResponses: 0,
     aiTests: [] as Array<Record<string, unknown>>,
     aiLiveTests: [] as Array<Record<string, unknown>>,
     codexImports: 0,
@@ -294,7 +304,45 @@ async function mockSettingsPage(page: Page, options: { customDataDir?: boolean; 
       await route.fulfill({ status: 201, json: created })
       return
     }
-    await route.fulfill({ json: { profiles: state.aiProfiles } })
+    state.profileListGets += 1
+    const responseProfiles = state.aiProfiles.map((profile) => ({ ...profile }))
+    if (state.profileListGets === 1 && options.staleInitialProfileListDelayMs) {
+      await new Promise((resolve) => setTimeout(resolve, options.staleInitialProfileListDelayMs))
+    }
+    state.profileListResponses += 1
+    await route.fulfill({ json: { profiles: responseProfiles } })
+  })
+
+  await page.route('http://backend.test/api/articles*', async (route) => {
+    await route.fulfill({ json: [] })
+  })
+
+  await page.route('http://backend.test/api/ai-cards', async (route) => {
+    await route.fulfill({ json: [] })
+  })
+
+  await page.route('http://backend.test/api/ai/task-presets', async (route) => {
+    await route.fulfill({ json: {} })
+  })
+
+  await page.route('http://backend.test/api/ai/chat-settings', async (route) => {
+    await route.fulfill({ json: { system_prompt: '' } })
+  })
+
+  await page.route('http://backend.test/api/ai/threads/current*', async (route) => {
+    await route.fulfill({
+      json: {
+        thread: {
+          id: 'thread-1',
+          scope_kind: 'article',
+          scope_id: 'article-1',
+          title: '测试对话',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+        messages: [],
+      },
+    })
   })
 
   await page.route('http://backend.test/api/settings/ai/test', async (route) => {
@@ -439,6 +487,7 @@ test('settings supports OpenCode model refresh and local login config', async ({
   const state = await mockSettingsPage(page)
 
   await page.goto('/settings')
+  await expect(page.getByRole('heading', { name: '设置', level: 1 })).toBeVisible({ timeout: 15000 })
   await expect(page.getByText('本机配置发现')).toBeVisible()
   await expect.poll(() => state.localProfileDiscoveries).toBe(0)
   await expect(page.getByText('OpenCode · DeepSeek v4 Flash Free')).toHaveCount(0)
@@ -489,6 +538,42 @@ test('settings supports OpenCode model refresh and local login config', async ({
     api_key_source: 'opencode',
     gemini_cli_proxy: null,
   }))
+})
+
+test('imported AI profiles survive a stale profile load and settings/tools route round trip', async ({ page }) => {
+  const state = await mockSettingsPage(page, { staleInitialProfileListDelayMs: 900 })
+  const settingsProfiles = page.locator('section').filter({ hasText: 'AI 配置档案' })
+
+  await page.goto('/settings?section=ai_profiles')
+  await expect(page.getByRole('heading', { name: '设置', level: 1 })).toBeVisible({ timeout: 15000 })
+  await expect(page.getByText('本机配置发现')).toBeVisible()
+
+  await page.getByRole('button', { name: '扫描本机配置' }).click()
+  await expect(page.getByText('OpenCode · DeepSeek v4 Flash Free')).toBeVisible()
+  await expect(page.getByText('Codex / OpenAI · gpt-5.4')).toBeVisible()
+
+  await page.getByRole('button', { name: '导入可用配置' }).click()
+  await expect.poll(() => state.localProfileImports.length).toBe(1)
+  await expect(settingsProfiles.getByRole('heading', { name: 'OpenCode · DeepSeek v4 Flash Free', level: 3 })).toBeVisible()
+  await expect(settingsProfiles.getByRole('heading', { name: 'Codex / OpenAI · gpt-5.4', level: 3 })).toBeVisible()
+
+  await expect.poll(() => state.profileListResponses).toBeGreaterThanOrEqual(1)
+  await expect(settingsProfiles.getByRole('heading', { name: 'OpenCode · DeepSeek v4 Flash Free', level: 3 })).toBeVisible()
+  await expect(settingsProfiles.getByRole('heading', { name: 'Codex / OpenAI · gpt-5.4', level: 3 })).toBeVisible()
+
+  await page.goto('/ai?tab=tools')
+  const modelCompare = page.locator('section').filter({ hasText: '模型对比' })
+  await expect(modelCompare.getByText('OpenCode · DeepSeek v4 Flash Free')).toBeVisible()
+  await expect(modelCompare.getByText('Codex / OpenAI · gpt-5.4')).toBeVisible()
+
+  await modelCompare.getByRole('button', { name: '管理配置' }).click()
+  await expect(page).toHaveURL(/\/settings\?section=ai_profiles/)
+  await expect(settingsProfiles.getByRole('heading', { name: 'OpenCode · DeepSeek v4 Flash Free', level: 3 })).toBeVisible()
+  await expect(settingsProfiles.getByRole('heading', { name: 'Codex / OpenAI · gpt-5.4', level: 3 })).toBeVisible()
+
+  await page.goto('/ai?tab=tools')
+  await expect(modelCompare.getByText('OpenCode · DeepSeek v4 Flash Free')).toBeVisible()
+  await expect(modelCompare.getByText('Codex / OpenAI · gpt-5.4')).toBeVisible()
 })
 
 test('settings data storage buttons call native commands and protect migration with confirmation', async ({ page }) => {

@@ -80,6 +80,7 @@ const aiProfilesSupported = ref(true)
 const aiProfilesLoading = ref(false)
 const aiProfilesNotice = ref('')
 let aiProfilesNoticeTimer: number | null = null
+let aiProfilesLoadSeq = 0
 const presetName = ref('')
 const CHAT_SYSTEM_PROMPT_LIMIT = 4000
 const chatSystemPrompt = ref('')
@@ -510,14 +511,18 @@ async function loadTaskPresets() {
 }
 
 async function loadAiProfiles() {
+  const seq = ++aiProfilesLoadSeq
   if (backendCapabilityMissing('ai_profiles')) {
+    if (seq !== aiProfilesLoadSeq) return
     aiProfilesSupported.value = false
     aiProfiles.value = []
+    aiProfilesLoading.value = false
     return
   }
   aiProfilesLoading.value = true
   try {
     const result = await settingsApi.listAiProfiles()
+    if (seq !== aiProfilesLoadSeq) return
     aiProfiles.value = result.profiles
     aiProfilesSupported.value = true
     selectedProfileIds.value = selectedProfileIds.value.filter((id) =>
@@ -525,6 +530,7 @@ async function loadAiProfiles() {
     )
     if (!selectedProfileIds.value.length) selectedProfileIds.value = ['default']
   } catch (e) {
+    if (seq !== aiProfilesLoadSeq) return
     if (isHttpStatus(e, 404)) {
       aiProfilesSupported.value = false
       aiProfiles.value = []
@@ -533,7 +539,7 @@ async function loadAiProfiles() {
       error.value = errorMessage(e)
     }
   } finally {
-    aiProfilesLoading.value = false
+    if (seq === aiProfilesLoadSeq) aiProfilesLoading.value = false
   }
 }
 

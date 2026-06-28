@@ -66,6 +66,7 @@ const discoveredProfiles = ref<AiDiscoveredProfile[]>([])
 const discoveringProfiles = ref(false)
 const importingLocalProfiles = ref(false)
 const aiProfilesSectionRef = ref<HTMLElement | null>(null)
+let profileStateSeq = 0
 
 const closeBehaviorNotice = ref('')
 const dataLocation = ref<DataLocationInfo | null>(null)
@@ -323,15 +324,18 @@ function normalizeProfileDraftForProvider() {
 }
 
 async function loadProfiles() {
+  const seq = ++profileStateSeq
   loadingProfiles.value = true
   profileError.value = ''
   try {
     const result = await settingsApi.listAiProfiles()
+    if (seq !== profileStateSeq) return
     aiProfiles.value = result.profiles
   } catch (e) {
+    if (seq !== profileStateSeq) return
     profileError.value = errorMessage(e)
   } finally {
-    loadingProfiles.value = false
+    if (seq === profileStateSeq) loadingProfiles.value = false
   }
 }
 
@@ -410,15 +414,19 @@ async function saveProfile() {
 
 async function deleteProfile(profile: AiProfile) {
   if (!window.confirm(t('settings.aiProfileDeleteConfirm', { name: profile.name }))) return
+  const seq = ++profileStateSeq
+  loadingProfiles.value = false
   profileError.value = ''
   profileNotice.value = ''
   try {
     await settingsApi.deleteAiProfile(profile.id)
+    if (seq !== profileStateSeq) return
     aiProfiles.value = aiProfiles.value.filter((item) => item.id !== profile.id)
     syncDiscoveredProfilesWithSavedProfiles()
     if (editingProfileId.value === profile.id) cancelProfileEdit()
     profileNotice.value = t('settings.aiProfileDeleted')
   } catch (e) {
+    if (seq !== profileStateSeq) return
     profileError.value = errorMessage(e)
   }
 }
@@ -438,11 +446,14 @@ async function discoverProfiles() {
 }
 
 async function importLocalProfiles(sourceKeys: string[] = []) {
+  const seq = ++profileStateSeq
   importingLocalProfiles.value = true
+  loadingProfiles.value = false
   profileError.value = ''
   profileNotice.value = ''
   try {
     const result = await settingsApi.importLocalAiProfiles(sourceKeys, true)
+    if (seq !== profileStateSeq) return
     aiProfiles.value = result.profiles
     syncDiscoveredProfilesWithSavedProfiles()
     const changed = result.imported_count + result.updated_count
@@ -457,9 +468,13 @@ async function importLocalProfiles(sourceKeys: string[] = []) {
       profileNotice.value = t('settings.localProfilesNoChanges')
     }
   } catch (e) {
+    if (seq !== profileStateSeq) return
     profileError.value = errorMessage(e)
   } finally {
-    importingLocalProfiles.value = false
+    if (seq === profileStateSeq) {
+      importingLocalProfiles.value = false
+      loadingProfiles.value = false
+    }
   }
 }
 
@@ -516,12 +531,16 @@ async function focusRequestedSection() {
 }
 
 async function toggleProfileEnabled(profile: AiProfile) {
+  const seq = ++profileStateSeq
+  loadingProfiles.value = false
   profileError.value = ''
   profileNotice.value = ''
   try {
     const updated = await settingsApi.updateAiProfile(profile.id, { enabled: !profile.enabled })
+    if (seq !== profileStateSeq) return
     aiProfiles.value = aiProfiles.value.map((item) => item.id === updated.id ? updated : item)
   } catch (e) {
+    if (seq !== profileStateSeq) return
     profileError.value = errorMessage(e)
   }
 }
