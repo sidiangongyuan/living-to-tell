@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router'
 import { articlesApi } from '../../api/articles'
 import { libraryApi } from '../../api/library'
 import { settingsApi, type AiSettings } from '../../api/settings'
+import { appApi } from '../../api/app'
+import { onboardingApi, type SampleProjectState } from '../../api/onboarding'
 import { buildDailyQuoteLibraryQuery } from './quoteLink'
 import { formatDateKey, useDatesStore } from './store'
 import { useI18n } from '../../i18n'
@@ -17,6 +19,20 @@ const calendarRef = ref<HTMLDivElement | null>(null)
 const createError = ref('')
 const onboardingLoading = ref(false)
 const onboardingError = ref('')
+const sampleProjectLoading = ref(false)
+const sampleProjectNotice = ref('')
+const sampleProjectError = ref('')
+const sampleProjectSupported = ref<boolean | null>(null)
+const sampleProjectState = ref<SampleProjectState>({
+  installed: false,
+  collection_id: null,
+  entry_ids: [],
+  reference_ids: [],
+  ai_card_ids: [],
+  note_ids: [],
+  created_at: null,
+  missing_ids: [],
+})
 const onboardingState = ref({
   hasArticle: false,
   hasReference: false,
@@ -86,16 +102,18 @@ async function loadOnboardingProgress() {
   onboardingLoading.value = true
   onboardingError.value = ''
   try {
-    const [articles, stats, ai] = await Promise.all([
+    const [articles, stats, ai, sample] = await Promise.all([
       articlesApi.listArticles(1).catch(() => []),
       libraryApi.getStats().catch(() => ({ total: 0, by_usage_kind: {} })),
       settingsApi.getAiSettings().catch(() => null),
+      loadSampleProjectState().catch(() => null),
     ])
     onboardingState.value = {
       hasArticle: articles.length > 0,
       hasReference: stats.total > 0,
       aiConfigured: ai ? aiSettingsHasUsableCredential(ai) : false,
     }
+    if (sample) sampleProjectState.value = sample
   } catch (e) {
     onboardingError.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -217,6 +235,66 @@ function openAiSettings() {
 function openBackup() {
   settings.markOnboardingStorageReviewed()
   router.push({ name: 'backup' })
+}
+
+async function loadSampleProjectState(): Promise<SampleProjectState | null> {
+  if (sampleProjectSupported.value === false) return null
+  try {
+    if (sampleProjectSupported.value === null) {
+      const info = await appApi.getVersion()
+      sampleProjectSupported.value = info.capabilities.includes('sample_project')
+    }
+    if (!sampleProjectSupported.value) return null
+    const state = await onboardingApi.getSampleProject()
+    sampleProjectState.value = state
+    return state
+  } catch {
+    sampleProjectSupported.value = false
+    return null
+  }
+}
+
+async function createSampleProject() {
+  sampleProjectLoading.value = true
+  sampleProjectNotice.value = ''
+  sampleProjectError.value = ''
+  try {
+    const result = await onboardingApi.createSampleProject()
+    sampleProjectState.value = result
+    sampleProjectNotice.value = result.action === 'already_installed'
+      ? '示例项目已经存在。'
+      : '已创建示例项目：包含文章、作品集大纲、文脉标本、文章便签和场景 AI Card。'
+    await loadOnboardingProgress()
+  } catch (e) {
+    sampleProjectError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    sampleProjectLoading.value = false
+  }
+}
+
+async function deleteSampleProject() {
+  if (!confirm('删除示例项目？只会删除应用为示例项目记录的文章、作品集、文脉和 AI Card，不会按标题或标签删除你的其他内容。')) {
+    return
+  }
+  sampleProjectLoading.value = true
+  sampleProjectNotice.value = ''
+  sampleProjectError.value = ''
+  try {
+    const result = await onboardingApi.deleteSampleProject()
+    sampleProjectState.value = result
+    sampleProjectNotice.value = '示例项目已删除。'
+    await loadOnboardingProgress()
+  } catch (e) {
+    sampleProjectError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    sampleProjectLoading.value = false
+  }
+}
+
+function openSampleProject() {
+  if (sampleProjectState.value.collection_id) {
+    router.push({ name: 'collections' })
+  }
 }
 
 async function startWritingForSelectedDate() {
@@ -380,6 +458,78 @@ async function startWritingForSelectedDate() {
           <div v-if="onboardingLoading || onboardingError" class="border-t border-amber-100 px-5 py-3 text-xs text-amber-700">
             <span v-if="onboardingLoading">{{ t('welcome.checking') }}</span>
             <span v-else>{{ t('welcome.checkUnavailable') }}</span>
+          </div>
+        </section>
+
+        <section
+          v-if="!settings.welcomeChecklistDismissed"
+          class="mb-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
+          data-testid="sample-project-panel"
+        >
+          <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2">
+                <h3 class="text-base font-bold text-slate-950">示例项目</h3>
+                <span
+                  :class="[
+                    'rounded-full px-2.5 py-1 text-xs font-semibold',
+                    sampleProjectState.installed
+                      ? 'bg-emerald-50 text-emerald-700'
+                      : 'bg-slate-100 text-slate-600',
+                  ]"
+                >
+                  {{ sampleProjectState.installed ? '已安装' : '可选' }}
+                </span>
+              </div>
+              <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                创建一个可删除的本地演示项目，包含两篇文章、一个作品集大纲、一个文脉标本、一张文章便签和一张场景 AI Card。它不会自动创建；删除时只删除被标记为示例项目的内容。
+              </p>
+              <div v-if="sampleProjectState.installed" class="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+                <span class="rounded-full bg-slate-50 px-2.5 py-1">文章 {{ sampleProjectState.entry_ids.length }}</span>
+                <span class="rounded-full bg-slate-50 px-2.5 py-1">文脉 {{ sampleProjectState.reference_ids.length }}</span>
+                <span class="rounded-full bg-slate-50 px-2.5 py-1">AI Card {{ sampleProjectState.ai_card_ids.length }}</span>
+                <span v-if="sampleProjectState.created_at" class="rounded-full bg-slate-50 px-2.5 py-1">
+                  {{ new Date(sampleProjectState.created_at).toLocaleDateString() }}
+                </span>
+              </div>
+            </div>
+            <div class="flex shrink-0 flex-wrap gap-2">
+              <button
+                v-if="sampleProjectSupported !== false && !sampleProjectState.installed"
+                type="button"
+                class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                :disabled="sampleProjectLoading"
+                @click="createSampleProject"
+              >
+                {{ sampleProjectLoading ? '创建中…' : '创建示例项目' }}
+              </button>
+              <button
+                v-if="sampleProjectState.installed"
+                type="button"
+                class="rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200"
+                @click="openSampleProject"
+              >
+                打开作品集
+              </button>
+              <button
+                v-if="sampleProjectState.installed"
+                type="button"
+                class="rounded-xl bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+                :disabled="sampleProjectLoading"
+                @click="deleteSampleProject"
+              >
+                删除示例
+              </button>
+            </div>
+          </div>
+          <div v-if="sampleProjectSupported === false" class="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            当前后台版本不支持示例项目。重新安装最新版本后可使用；你的写作数据不会被删除。
+          </div>
+          <div v-if="sampleProjectNotice" class="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+            {{ sampleProjectNotice }}
+          </div>
+          <div v-if="sampleProjectError" class="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
+            {{ sampleProjectError }}
           </div>
         </section>
 

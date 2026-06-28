@@ -6,7 +6,7 @@
 - [ ] Add signed Windows builds or published checksums for preview installers.
 - [x] Add a first-run checklist that reads local state without creating sample data.
 - [ ] Improve first-run onboarding with language, data location, backups, and AI provider setup.
-- [ ] Add a small sample project for new users.
+- [x] Add a small sample project for new users.
 - [ ] Rework the full dark theme, then re-enable the theme switcher.
 - [ ] Add short demo videos or GIFs after the static screenshots settle.
 
@@ -15,12 +15,13 @@
 - [x] Article notes for reminders, fragments, and next-step ideas beside the current article.
 - [x] Last-position restore and more comfortable long-document writing near the end of a draft.
 - [ ] More editor layout presets for compact, balanced, and wide screens.
-- [ ] More visible checkpoint/history flow before large edits.
+- [x] More visible checkpoint/history flow before large edits.
 - [ ] Optional article templates.
 - [ ] Future mind map / imagery collection space for organizing themes, symbols, motifs, character links, arguments, references, and AI-generated ideas visually.
 
 ## Collections
 
+- [x] Planning board for long-form outline items grouped by status.
 - [ ] Richer collection preview with whole-book reading mode.
 - [ ] Export options for front matter, section breaks, and title pages.
 - [ ] Better empty-state onboarding for first collection creation.

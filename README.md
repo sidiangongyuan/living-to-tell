@@ -4,9 +4,9 @@
 
 ### A local-first writing studio for articles, collections, references, and scoped AI
 
-[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.21)
+[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.24)
 
-[![Version](https://img.shields.io/badge/preview-0.1.21-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.24-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **Writing, photography, singing, and speaking are all ways to tell. To live is to tell.**
 
-[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.21) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
+[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.24) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
 
 </div>
 
@@ -27,12 +27,12 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 | | |
 | --- | --- |
 | **Article Studio** | Draft long-form writing with autosave, tags, search, epigraphs, focus mode, notes, version history, and export. |
-| **Collections** | Arrange articles into a manuscript and plan longer projects with outline items, progress summaries, filters, and Markdown outline export. |
+| **Collections** | Arrange articles into a manuscript and plan longer projects with outline items, planning board, progress summaries, filters, and Markdown outline export. |
 | **Reference Library** | Keep quotes, source titles, authors, usage notes, and citation-ready snippets in one place. |
 | **Article AI** | Use focused AI tools, compare multiple configured models, and keep every write-back explicit. |
 | **AI Cards** | Save reusable style, character, and scene cards with templates and AI-assisted draft generation. |
 | **Motif Star Map** | Mark selected text as motifs, revisit source anchors, and explore how motifs co-occur. |
-| **Export & Backup** | Review the local data path, create backups/checkpoints, open storage folders, and export the recent article or collection. |
+| **Export & Backup** | Review restore points, local data paths, backups/checkpoints, storage folders, backup reminders, and recent article/collection exports. |
 | **Local First** | Store writing data locally and send text to AI only when you explicitly run an AI action. |
 
 ## Current Preview Status
@@ -63,6 +63,10 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 | :---: | :---: |
 | ![AI workspace](tauri-mvp/docs/assets/screenshots/ai-workspace.png) | ![Settings](tauri-mvp/docs/assets/screenshots/settings.png) |
 
+| First-Run Checklist | Export & Backup |
+| :---: | :---: |
+| ![First-run checklist](tauri-mvp/docs/assets/screenshots/dates-onboarding.png) | ![Export and backup center](tauri-mvp/docs/assets/screenshots/backup-center.png) |
+
 ## Features
 
 ### Writing
@@ -81,6 +85,7 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 - Preview the selected article in a paper-like reading pane.
 - Switch to the outline tab to plan long-form projects with part, chapter, scene, and note cards.
 - Track outline status, summary, point of view, timeline, setting, tags, target word count, and linked article.
+- Use the planning board to scan idea, draft, revision, done, and parked items across the whole collection.
 - Create a linked article from an outline item or connect an existing article to the plan.
 - Export a collection in Markdown, TXT, or DOCX using the current order.
 
@@ -117,33 +122,36 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 
 - Windows desktop preview with a simple installer.
 - Light startup splash gives immediate feedback while the bundled backend is starting.
+- First-run onboarding can create an explicit disposable sample project with articles, a collection outline, a reference, a writing note, and a scene AI Card. It is never created automatically and can be removed without touching user content.
 - The app checks GitHub Releases in the background after startup and shows a clear update notice when a newer public build is available.
 - Close behavior can be set to ask every time, minimize to tray, or exit directly.
+- Export & Backup now centers restore points first: it shows the latest backup/checkpoint state, lets you choose a restore point, reminds you when backups are stale, and still auto-backs up before restore.
 - Data and Storage settings show the active SQLite database, backup folder, checkpoint folder, and custom data-directory status.
 - Data-directory migration copies data to the new location and leaves the previous folder untouched.
 - Public preview uses light mode only while the dark theme is being polished.
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.21).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.24).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.21_x64-setup.exe`
+- `LivingToTell_0.1.24_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.21_x64_zh-CN.msi`
+- `LivingToTell_0.1.24_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 
 ## Quick Start
 
 1. Install Living to Tell from the latest Release.
-2. Open Articles and start a new article.
-3. Use Collections to arrange multiple articles into a reading order.
-4. Save quotes and sources in the Reference Library.
-5. Configure AI in Settings if you want AI tools or scoped chat.
+2. Use the Date view checklist to create a first article, review backups, or create the optional sample project.
+3. Open Articles and start writing, or open the sample collection to inspect the long-form workflow.
+4. Use Collections to arrange multiple articles into a reading order and plan outlines.
+5. Save quotes and sources in the Reference Library.
+6. Configure AI in Settings if you want AI tools or scoped chat.
 
 ## AI Setup
 
@@ -190,6 +198,9 @@ Long Gemini requests default to a 120 second wait. Advanced users can tune this 
 - Added a motif star map with right-click text capture, source anchors, co-occurrence links, deduplication, and safer unlink behavior.
 - Added article-scoped AI chat, standing instructions, copy actions, and save-as-note actions.
 - Added first-run checklist progress, AI settings diagnostics, long-request size feedback, and grouped global command palette search.
+- Added an explicit disposable sample project that demonstrates articles, collection outline planning, references, notes, and scene AI Cards without modifying user content automatically.
+- Expanded Export & Backup into a recovery-focused center with restore-point selection, data-path visibility, backup reminders, and recent article/collection export shortcuts.
+- Enhanced collection outlines with a planning board for long-form projects, showing outline cards grouped by status.
 - Added reference-library overview cards and current-group summaries for source count, duplicate hints, usage distribution, and character totals.
 - Added AI chat capture previews so assistant replies can be reviewed before saving as reference material or new articles.
 - Upgraded AI Cards into style / character / scene templates, added AI draft generation, and added manual scene-module attachment for AI tasks.
@@ -215,7 +226,7 @@ The public TODO list is kept visible but folded so the README stays readable.
 
 - [x] Add a first-run checklist that reads local state without creating sample data.
 - [ ] Improve first-run onboarding for language, data location, backups, and AI provider setup.
-- [ ] Add a sample project so new users can understand the workflow quickly.
+- [x] Add a sample project so new users can understand the workflow quickly.
 - [ ] Re-enable dark mode after a complete visual pass.
 
 ### Writing
@@ -226,6 +237,7 @@ The public TODO list is kept visible but folded so the README stays readable.
 - [ ] Add editor layout presets for compact, balanced, and wide screens.
 - [ ] Improve keyboard-only navigation across Dates, Articles, Collections, and AI Workspace.
 - [x] Add collection-level outline planning for long-form projects.
+- [x] Add a collection planning board for outline status review.
 - [ ] Add richer collection publishing options such as cover notes, section dividers, and saved export presets.
 
 ### AI
@@ -251,6 +263,7 @@ The public TODO list is kept visible but folded so the README stays readable.
 ### Platform
 
 - [x] Add visible Data and Storage settings with copy-based data-directory migration.
+- [x] Expand Export & Backup with restore-point selection, safety summary, paths, and backup reminders.
 - [x] Keep uninstall from deleting writing data by default.
 - [ ] Add optional cloud sync for writers who want the same local-first workspace across devices.
 - [ ] Add signed Windows builds or published checksums for preview installers.

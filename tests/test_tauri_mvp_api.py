@@ -35,7 +35,7 @@ def test_tauri_app_version_capabilities(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["app_name"] == "Living to Tell"
-    assert payload["version"] == "0.1.21"
+    assert payload["version"] == "0.1.24"
     assert payload["api_version"] == "2.0.0"
     assert {
         "data_location",
@@ -47,9 +47,73 @@ def test_tauri_app_version_capabilities(monkeypatch):
         "update_check",
         "article_versions",
         "collection_outline",
+        "sample_project",
     }.issubset(
         set(payload["capabilities"])
     )
+
+
+def test_tauri_onboarding_sample_project_is_explicit_and_disposable(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    # Start from a clean sample marker without assuming an empty user database.
+    client.delete("/api/onboarding/sample-project")
+    user_article = client.post(
+        "/api/articles",
+        json={"title": "用户自己的文章", "body": "不要被示例项目清理。", "tags": ["用户数据"]},
+    )
+    assert user_article.status_code == 201, user_article.text
+    user_article_id = user_article.json()["id"]
+
+    initial = client.get("/api/onboarding/sample-project")
+    assert initial.status_code == 200, initial.text
+    assert initial.json()["installed"] is False
+
+    created = client.post("/api/onboarding/sample-project")
+    assert created.status_code == 201, created.text
+    created_payload = created.json()
+    assert created_payload["action"] == "created"
+    assert created_payload["installed"] is True
+    assert len(created_payload["entry_ids"]) == 2
+    assert len(created_payload["reference_ids"]) == 1
+    assert len(created_payload["ai_card_ids"]) == 1
+    assert len(created_payload["note_ids"]) == 1
+
+    again = client.post("/api/onboarding/sample-project")
+    assert again.status_code == 201, again.text
+    assert again.json()["action"] == "already_installed"
+    assert again.json()["entry_ids"] == created_payload["entry_ids"]
+
+    removed = client.delete("/api/onboarding/sample-project")
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["action"] == "removed"
+    assert removed.json()["installed"] is False
+
+    user_still_exists = client.get(f"/api/articles/{user_article_id}")
+    assert user_still_exists.status_code == 200, user_still_exists.text
+    assert user_still_exists.json()["title"] == "用户自己的文章"
+
+
+def test_tauri_onboarding_sample_project_rolls_back_partial_create(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from deps import get_container
+
+    client.delete("/api/onboarding/sample-project")
+    container = get_container()
+
+    def fail_collection_create(*_args, **_kwargs):
+        raise RuntimeError("simulated collection failure")
+
+    monkeypatch.setattr(container.collection_repository, "create", fail_collection_create)
+
+    response = client.post("/api/onboarding/sample-project")
+
+    assert response.status_code == 500, response.text
+    assert "已回滚" in response.json()["detail"]
+
+    entries = client.get("/api/articles?limit=500")
+    assert entries.status_code == 200, entries.text
+    assert all(not item["title"].startswith("示例｜") for item in entries.json())
 
 
 def test_tauri_app_update_check_reports_latest_release(monkeypatch):
@@ -70,20 +134,20 @@ def test_tauri_app_update_check_reports_latest_release(monkeypatch):
         def read(self):
             return json.dumps(
                 {
-                    "tag_name": "living-to-tell-v0.1.22",
-                    "name": "Living to Tell Preview 0.1.22",
-                    "html_url": "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.22",
+                    "tag_name": "living-to-tell-v0.1.25",
+                    "name": "Living to Tell Preview 0.1.25",
+                    "html_url": "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.25",
                     "published_at": "2026-06-26T01:02:03Z",
-                    "body": "## 0.1.22\n\nAdded update notifications.",
+                    "body": "## 0.1.25\n\nAdded update notifications.",
                     "assets": [
                         {
-                            "name": "LivingToTell_0.1.22_x64_zh-CN.msi",
-                            "browser_download_url": "https://example.test/LivingToTell_0.1.22_x64_zh-CN.msi",
+                            "name": "LivingToTell_0.1.25_x64_zh-CN.msi",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.25_x64_zh-CN.msi",
                             "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                         },
                         {
-                            "name": "LivingToTell_0.1.22_x64-setup.exe",
-                            "browser_download_url": "https://example.test/LivingToTell_0.1.22_x64-setup.exe",
+                            "name": "LivingToTell_0.1.25_x64-setup.exe",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.25_x64-setup.exe",
                             "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                         },
                     ],
@@ -107,11 +171,11 @@ def test_tauri_app_update_check_reports_latest_release(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "update_available"
-    assert payload["current_version"] == "0.1.21"
-    assert payload["latest_version"] == "0.1.22"
-    assert payload["release_name"] == "Living to Tell Preview 0.1.22"
-    assert payload["download_name"] == "LivingToTell_0.1.22_x64-setup.exe"
-    assert payload["download_url"] == "https://example.test/LivingToTell_0.1.22_x64-setup.exe"
+    assert payload["current_version"] == "0.1.24"
+    assert payload["latest_version"] == "0.1.25"
+    assert payload["release_name"] == "Living to Tell Preview 0.1.25"
+    assert payload["download_name"] == "LivingToTell_0.1.25_x64-setup.exe"
+    assert payload["download_url"] == "https://example.test/LivingToTell_0.1.25_x64-setup.exe"
     assert payload["download_sha256"] == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     assert "应用内" in payload["message"]
     assert calls == [
@@ -140,7 +204,7 @@ def test_tauri_app_update_check_returns_friendly_error(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "error"
-    assert payload["current_version"] == "0.1.21"
+    assert payload["current_version"] == "0.1.24"
     assert "暂时无法检查更新" in payload["message"]
 
 
@@ -159,7 +223,7 @@ def test_tauri_app_update_check_falls_back_to_latest_redirect(monkeypatch):
             return False
 
         def geturl(self):
-            return "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.22"
+            return "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.25"
 
     def fake_urlopen(req, timeout):
         if req.full_url == app_routes.GITHUB_LATEST_RELEASE_URL:
@@ -174,10 +238,10 @@ def test_tauri_app_update_check_falls_back_to_latest_redirect(monkeypatch):
     payload = response.json()
     assert payload["status"] == "update_available"
     assert payload["source"] == "github_releases_latest_redirect"
-    assert payload["latest_version"] == "0.1.22"
-    assert payload["download_name"] == "LivingToTell_0.1.22_x64-setup.exe"
+    assert payload["latest_version"] == "0.1.25"
+    assert payload["download_name"] == "LivingToTell_0.1.25_x64-setup.exe"
     assert payload["download_url"].endswith(
-        "/releases/download/living-to-tell-v0.1.22/LivingToTell_0.1.22_x64-setup.exe"
+        "/releases/download/living-to-tell-v0.1.25/LivingToTell_0.1.25_x64-setup.exe"
     )
 
 
@@ -209,7 +273,7 @@ def test_tauri_app_update_download_saves_and_verifies_installer(monkeypatch, tmp
             return chunk
 
     def fake_open_url(req, timeout):
-        assert req.full_url.endswith("/LivingToTell_0.1.22_x64-setup.exe")
+        assert req.full_url.endswith("/LivingToTell_0.1.25_x64-setup.exe")
         assert timeout == 120
         return FakeDownloadResponse()
 
@@ -218,8 +282,8 @@ def test_tauri_app_update_download_saves_and_verifies_installer(monkeypatch, tmp
     response = client.post(
         "/api/app/update-download",
         json={
-            "download_url": "https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.22/LivingToTell_0.1.22_x64-setup.exe",
-            "download_name": "LivingToTell_0.1.22_x64-setup.exe",
+            "download_url": "https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.25/LivingToTell_0.1.25_x64-setup.exe",
+            "download_name": "LivingToTell_0.1.25_x64-setup.exe",
             "expected_sha256": expected_sha,
         },
     )

@@ -14,6 +14,7 @@ from features.dates.routes import router as dates_router
 from features.library.routes import router as library_router
 from features.motifs.routes import router as motifs_router
 from features.notes.routes import router as notes_router
+from features.onboarding.routes import router as onboarding_router
 from features.settings.routes import router as settings_router
 from version_info import API_VERSION
 
@@ -28,6 +29,7 @@ _FEATURE_ROUTERS = (
     library_router,
     motifs_router,
     notes_router,
+    onboarding_router,
     backup_router,
     settings_router,
 )

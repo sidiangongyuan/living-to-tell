@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 
 declare global {
@@ -101,7 +102,126 @@ const reference = {
   updated_at: null,
 }
 
+const outlineItems = [
+  {
+    id: 'outline-part-a',
+    collection_id: collection.id,
+    parent_id: null,
+    entry_id: null,
+    title: '第一部：回到旧城',
+    item_type: 'part',
+    status: 'drafting',
+    summary: '主角回到旧城，故事从私人记忆转向现实追索。',
+    notes: '这个部分负责建立气氛和核心悬念。',
+    pov: '',
+    setting: '旧城',
+    timeline: '现在时',
+    tags: ['长篇', '结构'],
+    target_word_count: 8000,
+    sort_order: 0,
+    created_at: null,
+    updated_at: null,
+  },
+  {
+    id: 'outline-chapter-a',
+    collection_id: collection.id,
+    parent_id: 'outline-part-a',
+    entry_id: article.id,
+    title: '雨夜来信',
+    item_type: 'chapter',
+    status: 'drafting',
+    summary: '一封迟来的信打破日常，把主角推向已经封存的往事。',
+    notes: '需要保留信件带来的不安，不要太早解释真相。',
+    pov: '林澄',
+    setting: '旧邮局',
+    timeline: '第一晚',
+    tags: ['开端', '悬念'],
+    target_word_count: 3500,
+    sort_order: 1,
+    created_at: null,
+    updated_at: null,
+  },
+  {
+    id: 'outline-scene-a',
+    collection_id: collection.id,
+    parent_id: 'outline-chapter-a',
+    entry_id: articleB.id,
+    title: '河岸清单',
+    item_type: 'scene',
+    status: 'idea',
+    summary: '主角把谜团拆成三件可执行的事，开始从被动等待转为行动。',
+    notes: '',
+    pov: '林澄',
+    setting: '河岸',
+    timeline: '次日清晨',
+    tags: ['行动', '线索'],
+    target_word_count: 1800,
+    sort_order: 2,
+    created_at: null,
+    updated_at: null,
+  },
+  {
+    id: 'outline-note-a',
+    collection_id: collection.id,
+    parent_id: null,
+    entry_id: null,
+    title: '结尾余韵备忘',
+    item_type: 'note',
+    status: 'done',
+    summary: '结尾要落回人物选择，而不是只落在谜底。',
+    notes: '',
+    pov: '',
+    setting: '',
+    timeline: '',
+    tags: ['修订'],
+    target_word_count: null,
+    sort_order: 3,
+    created_at: null,
+    updated_at: null,
+  },
+]
+
+const backupItems = [
+  {
+    path: 'D:\\LivingToTellData\\backups\\auto-20260628-090000.sqlite3',
+    name: 'auto-20260628-090000.sqlite3',
+    size: 245760,
+    created: '2026-06-28T09:00:00Z',
+  },
+]
+
+const checkpointItems = [
+  {
+    path: 'D:\\LivingToTellData\\checkpoints\\大修前检查点.sqlite3',
+    name: '大修前检查点',
+    description: '准备重排长篇结构之前保存。',
+    size: 251904,
+    created: '2026-06-28T08:30:00Z',
+  },
+]
+
+async function updatePublicScreenshot(page: Page, name: string) {
+  if (process.env.UPDATE_PUBLIC_SCREENSHOTS !== '1') return
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await page.screenshot({
+    path: path.resolve(process.cwd(), '..', 'docs', 'assets', 'screenshots', name),
+    fullPage: true,
+  })
+}
+
 async function mockVisibleActionApi(page: Page) {
+  let sampleProjectInstalled = false
+  const sampleProjectState = () => ({
+    installed: sampleProjectInstalled,
+    collection_id: sampleProjectInstalled ? 'collection-a' : null,
+    entry_ids: sampleProjectInstalled ? [article.id, articleB.id] : [],
+    reference_ids: sampleProjectInstalled ? [existingReference.id] : [],
+    ai_card_ids: sampleProjectInstalled ? ['card-scene'] : [],
+    note_ids: sampleProjectInstalled ? [openNote.id] : [],
+    created_at: sampleProjectInstalled ? '2026-06-28T09:00:00.000Z' : null,
+    missing_ids: [],
+  })
+
   await page.addInitScript(() => {
     window.localStorage.clear()
     ;(window as Window & { __WRITER_DISABLE_AUTO_UPDATE__?: boolean }).__WRITER_DISABLE_AUTO_UPDATE__ = true
@@ -130,6 +250,7 @@ async function mockVisibleActionApi(page: Page) {
           'update_check',
           'article_versions',
           'collection_outline',
+          'sample_project',
         ],
       },
     })
@@ -151,6 +272,96 @@ async function mockVisibleActionApi(page: Page) {
         cached: false,
         download_url: 'https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.13/LivingToTell_0.1.13_x64-setup.exe',
         download_name: 'LivingToTell_0.1.13_x64-setup.exe',
+      },
+    })
+  })
+  await page.route('**/api/onboarding/sample-project', async (route) => {
+    if (route.request().method() === 'POST') {
+      const action = sampleProjectInstalled ? 'already_installed' : 'created'
+      sampleProjectInstalled = true
+      await route.fulfill({ status: 201, json: { ...sampleProjectState(), action } })
+      return
+    }
+    if (route.request().method() === 'DELETE') {
+      sampleProjectInstalled = false
+      await route.fulfill({ json: { ...sampleProjectState(), action: 'removed' } })
+      return
+    }
+    await route.fulfill({ json: sampleProjectState() })
+  })
+  await page.route('**/api/backup/**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (url.pathname === '/api/backup/backups') {
+      await route.fulfill({ json: backupItems })
+      return
+    }
+    if (url.pathname === '/api/backup/checkpoints') {
+      if (request.method() === 'POST') {
+        const body = request.postDataJSON() as { name?: string; description?: string }
+        await route.fulfill({
+          status: 201,
+          json: {
+            path: `D:\\LivingToTellData\\checkpoints\\${body.name ?? '新检查点'}.sqlite3`,
+            name: body.name ?? '新检查点',
+            description: body.description ?? '',
+            size: 260096,
+            created: '2026-06-28T10:00:00Z',
+          },
+        })
+        return
+      }
+      await route.fulfill({ json: checkpointItems })
+      return
+    }
+    if (url.pathname === '/api/backup/stats') {
+      await route.fulfill({
+        json: {
+          backup_count: backupItems.length,
+          checkpoint_count: checkpointItems.length,
+          total_backup_size: backupItems.reduce((total, item) => total + item.size, 0),
+          total_checkpoint_size: checkpointItems.reduce((total, item) => total + item.size, 0),
+          total_size: [...backupItems, ...checkpointItems].reduce((total, item) => total + item.size, 0),
+          backup_dir: 'D:\\LivingToTellData\\backups',
+          checkpoint_dir: 'D:\\LivingToTellData\\checkpoints',
+        },
+      })
+      return
+    }
+    if (url.pathname === '/api/backup/auto-backup') {
+      await route.fulfill({
+        status: 201,
+        json: {
+          path: 'D:\\LivingToTellData\\backups\\auto-20260628-100000.sqlite3',
+          name: 'auto-20260628-100000.sqlite3',
+          size: 262144,
+          created: '2026-06-28T10:00:00Z',
+        },
+      })
+      return
+    }
+    if (url.pathname === '/api/backup/restore') {
+      await route.fulfill({ json: { ok: true } })
+      return
+    }
+    if (request.method() === 'DELETE') {
+      await route.fulfill({ status: 204 })
+      return
+    }
+    await route.fallback()
+  })
+  await page.route('**/api/settings/data-location', async (route) => {
+    await route.fulfill({
+      json: {
+        data_dir: 'D:\\LivingToTellData',
+        default_data_dir: 'D:\\LivingToTellData',
+        database_path: 'D:\\LivingToTellData\\writer.db',
+        default_database_path: 'D:\\LivingToTellData\\writer.db',
+        backup_dir: 'D:\\LivingToTellData\\backups',
+        checkpoint_dir: 'D:\\LivingToTellData\\checkpoints',
+        is_custom: false,
+        database_exists: true,
+        warning: null,
       },
     })
   })
@@ -286,7 +497,7 @@ async function mockVisibleActionApi(page: Page) {
             collection_id: collection.id,
             title: body.title ?? '新大纲项',
             item_type: body.item_type ?? 'scene',
-            status: body.status ?? 'planned',
+            status: body.status ?? 'idea',
             summary: body.summary ?? '',
             pov: body.pov ?? '',
             timeline: body.timeline ?? '',
@@ -303,11 +514,11 @@ async function mockVisibleActionApi(page: Page) {
         })
         return
       }
-      await route.fulfill({ json: [] })
+      await route.fulfill({ json: outlineItems })
       return
     }
     if (url.pathname === '/api/collections/collection-a/outline/order') {
-      await route.fulfill({ json: [] })
+      await route.fulfill({ json: outlineItems })
       return
     }
     if (url.pathname.startsWith('/api/collections/collection-a/outline/')) {
@@ -315,25 +526,11 @@ async function mockVisibleActionApi(page: Page) {
         await route.fulfill({ status: 204 })
         return
       }
+      const itemId = url.pathname.split('/').pop() ?? 'outline-created'
+      const existing = outlineItems.find((item) => item.id === itemId) ?? outlineItems[0]
       await route.fulfill({
         json: {
-          id: url.pathname.split('/').pop() ?? 'outline-created',
-          collection_id: collection.id,
-          title: '大纲项',
-          item_type: 'scene',
-          status: 'planned',
-          summary: '',
-          pov: '',
-          timeline: '',
-          setting: '',
-          tags: [],
-          notes: '',
-          target_word_count: null,
-          entry_id: null,
-          parent_id: null,
-          sort_order: 0,
-          created_at: null,
-          updated_at: null,
+          ...existing,
           ...(request.method() === 'PUT' ? request.postDataJSON() as Record<string, unknown> : {}),
         },
       })
@@ -1031,10 +1228,27 @@ test('dates calendar buttons, daily quote, welcome close, and start writing acti
   const welcomePanel = page.locator('section').filter({ hasText: '开始使用活着为了讲述' }).first()
   await expect(welcomePanel.getByText(/\/5 已完成/)).toBeVisible()
   await expect(welcomePanel.getByText('待完成').first()).toBeVisible()
+  await updatePublicScreenshot(page, 'dates-onboarding.png')
   await welcomePanel.getByRole('button', { name: '查看备份与数据说明' }).click()
   await expect(page).toHaveURL(/\/backup/)
 
   await page.goto('/dates')
+  const samplePanel = page.getByTestId('sample-project-panel')
+  await expect(samplePanel.getByText('示例项目', { exact: true })).toBeVisible()
+  await samplePanel.getByRole('button', { name: '创建示例项目' }).click()
+  await expect(samplePanel.getByText('已安装')).toBeVisible()
+  await expect(samplePanel.getByText('文章 2')).toBeVisible()
+  await samplePanel.getByRole('button', { name: '打开作品集' }).click()
+  await expect(page).toHaveURL(/\/collections/)
+
+  await page.goto('/dates')
+  page.once('dialog', async (dialog) => {
+    expect(dialog.message()).toContain('只会删除应用为示例项目记录')
+    await dialog.accept()
+  })
+  await page.getByTestId('sample-project-panel').getByRole('button', { name: '删除示例' }).click()
+  await expect(page.getByTestId('sample-project-panel').getByText('可选')).toBeVisible()
+
   await welcomePanel.getByRole('button', { name: '关闭' }).click()
   await expect(page.getByText('开始使用活着为了讲述')).toHaveCount(0)
 
@@ -1046,6 +1260,34 @@ test('dates calendar buttons, daily quote, welcome close, and start writing acti
   }))
   expect(String(createdArticles[0].title)).toContain('记录')
   await expect(page).toHaveURL(/\/articles\?.*id=article-from-date/)
+})
+
+test('backup center surfaces restore points, data paths, and safe restore confirmation', async ({ page }) => {
+  await page.goto('/backup')
+
+  const safety = page.getByTestId('backup-safety-summary')
+  const planner = page.getByTestId('backup-restore-planner')
+  await expect(safety.getByText(/当前有可用恢复点|建议更新备份/)).toBeVisible()
+  await expect(safety.getByText('自动备份', { exact: true })).toBeVisible()
+  await expect(safety.getByText('检查点', { exact: true })).toBeVisible()
+  await expect(planner.getByText('选择恢复点')).toBeVisible()
+  await expect(planner.getByText('大修前检查点')).toBeVisible()
+  await expect(planner.getByText('auto-20260628-090000.sqlite3')).toBeVisible()
+  await updatePublicScreenshot(page, 'backup-center.png')
+
+  await safety.locator('select').selectOption('14')
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('living_to_tell_backup_reminder_days'))).toBe('14')
+
+  await page.getByRole('button', { name: '复制' }).first().click()
+  await expect.poll(() => page.evaluate(() => window.__copiedText)).toBe('D:\\LivingToTellData\\writer.db')
+  await expect(page.getByText('路径已复制。')).toBeVisible()
+
+  await planner.getByRole('button', { name: /大修前检查点/ }).click()
+  await planner.getByRole('button', { name: '恢复所选' }).click()
+  await expect(page.getByRole('heading', { name: '确认操作' })).toBeVisible()
+  await expect(page.getByText('确定要从"大修前检查点"恢复吗？当前数据库会先自动备份，恢复后应用将重启。')).toBeVisible()
+  await page.getByRole('button', { name: '取消' }).click()
+  await expect(page.getByRole('heading', { name: '确认操作' })).toHaveCount(0)
 })
 
 test('date article cards open the selected article from the calendar', async ({ page }) => {
@@ -1315,6 +1557,27 @@ test('collection export buttons trigger downloads and article management actions
   page.once('dialog', async (dialog) => dialog.accept())
   await page.getByRole('button', { name: '删除' }).first().click()
   await expect.poll(() => deleteCollectionRequests).toBe(1)
+})
+
+test('collection planning board groups outline items and opens the selected outline detail', async ({ page }) => {
+  await page.goto('/collections')
+  await expect(page.getByText('测试作品集')).toBeVisible()
+
+  await page.getByRole('button', { name: '规划看板' }).click()
+  const board = page.getByTestId('collection-planning-board')
+  await expect(board.getByRole('heading', { name: '长篇规划看板' })).toBeVisible()
+  await expect(board.locator('div').filter({ hasText: /^构思$/ })).toBeVisible()
+  await expect(board.locator('div').filter({ hasText: /^草稿$/ })).toBeVisible()
+  await expect(board.locator('div').filter({ hasText: /^完成$/ })).toBeVisible()
+  await expect(board.locator('article').filter({ hasText: '雨夜来信' })).toBeVisible()
+  await expect(board.locator('article').filter({ hasText: '河岸清单' })).toBeVisible()
+  await updatePublicScreenshot(page, 'collections.png')
+
+  await board.locator('article').filter({ hasText: '河岸清单' }).click()
+  const detail = page.getByTestId('collection-outline-detail')
+  await expect(detail).toBeVisible()
+  await expect(detail.locator('input').first()).toHaveValue('河岸清单')
+  await expect(detail.locator('input').nth(2)).toHaveValue('林澄')
 })
 
 test('collection export flushes edited title before downloading', async ({ page }) => {

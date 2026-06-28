@@ -26,7 +26,7 @@ const allArticles = ref<Entry[]>([])
 const articlePickerOpen = ref(false)
 const createDialogOpen = ref(false)
 const selectedArticleIds = ref<string[]>([])
-const viewMode = ref<'manuscript' | 'outline'>('manuscript')
+const viewMode = ref<'manuscript' | 'outline' | 'board'>('manuscript')
 const newTitle = ref('')
 const newDescription = ref('')
 const draftTitle = ref('')
@@ -103,6 +103,16 @@ const filteredOutline = computed(() => filterOutlineItems(store.outline, {
 }))
 const outlineLinkedArticleCount = computed(() =>
   new Set(store.outline.map((item) => item.entry_id).filter(Boolean)).size
+)
+const outlineProgressPercent = computed(() => {
+  if (!outlineProgress.value.targetWordTotal) return null
+  return Math.min(100, Math.round((outlineProgress.value.linkedArticleWordCount / outlineProgress.value.targetWordTotal) * 100))
+})
+const outlineBoardColumns = computed(() =>
+  outlineStatusOptions.map((status) => ({
+    ...status,
+    items: filteredOutline.value.filter((item) => item.status === status.value),
+  }))
 )
 
 function articlePreview(body: string): string {
@@ -242,6 +252,14 @@ function outlineTypeLabel(type: OutlineItemType): string {
 
 function outlineStatusLabel(status: OutlineItemStatus): string {
   return outlineStatusOptions.find((item) => item.value === status)?.label ?? status
+}
+
+function outlineStatusTone(status: OutlineItemStatus): string {
+  if (status === 'done') return 'bg-emerald-50 text-emerald-700 ring-emerald-100'
+  if (status === 'drafting') return 'bg-blue-50 text-blue-700 ring-blue-100'
+  if (status === 'revising') return 'bg-violet-50 text-violet-700 ring-violet-100'
+  if (status === 'parked') return 'bg-stone-100 text-stone-500 ring-stone-200'
+  return 'bg-amber-50 text-amber-700 ring-amber-100'
 }
 
 async function createOutlineItem(type: OutlineItemType = 'scene') {
@@ -618,6 +636,24 @@ async function openLinkedOutlineArticle() {
                   {{ t('common.saving') }}
                 </span>
               </div>
+              <div class="grid gap-2 text-xs text-stone-600 md:grid-cols-4">
+                <div class="rounded-2xl bg-white/70 px-3 py-2 shadow-sm">
+                  <div class="text-[11px] text-stone-400">已关联大纲</div>
+                  <div class="mt-1 text-base font-semibold text-stone-900">{{ outlineProgress.linkedItems }} / {{ outlineProgress.totalItems }}</div>
+                </div>
+                <div class="rounded-2xl bg-white/70 px-3 py-2 shadow-sm">
+                  <div class="text-[11px] text-stone-400">目标字数</div>
+                  <div class="mt-1 text-base font-semibold text-amber-700">{{ outlineProgress.targetWordTotal || '—' }}</div>
+                </div>
+                <div class="rounded-2xl bg-white/70 px-3 py-2 shadow-sm">
+                  <div class="text-[11px] text-stone-400">当前字数</div>
+                  <div class="mt-1 text-base font-semibold text-emerald-700">{{ outlineProgress.linkedArticleWordCount }}</div>
+                </div>
+                <div class="rounded-2xl bg-white/70 px-3 py-2 shadow-sm">
+                  <div class="text-[11px] text-stone-400">目标进度</div>
+                  <div class="mt-1 text-base font-semibold text-stone-900">{{ outlineProgressPercent === null ? '—' : `${outlineProgressPercent}%` }}</div>
+                </div>
+              </div>
               <div class="inline-flex rounded-xl bg-stone-100 p-1 text-sm font-semibold text-stone-600">
                 <button
                   type="button"
@@ -628,6 +664,16 @@ async function openLinkedOutlineArticle() {
                   @click="viewMode = 'manuscript'"
                 >
                   {{ t('collectionOutline.manuscriptTab') }}
+                </button>
+                <button
+                  type="button"
+                  :class="[
+                    'rounded-lg px-3 py-1.5 transition',
+                    viewMode === 'board' ? 'bg-white text-stone-950 shadow-sm' : 'hover:text-stone-900'
+                  ]"
+                  @click="viewMode = 'board'"
+                >
+                  规划看板
                 </button>
                 <button
                   type="button"
@@ -813,6 +859,97 @@ async function openLinkedOutlineArticle() {
             {{ t('collections.selectArticle') }}
           </div>
         </section>
+        </template>
+
+        <template v-else-if="viewMode === 'board'">
+          <section class="flex-1 overflow-y-auto p-6" data-testid="collection-planning-board">
+            <div class="mb-5 flex flex-col gap-4 rounded-3xl border border-stone-200 bg-white/75 p-5 shadow-sm lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">Planning Board</p>
+                <h3 class="mt-1 text-2xl font-semibold text-stone-900">长篇规划看板</h3>
+                <p class="mt-2 max-w-3xl text-sm leading-6 text-stone-500">
+                  按状态查看章节、场景和笔记。这里适合扫全局节奏；需要编辑细节时点开卡片，右侧大纲页仍是精修入口。
+                </p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <select v-model="outlineFilterType" class="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs outline-none">
+                  <option value="all">全部类型</option>
+                  <option v-for="option in outlineTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                </select>
+                <select v-model="outlineFilterStatus" class="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs outline-none">
+                  <option value="all">全部状态</option>
+                  <option v-for="option in outlineStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                </select>
+                <button
+                  type="button"
+                  class="rounded-xl bg-stone-900 px-3 py-2 text-xs font-semibold text-white hover:bg-stone-700"
+                  @click="createOutlineItem('chapter')"
+                >
+                  新建章节
+                </button>
+              </div>
+            </div>
+
+            <div v-if="outlineActionError || store.error" class="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+              {{ outlineActionError || store.error }}
+            </div>
+            <div v-if="store.outlineLoading" class="rounded-2xl bg-white/70 p-6 text-center text-sm text-stone-400">
+              {{ t('common.loading') }}
+            </div>
+            <div v-else-if="!store.outline.length" class="rounded-3xl border border-dashed border-stone-300 bg-white/70 p-10 text-center">
+              <div class="text-lg font-semibold text-stone-700">{{ t('collectionOutline.emptyTitle') }}</div>
+              <p class="mt-2 text-sm text-stone-500">{{ t('collectionOutline.emptyHint') }}</p>
+              <button class="mt-5 rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white" @click="createOutlineItem('chapter')">
+                新建第一章
+              </button>
+            </div>
+            <div v-else class="grid min-w-[920px] grid-cols-5 gap-3">
+              <section
+                v-for="column in outlineBoardColumns"
+                :key="column.value"
+                class="min-h-[420px] rounded-3xl border border-stone-200 bg-white/60 p-3"
+              >
+                <div class="mb-3 flex items-center justify-between gap-2">
+                  <div class="font-semibold text-stone-800">{{ column.label }}</div>
+                  <span :class="['rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1', outlineStatusTone(column.value)]">
+                    {{ column.items.length }}
+                  </span>
+                </div>
+                <div v-if="!column.items.length" class="rounded-2xl border border-dashed border-stone-200 p-4 text-center text-xs leading-5 text-stone-400">
+                  暂无条目
+                </div>
+                <div v-else class="space-y-2">
+                  <article
+                    v-for="item in column.items"
+                    :key="item.id"
+                    class="cursor-pointer rounded-2xl border border-stone-200 bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                    @click="selectOutlineItem(item.id); viewMode = 'outline'"
+                  >
+                    <div class="flex items-start justify-between gap-2">
+                      <h4 class="line-clamp-2 text-sm font-semibold leading-5 text-stone-900">{{ item.title || t('collectionOutline.untitled') }}</h4>
+                      <span class="shrink-0 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] text-indigo-700">
+                        {{ outlineTypeLabel(item.item_type) }}
+                      </span>
+                    </div>
+                    <p class="mt-2 line-clamp-3 text-xs leading-5 text-stone-500">
+                      {{ item.summary || t('collectionOutline.noSummary') }}
+                    </p>
+                    <div class="mt-3 flex flex-wrap gap-1.5">
+                      <span v-if="item.entry_id" class="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700">
+                        {{ t('collectionOutline.linked') }}
+                      </span>
+                      <span v-if="item.target_word_count" class="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">
+                        {{ item.target_word_count }} 字
+                      </span>
+                      <span v-if="item.pov" class="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] text-stone-500">
+                        {{ item.pov }}
+                      </span>
+                    </div>
+                  </article>
+                </div>
+              </section>
+            </div>
+          </section>
         </template>
 
         <template v-else>

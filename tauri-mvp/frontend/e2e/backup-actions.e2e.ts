@@ -172,8 +172,8 @@ test('backup page create, delete, and restore actions call real APIs with confir
   })
 
   await page.goto('/backup')
-  await expect(page.getByText('chapter-three')).toBeVisible()
-  await expect(page.getByText('auto_backup_20260619')).toBeVisible()
+  await expect(page.locator('article').filter({ hasText: 'chapter-three' }).first()).toBeVisible()
+  await expect(page.locator('article').filter({ hasText: 'auto_backup_20260619' }).first()).toBeVisible()
 
   await page.getByRole('button', { name: '创建检查点' }).click()
   const createCheckpointButton = page.getByRole('button', { name: '创建', exact: true })

@@ -1,5 +1,40 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.24 - Export, Backup, Long-Form Planning, and Sample Project (2026-06-28)
+
+### Added
+
+- Added an explicit disposable sample project from the Date welcome checklist. It creates sample articles, a collection outline, a reference passage, an article note, and a scene AI Card only after the user asks.
+- Added sample-project state, create, and remove APIs. Removal uses only the marker-recorded entity IDs and never deletes by title or tag.
+- Expanded Export & Backup into a recovery-centered surface with safety summary, restore-point selection, backup/checkpoint age, local backup reminder threshold, and real data-path cards.
+- Added recent article and recent collection export shortcuts from the Export & Backup center.
+- Added a collection planning board that groups outline cards by status for long-form project review.
+- Added Playwright coverage for the sample project panel, backup restore planner, and collection planning board.
+
+### Changed
+
+- The onboarding checklist remains state-based and does not create data automatically. The sample project is optional and removable.
+- Collection headers now show stronger long-form progress context, including linked outline count, target words, linked article words, and progress percentage.
+- The backup page now prioritizes restore confidence before raw backup lists, while keeping existing backup/checkpoint create, delete, and restore actions.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py::test_tauri_app_version_capabilities tests\test_tauri_mvp_api.py::test_tauri_onboarding_sample_project_is_explicit_and_disposable -q`
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py tests\services\ai -q`
+- `npm test -- --run`
+- `npm run test:e2e -- --grep "backup center|collection planning board|dates calendar" --workers=1`
+- `npm run test:e2e -- --workers=1`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.24_x64-setup.exe`
+  - SHA256: `CB38580324BD3FE6E6FBD0DAA52724B0E477AFE1858C3E55E861897A61CF70B2`
+- `LivingToTell_0.1.24_x64_zh-CN.msi`
+  - SHA256: `E82B6EF08907226C51AF53798903601255089F2C20AFBAF60EC70DFE00F3A3D1`
+
 ## 0.1.21 - Onboarding, Command Palette, and Reference Capture (2026-06-28)
 
 ### Added
