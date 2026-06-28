@@ -735,7 +735,10 @@ class MotifRepository:
             if len(duplicate_rows) <= 1:
                 continue
             before, after = self._contexts_for_range(source_text, start, end)
-            canonical = self._canonical_excerpt_row(duplicate_rows)
+            canonical = self._canonical_excerpt_row(
+                duplicate_rows,
+                selection_range=(start, end),
+            )
             duplicate_ids = [row["id"] for row in duplicate_rows if row["id"] != canonical["id"]]
             self.merge_duplicate_excerpts(
                 canonical["id"],
@@ -1085,10 +1088,28 @@ class MotifRepository:
             if (row["excerpt_text"] or "").strip() == clean_excerpt
         ]
 
-    def _canonical_excerpt_row(self, rows: list[sqlite3.Row]) -> sqlite3.Row:
+    def _canonical_excerpt_row(
+        self,
+        rows: list[sqlite3.Row],
+        *,
+        selection_range: Optional[tuple[Optional[int], Optional[int]]] = None,
+    ) -> sqlite3.Row:
+        expected_start: Optional[int] = None
+        expected_end: Optional[int] = None
+        if selection_range is not None:
+            start, end = selection_range
+            if start is not None and end is not None:
+                expected_start = int(start)
+                expected_end = int(end)
+
         return sorted(
             rows,
             key=lambda row: (
+                0
+                if expected_start is not None
+                and _optional_int(row["selection_start"]) == expected_start
+                and _optional_int(row["selection_end"]) == expected_end
+                else 1,
                 str(row["created_at"] or ""),
                 str(row["updated_at"] or ""),
                 str(row["id"] or ""),
@@ -1144,7 +1165,7 @@ class MotifRepository:
     ) -> Optional[MotifExcerpt]:
         if not rows:
             return None
-        canonical = self._canonical_excerpt_row(rows)
+        canonical = self._canonical_excerpt_row(rows, selection_range=selection_range)
         duplicate_ids = [row["id"] for row in rows if row["id"] != canonical["id"]]
         start: Optional[int] = None
         end: Optional[int] = None

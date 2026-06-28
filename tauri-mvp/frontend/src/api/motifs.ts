@@ -76,6 +76,36 @@ export interface SetMotifsForExcerptResult {
   deleted: boolean
 }
 
+export interface MotifEnrichmentRequest {
+  motif_id?: string | null
+  concept: string
+  direction?: string
+  include_excerpts?: boolean
+  request_web_context?: boolean
+  profile_id?: string
+  cost_tier?: 'balanced' | 'strong'
+}
+
+export interface MotifSourceHint {
+  title: string
+  url?: string | null
+  note: string
+}
+
+export interface MotifEnrichmentDraft {
+  title: string
+  concept: string
+  aliases: string[]
+  tags: string[]
+  note: string
+  related_suggestions: string[]
+  source_hints: MotifSourceHint[]
+  provider?: string | null
+  model?: string | null
+  transport?: string | null
+  elapsed_ms: number
+}
+
 export interface MotifGraphNode {
   id: string
   name: string
@@ -134,6 +164,16 @@ export const motifsApi = {
 
   async deleteMotif(id: string): Promise<void> {
     const res = await apiFetch(`/api/motifs/${id}`, { method: 'DELETE' })
+    return handleResponse(res)
+  },
+
+  async generateEnrichmentDraft(data: MotifEnrichmentRequest): Promise<MotifEnrichmentDraft> {
+    const res = await apiFetch('/api/motifs/enrich-draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      signal: AbortSignal.timeout(120000),
+    })
     return handleResponse(res)
   },
 

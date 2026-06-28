@@ -10,8 +10,8 @@ Use this to confirm where the app lives, where your writing lives, and what upgr
 
 Steps:
 
-1. Download the latest Windows preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.24).
-2. Run the recommended installer: `LivingToTell_0.1.24_x64-setup.exe`. The MSI asset is `LivingToTell_0.1.24_x64_zh-CN.msi`.
+1. Download the latest Windows preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.25).
+2. Run the recommended installer: `LivingToTell_0.1.25_x64-setup.exe`. The MSI asset is `LivingToTell_0.1.25_x64_zh-CN.msi`.
 3. Open **活着为了讲述** from the Start menu or desktop shortcut.
 4. Open **Settings → Data and Storage** to review the active SQLite database, backup folder, and checkpoint folder.
 5. Before major edits, open **Export & Backup** and create a backup or named checkpoint.
@@ -118,13 +118,15 @@ Steps:
 4. Select text in an article or reference, right-click, and choose **加入意象星图**.
 5. Search existing motifs or create new ones, then save the excerpt.
 6. Open **Motif Star Map** to inspect node size, color, and co-occurrence links.
-7. Removing an excerpt from a motif only unlinks the current motif; the same excerpt remains under other motifs.
+7. Click **AI Enrich** in the motif detail pane to turn concepts such as mythic pattern, slave morality, or das Man into compact writing cards. Review the draft before appending or overwriting the note.
+8. Removing an excerpt from a motif only unlinks the current motif; the same excerpt remains under other motifs.
 
 Safety notes:
 
 - References keep source context; motifs capture recurring image/idea relationships.
 - The same source and selection reuses one excerpt instead of creating duplicates.
 - If article edits shift the selection, the app resolves by text and context and merges duplicates within the same source.
+- AI Enrich does not create related nodes or semantic edges automatically. Suggested relations are prompts for your review; star-map links still come from real excerpt co-occurrence.
 
 Common mistakes:
 

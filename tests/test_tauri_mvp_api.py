@@ -44,6 +44,7 @@ def test_tauri_app_version_capabilities(monkeypatch):
         "ai_profiles",
         "ai_task_compare",
         "motif_star_map",
+        "motif_ai_enrichment",
         "update_check",
         "article_versions",
         "collection_outline",
@@ -846,6 +847,315 @@ def test_tauri_motifs_create_excerpt_and_graph(monkeypatch):
     local_graph = client.get(f"/api/motifs/{rose_id}/graph").json()
     assert local_graph["nodes"][0]["id"] == rose_id
     assert local_graph["nodes"][0]["is_center"] is True
+
+
+def test_tauri_motifs_enrich_draft_uses_context_and_does_not_mutate(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from deps import get_container
+
+    entry = client.post(
+        "/api/articles",
+        json={"title": "神话", "body": "他在归来时发现村庄已经把他当作一个传说。", "tags": []},
+    ).json()
+    motif = client.post(
+        "/api/motifs",
+        json={
+            "name": "神话模式",
+            "aliases": ["mythic pattern"],
+            "note": "已有笔记：循环、归来与仪式。",
+            "tags": ["写作手法"],
+        },
+    ).json()
+    client.post(
+        "/api/motifs/excerpts",
+        json={
+            "source_kind": "article",
+            "source_id": entry["id"],
+            "source_title_snapshot": entry["title"],
+            "excerpt_text": "他在归来时发现村庄已经把他当作一个传说。",
+            "selection_start": 0,
+            "selection_end": 22,
+            "motif_ids": [motif["id"]],
+        },
+    )
+
+    class FakeTaskService:
+        def __init__(self):
+            self.calls = []
+
+        def generate_from_messages(self, messages, *, cost_tier, model_override=None):
+            self.calls.append(
+                {"messages": messages, "cost_tier": cost_tier, "model_override": model_override}
+            )
+            return SimpleNamespace(
+                content=json.dumps(
+                    {
+                        "title": "神话模式短卡",
+                        "concept": "神话模式",
+                        "aliases": ["神话结构", "原型叙事"],
+                        "tags": ["写作手法", "叙事模式"],
+                        "note": (
+                            "【一句话定义】\n把个人遭遇放进近似仪式或原型的轨道。\n\n"
+                            "【核心张力】\n个人选择与古老结构互相挤压。\n\n"
+                            "【写作功能】\n让普通事件带上命运感。\n\n"
+                            "【场景触发】\n归来、牺牲、试炼、命名。\n\n"
+                            "【人物表现】\n人物像在重复一个比自己更老的动作。\n\n"
+                            "【意象转译】\n门槛、火、面具、河流。\n\n"
+                            "【短例子】\n他回到村口时，所有人都沉默。"
+                            "孩子们喊出的不是他的名字，而是旧故事里的称号。"
+                            "他这才意识到，归来不是结束，而是被推上祭台。\n\n"
+                            "【关联建议】\n原型、仪式、牺牲。\n\n"
+                            "【误用提醒】\n不要把神话感写成空洞宏大词。\n\n"
+                            "【微练习】\n把一次回家写成一次试炼。\n\n"
+                            "【来源线索（需核对）】\n- 未能联网核对。"
+                        ),
+                        "related_suggestions": ["原型", "仪式", "牺牲"],
+                        "source_hints": [
+                            {
+                                "title": "未能联网核对",
+                                "url": None,
+                                "note": "模型未返回可核对来源。",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                provider="fake",
+                model="fake-strong",
+                transport="fake",
+            )
+
+    fake = FakeTaskService()
+    get_container().ai_task_service = fake
+
+    response = client.post(
+        "/api/motifs/enrich-draft",
+        json={
+            "motif_id": motif["id"],
+            "concept": "神话模式",
+            "direction": "作为写作手法",
+            "include_excerpts": True,
+            "request_web_context": True,
+            "profile_id": "default",
+            "cost_tier": "strong",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["title"] == "神话模式短卡"
+    assert "【短例子】" in payload["note"]
+    assert payload["aliases"] == ["神话结构", "原型叙事"]
+    assert payload["related_suggestions"] == ["原型", "仪式", "牺牲"]
+    assert payload["source_hints"][0]["title"] == "未能联网核对"
+    prompt = fake.calls[-1]["messages"][1]["content"]
+    assert "已有笔记：循环、归来与仪式" in prompt
+    assert "他在归来时发现村庄已经把他当作一个传说" in prompt
+    assert "请求“联网补充”" in prompt
+    assert fake.calls[-1]["cost_tier"].value == "strong"
+    unchanged = client.get(f"/api/motifs/{motif['id']}").json()
+    assert unchanged["note"] == "已有笔记：循环、归来与仪式。"
+
+
+def test_tauri_motifs_enrich_draft_new_concept_does_not_create_node(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from deps import get_container
+
+    suffix = uuid.uuid4().hex[:8]
+    concept = f"海德格尔的常人-{suffix}"
+
+    class FakeTaskService:
+        def generate_from_messages(self, messages, *, cost_tier, model_override=None):
+            return SimpleNamespace(
+                content=json.dumps(
+                    {
+                        "title": concept,
+                        "concept": concept,
+                        "aliases": ["das Man"],
+                        "tags": ["哲学概念"],
+                        "note": (
+                            "【一句话定义】\n人在公共意见中失去自己的判断。\n\n"
+                            "【核心张力】\n自我选择与平均化生活互相拉扯。\n\n"
+                            "【写作功能】\n制造人物被日常吞没的压力。\n\n"
+                            "【场景触发】\n所有人都说这样才正常。\n\n"
+                            "【人物表现】\n人物不断引用别人说的话。\n\n"
+                            "【意象转译】\n走廊、广播、统一制服。\n\n"
+                            "【短例子】\n他没有被命令沉默。"
+                            "只是每个人都替他准备好了该说的话。"
+                            "他说出口时，甚至听不出那是不是自己的声音。\n\n"
+                            "【关联建议】\n异化、从众、日常性。\n\n"
+                            "【误用提醒】\n不要把常人简单写成庸俗群众。\n\n"
+                            "【微练习】\n写一个人物被“大家都这样”逼退的瞬间。\n\n"
+                            "【来源线索（需核对）】\n- 未请求联网补充。"
+                        ),
+                        "related_suggestions": ["异化", "从众"],
+                        "source_hints": [],
+                    },
+                    ensure_ascii=False,
+                )
+            )
+
+    get_container().ai_task_service = FakeTaskService()
+
+    response = client.post(
+        "/api/motifs/enrich-draft",
+        json={"concept": concept, "include_excerpts": False},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["concept"] == concept
+    found = client.get(f"/api/motifs?q={suffix}&limit=10")
+    assert found.status_code == 200
+    assert all(item["name"] != concept for item in found.json())
+
+
+def test_tauri_motifs_enrich_draft_keeps_user_concept_name(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from deps import get_container
+
+    concept = "神话模式"
+
+    class FakeTaskService:
+        def generate_from_messages(self, messages, *, cost_tier, model_override=None):
+            return SimpleNamespace(
+                content=json.dumps(
+                    {
+                        "title": "模型改写后的标题",
+                        "concept": "将神话叙事转译为日常行动的长定义",
+                        "aliases": ["神话结构"],
+                        "tags": ["写作手法"],
+                        "note": (
+                            "【一句话定义】\n把普通经验放入原型结构。\n\n"
+                            "【核心张力】\n日常与命运互相拉扯。\n\n"
+                            "【写作功能】\n让事件具有回声。\n\n"
+                            "【场景触发】\n归来、试炼、牺牲。\n\n"
+                            "【人物表现】\n人物像重复古老动作。\n\n"
+                            "【意象转译】\n门槛、火、河流。\n\n"
+                            "【短例子】\n他推开门。所有人都像等候一个旧预言。\n\n"
+                            "【关联建议】\n原型、仪式。\n\n"
+                            "【误用提醒】\n不要堆砌宏大词。\n\n"
+                            "【微练习】\n把一次回家写成试炼。\n\n"
+                            "【来源线索（需核对）】\n- 未请求联网补充。"
+                        ),
+                        "related_suggestions": ["原型"],
+                        "source_hints": [],
+                    },
+                    ensure_ascii=False,
+                )
+            )
+
+    get_container().ai_task_service = FakeTaskService()
+
+    response = client.post(
+        "/api/motifs/enrich-draft",
+        json={"concept": concept, "include_excerpts": False},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["concept"] == concept
+
+
+def test_tauri_motifs_enrich_draft_uses_profile_model(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from deps import get_container
+    from features.motifs import routes as motif_routes
+    from writer.services.ai.interfaces import ChatResponse
+
+    profile_id = "profile-test"
+    get_container().settings.save_ai_provider_profiles(
+        [
+            {
+                "id": profile_id,
+                "name": "DeepSeek",
+                "provider_name": "openai",
+                "base_url": "https://api.example/v1",
+                "wire_api": "chat_completions",
+                "model": "deepseek-v4-pro",
+                "api_key_source": "env:WRITER_TEST_PRESENT_KEY",
+                "gemini_cli_proxy": "",
+                "enabled": True,
+            }
+        ]
+    )
+    seen = {}
+
+    class FakeProvider:
+        def chat(self, messages, *, model=None):
+            seen["model"] = model
+            seen["messages"] = messages
+            return ChatResponse(
+                content=json.dumps(
+                    {
+                        "title": "奴隶道德",
+                        "concept": "奴隶道德",
+                        "aliases": ["slave morality"],
+                        "tags": ["哲学概念"],
+                        "note": (
+                            "【一句话定义】\n弱者以价值重估保护自身。\n\n"
+                            "【核心张力】\n力量、怨恨与道德评价互相纠缠。\n\n"
+                            "【写作功能】\n让角色的善恶判断带有反击结构。\n\n"
+                            "【场景触发】\n无力者重新命名强者。\n\n"
+                            "【人物表现】\n人物把不能做说成不屑做。\n\n"
+                            "【意象转译】\n锁、镜子、冷房间。\n\n"
+                            "【短例子】\n他没有赢过那个人。"
+                            "于是他开始教育孩子，赢本身就是粗鄙。"
+                            "多年后，他终于相信这是一种高贵。\n\n"
+                            "【关联建议】\n怨恨、价值重估。\n\n"
+                            "【误用提醒】\n不要把它写成简单的弱者邪恶。\n\n"
+                            "【微练习】\n写一个角色把失败改名为美德。\n\n"
+                            "【来源线索（需核对）】\n- 未请求联网补充。"
+                        ),
+                        "related_suggestions": ["怨恨", "价值重估"],
+                        "source_hints": [],
+                    },
+                    ensure_ascii=False,
+                ),
+                provider="openai",
+                model=model,
+                transport="chat_completions",
+            )
+
+    monkeypatch.setattr(motif_routes, "provider_for_config", lambda config, prompt_builder: FakeProvider())
+    monkeypatch.setenv("WRITER_TEST_PRESENT_KEY", "test-key")
+
+    response = client.post(
+        "/api/motifs/enrich-draft",
+        json={
+            "concept": "奴隶道德",
+            "profile_id": profile_id,
+            "cost_tier": "balanced",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert seen["model"] == "deepseek-v4-pro"
+    assert response.json()["model"] == "deepseek-v4-pro"
+
+
+def test_tauri_motifs_enrich_draft_rejects_bad_json_and_sanitizes_html(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from deps import get_container
+
+    class BadJsonTaskService:
+        def generate_from_messages(self, messages, *, cost_tier, model_override=None):
+            return SimpleNamespace(content="not json")
+
+    get_container().ai_task_service = BadJsonTaskService()
+    bad_json = client.post("/api/motifs/enrich-draft", json={"concept": "神话模式"})
+    assert bad_json.status_code == 502
+
+    class HtmlErrorTaskService:
+        def generate_from_messages(self, messages, *, cost_tier, model_override=None):
+            raise RuntimeError(
+                "AI request failed: <!doctype html><html><title>403 | Forbidden</title></html>"
+            )
+
+    get_container().ai_task_service = HtmlErrorTaskService()
+    html_error = client.post("/api/motifs/enrich-draft", json={"concept": "神话模式"})
+    assert html_error.status_code == 500
+    detail = html_error.json()["detail"]
+    assert "AI 丰富意象失败" in detail
+    assert "<html" not in detail.lower()
 
 
 def test_tauri_motifs_excerpt_lookup_merge_and_unlink(monkeypatch):

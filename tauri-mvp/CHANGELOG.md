@@ -1,5 +1,35 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.25 - Motif AI Enrichment (2026-06-28)
+
+### Added
+
+- Added AI Enrich to the Motif Star Map detail pane. Existing motifs and newly typed concepts can generate a compact writing-oriented concept card before anything is saved.
+- Added the motif enrichment draft API with profile selection, optional excerpt context, optional web-context request wording, strict JSON parsing, and Chinese provider-error copy.
+- Added motif enrichment capability metadata so the frontend can detect backend support.
+
+### Changed
+
+- Motif AI drafts now keep the user's typed concept as the authoritative motif name even when the model rewrites the JSON `concept` field.
+- Motif detail refresh now loads excerpts and local graph data sequentially to avoid shared SQLite connection contention after saving.
+- Duplicate source-excerpt repair now keeps the row whose current source range is already correct before falling back to timestamps and id ordering.
+
+### Verification
+
+- Real OpenCode smoke test: `opencode/deepseek-v4-flash-free` generated an AI enrichment draft, saved it as a test motif, verified the note template through the API, and deleted the test motif.
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py tests\storage\test_motif_repository.py -q`
+- `npm test -- --run`
+- `npm run test:e2e`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+
+### Release artifacts
+
+- `LivingToTell_0.1.25_x64-setup.exe`
+  - SHA256: `0B70F96BB533BAFF00C342635E45373D0D05F8B14CCA13808F1605EF39FD94BC`
+- `LivingToTell_0.1.25_x64_zh-CN.msi`
+  - SHA256: `0C301DEE8BADF8D09A1079371AE0F0699228DBFA1DC693EE68CF84B58726F339`
+
 ## 0.1.24 - Export, Backup, Long-Form Planning, and Sample Project (2026-06-28)
 
 ### Added
