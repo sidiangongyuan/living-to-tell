@@ -110,6 +110,37 @@ const aiCards = [
   },
 ]
 
+const aiProfiles = [
+  {
+    id: 'demo-profile-opencode',
+    name: 'OpenCode · DeepSeek Flash',
+    provider_name: 'opencode',
+    base_url: null,
+    wire_api: 'opencode_cli',
+    model: 'opencode/deepseek-v4-flash-free',
+    api_key_source: 'opencode',
+    gemini_cli_proxy: null,
+    enabled: true,
+    source_key: 'opencode:default',
+    created_at: '2026-06-18T09:00:00',
+    updated_at: now,
+  },
+  {
+    id: 'demo-profile-codex',
+    name: 'Codex 本地登录',
+    provider_name: 'openai',
+    base_url: 'https://api.openai.com/v1',
+    wire_api: 'responses',
+    model: 'gpt-4o-mini',
+    api_key_source: 'codex',
+    gemini_cli_proxy: null,
+    enabled: true,
+    source_key: 'codex:default',
+    created_at: '2026-06-18T09:05:00',
+    updated_at: now,
+  },
+]
+
 const aiSettings = {
   provider_name: 'openai',
   base_url: 'https://api.openai.com/v1',
@@ -171,6 +202,24 @@ async function installDemoApi(page) {
     }
 
     if (pathname === '/health') return json(route, { message: 'ok', version: 'demo' })
+    if (pathname === '/api/app/version') {
+      return json(route, {
+        app_name: 'Living to Tell',
+        version: '0.1.16',
+        api_version: '2.0.0',
+        capabilities: [
+          'data_location',
+          'ai_chat_settings',
+          'ai_task_presets',
+          'ai_profiles',
+          'ai_task_compare',
+          'motif_star_map',
+          'update_check',
+          'article_versions',
+          'collection_outline',
+        ],
+      })
+    }
 
     if (pathname === '/api/articles' && method === 'GET') return json(route, articles)
     if (pathname === '/api/articles/search') return json(route, articles)
@@ -193,6 +242,7 @@ async function installDemoApi(page) {
     if (pathname === '/api/collections') return json(route, collections)
     if (pathname === '/api/collections/demo-collection-1') return json(route, collections[0])
     if (pathname === '/api/collections/demo-collection-1/articles') return json(route, collectionArticles)
+    if (pathname === '/api/collections/demo-collection-1/outline') return json(route, [])
     if (pathname.startsWith('/api/collections/for-entry/')) return json(route, collections)
     if (pathname === '/api/library/stats') {
       return json(route, { total: references.length, by_usage_kind: { imagery: 1, style: 1 } })
@@ -233,7 +283,10 @@ async function installDemoApi(page) {
       })
     }
     if (pathname === '/api/ai/threads') return json(route, [])
+    if (pathname === '/api/ai/chat-settings') return json(route, { system_prompt: '' })
     if (pathname === '/api/settings/ai') return json(route, aiSettings)
+    if (pathname === '/api/settings/ai/profiles') return json(route, { profiles: aiProfiles })
+    if (pathname === '/api/settings/ai/profiles/discover') return json(route, [])
     if (pathname === '/api/settings/ai/models') {
       const provider = url.searchParams.get('provider') || 'openai'
       return json(route, {
@@ -246,6 +299,7 @@ async function installDemoApi(page) {
     if (pathname === '/api/backup/stats') return json(route, { total_size: 0 })
     if (pathname === '/api/backup/backups') return json(route, [])
     if (pathname === '/api/backup/checkpoints') return json(route, [])
+    if (pathname.startsWith('/api/motifs/excerpts/source/')) return json(route, [])
 
     return json(route, { detail: `Demo route not mocked: ${method} ${pathname}` }, 404)
   })
