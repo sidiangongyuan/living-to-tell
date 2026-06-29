@@ -1,5 +1,37 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.26 - Motif AI Reliability And Detail Layout (2026-06-30)
+
+### Fixed
+
+- Fixed motif AI enrichment failures with `opencode/deepseek-v4-flash-free` when the model returns a complete template card as plain text instead of strict JSON.
+- Added safer motif enrichment parsing: direct JSON, fenced JSON, balanced JSON objects, conservative trailing-comma cleanup, and a template-text fallback. Random non-template text still fails instead of being treated as success.
+- Replaced the raw "unparseable JSON" failure with a Chinese retry/model guidance message.
+
+### Changed
+
+- Reworked the motif detail/archive pane for readability: wider default panel, non-truncated long concept names, clearer stats, compact local star map, related-node chips, and larger single-column edit fields for tags, aliases, and notes.
+- Made version-related API tests read the current app version from `version_info.py` so patch releases no longer break update-check tests through stale hard-coded values.
+- Updated public documentation links and installer names to `0.1.26`.
+
+### Verification
+
+- Real OpenCode smoke test: `opencode/deepseek-v4-flash-free` created an isolated test motif, generated an AI enrichment draft, saved it to the motif note, verified required short-card headings, deleted the motif, and confirmed no test motif remained.
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py tests\storage\test_motif_repository.py -q`
+- `npm test -- --run`
+- `npm run test:e2e -- e2e/motifs-flow.e2e.ts --workers=1`
+- `npm run test:e2e -- --workers=1`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.26_x64-setup.exe`
+  - SHA256: `1A290FDB2E53E6067D1E983C2531BAA65D44A53A6B9E09C01BC875BFF9EE93ED`
+- `LivingToTell_0.1.26_x64_zh-CN.msi`
+  - SHA256: `A3F83674FACFAE3D79906A8E6A1CD05478A7D9A804A1950F105C9258FDB96442`
+
 ## 0.1.25 - Motif AI Enrichment (2026-06-28)
 
 ### Added

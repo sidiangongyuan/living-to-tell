@@ -29,13 +29,14 @@ def _tauri_client(monkeypatch):
 
 def test_tauri_app_version_capabilities(monkeypatch):
     client = _tauri_client(monkeypatch)
+    from version_info import APP_VERSION
 
     response = client.get("/api/app/version")
 
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["app_name"] == "Living to Tell"
-    assert payload["version"] == "0.1.24"
+    assert payload["version"] == APP_VERSION
     assert payload["api_version"] == "2.0.0"
     assert {
         "data_location",
@@ -120,6 +121,7 @@ def test_tauri_onboarding_sample_project_rolls_back_partial_create(monkeypatch):
 def test_tauri_app_update_check_reports_latest_release(monkeypatch):
     client = _tauri_client(monkeypatch)
     from features.app_meta import routes as app_routes
+    from version_info import APP_VERSION
 
     app_routes.UPDATE_CACHE["payload"] = None
     app_routes.UPDATE_CACHE["expires_at"] = 0.0
@@ -135,20 +137,20 @@ def test_tauri_app_update_check_reports_latest_release(monkeypatch):
         def read(self):
             return json.dumps(
                 {
-                    "tag_name": "living-to-tell-v0.1.25",
-                    "name": "Living to Tell Preview 0.1.25",
-                    "html_url": "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.25",
+                    "tag_name": "living-to-tell-v0.1.99",
+                    "name": "Living to Tell Preview 0.1.99",
+                    "html_url": "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.99",
                     "published_at": "2026-06-26T01:02:03Z",
-                    "body": "## 0.1.25\n\nAdded update notifications.",
+                    "body": "## 0.1.99\n\nAdded update notifications.",
                     "assets": [
                         {
-                            "name": "LivingToTell_0.1.25_x64_zh-CN.msi",
-                            "browser_download_url": "https://example.test/LivingToTell_0.1.25_x64_zh-CN.msi",
+                            "name": "LivingToTell_0.1.99_x64_zh-CN.msi",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.99_x64_zh-CN.msi",
                             "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                         },
                         {
-                            "name": "LivingToTell_0.1.25_x64-setup.exe",
-                            "browser_download_url": "https://example.test/LivingToTell_0.1.25_x64-setup.exe",
+                            "name": "LivingToTell_0.1.99_x64-setup.exe",
+                            "browser_download_url": "https://example.test/LivingToTell_0.1.99_x64-setup.exe",
                             "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                         },
                     ],
@@ -172,11 +174,11 @@ def test_tauri_app_update_check_reports_latest_release(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "update_available"
-    assert payload["current_version"] == "0.1.24"
-    assert payload["latest_version"] == "0.1.25"
-    assert payload["release_name"] == "Living to Tell Preview 0.1.25"
-    assert payload["download_name"] == "LivingToTell_0.1.25_x64-setup.exe"
-    assert payload["download_url"] == "https://example.test/LivingToTell_0.1.25_x64-setup.exe"
+    assert payload["current_version"] == APP_VERSION
+    assert payload["latest_version"] == "0.1.99"
+    assert payload["release_name"] == "Living to Tell Preview 0.1.99"
+    assert payload["download_name"] == "LivingToTell_0.1.99_x64-setup.exe"
+    assert payload["download_url"] == "https://example.test/LivingToTell_0.1.99_x64-setup.exe"
     assert payload["download_sha256"] == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     assert "应用内" in payload["message"]
     assert calls == [
@@ -191,6 +193,7 @@ def test_tauri_app_update_check_reports_latest_release(monkeypatch):
 def test_tauri_app_update_check_returns_friendly_error(monkeypatch):
     client = _tauri_client(monkeypatch)
     from features.app_meta import routes as app_routes
+    from version_info import APP_VERSION
 
     app_routes.UPDATE_CACHE["payload"] = None
     app_routes.UPDATE_CACHE["expires_at"] = 0.0
@@ -205,7 +208,7 @@ def test_tauri_app_update_check_returns_friendly_error(monkeypatch):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "error"
-    assert payload["current_version"] == "0.1.24"
+    assert payload["current_version"] == APP_VERSION
     assert "暂时无法检查更新" in payload["message"]
 
 
@@ -224,7 +227,7 @@ def test_tauri_app_update_check_falls_back_to_latest_redirect(monkeypatch):
             return False
 
         def geturl(self):
-            return "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.25"
+            return "https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.99"
 
     def fake_urlopen(req, timeout):
         if req.full_url == app_routes.GITHUB_LATEST_RELEASE_URL:
@@ -239,10 +242,10 @@ def test_tauri_app_update_check_falls_back_to_latest_redirect(monkeypatch):
     payload = response.json()
     assert payload["status"] == "update_available"
     assert payload["source"] == "github_releases_latest_redirect"
-    assert payload["latest_version"] == "0.1.25"
-    assert payload["download_name"] == "LivingToTell_0.1.25_x64-setup.exe"
+    assert payload["latest_version"] == "0.1.99"
+    assert payload["download_name"] == "LivingToTell_0.1.99_x64-setup.exe"
     assert payload["download_url"].endswith(
-        "/releases/download/living-to-tell-v0.1.25/LivingToTell_0.1.25_x64-setup.exe"
+        "/releases/download/living-to-tell-v0.1.99/LivingToTell_0.1.99_x64-setup.exe"
     )
 
 
@@ -1135,6 +1138,37 @@ def test_tauri_motifs_enrich_draft_uses_profile_model(monkeypatch):
 def test_tauri_motifs_enrich_draft_rejects_bad_json_and_sanitizes_html(monkeypatch):
     client = _tauri_client(monkeypatch)
     from deps import get_container
+
+    class TemplateTextTaskService:
+        def generate_from_messages(self, messages, *, cost_tier, model_override=None):
+            return SimpleNamespace(
+                content=(
+                    "【一句话定义】\n把普通经验放入原型结构。\n\n"
+                    "【核心张力】\n日常行动与古老结构互相拉扯。\n\n"
+                    "【写作功能】\n让普通事件带上命运感。\n\n"
+                    "【场景触发】\n归来、牺牲、试炼、命名。\n\n"
+                    "【人物表现】\n人物像在重复一个比自己更老的动作。\n\n"
+                    "【意象转译】\n门槛、火、面具、河流。\n\n"
+                    "【短例子】\n他回到村口时，所有人都沉默。"
+                    "孩子们喊出的不是他的名字，而是旧故事里的称号。"
+                    "他这才意识到，归来不是结束，而是被推上祭台。\n\n"
+                    "【关联建议】\n原型、仪式、牺牲\n\n"
+                    "【误用提醒】\n不要把神话感写成空洞宏大词。\n\n"
+                    "【微练习】\n把一次回家写成一次试炼。\n\n"
+                    "【来源线索（需核对）】\n- 未请求联网补充。"
+                ),
+                provider="fake",
+                model="fake-strong",
+                transport="fake",
+            )
+
+    get_container().ai_task_service = TemplateTextTaskService()
+    template_text = client.post("/api/motifs/enrich-draft", json={"concept": "神话模式"})
+    assert template_text.status_code == 200, template_text.text
+    template_payload = template_text.json()
+    assert template_payload["title"] == "神话模式"
+    assert "【短例子】" in template_payload["note"]
+    assert template_payload["related_suggestions"] == ["原型", "仪式", "牺牲"]
 
     class BadJsonTaskService:
         def generate_from_messages(self, messages, *, cost_tier, model_override=None):

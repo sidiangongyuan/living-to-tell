@@ -64,9 +64,9 @@ const motifListPane = useResizablePane({
 })
 const motifDetailPane = useResizablePane({
   key: 'motifs:detail',
-  defaultSize: 320,
-  minSize: 300,
-  maxSize: 520,
+  defaultSize: 440,
+  minSize: 360,
+  maxSize: 680,
   edge: 'start',
 })
 const deleteContextMenuOpen = ref(false)
@@ -92,13 +92,27 @@ const visibleHomeGraph = computed(() =>
   filterMotifGraphByLimit(homeGraph.value, homeLimit.value, selectedMotifId.value)
 )
 const positionedHomeGraph = computed(() => layoutMotifGraph(visibleHomeGraph.value, { width: 1080, height: 620 }))
-const positionedLocalGraph = computed(() => layoutMotifGraph(localGraph.value, { width: 620, height: 440 }))
+const positionedLocalGraph = computed(() => layoutMotifGraph(localGraph.value, { width: 620, height: 300 }))
 const graphCountLabel = computed(() =>
   motifs.value.length
     ? t('motifs.graphShowing', { visible: visibleHomeGraph.value.nodes.length, total: motifs.value.length })
     : t('motifs.noGraphNodes')
 )
 const filteredMotifs = computed(() => motifs.value)
+const localRelatedNodes = computed(() =>
+  localGraph.value.nodes
+    .filter((node) => !node.is_center)
+    .map((node) => ({
+      node,
+      weight: localGraph.value.edges
+        .filter((edge) => edge.source_id === node.id || edge.target_id === node.id)
+        .reduce((total, edge) => total + edge.weight, 0),
+    }))
+    .sort((a, b) => b.weight - a.weight || b.node.excerpt_count - a.node.excerpt_count || a.node.name.localeCompare(b.node.name))
+    .slice(0, 10)
+)
+const formAliasChips = computed(() => linesFrom(formAliases.value).slice(0, 8))
+const formTagChips = computed(() => linesFrom(formTags.value).slice(0, 8))
 const aiProfileOptions = computed(() => [
   { id: 'default', name: t('motifs.enrichDefaultProfile'), provider: '', model: '' },
   ...aiProfiles.value
@@ -813,10 +827,15 @@ function previewExcerpt(text: string): string {
         >
           <div v-if="selectedMotif" class="p-6">
             <div class="mb-5">
-              <div class="flex items-start justify-between gap-3">
+              <div class="flex items-start justify-between gap-4">
                 <div class="min-w-0">
                   <p class="text-xs font-semibold uppercase tracking-[0.2em] text-rose-700">{{ t('motifs.archive') }}</p>
-                  <h2 class="mt-2 truncate text-3xl font-semibold text-stone-950">{{ selectedMotif.name }}</h2>
+                  <h2 class="mt-2 break-words text-2xl font-semibold leading-tight text-stone-950">{{ selectedMotif.name }}</h2>
+                  <div class="mt-3 flex flex-wrap gap-2 text-xs text-stone-600">
+                    <span class="rounded-full bg-stone-100 px-2.5 py-1">{{ t('motifs.excerptCount', { count: selectedMotif.excerpt_count }) }}</span>
+                    <span class="rounded-full bg-stone-100 px-2.5 py-1">{{ t('motifs.localRelationCount', { count: localGraph.edges.length }) }}</span>
+                    <span v-if="selectedMotif.tags.length" class="rounded-full bg-amber-50 px-2.5 py-1 text-amber-800">{{ selectedMotif.tags.length }} {{ t('motifs.tags') }}</span>
+                  </div>
                 </div>
                 <div class="flex shrink-0 flex-col items-end gap-2">
                   <label class="flex items-center gap-2 rounded-full bg-stone-100 px-3 py-2 text-xs text-stone-600">
@@ -833,9 +852,16 @@ function previewExcerpt(text: string): string {
               </div>
             </div>
 
-            <div class="mb-5 rounded-2xl border border-amber-100 bg-[#fffaf0] p-3">
-              <svg viewBox="0 0 620 440" class="h-[440px] w-full">
-                <rect width="620" height="440" fill="#f8f1e4" rx="14" />
+            <div class="mb-5 rounded-2xl border border-amber-100 bg-[#fffaf0] p-4" data-testid="motifs-local-graph-card">
+              <div class="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <h3 class="text-sm font-semibold text-stone-900">{{ t('motifs.localGraph') }}</h3>
+                  <p class="mt-1 text-xs text-stone-500">{{ t('motifs.localGraphHint') }}</p>
+                </div>
+                <span class="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-xs text-stone-500">{{ localRelatedNodes.length }}</span>
+              </div>
+              <svg viewBox="0 0 620 300" class="h-[260px] w-full">
+                <rect width="620" height="300" fill="#f8f1e4" rx="14" />
                 <line
                   v-for="edge in positionedLocalGraph.edges"
                   :key="`local-${edge.source_id}:${edge.target_id}`"
@@ -909,33 +935,49 @@ function previewExcerpt(text: string): string {
                 <text
                   v-if="positionedLocalGraph.nodes.length <= 1"
                   x="310"
-                  y="368"
+                  y="250"
                   text-anchor="middle"
                   class="fill-stone-400 text-xs"
                 >
                   {{ t('motifs.noRelations') }}
                 </text>
               </svg>
+              <div v-if="localRelatedNodes.length" class="mt-3 flex flex-wrap gap-2">
+                <button
+                  v-for="item in localRelatedNodes"
+                  :key="`local-chip-${item.node.id}`"
+                  type="button"
+                  @click="selectMotif(item.node.id)"
+                  class="max-w-full rounded-full bg-white px-3 py-1.5 text-left text-xs font-medium text-stone-700 ring-1 ring-amber-100 transition hover:bg-teal-50 hover:text-teal-800"
+                >
+                  <span class="break-all">{{ item.node.name }}</span>
+                  <span class="ml-1 text-stone-400">×{{ item.weight || 1 }}</span>
+                </button>
+              </div>
             </div>
 
-            <div class="mb-5 rounded-2xl border border-stone-200 bg-white p-4">
-              <div class="grid grid-cols-2 gap-3">
-                <label class="text-sm text-stone-600">
-                  {{ t('motifs.name') }}
-                  <input v-model="formName" class="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" />
-                </label>
-                <label class="text-sm text-stone-600">
-                  {{ t('motifs.tags') }}
-                  <textarea v-model="formTags" rows="2" class="mt-1 w-full resize-none rounded-xl border border-stone-200 px-3 py-2 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.onePerLine')" />
-                </label>
-              </div>
-              <label class="mt-3 block text-sm text-stone-600">
-                {{ t('motifs.aliases') }}
-                <textarea v-model="formAliases" rows="2" class="mt-1 w-full resize-none rounded-xl border border-stone-200 px-3 py-2 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.onePerLine')" />
+            <div class="mb-5 rounded-2xl border border-stone-200 bg-white p-5" data-testid="motifs-detail-form">
+              <label class="block text-sm font-medium text-stone-700">
+                {{ t('motifs.name') }}
+                <input v-model="formName" class="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2.5 text-base outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" />
               </label>
-              <label class="mt-3 block text-sm text-stone-600">
+              <label class="mt-4 block text-sm font-medium text-stone-700">
+                {{ t('motifs.tags') }}
+                <textarea v-model="formTags" rows="4" class="mt-1 min-h-[96px] w-full resize-y rounded-xl border border-stone-200 px-3 py-2 leading-6 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.onePerLine')" />
+              </label>
+              <div v-if="formTagChips.length" class="mt-2 flex flex-wrap gap-1.5">
+                <span v-for="item in formTagChips" :key="`form-tag-${item}`" class="rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-800">{{ item }}</span>
+              </div>
+              <label class="mt-4 block text-sm font-medium text-stone-700">
+                {{ t('motifs.aliases') }}
+                <textarea v-model="formAliases" rows="4" class="mt-1 min-h-[96px] w-full resize-y rounded-xl border border-stone-200 px-3 py-2 leading-6 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.onePerLine')" />
+              </label>
+              <div v-if="formAliasChips.length" class="mt-2 flex flex-wrap gap-1.5">
+                <span v-for="item in formAliasChips" :key="`form-alias-${item}`" class="rounded-full bg-teal-50 px-2 py-1 text-xs text-teal-800">{{ item }}</span>
+              </div>
+              <label class="mt-4 block text-sm font-medium text-stone-700">
                 {{ t('motifs.note') }}
-                <textarea v-model="formNote" rows="4" class="mt-1 w-full resize-none rounded-xl border border-stone-200 px-3 py-2 leading-6 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.notePlaceholder')" />
+                <textarea v-model="formNote" rows="14" class="mt-1 min-h-[320px] w-full resize-y rounded-xl border border-stone-200 bg-[#fffdf8] px-3 py-3 text-sm leading-7 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.notePlaceholder')" />
               </label>
               <div class="mt-4 flex justify-between gap-3">
                 <button

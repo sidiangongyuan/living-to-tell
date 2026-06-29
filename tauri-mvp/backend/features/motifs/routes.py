@@ -246,30 +246,190 @@ def _limit_from_density(density: Optional[int], fallback_limit: int) -> int:
 
 
 _JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
+_TRAILING_COMMA = re.compile(r",\s*([}\]])")
+_SECTION_HEADING_RE = re.compile(r"【([^】]+)】")
+
+
+_ENRICH_REQUIRED_HEADINGS = [
+    "【一句话定义】",
+    "【核心张力】",
+    "【写作功能】",
+    "【场景触发】",
+    "【人物表现】",
+    "【意象转译】",
+    "【短例子】",
+    "【关联建议】",
+    "【误用提醒】",
+    "【微练习】",
+]
+
+
+def _json_loads_object(candidate: str) -> dict[str, Any] | None:
+    raw = (candidate or "").strip().lstrip("\ufeff")
+    if not raw:
+        return None
+    variants = [raw]
+    without_trailing_commas = _TRAILING_COMMA.sub(r"\1", raw)
+    if without_trailing_commas != raw:
+        variants.append(without_trailing_commas)
+    for variant in variants:
+        try:
+            parsed = json.loads(variant)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _balanced_json_candidates(text: str) -> list[str]:
+    """Return balanced JSON-object candidates without being confused by strings."""
+    candidates: list[str] = []
+    start: int | None = None
+    depth = 0
+    in_string = False
+    escape = False
+    for index, char in enumerate(text or ""):
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            continue
+        if char == "{":
+            if depth == 0:
+                start = index
+            depth += 1
+            continue
+        if char == "}" and depth:
+            depth -= 1
+            if depth == 0 and start is not None:
+                candidates.append(text[start : index + 1])
+                start = None
+    return sorted(candidates, key=len, reverse=True)
 
 
 def _parse_json_object(text: str) -> dict[str, Any] | None:
-    try:
-        parsed = json.loads(text)
-        return parsed if isinstance(parsed, dict) else None
-    except (TypeError, ValueError, json.JSONDecodeError):
-        pass
+    parsed = _json_loads_object(text or "")
+    if parsed is not None:
+        return parsed
     match = _JSON_FENCE.search(text or "")
     if match:
-        try:
-            parsed = json.loads(match.group(1))
-            return parsed if isinstance(parsed, dict) else None
-        except (TypeError, ValueError, json.JSONDecodeError):
-            pass
-    start = (text or "").find("{")
-    end = (text or "").rfind("}")
-    if 0 <= start < end:
-        try:
-            parsed = json.loads(text[start : end + 1])
-            return parsed if isinstance(parsed, dict) else None
-        except (TypeError, ValueError, json.JSONDecodeError):
-            return None
+        parsed = _json_loads_object(match.group(1))
+        if parsed is not None:
+            return parsed
+    for candidate in _balanced_json_candidates(text or ""):
+        parsed = _json_loads_object(candidate)
+        if parsed is not None:
+            return parsed
     return None
+
+
+def _normalize_enrichment_note(text: str) -> str:
+    value = (text or "").strip()
+    fence_match = _JSON_FENCE.search(value)
+    if fence_match and "【一句话定义】" in fence_match.group(1):
+        value = fence_match.group(1).strip()
+    first_heading_positions = [
+        value.find(heading)
+        for heading in _ENRICH_REQUIRED_HEADINGS
+        if value.find(heading) >= 0
+    ]
+    if first_heading_positions:
+        value = value[min(first_heading_positions) :].strip()
+    return value
+
+
+def _extract_section_text(note: str, heading: str) -> str:
+    marker = f"【{heading}】"
+    start = note.find(marker)
+    if start < 0:
+        return ""
+    start += len(marker)
+    match = _SECTION_HEADING_RE.search(note, start)
+    end = match.start() if match else len(note)
+    return note[start:end].strip()
+
+
+def _split_loose_list(text: str, *, limit: int = 12) -> list[str]:
+    values: list[str] = []
+    seen: set[str] = set()
+    for raw in re.split(r"[、,，|｜/\n]+", text or ""):
+        value = raw.strip().lstrip("-*•0123456789.、)） ").strip()
+        if not value:
+            continue
+        if "：" in value and len(value) > 18:
+            value = value.split("：", 1)[0].strip()
+        key = value.casefold()
+        if not value or key in seen:
+            continue
+        seen.add(key)
+        values.append(value[:48])
+        if len(values) >= limit:
+            break
+    return values
+
+
+def _fallback_payload_from_template_text(
+    text: str,
+    *,
+    concept: str,
+    request_web_context: bool,
+) -> dict[str, Any] | None:
+    note = _normalize_enrichment_note(text)
+    if not note:
+        return None
+    present = [heading for heading in _ENRICH_REQUIRED_HEADINGS if heading in note]
+    if len(present) < len(_ENRICH_REQUIRED_HEADINGS):
+        return None
+    related = _split_loose_list(_extract_section_text(note, "关联建议"), limit=12)
+    source_text = _extract_section_text(note, "来源线索（需核对）")
+    source_hints: list[dict[str, Any]] = []
+    if request_web_context:
+        for line in source_text.splitlines():
+            value = line.strip().lstrip("-*• ").strip()
+            if not value:
+                continue
+            title, _, note_text = value.partition("：")
+            source_hints.append(
+                {
+                    "title": (title or "来源线索")[:120],
+                    "url": None,
+                    "note": note_text[:240],
+                }
+            )
+            if len(source_hints) >= 5:
+                break
+    return {
+        "title": concept,
+        "concept": concept,
+        "aliases": [],
+        "tags": [],
+        "note": note,
+        "related_suggestions": related,
+        "source_hints": source_hints,
+    }
+
+
+def _parse_enrichment_payload(
+    text: str,
+    *,
+    concept: str,
+    request_web_context: bool,
+) -> dict[str, Any] | None:
+    parsed = _parse_json_object(text)
+    if parsed is not None:
+        return parsed
+    return _fallback_payload_from_template_text(
+        text,
+        concept=concept,
+        request_web_context=request_web_context,
+    )
 
 
 def _friendly_ai_error(exc: Exception) -> str:
@@ -374,19 +534,7 @@ def _coerce_enrichment_draft(
     note = str(payload.get("note") or "").strip()
     if not note:
         raise HTTPException(502, "AI 返回的意象草稿缺少概念或笔记。")
-    required_headings = [
-        "【一句话定义】",
-        "【核心张力】",
-        "【写作功能】",
-        "【场景触发】",
-        "【人物表现】",
-        "【意象转译】",
-        "【短例子】",
-        "【关联建议】",
-        "【误用提醒】",
-        "【微练习】",
-    ]
-    missing = [heading for heading in required_headings if heading not in note]
+    missing = [heading for heading in _ENRICH_REQUIRED_HEADINGS if heading not in note]
     if missing:
         raise HTTPException(502, f"AI 返回的意象草稿缺少模板标题：{missing[0]}")
     hints = _source_hints_from(payload.get("source_hints"), request_web_context=request_web_context)
@@ -635,9 +783,16 @@ def generate_motif_enrichment_draft(
         raise HTTPException(500, f"AI 丰富意象失败：{_friendly_ai_error(exc)}") from exc
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
-    parsed = _parse_json_object(response.content)
+    parsed = _parse_enrichment_payload(
+        response.content,
+        concept=concept,
+        request_web_context=request.request_web_context,
+    )
     if parsed is None:
-        raise HTTPException(502, "AI 没有返回可解析的意象草稿 JSON。")
+        raise HTTPException(
+            502,
+            "AI 没有返回可整理的意象草稿。请重试，或关闭联网补充后换用更强模型。",
+        )
     return _coerce_enrichment_draft(
         parsed,
         concept=concept,
