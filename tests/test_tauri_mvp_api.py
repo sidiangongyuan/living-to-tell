@@ -2122,6 +2122,8 @@ def test_tauri_ai_settings_read_save_and_validate(monkeypatch):
     assert "status" in initial_payload
     assert "opencode" in initial_payload["status"]
     assert "model_presets" in initial_payload
+    assert "deepseek-v4-pro" in initial_payload["model_presets"]["openai"]
+    assert "glm-5.2" in initial_payload["model_presets"]["openai"]
     assert "opencode/deepseek-v4-flash-free" in initial_payload["model_presets"]["opencode"]
     saved = client.put(
         "/api/settings/ai",

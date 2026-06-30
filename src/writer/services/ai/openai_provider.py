@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from typing import Optional
+from urllib.parse import urlparse
 
 from writer.domain.models.ai_config import AiConfig
 from writer.services.ai.codex_auth import CodexAuthError, CodexAuthResolver
@@ -84,7 +85,7 @@ class OpenAiProvider(AiProvider):
             raise AiError("openai package is not installed") from exc
         kwargs = {"api_key": self._resolve_api_key()}
         if self._config.base_url:
-            kwargs["base_url"] = self._config.base_url
+            kwargs["base_url"] = _normalize_openai_base_url_for_sdk(self._config.base_url)
         self._client = OpenAI(**kwargs)
         return self._client
 
@@ -206,6 +207,28 @@ def _safe_str(obj, name: str) -> Optional[str]:
         return None
     value = getattr(obj, name, None)
     return value if isinstance(value, str) else None
+
+
+def _normalize_openai_base_url_for_sdk(base_url: str) -> str:
+    """Accept either a relay origin or an SDK-ready OpenAI-compatible base URL."""
+    base = (base_url or "").strip().rstrip("/")
+    if not base:
+        return base
+
+    lower = base.lower()
+    for suffix in ("/chat/completions", "/responses", "/models"):
+        if lower.endswith(suffix):
+            base = base[: -len(suffix)].rstrip("/")
+            lower = base.lower()
+            break
+
+    if lower.endswith(("/v1", "/v1beta", "/openai")):
+        return base
+
+    parsed = urlparse(base)
+    if parsed.scheme and parsed.netloc and (not parsed.path or parsed.path == "/"):
+        return f"{base}/v1"
+    return base
 
 
 def _extract_output_text(response) -> str:

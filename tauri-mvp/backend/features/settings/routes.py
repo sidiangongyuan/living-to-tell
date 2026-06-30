@@ -57,7 +57,13 @@ from writer.services.ai.prompt_builder import PromptBuilder
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
-OPENAI_MODEL_PRESETS = ("gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1")
+OPENAI_MODEL_PRESETS = (
+    "gpt-4o-mini",
+    "gpt-4.1-mini",
+    "gpt-4.1",
+    "deepseek-v4-pro",
+    "glm-5.2",
+)
 GEMINI_MODEL_PRESETS = (
     "gemini-3.1-pro-preview",
     "gemini-3-flash-preview",

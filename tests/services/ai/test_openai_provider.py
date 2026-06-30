@@ -5,7 +5,10 @@ from writer.services.ai.interfaces import (
     AiError,
     RewriteRequest,
 )
-from writer.services.ai.openai_provider import OpenAiProvider
+from writer.services.ai.openai_provider import (
+    OpenAiProvider,
+    _normalize_openai_base_url_for_sdk,
+)
 from writer.services.ai.prompt_builder import PromptBuilder
 from writer.domain.enums import RewriteAction
 
@@ -86,6 +89,25 @@ def test_chat_completions_wire_api_returns_text_and_usage():
     assert response.output_tokens == 9
     assert response.finish_reason == "stop"
     assert client.chat.completions.calls[0]["messages"] == [{"role": "user", "content": "hi"}]
+
+
+def test_openai_compatible_base_url_normalizes_relay_origin():
+    assert (
+        _normalize_openai_base_url_for_sdk("https://elysiver.h-e.top/")
+        == "https://elysiver.h-e.top/v1"
+    )
+    assert (
+        _normalize_openai_base_url_for_sdk("https://elysiver.h-e.top/v1")
+        == "https://elysiver.h-e.top/v1"
+    )
+    assert (
+        _normalize_openai_base_url_for_sdk("https://elysiver.h-e.top/v1/chat/completions")
+        == "https://elysiver.h-e.top/v1"
+    )
+    assert (
+        _normalize_openai_base_url_for_sdk("https://openrouter.ai/api/v1")
+        == "https://openrouter.ai/api/v1"
+    )
 
 
 def test_rewrite_rejects_unsupported_wire_api():
