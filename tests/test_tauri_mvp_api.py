@@ -966,6 +966,10 @@ def test_tauri_motifs_enrich_draft_uses_context_and_does_not_mutate(monkeypatch)
     assert "已有笔记：循环、归来与仪式" in prompt
     assert "他在归来时发现村庄已经把他当作一个传说" in prompt
     assert "请求“联网补充”" in prompt
+    assert "他人评论" in prompt
+    assert "后世引用" in prompt
+    assert "文学或影视作品中对该意象/概念的使用方式" in prompt
+    assert "如果请求联网补充，可以给 4-10 条" in prompt
     assert fake.calls[-1]["cost_tier"].value == "strong"
     unchanged = client.get(f"/api/motifs/{motif['id']}").json()
     assert unchanged["note"] == "已有笔记：循环、归来与仪式。"

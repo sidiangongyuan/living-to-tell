@@ -1,5 +1,40 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.29 - Motif Enrichment Logic And Resizable Dialog (2026-06-30)
+
+### Fixed
+
+- Fixed AI enrichment drafts becoming impossible to apply after closing and reopening the dialog for a newly typed concept. New-concept drafts are no longer invalidated just because the concept/name field changed.
+- Fixed the left-panel `AI` button requiring a new motif name before opening the enrichment dialog. The dialog can now open empty, let the user enter the concept inside, and generate from there.
+- Fixed a misleading stale-draft warning for new concepts. The stale guard now protects only drafts generated for a different selected motif.
+
+### Changed
+
+- Made the AI enrichment dialog manually resizable in addition to viewport-adaptive, with larger maximum width and more readable candidate sentence layout.
+- Increased motif enrichment request timeout from 2 minutes to 5 minutes for longer concept cards.
+- Broadened `请求联网补充` prompts: source hints and candidate sentences may include original sources, criticism, research, later quotations, rewrites, intertextual uses, and literary/film examples instead of only author-owned material.
+- Increased enrichment source-hint and reference-candidate parsing limits so richer web-context responses are preserved.
+- Updated public documentation links and installer names to `0.1.29`.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py::test_tauri_motifs_enrich_draft_uses_context_and_does_not_mutate -q`
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\storage\test_database_migration.py tests\storage\test_motif_repository.py tests\test_tauri_mvp_api.py -q`
+- `npm test -- --run`
+- `npm run test:e2e -- e2e/motifs-flow.e2e.ts --workers=1`
+- `npm test -- --run src/api/base.test.ts`
+- `npm run test:e2e -- --workers=1`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.29_x64-setup.exe`
+  - SHA256: `A4C32E8457BF1D9EC7A84E99BF5BB2F9325D5A80237378A5192C73A72F369698`
+- `LivingToTell_0.1.29_x64_zh-CN.msi`
+  - SHA256: `C64BC6D4798BB18587AAFB871EC579DDBD53253A2E5997F9B0F2C5A3FD7E0B0F`
+
 ## 0.1.28 - Adaptive Motif Enrichment Polish (2026-06-30)
 
 ### Fixed

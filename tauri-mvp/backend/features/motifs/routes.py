@@ -707,7 +707,7 @@ def _source_hints_from(values: Any, *, request_web_context: bool) -> list[MotifS
                     note=note[:240],
                 )
             )
-            if len(hints) >= 5:
+            if len(hints) >= 8:
                 break
     if request_web_context and not hints:
         hints.append(
@@ -747,7 +747,7 @@ def _reference_candidates_from(values: Any) -> list[MotifReferenceCandidateOut]:
                 reason=reason,
             )
         )
-        if len(candidates) >= 8:
+        if len(candidates) >= 12:
             break
     return candidates
 
@@ -759,7 +759,7 @@ def _ensure_source_section(note: str, hints: list[MotifSourceHintOut], *, reques
     if request_web_context and hints:
         lines = [
             f"- {hint.title}" + (f"：{hint.note}" if hint.note else "")
-            for hint in hints[:5]
+            for hint in hints[:8]
         ]
     elif request_web_context:
         lines = ["- 未能联网核对；请把本草稿当作写作联想材料继续核对。"]
@@ -898,7 +898,9 @@ def _enrichment_user_prompt(
 ) -> str:
     web_policy = (
         "本次用户请求“联网补充”。如果当前模型/供应商具备联网或检索能力，请使用它核对概念线索，"
-        "并在 source_hints 中给出 3-5 条标题/链接/用途；note 的【来源线索（需核对）】也要简要列出。"
+        "并在 source_hints 中给出 4-8 条标题/链接/用途；note 的【来源线索（需核对）】也要简要列出。"
+        "补充范围不要只局限于原作者：可以包含原始出处、他人评论、研究文章、后世引用、改写、互文、"
+        "文学或影视作品中对该意象/概念的使用方式。"
         "如果你无法联网或无法确认来源，必须明确写“未能联网核对”，不要假装查过。"
         if request_web_context
         else "本次未请求联网补充。source_hints 返回空数组；note 的【来源线索（需核对）】写“未请求联网补充”。"
@@ -943,8 +945,9 @@ def _enrichment_user_prompt(
 - 【关联建议】列出可联想的概念/意象，但不要假设软件会自动建节点或连边。
 - aliases 给出少量别名、译名、近义称呼；tags 给出少量分类标签。
 - related_suggestions 只给概念名，不写解释。
-- reference_candidates 给 0-6 条外部相关句子候选；每条必须尽量包含 text、source_author、source_title、source_note、reason。
-- reference_candidates 不是你自己仿写的例句，而是你认为可追溯到具体作者和作品/文章的候选原句；没有明确作者和书名/篇名时，宁可少给。
+- reference_candidates 给 0-8 条外部相关句子候选；如果请求联网补充，可以给 4-10 条。
+- reference_candidates 可以来自原作者，也可以来自评论者、研究者、译者、后世文学/影视作品或明确文章中对该意象/概念的引用、转写、互文使用。
+- reference_candidates 不是你自己仿写的例句，而是你认为可追溯到具体作者和作品/文章的候选原句或短段；没有明确作者和书名/篇名时，宁可少给。
 - {web_policy}
 - 不要生成页码、伪原文、伪精确引用；没有把握时写“需核对”。
 """

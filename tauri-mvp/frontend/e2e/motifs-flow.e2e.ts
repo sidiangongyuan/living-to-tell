@@ -1151,12 +1151,48 @@ test('AI enrichment keeps a draft across close and reopen, and clears it only wh
   await page.getByTestId('motifs-detail-pane').getByRole('button', { name: 'AI 丰富' }).click()
   await expect(page.getByText('神话模式短卡 A')).toBeVisible()
   await expect(page.getByText('定义 A', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '应用到已有意象' })).toBeEnabled()
 
   await page.getByRole('button', { name: '生成短卡草稿' }).click()
   await expect(page.getByText('生成中...')).toBeVisible()
   await expect(page.getByText('定义 A', { exact: true })).toHaveCount(0)
   await expect(page.getByText('神话模式短卡 B')).toBeVisible()
   await expect(page.getByText('定义 B', { exact: true })).toBeVisible()
+})
+
+test('AI enrichment opens without a prefilled motif name and can apply a preserved new-concept draft', async ({ page }) => {
+  await page.goto('/motifs')
+  const listPane = page.getByTestId('motifs-list-pane')
+  await expect(listPane.getByRole('button', { name: 'AI', exact: true })).toBeEnabled()
+  await listPane.getByRole('button', { name: 'AI', exact: true }).click()
+
+  const conceptInput = page.getByPlaceholder('例如：神话模式、奴隶道德、常人')
+  await expect(conceptInput).toBeVisible()
+  await expect(page.getByRole('button', { name: '生成短卡草稿' })).toBeDisabled()
+
+  await conceptInput.fill('尼采')
+  await page.getByRole('button', { name: '生成短卡草稿' }).click()
+  await expect(page.getByText('尼采短卡 A')).toBeVisible()
+  await expect(page.getByRole('button', { name: '创建意象' })).toBeEnabled()
+
+  await conceptInput.fill('尼采的道德奴隶')
+  await page.getByRole('button', { name: '取消' }).click()
+  await expect(page.getByTestId('motif-enrichment-modal')).toHaveCount(0)
+
+  await listPane.getByRole('button', { name: 'AI', exact: true }).click()
+  await expect(page.getByText('尼采短卡 A')).toBeVisible()
+  await expect(conceptInput).toHaveValue('尼采的道德奴隶')
+  await expect(page.getByText('这个草稿属于另一个已选意象')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '创建意象' })).toBeEnabled()
+  await page.getByRole('button', { name: '创建意象' }).click()
+
+  await expect(page.getByText('AI 丰富结果已应用')).toBeVisible()
+  await expect(page.getByTestId('motifs-list-pane').getByRole('button', { name: /尼采的道德奴隶/ })).toBeVisible()
+  const motifsAfter = await page.evaluate(async () => {
+    const response = await fetch('/api/motifs')
+    return await response.json() as MotifNode[]
+  })
+  expect(motifsAfter.filter((motif) => motif.name === '尼采的道德奴隶')).toHaveLength(1)
 })
 
 test('AI enrichment for a new concept updates an existing same-name motif instead of creating a duplicate', async ({ page }) => {
@@ -1191,6 +1227,11 @@ test('AI enrichment for a new concept updates an existing same-name motif instea
   await page.getByRole('button', { name: '生成短卡草稿' }).click()
   await expect(page.getByText('海德格尔的常人短卡 A')).toBeVisible()
   await expect(page.getByRole('button', { name: '应用到已有意象' })).toBeVisible()
+  await page.getByRole('button', { name: '取消' }).click()
+  await page.getByTestId('motifs-list-pane').getByRole('button', { name: 'AI', exact: true }).click()
+  await expect(page.getByText('海德格尔的常人短卡 A')).toBeVisible()
+  await expect(page.getByText('这个草稿属于另一个已选意象')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '应用到已有意象' })).toBeEnabled()
   await page.getByRole('button', { name: '应用到已有意象' }).click()
 
   await expect(page.getByText('Motif name already exists')).toHaveCount(0)
@@ -1238,6 +1279,7 @@ test('AI enrichment dialog keeps footer actions visible and candidate list scrol
   await expect(footer).toBeVisible()
   await expect(applyButton).toBeVisible()
   await expect(cancelButton).toBeVisible()
+  await expect(modal).toHaveCSS('resize', 'both')
 
   const [modalBox, footerBox, applyBox, cancelBox] = await Promise.all([
     modal.boundingBox(),

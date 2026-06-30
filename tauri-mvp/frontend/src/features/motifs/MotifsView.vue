@@ -146,7 +146,7 @@ const aiProfileOptions = computed(() => [
     })),
 ])
 const enrichmentCurrentTargetKey = computed(() =>
-  enrichmentTargetKey(enrichmentMotifId.value, enrichmentConcept.value)
+  enrichmentTargetKey(enrichmentMotifId.value)
 )
 const enrichmentDraftMatchesTarget = computed(() =>
   !enrichmentDraft.value
@@ -474,9 +474,9 @@ async function resolveMotifByName(name: string): Promise<MotifNode | null> {
   }
 }
 
-function enrichmentTargetKey(motifId: string | null, concept: string): string {
+function enrichmentTargetKey(motifId: string | null): string {
   if (motifId) return `motif:${motifId}`
-  return `new:${normalizedMotifName(concept)}`
+  return 'new'
 }
 
 function profileListText(field: MotifProfileListField): string {
@@ -566,7 +566,7 @@ function resetEnrichmentDraft() {
 function openEnrichmentForSelected() {
   const motif = selectedMotif.value
   if (!motif) return
-  const nextKey = enrichmentTargetKey(motif.id, motif.name)
+  const nextKey = enrichmentTargetKey(motif.id)
   const sameTarget = enrichmentCurrentTargetKey.value === nextKey
   enrichmentMotifId.value = motif.id
   enrichmentConcept.value = formName.value.trim() || motif.name
@@ -582,11 +582,15 @@ function openEnrichmentForSelected() {
 
 function openEnrichmentForNewConcept() {
   const concept = newMotifName.value.trim()
-  if (!concept) return
-  const nextKey = enrichmentTargetKey(null, concept)
+  const nextKey = enrichmentTargetKey(null)
   const sameTarget = enrichmentCurrentTargetKey.value === nextKey
+  const hasNewDraft = Boolean(enrichmentDraft.value && enrichmentDraftTargetKey.value === nextKey)
   enrichmentMotifId.value = null
-  enrichmentConcept.value = concept
+  if (concept) {
+    enrichmentConcept.value = concept
+  } else if (!hasNewDraft) {
+    enrichmentConcept.value = ''
+  }
   if (!sameTarget) {
     enrichmentDirection.value = ''
     enrichmentIncludeExcerpts.value = false
@@ -943,8 +947,7 @@ function previewExcerpt(text: string): string {
           </button>
           <button
             @click="openEnrichmentForNewConcept"
-            :disabled="!newMotifName.trim()"
-            class="rounded-xl bg-teal-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-40"
+            class="rounded-xl bg-teal-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-teal-800"
           >
             {{ t('motifs.enrichShort') }}
           </button>
@@ -1639,8 +1642,9 @@ function previewExcerpt(text: string): string {
       @click.self="closeEnrichment"
     >
       <section
-        class="flex h-[calc(100vh-1rem)] max-h-[920px] w-[calc(100vw-1rem)] max-w-6xl flex-col overflow-hidden rounded-2xl border border-stone-200 bg-[#fffdf8] shadow-2xl sm:h-[calc(100vh-2rem)] sm:w-[calc(100vw-2rem)] lg:h-[calc(100vh-3rem)] lg:w-[calc(100vw-3rem)]"
+        class="flex h-[calc(100vh-1rem)] max-h-[calc(100vh-1rem)] w-[calc(100vw-1rem)] max-w-[1600px] resize flex-col overflow-hidden rounded-2xl border border-stone-200 bg-[#fffdf8] shadow-2xl sm:h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-2rem)] sm:w-[calc(100vw-2rem)] lg:h-[calc(100vh-3rem)] lg:max-h-[calc(100vh-3rem)] lg:w-[calc(100vw-3rem)]"
         data-testid="motif-enrichment-modal"
+        :style="{ minWidth: 'min(760px, calc(100vw - 1rem))', minHeight: 'min(560px, calc(100vh - 1rem))' }"
       >
         <header class="shrink-0 border-b border-stone-200 px-4 py-3 sm:px-5 sm:py-4">
           <div class="flex items-start justify-between gap-4">
@@ -1738,8 +1742,8 @@ function previewExcerpt(text: string): string {
                   {{ t('motifs.enrichDraftTargetChanged') }}
                 </div>
                 <div class="min-h-0 flex-1 overflow-y-auto pr-1">
-                  <div class="grid min-h-0 gap-4 2xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
-                    <div class="max-h-[min(62vh,560px)] overflow-y-auto rounded-xl bg-[#fffaf0] p-3 sm:p-4 2xl:max-h-none">
+                  <div class="grid min-h-0 gap-4 xl:h-full 2xl:grid-cols-[minmax(0,1fr)_minmax(460px,0.95fr)]">
+                    <div class="max-h-[min(62vh,560px)] overflow-y-auto rounded-xl bg-[#fffaf0] p-3 sm:p-4 xl:min-h-0 xl:max-h-none">
                       <div class="mb-3 text-xs font-semibold text-stone-500">{{ t('motifs.enrichProfileDraft') }}</div>
                       <div class="space-y-3">
                         <div v-if="enrichmentDraft.profile.definition" class="rounded-xl bg-white/85 p-3">
@@ -1763,11 +1767,11 @@ function previewExcerpt(text: string): string {
                       </div>
                     </div>
                     <div
-                      class="max-h-[min(62vh,560px)] overflow-y-auto rounded-xl border border-stone-200 bg-white p-3 sm:p-4 2xl:max-h-none"
+                      class="max-h-[min(62vh,560px)] overflow-y-auto rounded-xl border border-stone-200 bg-white p-3 sm:p-4 xl:min-h-0 xl:max-h-none"
                       data-testid="motif-enrichment-candidates"
                     >
                       <div class="mb-3 text-xs font-semibold text-stone-500">{{ t('motifs.enrichReferenceCandidates') }}</div>
-                      <div v-if="enrichmentDraft.reference_candidates.length" class="grid gap-3 min-[1500px]:grid-cols-2">
+                      <div v-if="enrichmentDraft.reference_candidates.length" class="grid gap-3 min-[1700px]:grid-cols-2">
                         <label
                           v-for="(candidate, index) in enrichmentDraft.reference_candidates"
                           :key="candidateKey(candidate, index)"

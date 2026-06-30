@@ -209,7 +209,7 @@ export const motifsApi = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
-      signal: AbortSignal.timeout(120000),
+      signal: AbortSignal.timeout(300000),
     })
     return handleResponse(res)
   },
