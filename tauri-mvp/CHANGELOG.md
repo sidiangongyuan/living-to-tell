@@ -1,5 +1,36 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.28 - Adaptive Motif Enrichment Polish (2026-06-30)
+
+### Fixed
+
+- Fixed AI Enrich applying a newly typed concept with the same name as an existing motif. It now updates or merges into the existing motif instead of creating a duplicate and hitting `Motif name already exists`.
+- Fixed AI Enrich drafts being discarded when closing and reopening the dialog for the same motif or concept. Drafts are now preserved until the app closes, the target changes, or the user generates a new draft.
+- Fixed the AI Enrich dialog layout in non-maximized windows: footer actions stay visible, reference candidates scroll cleanly, and long source/reason text wraps instead of squeezing the cards.
+
+### Changed
+
+- Widened and rebalanced the AI Enrich preview so structured profile content and reference candidates remain readable on compact and wide screens.
+- Added explicit stale-target protection so an enrichment draft generated for one motif cannot be accidentally applied to another.
+- Stabilized the backup action E2E mock by covering the data-location dependency and host-independent API routing.
+- Updated public documentation links and installer names to `0.1.28`.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\storage\test_database_migration.py tests\storage\test_motif_repository.py tests\test_tauri_mvp_api.py -q`
+- `npm test -- --run`
+- `npm run test:e2e -- --workers=1`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.28_x64-setup.exe`
+  - SHA256: `DBE9F07542A72F053EECA1A5BFF8E1D9A7A496A065B2C0E4E1EA78830EE004DC`
+- `LivingToTell_0.1.28_x64_zh-CN.msi`
+  - SHA256: `52DCE1DCDF57E83EA268E3CFA9238D8E64AF7A6465F20954A43FD9BC51ADED30`
+
 ## 0.1.27 - Motif Concept Archives (2026-06-30)
 
 ### Added

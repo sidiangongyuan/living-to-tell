@@ -65,6 +65,7 @@ const enrichmentProfileMode = ref<'merge' | 'overwrite' | 'none'>('merge')
 const enrichmentApplyAliases = ref(true)
 const enrichmentApplyTags = ref(true)
 const enrichmentApplyReferenceKeys = ref<string[]>([])
+const enrichmentDraftTargetKey = ref<string | null>(null)
 const motifListPane = useResizablePane({
   key: 'motifs:list',
   defaultSize: 260,
@@ -144,6 +145,20 @@ const aiProfileOptions = computed(() => [
       model: profile.model,
     })),
 ])
+const enrichmentCurrentTargetKey = computed(() =>
+  enrichmentTargetKey(enrichmentMotifId.value, enrichmentConcept.value)
+)
+const enrichmentDraftMatchesTarget = computed(() =>
+  !enrichmentDraft.value
+    || !enrichmentDraftTargetKey.value
+    || enrichmentDraftTargetKey.value === enrichmentCurrentTargetKey.value
+)
+const enrichmentApplyDisabled = computed(() =>
+  !enrichmentDraft.value || enrichmentApplying.value || !enrichmentDraftMatchesTarget.value
+)
+const enrichmentWillApplyToExisting = computed(() =>
+  Boolean(enrichmentMotifId.value || findMotifByName(enrichmentConcept.value))
+)
 const deleteContextMenuItems = computed(() => [{
   key: 'delete',
   label: deleteContextTarget.value?.kind === 'excerpt' ? t('motifs.removeFromMotif') : t('common.delete'),
@@ -423,6 +438,47 @@ function mergeProfiles(current: MotifProfile, next: MotifProfile, mode: 'merge' 
   }
 }
 
+function normalizedMotifName(name: string): string {
+  return name.trim().toLocaleLowerCase()
+}
+
+function motifNamesEqual(left: string, right: string): boolean {
+  return normalizedMotifName(left) === normalizedMotifName(right)
+}
+
+function findMotifByName(name: string): MotifNode | null {
+  const clean = normalizedMotifName(name)
+  if (!clean) return null
+  return motifs.value.find((motif) => normalizedMotifName(motif.name) === clean) ?? null
+}
+
+function upsertMotifInList(motif: MotifNode) {
+  const index = motifs.value.findIndex((item) => item.id === motif.id)
+  if (index >= 0) {
+    motifs.value = motifs.value.map((item) => item.id === motif.id ? motif : item)
+  } else {
+    motifs.value = [motif, ...motifs.value]
+  }
+}
+
+async function resolveMotifByName(name: string): Promise<MotifNode | null> {
+  const local = findMotifByName(name)
+  if (local) return local
+  const clean = normalizedMotifName(name)
+  if (!clean) return null
+  try {
+    const candidates = await motifsApi.listMotifs(name.trim(), 1000)
+    return candidates.find((motif) => normalizedMotifName(motif.name) === clean) ?? null
+  } catch {
+    return null
+  }
+}
+
+function enrichmentTargetKey(motifId: string | null, concept: string): string {
+  if (motifId) return `motif:${motifId}`
+  return `new:${normalizedMotifName(concept)}`
+}
+
 function profileListText(field: MotifProfileListField): string {
   return formProfile.value[field].join('\n')
 }
@@ -498,8 +554,9 @@ async function loadAiProfiles() {
 }
 
 function resetEnrichmentDraft() {
-  enrichmentDraft.value = null
   enrichmentError.value = ''
+  enrichmentDraft.value = null
+  enrichmentDraftTargetKey.value = null
   enrichmentProfileMode.value = 'merge'
   enrichmentApplyAliases.value = true
   enrichmentApplyTags.value = true
@@ -509,12 +566,16 @@ function resetEnrichmentDraft() {
 function openEnrichmentForSelected() {
   const motif = selectedMotif.value
   if (!motif) return
+  const nextKey = enrichmentTargetKey(motif.id, motif.name)
+  const sameTarget = enrichmentCurrentTargetKey.value === nextKey
   enrichmentMotifId.value = motif.id
   enrichmentConcept.value = formName.value.trim() || motif.name
-  enrichmentDirection.value = ''
-  enrichmentIncludeExcerpts.value = true
-  enrichmentRequestWebContext.value = false
-  resetEnrichmentDraft()
+  if (!sameTarget) {
+    enrichmentDirection.value = ''
+    enrichmentIncludeExcerpts.value = true
+    enrichmentRequestWebContext.value = false
+  }
+  enrichmentError.value = ''
   enrichmentOpen.value = true
   void loadAiProfiles()
 }
@@ -522,12 +583,16 @@ function openEnrichmentForSelected() {
 function openEnrichmentForNewConcept() {
   const concept = newMotifName.value.trim()
   if (!concept) return
+  const nextKey = enrichmentTargetKey(null, concept)
+  const sameTarget = enrichmentCurrentTargetKey.value === nextKey
   enrichmentMotifId.value = null
   enrichmentConcept.value = concept
-  enrichmentDirection.value = ''
-  enrichmentIncludeExcerpts.value = false
-  enrichmentRequestWebContext.value = false
-  resetEnrichmentDraft()
+  if (!sameTarget) {
+    enrichmentDirection.value = ''
+    enrichmentIncludeExcerpts.value = false
+    enrichmentRequestWebContext.value = false
+  }
+  enrichmentError.value = ''
   enrichmentOpen.value = true
   void loadAiProfiles()
 }
@@ -545,7 +610,8 @@ async function generateEnrichmentDraft() {
   }
   enrichmentGenerating.value = true
   enrichmentError.value = ''
-  enrichmentDraft.value = null
+  resetEnrichmentDraft()
+  const targetKey = enrichmentCurrentTargetKey.value
   try {
     enrichmentDraft.value = await motifsApi.generateEnrichmentDraft({
       motif_id: enrichmentMotifId.value,
@@ -556,6 +622,7 @@ async function generateEnrichmentDraft() {
       profile_id: enrichmentProfileId.value,
       cost_tier: 'strong',
     })
+    enrichmentDraftTargetKey.value = targetKey
     enrichmentApplyReferenceKeys.value = []
   } catch (e) {
     enrichmentError.value = friendlyMotifError(e)
@@ -567,11 +634,21 @@ async function generateEnrichmentDraft() {
 async function applyEnrichmentDraft() {
   const draft = enrichmentDraft.value
   if (!draft) return
+  if (!enrichmentDraftMatchesTarget.value) {
+    enrichmentError.value = t('motifs.enrichDraftTargetChanged')
+    return
+  }
   enrichmentApplying.value = true
   enrichmentError.value = ''
   try {
     let appliedMotifId = enrichmentMotifId.value
     if (enrichmentMotifId.value) {
+      const targetMotif = motifs.value.find((motif) => motif.id === enrichmentMotifId.value) ?? selectedMotif.value
+      const requestedName = (formName.value.trim() || targetMotif?.name || draft.concept).trim()
+      const duplicate = findMotifByName(requestedName)
+      const safeName = duplicate && duplicate.id !== enrichmentMotifId.value
+        ? (targetMotif?.name ?? requestedName)
+        : requestedName
       const aliases = enrichmentApplyAliases.value
         ? mergeUniqueValues(linesFrom(formAliases.value), draft.aliases)
         : linesFrom(formAliases.value)
@@ -579,7 +656,7 @@ async function applyEnrichmentDraft() {
         ? mergeUniqueValues(linesFrom(formTags.value), draft.tags)
         : linesFrom(formTags.value)
       const payload = {
-        name: (formName.value.trim() || draft.concept).trim(),
+        name: safeName,
         aliases,
         tags,
         note: formNote.value,
@@ -587,7 +664,7 @@ async function applyEnrichmentDraft() {
         pinned: formPinned.value,
       }
       const updated = await motifsApi.updateMotif(enrichmentMotifId.value, payload)
-      motifs.value = motifs.value.map((item) => item.id === updated.id ? updated : item)
+      upsertMotifInList(updated)
       selectedMotifId.value = updated.id
       appliedMotifId = updated.id
       formName.value = updated.name
@@ -598,18 +675,45 @@ async function applyEnrichmentDraft() {
       formPinned.value = updated.pinned
     } else {
       const conceptName = enrichmentConcept.value.trim() || draft.concept
-      const created = await motifsApi.createMotif({
-        name: conceptName,
-        aliases: enrichmentApplyAliases.value ? draft.aliases : [],
-        tags: enrichmentApplyTags.value ? draft.tags : [],
-        note: '',
-        profile: enrichmentProfileMode.value === 'none' ? emptyMotifProfile() : draft.profile,
-        pinned: false,
-      })
-      newMotifName.value = ''
-      await loadMotifs()
-      selectedMotifId.value = created.id
-      appliedMotifId = created.id
+      const existing = await resolveMotifByName(conceptName)
+      if (existing) {
+        const updated = await motifsApi.updateMotif(existing.id, {
+          name: existing.name,
+          aliases: enrichmentApplyAliases.value
+            ? mergeUniqueValues(existing.aliases, draft.aliases)
+            : existing.aliases,
+          tags: enrichmentApplyTags.value
+            ? mergeUniqueValues(existing.tags, draft.tags)
+            : existing.tags,
+          note: existing.note,
+          profile: mergeProfiles(normalizeProfile(existing.profile), draft.profile, enrichmentProfileMode.value),
+          pinned: existing.pinned,
+        })
+        upsertMotifInList(updated)
+        selectedMotifId.value = updated.id
+        appliedMotifId = updated.id
+        formName.value = updated.name
+        formAliases.value = updated.aliases.join('\n')
+        formTags.value = updated.tags.join('\n')
+        formNote.value = updated.note
+        formProfile.value = normalizeProfile(updated.profile)
+        formPinned.value = updated.pinned
+      } else {
+        const created = await motifsApi.createMotif({
+          name: conceptName,
+          aliases: enrichmentApplyAliases.value ? draft.aliases : [],
+          tags: enrichmentApplyTags.value ? draft.tags : [],
+          note: '',
+          profile: enrichmentProfileMode.value === 'none' ? emptyMotifProfile() : draft.profile,
+          pinned: false,
+        })
+        await loadMotifs()
+        selectedMotifId.value = created.id
+        appliedMotifId = created.id
+      }
+      if (motifNamesEqual(newMotifName.value, conceptName)) {
+        newMotifName.value = ''
+      }
     }
 
     const selectedCandidates = draft.reference_candidates.filter((candidate, index) =>
@@ -1531,29 +1635,32 @@ function previewExcerpt(text: string): string {
     </div>
     <div
       v-if="enrichmentOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/30 px-4 py-6"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/30 p-2 sm:p-4 lg:p-6"
       @click.self="closeEnrichment"
     >
-      <section class="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-stone-200 bg-[#fffdf8] shadow-2xl">
-        <header class="border-b border-stone-200 px-5 py-4">
+      <section
+        class="flex h-[calc(100vh-1rem)] max-h-[920px] w-[calc(100vw-1rem)] max-w-6xl flex-col overflow-hidden rounded-2xl border border-stone-200 bg-[#fffdf8] shadow-2xl sm:h-[calc(100vh-2rem)] sm:w-[calc(100vw-2rem)] lg:h-[calc(100vh-3rem)] lg:w-[calc(100vw-3rem)]"
+        data-testid="motif-enrichment-modal"
+      >
+        <header class="shrink-0 border-b border-stone-200 px-4 py-3 sm:px-5 sm:py-4">
           <div class="flex items-start justify-between gap-4">
-            <div>
+            <div class="min-w-0">
               <p class="text-xs font-semibold uppercase tracking-[0.22em] text-teal-700">{{ t('motifs.enrichEyebrow') }}</p>
               <h2 class="mt-1 text-xl font-semibold text-stone-950">{{ t('motifs.enrichTitle') }}</h2>
               <p class="mt-1 text-sm leading-6 text-stone-500">{{ t('motifs.enrichSubtitle') }}</p>
             </div>
             <button
               @click="closeEnrichment"
-              class="rounded-full px-3 py-1 text-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+              class="shrink-0 rounded-full px-3 py-1 text-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700"
             >
               ×
             </button>
           </div>
         </header>
 
-        <div class="min-h-0 flex-1 overflow-y-auto p-5">
-          <div class="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
-            <section class="rounded-2xl border border-stone-200 bg-white p-4">
+        <div class="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5 xl:overflow-hidden">
+          <div class="grid gap-4 xl:h-full xl:min-h-0 xl:grid-cols-[360px_minmax(0,1fr)]">
+            <section class="rounded-2xl border border-stone-200 bg-white p-4 xl:min-h-0 xl:overflow-y-auto">
               <label class="block text-sm font-medium text-stone-700">
                 {{ t('motifs.enrichConcept') }}
                 <input
@@ -1567,7 +1674,7 @@ function previewExcerpt(text: string): string {
                 <textarea
                   v-model="enrichmentDirection"
                   rows="3"
-                  class="mt-1 w-full resize-none rounded-xl border border-stone-200 px-3 py-2 leading-6 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100"
+                  class="mt-1 max-h-[30vh] w-full resize-y rounded-xl border border-stone-200 px-3 py-2 leading-6 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100"
                   :placeholder="t('motifs.enrichDirectionPlaceholder')"
                 />
               </label>
@@ -1610,12 +1717,12 @@ function previewExcerpt(text: string): string {
               </div>
             </section>
 
-            <section class="rounded-2xl border border-stone-200 bg-white p-4">
-              <div v-if="!enrichmentDraft" class="flex min-h-[360px] items-center justify-center rounded-xl border border-dashed border-stone-200 bg-stone-50 px-6 text-center text-sm leading-6 text-stone-400">
+            <section class="flex min-h-0 flex-col rounded-2xl border border-stone-200 bg-white p-3 sm:p-4">
+              <div v-if="!enrichmentDraft" class="flex min-h-[220px] items-center justify-center rounded-xl border border-dashed border-stone-200 bg-stone-50 px-6 text-center text-sm leading-6 text-stone-400 sm:min-h-[300px]">
                 {{ t('motifs.enrichEmptyPreview') }}
               </div>
-              <div v-else>
-                <div class="mb-3 flex items-start justify-between gap-3">
+              <div v-else class="flex min-h-0 flex-1 flex-col">
+                <div class="mb-3 flex shrink-0 items-start justify-between gap-3">
                   <div class="min-w-0">
                     <p class="text-xs font-semibold uppercase tracking-[0.2em] text-teal-700">{{ t('motifs.enrichDraft') }}</p>
                     <h3 class="mt-1 truncate text-lg font-semibold text-stone-950">{{ enrichmentDraft.title }}</h3>
@@ -1624,91 +1731,102 @@ function previewExcerpt(text: string): string {
                     </p>
                   </div>
                 </div>
-                <div class="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-                  <div class="max-h-[440px] overflow-y-auto rounded-xl bg-[#fffaf0] p-4">
-                    <div class="mb-3 text-xs font-semibold text-stone-500">{{ t('motifs.enrichProfileDraft') }}</div>
-                    <div class="space-y-3">
-                      <div v-if="enrichmentDraft.profile.definition" class="rounded-xl bg-white/85 p-3">
-                        <div class="mb-1 text-xs font-semibold text-teal-700">{{ t('motifs.profileDefinition') }}</div>
-                        <p class="text-sm leading-7 text-stone-850">{{ enrichmentDraft.profile.definition }}</p>
-                      </div>
-                      <div v-if="enrichmentDraft.profile.core_tension" class="rounded-xl bg-white/85 p-3">
-                        <div class="mb-1 text-xs font-semibold text-rose-700">{{ t('motifs.profileCoreTension') }}</div>
-                        <p class="text-sm leading-7 text-stone-850">{{ enrichmentDraft.profile.core_tension }}</p>
-                      </div>
-                      <div v-if="enrichmentDraft.profile.writing_functions.length" class="rounded-xl bg-white/85 p-3">
-                        <div class="mb-1 text-xs font-semibold text-stone-500">{{ t('motifs.profileWritingFunctions') }}</div>
-                        <ul class="space-y-1 text-sm leading-6 text-stone-750">
-                          <li v-for="item in enrichmentDraft.profile.writing_functions" :key="`draft-function-${item}`">· {{ item }}</li>
-                        </ul>
-                      </div>
-                      <details class="rounded-xl bg-white/70 p-3 text-sm leading-7 text-stone-750">
-                        <summary class="cursor-pointer text-xs font-semibold text-stone-600">{{ t('motifs.enrichRawNote') }}</summary>
-                        <div class="mt-2 whitespace-pre-wrap">{{ enrichmentDraft.note }}</div>
-                      </details>
-                    </div>
-                  </div>
-                  <div class="max-h-[440px] overflow-y-auto rounded-xl border border-stone-200 bg-white p-4">
-                    <div class="mb-3 text-xs font-semibold text-stone-500">{{ t('motifs.enrichReferenceCandidates') }}</div>
-                    <div v-if="enrichmentDraft.reference_candidates.length" class="space-y-3">
-                      <label
-                        v-for="(candidate, index) in enrichmentDraft.reference_candidates"
-                        :key="candidateKey(candidate, index)"
-                        class="block rounded-xl border p-3 text-sm leading-6"
-                        :class="candidateCanImport(candidate) ? 'border-teal-100 bg-teal-50/40' : 'border-stone-200 bg-stone-50 text-stone-500'"
-                      >
-                        <div class="flex items-start gap-2">
-                          <input
-                            v-model="enrichmentApplyReferenceKeys"
-                            type="checkbox"
-                            :value="candidateKey(candidate, index)"
-                            :disabled="!candidateCanImport(candidate)"
-                            class="mt-1 h-4 w-4 rounded border-stone-300 text-teal-700 disabled:opacity-40"
-                          />
-                          <div class="min-w-0">
-                            <p class="break-words text-stone-850">“{{ candidate.text }}”</p>
-                            <p class="mt-2 text-xs text-stone-500">
-                              {{ candidate.source_author || t('motifs.candidateMissingAuthor') }} · {{ candidate.source_title || t('motifs.candidateMissingTitle') }}
-                            </p>
-                            <p v-if="candidate.source_note" class="mt-1 text-xs text-stone-500">{{ candidate.source_note }}</p>
-                            <p v-if="candidate.reason" class="mt-1 rounded-lg bg-white/70 px-2 py-1 text-xs text-teal-800">{{ candidate.reason }}</p>
-                            <p v-if="!candidateCanImport(candidate)" class="mt-2 text-xs text-amber-700">{{ t('motifs.candidateNeedsSource') }}</p>
-                          </div>
+                <div
+                  v-if="!enrichmentDraftMatchesTarget"
+                  class="mb-3 shrink-0 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800"
+                >
+                  {{ t('motifs.enrichDraftTargetChanged') }}
+                </div>
+                <div class="min-h-0 flex-1 overflow-y-auto pr-1">
+                  <div class="grid min-h-0 gap-4 2xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
+                    <div class="max-h-[min(62vh,560px)] overflow-y-auto rounded-xl bg-[#fffaf0] p-3 sm:p-4 2xl:max-h-none">
+                      <div class="mb-3 text-xs font-semibold text-stone-500">{{ t('motifs.enrichProfileDraft') }}</div>
+                      <div class="space-y-3">
+                        <div v-if="enrichmentDraft.profile.definition" class="rounded-xl bg-white/85 p-3">
+                          <div class="mb-1 text-xs font-semibold text-teal-700">{{ t('motifs.profileDefinition') }}</div>
+                          <p class="text-sm leading-7 text-stone-850">{{ enrichmentDraft.profile.definition }}</p>
                         </div>
-                      </label>
+                        <div v-if="enrichmentDraft.profile.core_tension" class="rounded-xl bg-white/85 p-3">
+                          <div class="mb-1 text-xs font-semibold text-rose-700">{{ t('motifs.profileCoreTension') }}</div>
+                          <p class="text-sm leading-7 text-stone-850">{{ enrichmentDraft.profile.core_tension }}</p>
+                        </div>
+                        <div v-if="enrichmentDraft.profile.writing_functions.length" class="rounded-xl bg-white/85 p-3">
+                          <div class="mb-1 text-xs font-semibold text-stone-500">{{ t('motifs.profileWritingFunctions') }}</div>
+                          <ul class="space-y-1 text-sm leading-6 text-stone-750">
+                            <li v-for="item in enrichmentDraft.profile.writing_functions" :key="`draft-function-${item}`">· {{ item }}</li>
+                          </ul>
+                        </div>
+                        <details class="rounded-xl bg-white/70 p-3 text-sm leading-7 text-stone-750">
+                          <summary class="cursor-pointer text-xs font-semibold text-stone-600">{{ t('motifs.enrichRawNote') }}</summary>
+                          <div class="mt-2 whitespace-pre-wrap">{{ enrichmentDraft.note }}</div>
+                        </details>
+                      </div>
                     </div>
-                    <div v-else class="rounded-xl border border-dashed border-stone-200 bg-stone-50 p-4 text-center text-sm leading-6 text-stone-400">
-                      {{ t('motifs.noReferenceCandidates') }}
+                    <div
+                      class="max-h-[min(62vh,560px)] overflow-y-auto rounded-xl border border-stone-200 bg-white p-3 sm:p-4 2xl:max-h-none"
+                      data-testid="motif-enrichment-candidates"
+                    >
+                      <div class="mb-3 text-xs font-semibold text-stone-500">{{ t('motifs.enrichReferenceCandidates') }}</div>
+                      <div v-if="enrichmentDraft.reference_candidates.length" class="grid gap-3 min-[1500px]:grid-cols-2">
+                        <label
+                          v-for="(candidate, index) in enrichmentDraft.reference_candidates"
+                          :key="candidateKey(candidate, index)"
+                          class="block rounded-xl border p-3 text-sm leading-6"
+                          :class="candidateCanImport(candidate) ? 'border-teal-100 bg-teal-50/40' : 'border-stone-200 bg-stone-50 text-stone-500'"
+                        >
+                          <div class="flex items-start gap-2">
+                            <input
+                              v-model="enrichmentApplyReferenceKeys"
+                              type="checkbox"
+                              :value="candidateKey(candidate, index)"
+                              :disabled="!candidateCanImport(candidate)"
+                              class="mt-1 h-4 w-4 shrink-0 rounded border-stone-300 text-teal-700 disabled:opacity-40"
+                            />
+                            <div class="min-w-0">
+                              <p class="break-words text-stone-850">“{{ candidate.text }}”</p>
+                              <p class="mt-2 break-words text-xs text-stone-500">
+                                {{ candidate.source_author || t('motifs.candidateMissingAuthor') }} · {{ candidate.source_title || t('motifs.candidateMissingTitle') }}
+                              </p>
+                              <p v-if="candidate.source_note" class="mt-1 break-words text-xs text-stone-500">{{ candidate.source_note }}</p>
+                              <p v-if="candidate.reason" class="mt-1 break-words rounded-lg bg-white/70 px-2 py-1 text-xs text-teal-800">{{ candidate.reason }}</p>
+                              <p v-if="!candidateCanImport(candidate)" class="mt-2 text-xs text-amber-700">{{ t('motifs.candidateNeedsSource') }}</p>
+                            </div>
+                          </div>
+                        </label>
+                      </div>
+                      <div v-else class="rounded-xl border border-dashed border-stone-200 bg-stone-50 p-4 text-center text-sm leading-6 text-stone-400">
+                        {{ t('motifs.noReferenceCandidates') }}
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div v-if="enrichmentDraft.aliases.length || enrichmentDraft.tags.length" class="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <div class="mb-1 text-xs font-semibold text-stone-500">{{ t('motifs.aliases') }}</div>
+                  <div v-if="enrichmentDraft.aliases.length || enrichmentDraft.tags.length" class="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <div class="mb-1 text-xs font-semibold text-stone-500">{{ t('motifs.aliases') }}</div>
+                      <div class="flex flex-wrap gap-1.5">
+                        <span v-for="item in enrichmentDraft.aliases" :key="`alias-${item}`" class="rounded-full bg-teal-50 px-2 py-1 text-xs text-teal-800">{{ item }}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div class="mb-1 text-xs font-semibold text-stone-500">{{ t('motifs.tags') }}</div>
+                      <div class="flex flex-wrap gap-1.5">
+                        <span v-for="item in enrichmentDraft.tags" :key="`tag-${item}`" class="rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-800">{{ item }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="enrichmentDraft.related_suggestions.length" class="mt-4">
+                    <div class="mb-1 text-xs font-semibold text-stone-500">{{ t('motifs.enrichRelatedSuggestions') }}</div>
                     <div class="flex flex-wrap gap-1.5">
-                      <span v-for="item in enrichmentDraft.aliases" :key="`alias-${item}`" class="rounded-full bg-teal-50 px-2 py-1 text-xs text-teal-800">{{ item }}</span>
+                      <span v-for="item in enrichmentDraft.related_suggestions" :key="`related-${item}`" class="rounded-full bg-stone-100 px-2 py-1 text-xs text-stone-600">{{ item }}</span>
                     </div>
+                    <p class="mt-2 text-xs leading-5 text-stone-400">{{ t('motifs.enrichRelatedHint') }}</p>
                   </div>
-                  <div>
-                    <div class="mb-1 text-xs font-semibold text-stone-500">{{ t('motifs.tags') }}</div>
-                    <div class="flex flex-wrap gap-1.5">
-                      <span v-for="item in enrichmentDraft.tags" :key="`tag-${item}`" class="rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-800">{{ item }}</span>
+                  <div v-if="enrichmentDraft.source_hints.length" class="mt-4 rounded-xl bg-stone-50 p-3">
+                    <div class="mb-2 text-xs font-semibold text-stone-500">{{ t('motifs.enrichSourceHints') }}</div>
+                    <div v-for="hint in enrichmentDraft.source_hints" :key="`${hint.title}-${hint.url || hint.note}`" class="mb-2 last:mb-0">
+                      <a v-if="hint.url" :href="hint.url" target="_blank" rel="noreferrer" class="break-words text-sm font-medium text-teal-700 hover:text-teal-900">{{ hint.title }}</a>
+                      <p v-else class="break-words text-sm font-medium text-stone-700">{{ hint.title }}</p>
+                      <p v-if="hint.note" class="mt-0.5 break-words text-xs leading-5 text-stone-500">{{ hint.note }}</p>
                     </div>
-                  </div>
-                </div>
-                <div v-if="enrichmentDraft.related_suggestions.length" class="mt-4">
-                  <div class="mb-1 text-xs font-semibold text-stone-500">{{ t('motifs.enrichRelatedSuggestions') }}</div>
-                  <div class="flex flex-wrap gap-1.5">
-                    <span v-for="item in enrichmentDraft.related_suggestions" :key="`related-${item}`" class="rounded-full bg-stone-100 px-2 py-1 text-xs text-stone-600">{{ item }}</span>
-                  </div>
-                  <p class="mt-2 text-xs leading-5 text-stone-400">{{ t('motifs.enrichRelatedHint') }}</p>
-                </div>
-                <div v-if="enrichmentDraft.source_hints.length" class="mt-4 rounded-xl bg-stone-50 p-3">
-                  <div class="mb-2 text-xs font-semibold text-stone-500">{{ t('motifs.enrichSourceHints') }}</div>
-                  <div v-for="hint in enrichmentDraft.source_hints" :key="`${hint.title}-${hint.url || hint.note}`" class="mb-2 last:mb-0">
-                    <a v-if="hint.url" :href="hint.url" target="_blank" rel="noreferrer" class="text-sm font-medium text-teal-700 hover:text-teal-900">{{ hint.title }}</a>
-                    <p v-else class="text-sm font-medium text-stone-700">{{ hint.title }}</p>
-                    <p v-if="hint.note" class="mt-0.5 text-xs leading-5 text-stone-500">{{ hint.note }}</p>
                   </div>
                 </div>
               </div>
@@ -1716,7 +1834,7 @@ function previewExcerpt(text: string): string {
           </div>
         </div>
 
-        <footer class="border-t border-stone-200 bg-white px-5 py-4">
+        <footer class="shrink-0 border-t border-stone-200 bg-white px-4 py-3 sm:px-5 sm:py-4" data-testid="motif-enrichment-footer">
           <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div class="flex flex-wrap gap-3 text-sm text-stone-600">
               <label class="flex items-center gap-2">
@@ -1746,10 +1864,10 @@ function previewExcerpt(text: string): string {
               </button>
               <button
                 @click="applyEnrichmentDraft"
-                :disabled="!enrichmentDraft || enrichmentApplying"
+                :disabled="enrichmentApplyDisabled"
                 class="rounded-xl bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-40"
               >
-                {{ enrichmentApplying ? t('common.saving') : (enrichmentMotifId ? t('motifs.enrichApplyExisting') : t('motifs.enrichCreateMotif')) }}
+                {{ enrichmentApplying ? t('common.saving') : (enrichmentWillApplyToExisting ? t('motifs.enrichApplyExisting') : t('motifs.enrichCreateMotif')) }}
               </button>
             </div>
           </div>

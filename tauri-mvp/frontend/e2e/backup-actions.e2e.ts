@@ -25,14 +25,20 @@ async function mockBackupApi(page: Page) {
     ;(window as Window & { __WRITER_DISABLE_AUTO_UPDATE__?: boolean }).__WRITER_DISABLE_AUTO_UPDATE__ = true
     Object.defineProperty(window, '__TAURI_INTERNALS__', {
       value: {
-        invoke: (command: string) => Promise.resolve(command === 'get_api_base_url' ? 'http://backend.test' : null),
+        invoke: async (command: string) => {
+          if (command === 'get_api_base_url') return 'http://backend.test'
+          if (command === 'get_close_preference') return 'ask'
+          if (command.startsWith('plugin:event|')) return 1
+          return null
+        },
         transformCallback: () => 1,
+        unregisterCallback: () => undefined,
       },
       configurable: true,
     })
   })
 
-  await page.route('http://backend.test/api/app/version', async (route) => {
+  await page.route('**/api/app/version', async (route) => {
     await route.fulfill({
       json: {
         app_name: 'Living to Tell',
@@ -42,7 +48,7 @@ async function mockBackupApi(page: Page) {
       },
     })
   })
-  await page.route('http://backend.test/api/app/update-check*', async (route) => {
+  await page.route('**/api/app/update-check*', async (route) => {
     await route.fulfill({
       json: {
         current_version: '0.1.13',
@@ -62,8 +68,23 @@ async function mockBackupApi(page: Page) {
       },
     })
   })
+  await page.route('**/api/settings/data-location', async (route) => {
+    await route.fulfill({
+      json: {
+        data_dir: 'C:\\Data',
+        default_data_dir: 'C:\\Data',
+        database_path: 'C:\\Data\\living_to_tell.sqlite3',
+        default_database_path: 'C:\\Data\\living_to_tell.sqlite3',
+        backup_dir: 'C:\\Data\\backups',
+        checkpoint_dir: 'C:\\Data\\checkpoints',
+        is_custom: false,
+        database_exists: true,
+        warning: null,
+      },
+    })
+  })
 
-  await page.route('http://backend.test/api/backup/**', async (route) => {
+  await page.route('**/api/backup/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
 
@@ -134,46 +155,87 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('backup page create, delete, and restore actions call real APIs with confirmations', async ({ page }) => {
+  let backups = [backup]
+  let checkpoints = [checkpoint]
   const checkpointCreates: Array<Record<string, unknown>> = []
   let backupCreates = 0
   let backupDeletes = 0
   let checkpointDeletes = 0
   let restores = 0
 
-  await page.route('http://backend.test/api/backup/**', async (route) => {
+  await page.route('**/api/backup/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
+    if (url.pathname === '/api/backup/backups') {
+      await route.fulfill({ json: backups })
+      return
+    }
     if (url.pathname === '/api/backup/checkpoints' && request.method() === 'POST') {
-      checkpointCreates.push(request.postDataJSON() as Record<string, unknown>)
-      await route.fallback()
+      const body = request.postDataJSON() as { name?: string; description?: string }
+      checkpointCreates.push(body)
+      const created = {
+        ...checkpoint,
+        path: `C:\\Data\\checkpoints\\${body.name}.sqlite3`,
+        name: body.name ?? '',
+        description: body.description ?? '',
+      }
+      checkpoints = [created, ...checkpoints]
+      await route.fulfill({ status: 201, json: created })
+      return
+    }
+    if (url.pathname === '/api/backup/checkpoints') {
+      await route.fulfill({ json: checkpoints })
+      return
+    }
+    if (url.pathname === '/api/backup/stats') {
+      await route.fulfill({
+        json: {
+          backup_count: backups.length,
+          checkpoint_count: checkpoints.length,
+          total_backup_size: backups.reduce((total, item) => total + item.size, 0),
+          total_checkpoint_size: checkpoints.reduce((total, item) => total + item.size, 0),
+          total_size: [...backups, ...checkpoints].reduce((total, item) => total + item.size, 0),
+          backup_dir: 'C:\\Data\\backups',
+          checkpoint_dir: 'C:\\Data\\checkpoints',
+        },
+      })
       return
     }
     if (url.pathname === '/api/backup/auto-backup' && request.method() === 'POST') {
       backupCreates += 1
-      await route.fallback()
+      const created = {
+        ...backup,
+        path: 'C:\\Data\\backups\\auto_backup_created.sqlite3',
+        name: 'auto_backup_created',
+      }
+      backups = [created, ...backups]
+      await route.fulfill({ status: 201, json: created })
       return
     }
     if (url.pathname.startsWith('/api/backup/backups/') && request.method() === 'DELETE') {
       backupDeletes += 1
-      await route.fallback()
+      backups = []
+      await route.fulfill({ status: 204 })
       return
     }
     if (url.pathname.startsWith('/api/backup/checkpoints/') && request.method() === 'DELETE') {
       checkpointDeletes += 1
-      await route.fallback()
+      checkpoints = []
+      await route.fulfill({ status: 204 })
       return
     }
     if (url.pathname === '/api/backup/restore' && request.method() === 'POST') {
       restores += 1
-      await route.fallback()
+      await route.fulfill({ json: { message: 'Database restored successfully' } })
       return
     }
     await route.fallback()
   })
 
   await page.goto('/backup')
-  await expect(page.locator('article').filter({ hasText: 'chapter-three' }).first()).toBeVisible()
-  await expect(page.locator('article').filter({ hasText: 'auto_backup_20260619' }).first()).toBeVisible()
+  await expect(page.getByRole('heading', { name: '导出与备份' })).toBeVisible({ timeout: 20000 })
+  await expect(page.locator('article').filter({ hasText: 'chapter-three' }).first()).toBeVisible({ timeout: 20000 })
+  await expect(page.locator('article').filter({ hasText: 'auto_backup_20260619' }).first()).toBeVisible({ timeout: 20000 })
 
   await page.getByRole('button', { name: '创建检查点' }).click()
   const createCheckpointButton = page.getByRole('button', { name: '创建', exact: true })

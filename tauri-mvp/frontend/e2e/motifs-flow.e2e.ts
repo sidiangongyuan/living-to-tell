@@ -77,6 +77,10 @@ interface MotifExcerpt {
 
 type SourceKind = 'article' | 'reference'
 
+function normalizeMotifName(name: string): string {
+  return name.trim().toLowerCase()
+}
+
 function emptyMotifProfile(): MotifNode['profile'] {
   return {
     definition: '',
@@ -152,6 +156,7 @@ async function mockMotifFlowApi(page: Page) {
   }
   let motifs: MotifNode[] = []
   let excerpts: MotifExcerpt[] = []
+  let enrichmentDraftCalls = 0
 
   await page.route('**/api/app/version', async (route) => {
     await route.fulfill({
@@ -429,6 +434,9 @@ async function mockMotifFlowApi(page: Page) {
       },
     })
   })
+  await page.route(/\/api\/settings\/ai\/profiles$/, async (route) => {
+    await route.fulfill({ json: { profiles: [] } })
+  })
   await page.route(/\/api\/dates\//, async (route) => route.fulfill({ json: [] }))
   await page.route(/\/api\/collections\/for-entry\//, async (route) => route.fulfill({ json: [] }))
   await page.route(/\/api\/articles(?:\/|\?|$)/, async (route) => {
@@ -547,7 +555,7 @@ async function mockMotifFlowApi(page: Page) {
     if (path === '/api/motifs' && request.method() === 'POST') {
       const body = request.postDataJSON() as Partial<MotifNode> & { name?: string }
       const name = body.name?.trim() || '未命名意象'
-      const existing = motifs.find((motif) => motif.name === name)
+      const existing = motifs.find((motif) => normalizeMotifName(motif.name) === normalizeMotifName(name))
       if (existing) {
         await route.fulfill({ status: 400, json: { detail: 'Motif name already exists' } })
         return
@@ -574,6 +582,51 @@ async function mockMotifFlowApi(page: Page) {
       return
     }
 
+    if (path === '/api/motifs/enrich-draft' && request.method() === 'POST') {
+      enrichmentDraftCalls += 1
+      const body = request.postDataJSON() as { concept?: string }
+      const concept = body.concept?.trim() || '测试概念'
+      if (enrichmentDraftCalls === 2) {
+        await new Promise((resolve) => setTimeout(resolve, 350))
+      }
+      const suffix = enrichmentDraftCalls === 1 ? 'A' : 'B'
+      await route.fulfill({
+        json: {
+          title: `${concept}短卡 ${suffix}`,
+          concept,
+          aliases: [`${concept}别名`, 'das Man'],
+          tags: ['哲学概念', `测试标签${suffix}`],
+          note: `【一句话定义】\n定义 ${suffix}\n\n【核心张力】\n张力 ${suffix}\n\n【写作功能】\n- 功能 ${suffix}\n\n【场景触发】\n- 场景 ${suffix}\n\n【人物表现】\n- 表现 ${suffix}\n\n【意象转译】\n- 转译 ${suffix}\n\n【短例子】\n- 例子 ${suffix}\n\n【关联建议】\n建议 ${suffix}\n\n【误用提醒】\n- 提醒 ${suffix}\n\n【微练习】\n- 练习 ${suffix}\n\n【来源线索（需核对）】\n- 需核对。`,
+          profile: {
+            definition: `定义 ${suffix}`,
+            core_tension: `张力 ${suffix}`,
+            writing_functions: [`功能 ${suffix}`],
+            scene_triggers: [`场景 ${suffix}`],
+            character_signals: [`表现 ${suffix}`],
+            imagery_translations: [`转译 ${suffix}`],
+            short_examples: [`例子 ${suffix}`],
+            misuse_warnings: [`提醒 ${suffix}`],
+            micro_exercises: [`练习 ${suffix}`],
+            source_hints: [{ title: '测试来源线索', url: null, note: '需核对。' }],
+          },
+          related_suggestions: ['建议一', '建议二'],
+          source_hints: [{ title: '测试来源线索', url: null, note: '需核对。' }],
+          reference_candidates: Array.from({ length: 18 }, (_, index) => ({
+            text: `第 ${index + 1} 条候选句：这是一段很长的相关句子，用来验证小窗口中候选卡片是否能换行、滚动，并且不会遮挡底部操作按钮。`,
+            source_author: `测试作者${index + 1}`,
+            source_title: `测试书名${index + 1}：一个非常长的副标题用于验证断行`,
+            source_note: 'AI 候选，来源需人工核对。',
+            reason: '用于验证候选句卡片在紧凑窗口内仍然可读。',
+          })),
+          provider: 'fake',
+          model: 'fake-model',
+          transport: 'fake',
+          elapsed_ms: 120 + enrichmentDraftCalls,
+        },
+      })
+      return
+    }
+
     const motifNodeMatch = path.match(/^\/api\/motifs\/([^/]+)$/)
     if (motifNodeMatch && request.method() === 'GET') {
       const motif = motifs.find((item) => item.id === motifNodeMatch[1])
@@ -588,8 +641,16 @@ async function mockMotifFlowApi(page: Page) {
         return
       }
       const body = request.postDataJSON() as Partial<MotifNode>
+      const nextName = body.name ?? motif.name
+      const duplicate = motifs.find((item) =>
+        item.id !== motif.id && normalizeMotifName(item.name) === normalizeMotifName(nextName)
+      )
+      if (duplicate) {
+        await route.fulfill({ status: 400, json: { detail: 'Motif name already exists' } })
+        return
+      }
       Object.assign(motif, {
-        name: body.name ?? motif.name,
+        name: nextName,
         aliases: body.aliases ?? motif.aliases,
         note: body.note ?? motif.note,
         profile: body.profile ?? motif.profile,
@@ -805,7 +866,10 @@ test('article selection can be saved to multiple motifs and reopened from the st
 
   await page.getByRole('button', { name: /玫瑰花/ }).first().click()
   await expect(page.getByText('玫瑰在夜里像血一样醒着。')).toBeVisible()
-  await page.getByRole('button', { name: '打开来源' }).click()
+  const detailPane = page.getByTestId('motifs-detail-pane')
+  const openSourceButton = detailPane.getByRole('button', { name: '打开来源' })
+  await openSourceButton.scrollIntoViewIfNeeded()
+  await openSourceButton.click()
 
   await expect(page).toHaveURL(/\/articles\?.*id=article-a/)
   await expect(page.getByText('已回到原句。')).toBeVisible()
@@ -1063,4 +1127,147 @@ test('motif profile reader uses chips and saves chip edits explicitly', async ({
   await page.getByRole('button', { name: '查看详细' }).click()
   await expect(page.getByText('写作转译')).toBeVisible()
   await expect(page.getByText('他还没开口，答案已经替他说完。')).toBeVisible()
+})
+
+test('AI enrichment keeps a draft across close and reopen, and clears it only when regenerating', async ({ page }) => {
+  await page.goto('/motifs')
+  await page.evaluate(async () => {
+    await fetch('/api/motifs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '神话模式' }),
+    })
+  })
+
+  await page.goto('/motifs')
+  await expect(page.getByTestId('motifs-list-pane').getByRole('button', { name: /神话模式/ })).toBeVisible({ timeout: 20000 })
+  await page.getByTestId('motifs-detail-pane').getByRole('button', { name: 'AI 丰富' }).click()
+  await page.getByRole('button', { name: '生成短卡草稿' }).click()
+  await expect(page.getByText('神话模式短卡 A')).toBeVisible()
+  await expect(page.getByText('定义 A', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: '取消' }).click()
+  await expect(page.getByTestId('motif-enrichment-modal')).toHaveCount(0)
+  await page.getByTestId('motifs-detail-pane').getByRole('button', { name: 'AI 丰富' }).click()
+  await expect(page.getByText('神话模式短卡 A')).toBeVisible()
+  await expect(page.getByText('定义 A', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: '生成短卡草稿' }).click()
+  await expect(page.getByText('生成中...')).toBeVisible()
+  await expect(page.getByText('定义 A', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('神话模式短卡 B')).toBeVisible()
+  await expect(page.getByText('定义 B', { exact: true })).toBeVisible()
+})
+
+test('AI enrichment for a new concept updates an existing same-name motif instead of creating a duplicate', async ({ page }) => {
+  await page.goto('/motifs')
+  await page.evaluate(async () => {
+    await fetch('/api/motifs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: '海德格尔的常人',
+        aliases: ['旧别名'],
+        tags: ['旧标签'],
+        profile: {
+          definition: '旧定义',
+          core_tension: '',
+          writing_functions: [],
+          scene_triggers: [],
+          character_signals: [],
+          imagery_translations: [],
+          short_examples: [],
+          misuse_warnings: [],
+          micro_exercises: [],
+          source_hints: [],
+        },
+      }),
+    })
+  })
+
+  await page.goto('/motifs')
+  await page.getByPlaceholder('新意象').fill('海德格尔的常人')
+  await page.getByTestId('motifs-list-pane').getByRole('button', { name: 'AI', exact: true }).click()
+  await page.getByRole('button', { name: '生成短卡草稿' }).click()
+  await expect(page.getByText('海德格尔的常人短卡 A')).toBeVisible()
+  await expect(page.getByRole('button', { name: '应用到已有意象' })).toBeVisible()
+  await page.getByRole('button', { name: '应用到已有意象' }).click()
+
+  await expect(page.getByText('Motif name already exists')).toHaveCount(0)
+  await expect(page.getByText('AI 丰富结果已应用')).toBeVisible()
+  await expect(page.getByText('旧定义')).toBeVisible()
+  await expect(page.getByText('功能 A')).toBeVisible()
+  await expect(page.getByText('哲学概念')).toBeVisible()
+  await expect(page.getByPlaceholder('新意象')).toHaveValue('')
+
+  const motifsAfter = await page.evaluate(async () => {
+    const response = await fetch('/api/motifs')
+    return await response.json() as MotifNode[]
+  })
+  const sameName = motifsAfter.filter((motif) => motif.name === '海德格尔的常人')
+  expect(sameName).toHaveLength(1)
+  expect(sameName[0].profile.definition).toBe('旧定义')
+  expect(sameName[0].profile.writing_functions).toContain('功能 A')
+  expect(sameName[0].aliases).toContain('旧别名')
+  expect(sameName[0].aliases).toContain('海德格尔的常人别名')
+})
+
+test('AI enrichment dialog keeps footer actions visible and candidate list scrollable in compact viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 820, height: 520 })
+  await page.goto('/motifs')
+  await page.evaluate(async () => {
+    await fetch('/api/motifs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '尼采的道德奴隶' }),
+    })
+  })
+
+  await page.goto('/motifs')
+  await page.getByTestId('motifs-detail-pane').getByRole('button', { name: 'AI 丰富' }).click()
+  await page.getByRole('button', { name: '生成短卡草稿' }).click()
+  await expect(page.getByText('尼采的道德奴隶短卡 A')).toBeVisible()
+
+  const modal = page.getByTestId('motif-enrichment-modal')
+  const footer = page.getByTestId('motif-enrichment-footer')
+  const candidates = page.getByTestId('motif-enrichment-candidates')
+  const applyButton = page.getByRole('button', { name: '应用到已有意象' })
+  const cancelButton = page.getByRole('button', { name: '取消' })
+
+  await expect(modal).toBeVisible()
+  await expect(footer).toBeVisible()
+  await expect(applyButton).toBeVisible()
+  await expect(cancelButton).toBeVisible()
+
+  const [modalBox, footerBox, applyBox, cancelBox] = await Promise.all([
+    modal.boundingBox(),
+    footer.boundingBox(),
+    applyButton.boundingBox(),
+    cancelButton.boundingBox(),
+  ])
+  expect(modalBox).not.toBeNull()
+  expect(footerBox).not.toBeNull()
+  expect(applyBox).not.toBeNull()
+  expect(cancelBox).not.toBeNull()
+  expect(footerBox!.y + footerBox!.height).toBeLessThanOrEqual(520)
+  expect(applyBox!.y + applyBox!.height).toBeLessThanOrEqual(520)
+  expect(cancelBox!.y + cancelBox!.height).toBeLessThanOrEqual(520)
+  expect(footerBox!.y).toBeGreaterThanOrEqual(modalBox!.y)
+
+  const scrollState = await candidates.evaluate((element) => {
+    const target = element as HTMLElement
+    const before = {
+      clientHeight: target.clientHeight,
+      scrollHeight: target.scrollHeight,
+      scrollTop: target.scrollTop,
+    }
+    target.scrollTop = target.scrollHeight
+    return {
+      ...before,
+      afterScrollTop: target.scrollTop,
+    }
+  })
+  expect(scrollState.scrollHeight).toBeGreaterThan(scrollState.clientHeight)
+  expect(scrollState.afterScrollTop).toBeGreaterThan(0)
+  await expect(page.getByText(/第 18 条候选句/)).toBeVisible()
 })
