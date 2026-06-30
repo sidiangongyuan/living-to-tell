@@ -152,6 +152,37 @@ def test_initialize_schema_is_idempotent(tmp_path: Path) -> None:
         conn.close()
 
 
+def test_legacy_motif_nodes_gain_profile_json(tmp_path: Path) -> None:
+    db_path = tmp_path / "writer.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE motif_nodes (
+            id           TEXT PRIMARY KEY,
+            name         TEXT NOT NULL,
+            aliases_text TEXT NOT NULL DEFAULT '',
+            note         TEXT NOT NULL DEFAULT '',
+            tags_text    TEXT NOT NULL DEFAULT '',
+            pinned       INTEGER NOT NULL DEFAULT 0,
+            created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+            updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        );
+        INSERT INTO motif_nodes (id, name, note) VALUES ('m1', '旧意象', '旧笔记');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    conn = open_and_initialize(db_path)
+    try:
+        cols = _columns(conn, "motif_nodes")
+        assert "profile_json" in cols
+        row = conn.execute("SELECT profile_json FROM motif_nodes WHERE id = 'm1'").fetchone()
+        assert row["profile_json"] == "{}"
+    finally:
+        conn.close()
+
+
 def test_ensure_post_migration_indexes_is_idempotent(tmp_path: Path) -> None:
     db_path = tmp_path / "writer.db"
     conn = open_connection(db_path)

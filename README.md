@@ -4,9 +4,9 @@
 
 ### A local-first writing studio for articles, collections, references, and scoped AI
 
-[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.26)
+[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.27)
 
-[![Version](https://img.shields.io/badge/preview-0.1.26-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.27-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **Writing, photography, singing, and speaking are all ways to tell. To live is to tell.**
 
-[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.26) · [User Guide](docs/user-guide.md) · [GIF Tutorials](docs/tutorials.md) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
+[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.27) · [User Guide](docs/user-guide.md) · [GIF Tutorials](docs/tutorials.md) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
 
 </div>
 
@@ -105,6 +105,8 @@ For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They
 - Use source anchors to jump from the article context pane back to the marked sentence.
 - Explore a literary star map where node size, color, and links reflect excerpt usage and co-occurrence.
 - Use **AI Enrich** in the detail pane to turn concepts such as mythic pattern, slave morality, or das Man into compact writing cards.
+- Read enriched motifs as structured concept archives with definition, tension, writing functions, examples, warnings, and exercises instead of one long note.
+- Review AI-suggested reference sentence candidates before importing them into the Reference Library and linking them to the current motif.
 - Remove an excerpt from the current motif without deleting the same excerpt from other motifs.
 
 ### AI Workspace
@@ -135,15 +137,15 @@ For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.26).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.27).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.26_x64-setup.exe`
+- `LivingToTell_0.1.27_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.26_x64_zh-CN.msi`
+- `LivingToTell_0.1.27_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 
@@ -211,6 +213,7 @@ Long Gemini requests default to a 120 second wait. Advanced users can tune this 
 - Upgraded AI Cards into style / character / scene templates, added AI draft generation, and added manual scene-module attachment for AI tasks.
 - Added AI provider profiles and multi-model comparison in AI Tools, with per-result statistics and explicit winner selection before write-back.
 - Added OpenCode local-auth support, live OpenCode model fetching, and real OpenCode test requests through the unified AI provider path.
+- Reworked motif details into structured concept archives and added user-approved AI reference candidate import into the Reference Library.
 - Added a real AI connectivity test and fixed Gemini proxy transport selection for `sk-...` keys behind custom base URLs.
 - Added Data and Storage settings with directory display, open-folder actions, and copy-based migration.
 - Added a Tauri startup splash so cold starts show immediate progress instead of a blank window.

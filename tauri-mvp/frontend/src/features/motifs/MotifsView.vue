@@ -9,6 +9,8 @@ import {
   type MotifGraphEdge,
   type MotifGraphNode,
   type MotifNode,
+  type MotifProfile,
+  type MotifReferenceCandidate,
 } from '../../api/motifs'
 import { errorMessage, isHttpStatus } from '../../api/base'
 import { settingsApi, type AiProfile } from '../../api/settings'
@@ -40,7 +42,13 @@ const formName = ref('')
 const formAliases = ref('')
 const formTags = ref('')
 const formNote = ref('')
+const formProfile = ref<MotifProfile>(emptyMotifProfile())
 const formPinned = ref(false)
+const profileDrawerOpen = ref(false)
+const profileEditorOpen = ref(false)
+const chipEditorOpen = ref(false)
+const chipEditorKind = ref<'tags' | 'aliases'>('tags')
+const chipEditorText = ref('')
 const aiProfiles = ref<AiProfile[]>([])
 const enrichmentOpen = ref(false)
 const enrichmentMotifId = ref<string | null>(null)
@@ -53,9 +61,10 @@ const enrichmentGenerating = ref(false)
 const enrichmentApplying = ref(false)
 const enrichmentError = ref('')
 const enrichmentDraft = ref<MotifEnrichmentDraft | null>(null)
-const enrichmentNoteMode = ref<'append' | 'overwrite' | 'none'>('append')
+const enrichmentProfileMode = ref<'merge' | 'overwrite' | 'none'>('merge')
 const enrichmentApplyAliases = ref(true)
 const enrichmentApplyTags = ref(true)
+const enrichmentApplyReferenceKeys = ref<string[]>([])
 const motifListPane = useResizablePane({
   key: 'motifs:list',
   defaultSize: 260,
@@ -113,6 +122,17 @@ const localRelatedNodes = computed(() =>
 )
 const formAliasChips = computed(() => linesFrom(formAliases.value).slice(0, 8))
 const formTagChips = computed(() => linesFrom(formTags.value).slice(0, 8))
+const profileHasContent = computed(() => hasProfileContent(formProfile.value))
+const formDirty = computed(() => {
+  const motif = selectedMotif.value
+  if (!motif) return false
+  return formName.value.trim() !== motif.name
+    || JSON.stringify(linesFrom(formAliases.value)) !== JSON.stringify(motif.aliases)
+    || JSON.stringify(linesFrom(formTags.value)) !== JSON.stringify(motif.tags)
+    || formNote.value !== motif.note
+    || JSON.stringify(normalizeProfile(formProfile.value)) !== JSON.stringify(normalizeProfile(motif.profile))
+    || formPinned.value !== motif.pinned
+})
 const aiProfileOptions = computed(() => [
   { id: 'default', name: t('motifs.enrichDefaultProfile'), provider: '', model: '' },
   ...aiProfiles.value
@@ -140,6 +160,15 @@ const motifPalette = [
   { fill: '#cddfe8', stroke: '#45758b', halo: '#93cadc', text: '#234657' },
   { fill: '#ded7ce', stroke: '#8a7160', halo: '#d2b39d', text: '#4f3b31' },
 ]
+
+type MotifProfileListField =
+  | 'writing_functions'
+  | 'scene_triggers'
+  | 'character_signals'
+  | 'imagery_translations'
+  | 'short_examples'
+  | 'misuse_warnings'
+  | 'micro_exercises'
 
 onMounted(async () => {
   void loadAiProfiles()
@@ -284,11 +313,163 @@ function syncFormFromSelected() {
   formAliases.value = motif?.aliases.join('\n') ?? ''
   formTags.value = motif?.tags.join('\n') ?? ''
   formNote.value = motif?.note ?? ''
+  formProfile.value = normalizeProfile(motif?.profile)
   formPinned.value = motif?.pinned ?? false
+  profileDrawerOpen.value = false
+  profileEditorOpen.value = false
 }
 
 function linesFrom(text: string): string[] {
   return text.split(/\n+/).map((item) => item.trim()).filter(Boolean)
+}
+
+function emptyMotifProfile(): MotifProfile {
+  return {
+    definition: '',
+    core_tension: '',
+    writing_functions: [],
+    scene_triggers: [],
+    character_signals: [],
+    imagery_translations: [],
+    short_examples: [],
+    misuse_warnings: [],
+    micro_exercises: [],
+    source_hints: [],
+  }
+}
+
+function normalizeText(value: unknown): string {
+  return String(value ?? '').trim()
+}
+
+function normalizeList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return mergeUniqueValues([], value.map((item) => normalizeText(item)).filter(Boolean))
+}
+
+function normalizeProfile(profile: Partial<MotifProfile> | null | undefined): MotifProfile {
+  const raw = profile ?? {}
+  return {
+    definition: normalizeText(raw.definition),
+    core_tension: normalizeText(raw.core_tension),
+    writing_functions: normalizeList(raw.writing_functions),
+    scene_triggers: normalizeList(raw.scene_triggers),
+    character_signals: normalizeList(raw.character_signals),
+    imagery_translations: normalizeList(raw.imagery_translations),
+    short_examples: normalizeList(raw.short_examples),
+    misuse_warnings: normalizeList(raw.misuse_warnings),
+    micro_exercises: normalizeList(raw.micro_exercises),
+    source_hints: Array.isArray(raw.source_hints)
+      ? raw.source_hints
+          .map((hint) => ({
+            title: normalizeText(hint?.title),
+            url: normalizeText(hint?.url) || null,
+            note: normalizeText(hint?.note),
+          }))
+          .filter((hint) => hint.title || hint.note)
+      : [],
+  }
+}
+
+function hasProfileContent(profile: Partial<MotifProfile> | null | undefined): boolean {
+  const clean = normalizeProfile(profile)
+  return Boolean(
+    clean.definition
+      || clean.core_tension
+      || clean.writing_functions.length
+      || clean.scene_triggers.length
+      || clean.character_signals.length
+      || clean.imagery_translations.length
+      || clean.short_examples.length
+      || clean.misuse_warnings.length
+      || clean.micro_exercises.length
+      || clean.source_hints.length
+  )
+}
+
+function mergeSourceHints(current: MotifProfile['source_hints'], next: MotifProfile['source_hints']) {
+  const result: MotifProfile['source_hints'] = []
+  const seen = new Set<string>()
+  for (const hint of [...current, ...next]) {
+    const clean = {
+      title: normalizeText(hint.title),
+      url: normalizeText(hint.url) || null,
+      note: normalizeText(hint.note),
+    }
+    const key = `${clean.title}|${clean.url || ''}|${clean.note}`.toLocaleLowerCase()
+    if ((!clean.title && !clean.note) || seen.has(key)) continue
+    seen.add(key)
+    result.push(clean)
+  }
+  return result
+}
+
+function mergeProfiles(current: MotifProfile, next: MotifProfile, mode: 'merge' | 'overwrite' | 'none'): MotifProfile {
+  if (mode === 'none') return normalizeProfile(current)
+  const cleanCurrent = normalizeProfile(current)
+  const cleanNext = normalizeProfile(next)
+  if (mode === 'overwrite') return cleanNext
+  return {
+    definition: cleanCurrent.definition || cleanNext.definition,
+    core_tension: cleanCurrent.core_tension || cleanNext.core_tension,
+    writing_functions: mergeUniqueValues(cleanCurrent.writing_functions, cleanNext.writing_functions),
+    scene_triggers: mergeUniqueValues(cleanCurrent.scene_triggers, cleanNext.scene_triggers),
+    character_signals: mergeUniqueValues(cleanCurrent.character_signals, cleanNext.character_signals),
+    imagery_translations: mergeUniqueValues(cleanCurrent.imagery_translations, cleanNext.imagery_translations),
+    short_examples: mergeUniqueValues(cleanCurrent.short_examples, cleanNext.short_examples),
+    misuse_warnings: mergeUniqueValues(cleanCurrent.misuse_warnings, cleanNext.misuse_warnings),
+    micro_exercises: mergeUniqueValues(cleanCurrent.micro_exercises, cleanNext.micro_exercises),
+    source_hints: mergeSourceHints(cleanCurrent.source_hints, cleanNext.source_hints),
+  }
+}
+
+function profileListText(field: MotifProfileListField): string {
+  return formProfile.value[field].join('\n')
+}
+
+function inputValue(event: Event): string {
+  return (event.target as HTMLInputElement | HTMLTextAreaElement).value
+}
+
+function setProfileList(field: MotifProfileListField, value: string) {
+  formProfile.value = {
+    ...formProfile.value,
+    [field]: linesFrom(value),
+  }
+}
+
+function removeChip(kind: 'tags' | 'aliases', value: string) {
+  const next = (kind === 'tags' ? linesFrom(formTags.value) : linesFrom(formAliases.value))
+    .filter((item) => item !== value)
+  if (kind === 'tags') {
+    formTags.value = next.join('\n')
+  } else {
+    formAliases.value = next.join('\n')
+  }
+}
+
+function openChipEditor(kind: 'tags' | 'aliases') {
+  chipEditorKind.value = kind
+  chipEditorText.value = kind === 'tags' ? formTags.value : formAliases.value
+  chipEditorOpen.value = true
+}
+
+function applyChipEditor() {
+  const values = linesFrom(chipEditorText.value)
+  if (chipEditorKind.value === 'tags') {
+    formTags.value = values.join('\n')
+  } else {
+    formAliases.value = values.join('\n')
+  }
+  chipEditorOpen.value = false
+}
+
+function candidateKey(candidate: MotifReferenceCandidate, index: number): string {
+  return `${index}:${candidate.source_author}:${candidate.source_title}:${candidate.text}`.toLocaleLowerCase()
+}
+
+function candidateCanImport(candidate: MotifReferenceCandidate): boolean {
+  return Boolean(candidate.text.trim() && candidate.source_author.trim() && candidate.source_title.trim())
 }
 
 function mergeUniqueValues(current: string[], next: string[]): string[] {
@@ -319,9 +500,10 @@ async function loadAiProfiles() {
 function resetEnrichmentDraft() {
   enrichmentDraft.value = null
   enrichmentError.value = ''
-  enrichmentNoteMode.value = 'append'
+  enrichmentProfileMode.value = 'merge'
   enrichmentApplyAliases.value = true
   enrichmentApplyTags.value = true
+  enrichmentApplyReferenceKeys.value = []
 }
 
 function openEnrichmentForSelected() {
@@ -374,18 +556,12 @@ async function generateEnrichmentDraft() {
       profile_id: enrichmentProfileId.value,
       cost_tier: 'strong',
     })
+    enrichmentApplyReferenceKeys.value = []
   } catch (e) {
     enrichmentError.value = friendlyMotifError(e)
   } finally {
     enrichmentGenerating.value = false
   }
-}
-
-function noteFromEnrichmentDraft(draft: MotifEnrichmentDraft): string {
-  if (enrichmentNoteMode.value === 'none') return formNote.value
-  if (enrichmentNoteMode.value === 'overwrite') return draft.note
-  const current = formNote.value.trimEnd()
-  return current ? `${current}\n\n${draft.note}` : draft.note
 }
 
 async function applyEnrichmentDraft() {
@@ -394,6 +570,7 @@ async function applyEnrichmentDraft() {
   enrichmentApplying.value = true
   enrichmentError.value = ''
   try {
+    let appliedMotifId = enrichmentMotifId.value
     if (enrichmentMotifId.value) {
       const aliases = enrichmentApplyAliases.value
         ? mergeUniqueValues(linesFrom(formAliases.value), draft.aliases)
@@ -405,16 +582,19 @@ async function applyEnrichmentDraft() {
         name: (formName.value.trim() || draft.concept).trim(),
         aliases,
         tags,
-        note: noteFromEnrichmentDraft(draft),
+        note: formNote.value,
+        profile: mergeProfiles(formProfile.value, draft.profile, enrichmentProfileMode.value),
         pinned: formPinned.value,
       }
       const updated = await motifsApi.updateMotif(enrichmentMotifId.value, payload)
       motifs.value = motifs.value.map((item) => item.id === updated.id ? updated : item)
       selectedMotifId.value = updated.id
+      appliedMotifId = updated.id
       formName.value = updated.name
       formAliases.value = updated.aliases.join('\n')
       formTags.value = updated.tags.join('\n')
       formNote.value = updated.note
+      formProfile.value = normalizeProfile(updated.profile)
       formPinned.value = updated.pinned
     } else {
       const conceptName = enrichmentConcept.value.trim() || draft.concept
@@ -422,15 +602,31 @@ async function applyEnrichmentDraft() {
         name: conceptName,
         aliases: enrichmentApplyAliases.value ? draft.aliases : [],
         tags: enrichmentApplyTags.value ? draft.tags : [],
-        note: enrichmentNoteMode.value === 'none' ? '' : draft.note,
+        note: '',
+        profile: enrichmentProfileMode.value === 'none' ? emptyMotifProfile() : draft.profile,
         pinned: false,
       })
       newMotifName.value = ''
       await loadMotifs()
       selectedMotifId.value = created.id
+      appliedMotifId = created.id
     }
 
-    notice.value = t('motifs.enrichApplied')
+    const selectedCandidates = draft.reference_candidates.filter((candidate, index) =>
+      enrichmentApplyReferenceKeys.value.includes(candidateKey(candidate, index))
+    )
+    let importedCount = 0
+    if (appliedMotifId && selectedCandidates.length) {
+      const result = await motifsApi.applyReferenceCandidates(appliedMotifId, selectedCandidates)
+      importedCount = result.imported.length
+      if (result.skipped.length) {
+        enrichmentError.value = result.skipped.join('\n')
+      }
+    }
+
+    notice.value = importedCount
+      ? t('motifs.enrichAppliedWithReferences', { count: importedCount })
+      : t('motifs.enrichApplied')
     enrichmentOpen.value = false
     await loadHomeGraph()
     await loadSelectedMotifDetail()
@@ -467,9 +663,11 @@ async function saveSelectedMotif() {
       aliases: linesFrom(formAliases.value),
       tags: linesFrom(formTags.value),
       note: formNote.value,
+      profile: normalizeProfile(formProfile.value),
       pinned: formPinned.value,
     })
     motifs.value = motifs.value.map((item) => item.id === updated.id ? updated : item)
+    formProfile.value = normalizeProfile(updated.profile)
     notice.value = t('motifs.saved')
     await loadHomeGraph()
   } catch (e) {
@@ -961,24 +1159,91 @@ function previewExcerpt(text: string): string {
                 {{ t('motifs.name') }}
                 <input v-model="formName" class="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2.5 text-base outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" />
               </label>
-              <label class="mt-4 block text-sm font-medium text-stone-700">
-                {{ t('motifs.tags') }}
-                <textarea v-model="formTags" rows="4" class="mt-1 min-h-[96px] w-full resize-y rounded-xl border border-stone-200 px-3 py-2 leading-6 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.onePerLine')" />
-              </label>
-              <div v-if="formTagChips.length" class="mt-2 flex flex-wrap gap-1.5">
-                <span v-for="item in formTagChips" :key="`form-tag-${item}`" class="rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-800">{{ item }}</span>
+              <div class="mt-4">
+                <div class="mb-2 flex items-center justify-between gap-3">
+                  <h3 class="text-sm font-semibold text-stone-700">{{ t('motifs.tags') }}</h3>
+                  <button type="button" @click="openChipEditor('tags')" class="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100">
+                    {{ t('motifs.editTags') }}
+                  </button>
+                </div>
+                <div v-if="formTagChips.length" class="flex flex-wrap gap-1.5">
+                  <button
+                    v-for="item in formTagChips"
+                    :key="`form-tag-${item}`"
+                    type="button"
+                    @click="removeChip('tags', item)"
+                    class="rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-800 ring-1 ring-amber-100 hover:bg-amber-100"
+                    :title="t('motifs.removeChip')"
+                  >
+                    {{ item }} <span class="ml-1 text-amber-500">×</span>
+                  </button>
+                </div>
+                <button v-else type="button" @click="openChipEditor('tags')" class="rounded-xl border border-dashed border-stone-200 px-3 py-2 text-sm text-stone-400 hover:border-amber-200 hover:text-amber-700">
+                  {{ t('motifs.addTags') }}
+                </button>
               </div>
-              <label class="mt-4 block text-sm font-medium text-stone-700">
-                {{ t('motifs.aliases') }}
-                <textarea v-model="formAliases" rows="4" class="mt-1 min-h-[96px] w-full resize-y rounded-xl border border-stone-200 px-3 py-2 leading-6 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.onePerLine')" />
-              </label>
-              <div v-if="formAliasChips.length" class="mt-2 flex flex-wrap gap-1.5">
-                <span v-for="item in formAliasChips" :key="`form-alias-${item}`" class="rounded-full bg-teal-50 px-2 py-1 text-xs text-teal-800">{{ item }}</span>
+              <div class="mt-4">
+                <div class="mb-2 flex items-center justify-between gap-3">
+                  <h3 class="text-sm font-semibold text-stone-700">{{ t('motifs.aliases') }}</h3>
+                  <button type="button" @click="openChipEditor('aliases')" class="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-800 hover:bg-teal-100">
+                    {{ t('motifs.editAliases') }}
+                  </button>
+                </div>
+                <div v-if="formAliasChips.length" class="flex flex-wrap gap-1.5">
+                  <button
+                    v-for="item in formAliasChips"
+                    :key="`form-alias-${item}`"
+                    type="button"
+                    @click="removeChip('aliases', item)"
+                    class="rounded-full bg-teal-50 px-2 py-1 text-xs text-teal-800 ring-1 ring-teal-100 hover:bg-teal-100"
+                    :title="t('motifs.removeChip')"
+                  >
+                    {{ item }} <span class="ml-1 text-teal-500">×</span>
+                  </button>
+                </div>
+                <button v-else type="button" @click="openChipEditor('aliases')" class="rounded-xl border border-dashed border-stone-200 px-3 py-2 text-sm text-stone-400 hover:border-teal-200 hover:text-teal-700">
+                  {{ t('motifs.addAliases') }}
+                </button>
               </div>
-              <label class="mt-4 block text-sm font-medium text-stone-700">
-                {{ t('motifs.note') }}
-                <textarea v-model="formNote" rows="14" class="mt-1 min-h-[320px] w-full resize-y rounded-xl border border-stone-200 bg-[#fffdf8] px-3 py-3 text-sm leading-7 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.notePlaceholder')" />
-              </label>
+              <section class="mt-5 rounded-2xl border border-amber-100 bg-[#fffaf0] p-4">
+                <div class="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 class="text-sm font-semibold text-stone-900">{{ t('motifs.profileOverview') }}</h3>
+                    <p class="mt-1 text-xs leading-5 text-stone-500">{{ t('motifs.profileOverviewHint') }}</p>
+                  </div>
+                  <div class="flex shrink-0 gap-2">
+                    <button type="button" @click="profileDrawerOpen = true" class="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200 hover:bg-stone-50">
+                      {{ t('motifs.viewProfileDetails') }}
+                    </button>
+                    <button type="button" @click="profileEditorOpen = true" class="rounded-xl bg-stone-900 px-3 py-2 text-xs font-semibold text-white hover:bg-stone-700">
+                      {{ t('motifs.editProfile') }}
+                    </button>
+                  </div>
+                </div>
+                <div v-if="profileHasContent" class="space-y-3">
+                  <div v-if="formProfile.definition" class="rounded-xl bg-white/85 p-3">
+                    <div class="mb-1 text-xs font-semibold text-teal-700">{{ t('motifs.profileDefinition') }}</div>
+                    <p class="text-sm leading-7 text-stone-850">{{ formProfile.definition }}</p>
+                  </div>
+                  <div v-if="formProfile.core_tension" class="rounded-xl bg-white/85 p-3">
+                    <div class="mb-1 text-xs font-semibold text-rose-700">{{ t('motifs.profileCoreTension') }}</div>
+                    <p class="text-sm leading-7 text-stone-850">{{ formProfile.core_tension }}</p>
+                  </div>
+                  <div v-if="formProfile.writing_functions.length" class="flex flex-wrap gap-1.5">
+                    <span v-for="item in formProfile.writing_functions.slice(0, 5)" :key="`profile-function-${item}`" class="rounded-full bg-white px-2.5 py-1 text-xs text-stone-700 ring-1 ring-amber-100">{{ item }}</span>
+                  </div>
+                </div>
+                <div v-else class="rounded-xl border border-dashed border-amber-200 bg-white/60 p-4 text-sm leading-6 text-stone-500">
+                  <p>{{ formNote.trim() ? t('motifs.legacyNoteHint') : t('motifs.profileEmpty') }}</p>
+                  <p v-if="formNote.trim()" class="mt-2 line-clamp-4 whitespace-pre-wrap text-stone-600">{{ formNote }}</p>
+                  <button type="button" @click="openEnrichmentForSelected" class="mt-3 rounded-xl bg-teal-700 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-800">
+                    {{ t('motifs.upgradeProfileWithAi') }}
+                  </button>
+                </div>
+              </section>
+              <div v-if="formDirty" class="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                {{ t('motifs.unsavedChanges') }}
+              </div>
               <div class="mt-4 flex justify-between gap-3">
                 <button
                   @click="deleteSelectedMotif"
@@ -1065,6 +1330,205 @@ function previewExcerpt(text: string): string {
       @close="closeDeleteContextMenu"
       @select="handleDeleteContextMenuSelect"
     />
+    <div
+      v-if="chipEditorOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/30 px-4 py-6"
+      @click.self="chipEditorOpen = false"
+    >
+      <section class="w-full max-w-md rounded-2xl border border-stone-200 bg-[#fffdf8] p-5 shadow-2xl">
+        <div class="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-teal-700">
+              {{ chipEditorKind === 'tags' ? t('motifs.tags') : t('motifs.aliases') }}
+            </p>
+            <h2 class="mt-1 text-lg font-semibold text-stone-950">{{ t('motifs.editChips') }}</h2>
+            <p class="mt-1 text-xs leading-5 text-stone-500">{{ t('motifs.editChipsHint') }}</p>
+          </div>
+          <button type="button" @click="chipEditorOpen = false" class="rounded-full px-3 py-1 text-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700">×</button>
+        </div>
+        <textarea
+          v-model="chipEditorText"
+          rows="8"
+          class="min-h-[190px] w-full resize-y rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm leading-7 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100"
+          :placeholder="t('motifs.onePerLine')"
+        />
+        <div class="mt-4 flex justify-end gap-2">
+          <button type="button" @click="chipEditorOpen = false" class="rounded-xl bg-stone-100 px-4 py-2 text-sm font-semibold text-stone-600 hover:bg-stone-200">
+            {{ t('common.cancel') }}
+          </button>
+          <button type="button" @click="applyChipEditor" class="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700">
+            {{ t('motifs.applyChipDraft') }}
+          </button>
+        </div>
+      </section>
+    </div>
+    <div
+      v-if="profileDrawerOpen"
+      class="fixed inset-0 z-40 flex justify-end bg-stone-950/25"
+      @click.self="profileDrawerOpen = false"
+    >
+      <aside class="flex h-full w-full max-w-2xl flex-col overflow-hidden border-l border-stone-200 bg-[#fffdf8] shadow-2xl">
+        <header class="border-b border-stone-200 px-6 py-5">
+          <div class="flex items-start justify-between gap-4">
+            <div class="min-w-0">
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-rose-700">{{ t('motifs.profileDetails') }}</p>
+              <h2 class="mt-2 truncate text-2xl font-semibold text-stone-950">{{ formName || selectedMotif?.name }}</h2>
+              <p class="mt-1 text-sm leading-6 text-stone-500">{{ t('motifs.profileDetailsHint') }}</p>
+            </div>
+            <button type="button" @click="profileDrawerOpen = false" class="rounded-full px-3 py-1 text-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700">×</button>
+          </div>
+        </header>
+        <div class="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div v-if="profileHasContent" class="space-y-4">
+            <section class="rounded-2xl border border-amber-100 bg-white p-4">
+              <h3 class="text-sm font-semibold text-stone-950">{{ t('motifs.profileConceptSection') }}</h3>
+              <p v-if="formProfile.definition" class="mt-3 text-base leading-8 text-stone-850">{{ formProfile.definition }}</p>
+              <p v-if="formProfile.core_tension" class="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-sm leading-7 text-rose-900">{{ formProfile.core_tension }}</p>
+            </section>
+            <section class="rounded-2xl border border-stone-200 bg-white p-4">
+              <h3 class="text-sm font-semibold text-stone-950">{{ t('motifs.profileWritingSection') }}</h3>
+              <div class="mt-3 grid gap-3">
+                <div v-if="formProfile.writing_functions.length">
+                  <div class="text-xs font-semibold text-stone-500">{{ t('motifs.profileWritingFunctions') }}</div>
+                  <ul class="mt-2 space-y-1.5 text-sm leading-6 text-stone-750">
+                    <li v-for="item in formProfile.writing_functions" :key="`detail-function-${item}`">· {{ item }}</li>
+                  </ul>
+                </div>
+                <div v-if="formProfile.scene_triggers.length">
+                  <div class="text-xs font-semibold text-stone-500">{{ t('motifs.profileSceneTriggers') }}</div>
+                  <ul class="mt-2 space-y-1.5 text-sm leading-6 text-stone-750">
+                    <li v-for="item in formProfile.scene_triggers" :key="`detail-trigger-${item}`">· {{ item }}</li>
+                  </ul>
+                </div>
+                <div v-if="formProfile.character_signals.length">
+                  <div class="text-xs font-semibold text-stone-500">{{ t('motifs.profileCharacterSignals') }}</div>
+                  <ul class="mt-2 space-y-1.5 text-sm leading-6 text-stone-750">
+                    <li v-for="item in formProfile.character_signals" :key="`detail-character-${item}`">· {{ item }}</li>
+                  </ul>
+                </div>
+                <div v-if="formProfile.imagery_translations.length">
+                  <div class="text-xs font-semibold text-stone-500">{{ t('motifs.profileImageryTranslations') }}</div>
+                  <ul class="mt-2 space-y-1.5 text-sm leading-6 text-stone-750">
+                    <li v-for="item in formProfile.imagery_translations" :key="`detail-imagery-${item}`">· {{ item }}</li>
+                  </ul>
+                </div>
+              </div>
+            </section>
+            <section v-if="formProfile.short_examples.length || formProfile.micro_exercises.length || formProfile.misuse_warnings.length" class="rounded-2xl border border-stone-200 bg-white p-4">
+              <h3 class="text-sm font-semibold text-stone-950">{{ t('motifs.profileExamplesSection') }}</h3>
+              <div v-if="formProfile.short_examples.length" class="mt-3 space-y-2">
+                <p v-for="item in formProfile.short_examples" :key="`detail-example-${item}`" class="rounded-xl bg-[#fffaf0] px-3 py-2 text-sm leading-7 text-stone-800">{{ item }}</p>
+              </div>
+              <div v-if="formProfile.micro_exercises.length" class="mt-4">
+                <div class="text-xs font-semibold text-stone-500">{{ t('motifs.profileMicroExercises') }}</div>
+                <ul class="mt-2 space-y-1.5 text-sm leading-6 text-stone-750">
+                  <li v-for="item in formProfile.micro_exercises" :key="`detail-exercise-${item}`">· {{ item }}</li>
+                </ul>
+              </div>
+              <div v-if="formProfile.misuse_warnings.length" class="mt-4 rounded-xl bg-amber-50 px-3 py-2">
+                <div class="text-xs font-semibold text-amber-800">{{ t('motifs.profileMisuseWarnings') }}</div>
+                <ul class="mt-2 space-y-1.5 text-sm leading-6 text-amber-950">
+                  <li v-for="item in formProfile.misuse_warnings" :key="`detail-warning-${item}`">· {{ item }}</li>
+                </ul>
+              </div>
+            </section>
+            <section v-if="formProfile.source_hints.length || formNote.trim()" class="rounded-2xl border border-stone-200 bg-white p-4">
+              <h3 class="text-sm font-semibold text-stone-950">{{ t('motifs.profileSourcesAndNote') }}</h3>
+              <div v-if="formProfile.source_hints.length" class="mt-3 space-y-3">
+                <div v-for="hint in formProfile.source_hints" :key="`${hint.title}-${hint.url || hint.note}`" class="rounded-xl bg-stone-50 px-3 py-2">
+                  <a v-if="hint.url" :href="hint.url" target="_blank" rel="noreferrer" class="text-sm font-semibold text-teal-700 hover:text-teal-900">{{ hint.title }}</a>
+                  <p v-else class="text-sm font-semibold text-stone-800">{{ hint.title }}</p>
+                  <p v-if="hint.note" class="mt-1 text-xs leading-5 text-stone-500">{{ hint.note }}</p>
+                </div>
+              </div>
+              <div v-if="formNote.trim()" class="mt-4 rounded-xl bg-[#fffaf0] px-3 py-2 text-sm leading-7 text-stone-750 whitespace-pre-wrap">{{ formNote }}</div>
+            </section>
+          </div>
+          <div v-else class="rounded-2xl border border-dashed border-stone-200 bg-white p-6 text-center text-sm leading-6 text-stone-400">
+            {{ t('motifs.profileEmpty') }}
+          </div>
+        </div>
+        <footer class="border-t border-stone-200 bg-white px-6 py-4">
+          <div class="flex justify-end gap-2">
+            <button type="button" @click="profileEditorOpen = true" class="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700">{{ t('motifs.editProfile') }}</button>
+          </div>
+        </footer>
+      </aside>
+    </div>
+    <div
+      v-if="profileEditorOpen"
+      class="fixed inset-0 z-50 flex justify-end bg-stone-950/30"
+      @click.self="profileEditorOpen = false"
+    >
+      <aside class="flex h-full w-full max-w-3xl flex-col overflow-hidden border-l border-stone-200 bg-[#fffdf8] shadow-2xl">
+        <header class="border-b border-stone-200 px-6 py-5">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-teal-700">{{ t('motifs.profileEditor') }}</p>
+              <h2 class="mt-2 text-2xl font-semibold text-stone-950">{{ t('motifs.editProfile') }}</h2>
+              <p class="mt-1 text-sm leading-6 text-stone-500">{{ t('motifs.profileEditorHint') }}</p>
+            </div>
+            <button type="button" @click="profileEditorOpen = false" class="rounded-full px-3 py-1 text-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700">×</button>
+          </div>
+        </header>
+        <div class="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div class="grid gap-4">
+            <label class="block text-sm font-medium text-stone-700">
+              {{ t('motifs.profileDefinition') }}
+              <textarea v-model="formProfile.definition" rows="3" class="mt-1 w-full resize-y rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm leading-7 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" />
+            </label>
+            <label class="block text-sm font-medium text-stone-700">
+              {{ t('motifs.profileCoreTension') }}
+              <textarea v-model="formProfile.core_tension" rows="3" class="mt-1 w-full resize-y rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm leading-7 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" />
+            </label>
+            <div class="grid gap-4 md:grid-cols-2">
+              <label class="block text-sm font-medium text-stone-700">
+                {{ t('motifs.profileWritingFunctions') }}
+                <textarea :value="profileListText('writing_functions')" @input="setProfileList('writing_functions', inputValue($event))" rows="5" class="mt-1 w-full resize-y rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm leading-7 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.onePerLine')" />
+              </label>
+              <label class="block text-sm font-medium text-stone-700">
+                {{ t('motifs.profileSceneTriggers') }}
+                <textarea :value="profileListText('scene_triggers')" @input="setProfileList('scene_triggers', inputValue($event))" rows="5" class="mt-1 w-full resize-y rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm leading-7 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.onePerLine')" />
+              </label>
+              <label class="block text-sm font-medium text-stone-700">
+                {{ t('motifs.profileCharacterSignals') }}
+                <textarea :value="profileListText('character_signals')" @input="setProfileList('character_signals', inputValue($event))" rows="5" class="mt-1 w-full resize-y rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm leading-7 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.onePerLine')" />
+              </label>
+              <label class="block text-sm font-medium text-stone-700">
+                {{ t('motifs.profileImageryTranslations') }}
+                <textarea :value="profileListText('imagery_translations')" @input="setProfileList('imagery_translations', inputValue($event))" rows="5" class="mt-1 w-full resize-y rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm leading-7 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.onePerLine')" />
+              </label>
+            </div>
+            <label class="block text-sm font-medium text-stone-700">
+              {{ t('motifs.profileShortExamples') }}
+              <textarea :value="profileListText('short_examples')" @input="setProfileList('short_examples', inputValue($event))" rows="5" class="mt-1 w-full resize-y rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm leading-7 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.onePerLine')" />
+            </label>
+            <div class="grid gap-4 md:grid-cols-2">
+              <label class="block text-sm font-medium text-stone-700">
+                {{ t('motifs.profileMisuseWarnings') }}
+                <textarea :value="profileListText('misuse_warnings')" @input="setProfileList('misuse_warnings', inputValue($event))" rows="5" class="mt-1 w-full resize-y rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm leading-7 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.onePerLine')" />
+              </label>
+              <label class="block text-sm font-medium text-stone-700">
+                {{ t('motifs.profileMicroExercises') }}
+                <textarea :value="profileListText('micro_exercises')" @input="setProfileList('micro_exercises', inputValue($event))" rows="5" class="mt-1 w-full resize-y rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm leading-7 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.onePerLine')" />
+              </label>
+            </div>
+            <label class="block text-sm font-medium text-stone-700">
+              {{ t('motifs.freeNote') }}
+              <textarea v-model="formNote" rows="6" class="mt-1 w-full resize-y rounded-xl border border-stone-200 bg-[#fffaf0] px-3 py-2 text-sm leading-7 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-100" :placeholder="t('motifs.notePlaceholder')" />
+            </label>
+          </div>
+        </div>
+        <footer class="border-t border-stone-200 bg-white px-6 py-4">
+          <div class="flex items-center justify-between gap-3">
+            <p class="text-xs leading-5 text-stone-500">{{ t('motifs.profileSaveHint') }}</p>
+            <button type="button" @click="profileEditorOpen = false" class="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700">
+              {{ t('common.done') }}
+            </button>
+          </div>
+        </footer>
+      </aside>
+    </div>
     <div
       v-if="enrichmentOpen"
       class="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/30 px-4 py-6"
@@ -1160,8 +1624,63 @@ function previewExcerpt(text: string): string {
                     </p>
                   </div>
                 </div>
-                <div class="max-h-[420px] overflow-y-auto rounded-xl bg-[#fffaf0] p-4 text-sm leading-7 text-stone-800 whitespace-pre-wrap">
-                  {{ enrichmentDraft.note }}
+                <div class="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+                  <div class="max-h-[440px] overflow-y-auto rounded-xl bg-[#fffaf0] p-4">
+                    <div class="mb-3 text-xs font-semibold text-stone-500">{{ t('motifs.enrichProfileDraft') }}</div>
+                    <div class="space-y-3">
+                      <div v-if="enrichmentDraft.profile.definition" class="rounded-xl bg-white/85 p-3">
+                        <div class="mb-1 text-xs font-semibold text-teal-700">{{ t('motifs.profileDefinition') }}</div>
+                        <p class="text-sm leading-7 text-stone-850">{{ enrichmentDraft.profile.definition }}</p>
+                      </div>
+                      <div v-if="enrichmentDraft.profile.core_tension" class="rounded-xl bg-white/85 p-3">
+                        <div class="mb-1 text-xs font-semibold text-rose-700">{{ t('motifs.profileCoreTension') }}</div>
+                        <p class="text-sm leading-7 text-stone-850">{{ enrichmentDraft.profile.core_tension }}</p>
+                      </div>
+                      <div v-if="enrichmentDraft.profile.writing_functions.length" class="rounded-xl bg-white/85 p-3">
+                        <div class="mb-1 text-xs font-semibold text-stone-500">{{ t('motifs.profileWritingFunctions') }}</div>
+                        <ul class="space-y-1 text-sm leading-6 text-stone-750">
+                          <li v-for="item in enrichmentDraft.profile.writing_functions" :key="`draft-function-${item}`">· {{ item }}</li>
+                        </ul>
+                      </div>
+                      <details class="rounded-xl bg-white/70 p-3 text-sm leading-7 text-stone-750">
+                        <summary class="cursor-pointer text-xs font-semibold text-stone-600">{{ t('motifs.enrichRawNote') }}</summary>
+                        <div class="mt-2 whitespace-pre-wrap">{{ enrichmentDraft.note }}</div>
+                      </details>
+                    </div>
+                  </div>
+                  <div class="max-h-[440px] overflow-y-auto rounded-xl border border-stone-200 bg-white p-4">
+                    <div class="mb-3 text-xs font-semibold text-stone-500">{{ t('motifs.enrichReferenceCandidates') }}</div>
+                    <div v-if="enrichmentDraft.reference_candidates.length" class="space-y-3">
+                      <label
+                        v-for="(candidate, index) in enrichmentDraft.reference_candidates"
+                        :key="candidateKey(candidate, index)"
+                        class="block rounded-xl border p-3 text-sm leading-6"
+                        :class="candidateCanImport(candidate) ? 'border-teal-100 bg-teal-50/40' : 'border-stone-200 bg-stone-50 text-stone-500'"
+                      >
+                        <div class="flex items-start gap-2">
+                          <input
+                            v-model="enrichmentApplyReferenceKeys"
+                            type="checkbox"
+                            :value="candidateKey(candidate, index)"
+                            :disabled="!candidateCanImport(candidate)"
+                            class="mt-1 h-4 w-4 rounded border-stone-300 text-teal-700 disabled:opacity-40"
+                          />
+                          <div class="min-w-0">
+                            <p class="break-words text-stone-850">“{{ candidate.text }}”</p>
+                            <p class="mt-2 text-xs text-stone-500">
+                              {{ candidate.source_author || t('motifs.candidateMissingAuthor') }} · {{ candidate.source_title || t('motifs.candidateMissingTitle') }}
+                            </p>
+                            <p v-if="candidate.source_note" class="mt-1 text-xs text-stone-500">{{ candidate.source_note }}</p>
+                            <p v-if="candidate.reason" class="mt-1 rounded-lg bg-white/70 px-2 py-1 text-xs text-teal-800">{{ candidate.reason }}</p>
+                            <p v-if="!candidateCanImport(candidate)" class="mt-2 text-xs text-amber-700">{{ t('motifs.candidateNeedsSource') }}</p>
+                          </div>
+                        </div>
+                      </label>
+                    </div>
+                    <div v-else class="rounded-xl border border-dashed border-stone-200 bg-stone-50 p-4 text-center text-sm leading-6 text-stone-400">
+                      {{ t('motifs.noReferenceCandidates') }}
+                    </div>
+                  </div>
                 </div>
                 <div v-if="enrichmentDraft.aliases.length || enrichmentDraft.tags.length" class="mt-4 grid gap-3 sm:grid-cols-2">
                   <div>
@@ -1201,16 +1720,16 @@ function previewExcerpt(text: string): string {
           <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div class="flex flex-wrap gap-3 text-sm text-stone-600">
               <label class="flex items-center gap-2">
-                <input v-model="enrichmentNoteMode" type="radio" value="append" class="text-teal-700" />
-                {{ t('motifs.enrichAppendNote') }}
+                <input v-model="enrichmentProfileMode" type="radio" value="merge" class="text-teal-700" />
+                {{ t('motifs.enrichMergeProfile') }}
               </label>
               <label class="flex items-center gap-2">
-                <input v-model="enrichmentNoteMode" type="radio" value="overwrite" class="text-teal-700" />
-                {{ t('motifs.enrichOverwriteNote') }}
+                <input v-model="enrichmentProfileMode" type="radio" value="overwrite" class="text-teal-700" />
+                {{ t('motifs.enrichOverwriteProfile') }}
               </label>
               <label class="flex items-center gap-2">
-                <input v-model="enrichmentNoteMode" type="radio" value="none" class="text-teal-700" />
-                {{ t('motifs.enrichSkipNote') }}
+                <input v-model="enrichmentProfileMode" type="radio" value="none" class="text-teal-700" />
+                {{ t('motifs.enrichSkipProfile') }}
               </label>
               <label class="flex items-center gap-2">
                 <input v-model="enrichmentApplyAliases" type="checkbox" class="rounded border-stone-300 text-teal-700" />

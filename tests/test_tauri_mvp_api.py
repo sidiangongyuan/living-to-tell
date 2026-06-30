@@ -920,6 +920,15 @@ def test_tauri_motifs_enrich_draft_uses_context_and_does_not_mutate(monkeypatch)
                                 "note": "模型未返回可核对来源。",
                             }
                         ],
+                        "reference_candidates": [
+                            {
+                                "text": "所谓神话，就是对世界的一种叙事秩序。",
+                                "source_author": "测试作者",
+                                "source_title": "测试书名",
+                                "source_note": "AI 候选，需核对。",
+                                "reason": "用于测试候选句结构。",
+                            }
+                        ],
                     },
                     ensure_ascii=False,
                 ),
@@ -949,8 +958,10 @@ def test_tauri_motifs_enrich_draft_uses_context_and_does_not_mutate(monkeypatch)
     assert payload["title"] == "神话模式短卡"
     assert "【短例子】" in payload["note"]
     assert payload["aliases"] == ["神话结构", "原型叙事"]
+    assert payload["profile"]["definition"] == "把个人遭遇放进近似仪式或原型的轨道。"
     assert payload["related_suggestions"] == ["原型", "仪式", "牺牲"]
     assert payload["source_hints"][0]["title"] == "未能联网核对"
+    assert payload["reference_candidates"][0]["source_author"] == "测试作者"
     prompt = fake.calls[-1]["messages"][1]["content"]
     assert "已有笔记：循环、归来与仪式" in prompt
     assert "他在归来时发现村庄已经把他当作一个传说" in prompt
@@ -958,6 +969,78 @@ def test_tauri_motifs_enrich_draft_uses_context_and_does_not_mutate(monkeypatch)
     assert fake.calls[-1]["cost_tier"].value == "strong"
     unchanged = client.get(f"/api/motifs/{motif['id']}").json()
     assert unchanged["note"] == "已有笔记：循环、归来与仪式。"
+    assert unchanged["profile"]["definition"] == ""
+
+
+def test_tauri_motifs_apply_reference_candidates_imports_reference_excerpt(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    suffix = uuid.uuid4().hex[:8]
+    motif = client.post(
+        "/api/motifs",
+        json={
+            "name": f"测试意象｜常人｜{suffix}",
+            "tags": ["哲学概念"],
+            "profile": {
+                "definition": "人在公共意见中失去自己的判断。",
+                "core_tension": "",
+                "writing_functions": [],
+                "scene_triggers": [],
+                "character_signals": [],
+                "imagery_translations": [],
+                "short_examples": [],
+                "misuse_warnings": [],
+                "micro_exercises": [],
+                "source_hints": [],
+            },
+        },
+    )
+    assert motif.status_code == 201, motif.text
+    motif_payload = motif.json()
+
+    candidate = {
+        "text": f"测试句子 {suffix}：大家都这样说，于是他也这样说。",
+        "source_author": "测试作者",
+        "source_title": "测试书名",
+        "source_note": "AI 候选，需核对。",
+        "reason": "体现常人状态。",
+    }
+    response = client.post(
+        f"/api/motifs/{motif_payload['id']}/reference-candidates",
+        json={
+            "candidates": [
+                candidate,
+                {
+                    "text": "来源不足的句子",
+                    "source_author": "",
+                    "source_title": "",
+                    "source_note": "",
+                    "reason": "",
+                },
+            ]
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert len(payload["imported"]) == 1
+    assert payload["skipped"]
+    assert payload["imported"][0]["source_author"] == "测试作者"
+
+    again = client.post(
+        f"/api/motifs/{motif_payload['id']}/reference-candidates",
+        json={"candidates": [candidate]},
+    )
+    assert again.status_code == 200, again.text
+    assert again.json()["imported"][0]["reused_reference"] is True
+    assert again.json()["imported"][0]["excerpt_id"] == payload["imported"][0]["excerpt_id"]
+
+    excerpts = client.get(f"/api/motifs/{motif_payload['id']}/excerpts")
+    assert excerpts.status_code == 200, excerpts.text
+    listed = excerpts.json()
+    assert len(listed) == 1
+    assert listed[0]["source_kind"] == "reference"
+    assert listed[0]["excerpt_text"] == candidate["text"]
+    assert listed[0]["source_current_title"] == "测试书名"
 
 
 def test_tauri_motifs_enrich_draft_new_concept_does_not_create_node(monkeypatch):

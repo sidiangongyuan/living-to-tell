@@ -94,6 +94,47 @@ def test_motif_node_crud_and_delete_keeps_source(tmp_path):
     assert motifs.get_excerpt(excerpt.id) is None
 
 
+def test_motif_node_profile_persists_and_searches(tmp_path):
+    conn = open_and_initialize(tmp_path / "writer.db")
+    motifs = MotifRepository(conn)
+
+    profile = {
+        "definition": "人在公共意见中失去自己的判断。",
+        "core_tension": "自我选择与平均化生活互相拉扯。",
+        "writing_functions": ["制造日常压力"],
+        "source_hints": [{"title": "《存在与时间》", "url": None, "note": "需核对"}],
+    }
+    node = motifs.create_node(
+        name="海德格尔的常人",
+        tags=["哲学概念"],
+        profile=profile,
+    )
+    loaded = motifs.get_node(node.id)
+
+    assert loaded is not None
+    assert loaded.profile["definition"] == profile["definition"]
+    assert loaded.profile["writing_functions"] == ["制造日常压力"]
+    assert motifs.list_nodes(query="平均化生活", limit=10)[0].id == node.id
+
+    updated = motifs.update_node(
+        node.id,
+        name=node.name,
+        tags=["哲学概念", "存在主义"],
+        profile={**profile, "definition": "常人是日常公共性中的平均化自我。"},
+    )
+    assert updated is not None
+    assert updated.profile["definition"] == "常人是日常公共性中的平均化自我。"
+
+    preserved = motifs.update_node(
+        node.id,
+        name=node.name,
+        tags=["哲学概念"],
+        note="只改自由笔记，不清空档案。",
+    )
+    assert preserved is not None
+    assert preserved.profile["definition"] == "常人是日常公共性中的平均化自我。"
+
+
 def test_motif_excerpt_can_use_reference_source(tmp_path):
     conn = open_and_initialize(tmp_path / "writer.db")
     references = ReferenceRepository(conn)

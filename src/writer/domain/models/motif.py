@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 
 MOTIF_SOURCE_ARTICLE = "article"
@@ -16,6 +16,7 @@ class MotifNode:
     name: str
     aliases: list[str] = field(default_factory=list)
     note: str = ""
+    profile: dict[str, Any] = field(default_factory=dict)
     tags: list[str] = field(default_factory=list)
     pinned: bool = False
     excerpt_count: int = 0

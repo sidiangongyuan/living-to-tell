@@ -1,6 +1,6 @@
 [package]
 name = "living-to-tell-app"
-version = "0.1.26"
+version = "0.1.27"
 description = "活着为了讲述 / Living to Tell"
 authors = ["Living to Tell contributors"]
 edition = "2021"

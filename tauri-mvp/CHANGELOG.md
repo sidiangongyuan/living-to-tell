@@ -1,5 +1,36 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.27 - Motif Concept Archives (2026-06-30)
+
+### Added
+
+- Added structured motif concept archives backed by `profile_json`, with automatic migration for existing SQLite databases.
+- Added readable motif profile sections for definition, core tension, writing functions, scene triggers, character signals, imagery translations, examples, misuse warnings, micro exercises, and source hints.
+- Added AI enrichment reference candidates. Candidates with text, author, and source title can be imported into the Reference Library and linked to the current motif as real reference excerpts.
+
+### Changed
+
+- Reworked motif detail editing into a chip-first and reader-first flow: tags and aliases display as removable chips, detailed profile fields live in drawers, and chip/profile edits persist only after saving the motif.
+- Changed AI enrichment drafts to return structured profile data plus optional reference candidates while keeping the legacy note text for compatibility.
+- Kept motif graph semantics unchanged: AI suggestions do not create semantic edges, and imported candidates only affect the graph after they become real reference excerpts.
+- Updated public documentation links and installer names to `0.1.27`.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\storage\test_database_migration.py tests\storage\test_motif_repository.py tests\test_tauri_mvp_api.py -q`
+- `npm test -- --run`
+- `npm run test:e2e -- e2e/motifs-flow.e2e.ts --workers=1`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.27_x64-setup.exe`
+  - SHA256: `011BABA3E38F97E667C28E50030674C2EF71882447364C4BD214805A1DBE6E4B`
+- `LivingToTell_0.1.27_x64_zh-CN.msi`
+  - SHA256: `2C994D35362103DB6EEFE30EDAF99AF8E35CBF6DF723809711E4F294D8CE64EC`
+
 ## 0.1.26 - Motif AI Reliability And Detail Layout (2026-06-30)
 
 ### Fixed

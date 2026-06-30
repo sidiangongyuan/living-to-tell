@@ -1,9 +1,10 @@
 """Persistence for motif nodes, excerpts, and star-map graph data."""
 from __future__ import annotations
 
+import json
 import sqlite3
 import uuid
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
 
 from writer.domain.models.motif import (
     MOTIF_SOURCE_ARTICLE,
@@ -24,6 +25,24 @@ def _split_text(value: object) -> list[str]:
 
 def _join_text(values: Iterable[str]) -> str:
     return "\n".join(part.strip() for part in values if part.strip())
+
+
+def _profile_json(value: Optional[dict[str, Any]]) -> str:
+    if not isinstance(value, dict):
+        return "{}"
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _profile_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    keys = row.keys()
+    if "profile_json" not in keys:
+        return {}
+    raw = row["profile_json"] or "{}"
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _optional_int(value: object) -> Optional[int]:
@@ -85,6 +104,7 @@ def _row_to_node(row: sqlite3.Row) -> MotifNode:
         name=row["name"],
         aliases=_split_text(row["aliases_text"]),
         note=row["note"] or "",
+        profile=_profile_from_row(row),
         tags=_split_text(row["tags_text"]),
         pinned=bool(row["pinned"]),
         excerpt_count=int(row["excerpt_count"] if "excerpt_count" in row.keys() else 0),
@@ -132,6 +152,7 @@ class MotifRepository:
         name: str,
         aliases: Optional[list[str]] = None,
         note: str = "",
+        profile: Optional[dict[str, Any]] = None,
         tags: Optional[list[str]] = None,
         pinned: bool = False,
     ) -> MotifNode:
@@ -144,14 +165,15 @@ class MotifRepository:
         self._conn.execute(
             """
             INSERT INTO motif_nodes
-                (id, name, aliases_text, note, tags_text, pinned)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (id, name, aliases_text, note, profile_json, tags_text, pinned)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 new_id,
                 clean_name,
                 _join_text(aliases or []),
                 note,
+                _profile_json(profile),
                 _join_text(tags or []),
                 1 if pinned else 0,
             ),
@@ -173,6 +195,7 @@ class MotifRepository:
         name: str,
         aliases: Optional[list[str]] = None,
         note: str = "",
+        profile: Optional[dict[str, Any]] = None,
         tags: Optional[list[str]] = None,
         pinned: bool = False,
     ) -> Optional[MotifNode]:
@@ -182,12 +205,21 @@ class MotifRepository:
         existing = self.find_node_by_name(clean_name)
         if existing is not None and existing.id != node_id:
             raise ValueError("Motif name already exists")
+        if profile is None:
+            row = self._conn.execute(
+                "SELECT profile_json FROM motif_nodes WHERE id = ?",
+                (node_id,),
+            ).fetchone()
+            profile_json = row["profile_json"] if row else "{}"
+        else:
+            profile_json = _profile_json(profile)
         cur = self._conn.execute(
             """
             UPDATE motif_nodes
                SET name = ?,
                    aliases_text = ?,
                    note = ?,
+                   profile_json = ?,
                    tags_text = ?,
                    pinned = ?,
                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
@@ -197,6 +229,7 @@ class MotifRepository:
                 clean_name,
                 _join_text(aliases or []),
                 note,
+                profile_json,
                 _join_text(tags or []),
                 1 if pinned else 0,
                 node_id,
@@ -247,10 +280,10 @@ class MotifRepository:
         if clean_query:
             where = (
                 "WHERE m.name LIKE ? OR m.aliases_text LIKE ? "
-                "OR m.tags_text LIKE ? OR m.note LIKE ?"
+                "OR m.tags_text LIKE ? OR m.note LIKE ? OR m.profile_json LIKE ?"
             )
             like = f"%{clean_query}%"
-            params.extend([like, like, like, like])
+            params.extend([like, like, like, like, like])
         params.append(max(1, int(limit)))
         rows = self._conn.execute(
             f"""

@@ -220,6 +220,38 @@ class ReferenceRepository:
                 return passage
         return None
 
+    def find_exact_source_match(
+        self,
+        *,
+        source_title: str,
+        source_author: str,
+        content: str,
+    ) -> Optional[ReferencePassage]:
+        normalized = normalize_reference_content(content)
+        if not normalized:
+            return None
+        clean_title = source_title.strip().casefold()
+        clean_author = source_author.strip().casefold()
+        rows = self._conn.execute(
+            """
+            SELECT *
+              FROM reference_passages
+             WHERE lower(source_title) = lower(?)
+               AND lower(source_author) = lower(?)
+             ORDER BY updated_at DESC, created_at DESC
+            """,
+            (source_title.strip(), source_author.strip()),
+        ).fetchall()
+        for row in rows:
+            passage = _row_to_reference(row)
+            if (
+                passage.source_title.strip().casefold() == clean_title
+                and passage.source_author.strip().casefold() == clean_author
+                and normalize_reference_content(passage.content) == normalized
+            ):
+                return passage
+        return None
+
     def stats(self) -> ReferenceLibraryStats:
         rows = self._conn.execute("SELECT * FROM reference_passages").fetchall()
         passages = [_row_to_reference(r) for r in rows]

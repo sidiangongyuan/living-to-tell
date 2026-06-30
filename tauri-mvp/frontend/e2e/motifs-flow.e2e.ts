@@ -37,6 +37,18 @@ interface MotifNode {
   name: string
   aliases: string[]
   note: string
+  profile: {
+    definition: string
+    core_tension: string
+    writing_functions: string[]
+    scene_triggers: string[]
+    character_signals: string[]
+    imagery_translations: string[]
+    short_examples: string[]
+    misuse_warnings: string[]
+    micro_exercises: string[]
+    source_hints: Array<{ title: string; url?: string | null; note: string }>
+  }
   tags: string[]
   pinned: boolean
   excerpt_count: number
@@ -64,6 +76,21 @@ interface MotifExcerpt {
 }
 
 type SourceKind = 'article' | 'reference'
+
+function emptyMotifProfile(): MotifNode['profile'] {
+  return {
+    definition: '',
+    core_tension: '',
+    writing_functions: [],
+    scene_triggers: [],
+    character_signals: [],
+    imagery_translations: [],
+    short_examples: [],
+    misuse_warnings: [],
+    micro_exercises: [],
+    source_hints: [],
+  }
+}
 
 function uniqueNames(names: string[]): string[] {
   const result: string[] = []
@@ -260,6 +287,7 @@ async function mockMotifFlowApi(page: Page) {
       name,
       aliases: [],
       note: '',
+      profile: emptyMotifProfile(),
       tags: [],
       pinned: false,
       excerpt_count: 0,
@@ -517,7 +545,7 @@ async function mockMotifFlowApi(page: Page) {
     }
 
     if (path === '/api/motifs' && request.method() === 'POST') {
-      const body = request.postDataJSON() as { name?: string }
+      const body = request.postDataJSON() as Partial<MotifNode> & { name?: string }
       const name = body.name?.trim() || '未命名意象'
       const existing = motifs.find((motif) => motif.name === name)
       if (existing) {
@@ -527,10 +555,11 @@ async function mockMotifFlowApi(page: Page) {
       const motif = {
         id: `motif-${motifs.length + 1}`,
         name,
-        aliases: [],
-        note: '',
-        tags: [],
-        pinned: false,
+        aliases: body.aliases ?? [],
+        note: body.note ?? '',
+        profile: body.profile ?? emptyMotifProfile(),
+        tags: body.tags ?? [],
+        pinned: body.pinned ?? false,
         excerpt_count: 0,
         created_at: null,
         updated_at: null,
@@ -542,6 +571,32 @@ async function mockMotifFlowApi(page: Page) {
 
     if (path === '/api/motifs/graph') {
       await route.fulfill({ json: graphFrom(motifs, excerpts) })
+      return
+    }
+
+    const motifNodeMatch = path.match(/^\/api\/motifs\/([^/]+)$/)
+    if (motifNodeMatch && request.method() === 'GET') {
+      const motif = motifs.find((item) => item.id === motifNodeMatch[1])
+      await route.fulfill(motif ? { json: motif } : { status: 404, json: { detail: 'Motif not found' } })
+      return
+    }
+
+    if (motifNodeMatch && request.method() === 'PUT') {
+      const motif = motifs.find((item) => item.id === motifNodeMatch[1])
+      if (!motif) {
+        await route.fulfill({ status: 404, json: { detail: 'Motif not found' } })
+        return
+      }
+      const body = request.postDataJSON() as Partial<MotifNode>
+      Object.assign(motif, {
+        name: body.name ?? motif.name,
+        aliases: body.aliases ?? motif.aliases,
+        note: body.note ?? motif.note,
+        profile: body.profile ?? motif.profile,
+        tags: body.tags ?? motif.tags,
+        pinned: body.pinned ?? motif.pinned,
+      })
+      await route.fulfill({ json: motif })
       return
     }
 
@@ -712,7 +767,7 @@ test.beforeEach(async ({ page }) => {
 test('article selection can be saved to multiple motifs and reopened from the star map', async ({ page }) => {
   await page.goto('/articles?id=article-a')
   const editor = page.getByTestId('article-body-editor')
-  await expect(editor).toHaveValue(article.body)
+  await expect(editor).toHaveValue(article.body, { timeout: 20000 })
 
   const start = article.body.indexOf('玫瑰在夜里')
   const end = start + '玫瑰在夜里像血一样醒着。'.length
@@ -967,4 +1022,45 @@ test('reference selection can be saved as a motif excerpt', async ({ page }) => 
   await page.goto('/motifs')
   await page.getByRole('button', { name: /天空/ }).first().click()
   await expect(page.getByText('天空像一块被擦亮的黑石。')).toBeVisible()
+})
+
+test('motif profile reader uses chips and saves chip edits explicitly', async ({ page }) => {
+  await page.goto('/motifs')
+  await page.evaluate(async () => {
+    await fetch('/api/motifs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: '海德格尔的常人',
+        aliases: ['das Man', 'the They'],
+        tags: ['海德格尔', '存在主义'],
+        profile: {
+          definition: '人在公共意见中失去自己的判断。',
+          core_tension: '自我选择与平均化生活互相拉扯。',
+          writing_functions: ['制造日常压力', '表现从众'],
+          scene_triggers: ['大家都这样说'],
+          character_signals: ['人物不断引用别人说的话'],
+          imagery_translations: ['广播', '走廊'],
+          short_examples: ['他还没开口，答案已经替他说完。'],
+          misuse_warnings: ['不要把常人简单写成庸俗群众。'],
+          micro_exercises: ['写一个人被“大家都这样”逼退的瞬间。'],
+          source_hints: [{ title: '《存在与时间》', url: null, note: '需核对。' }],
+        },
+      }),
+    })
+  })
+
+  await page.goto('/motifs')
+  await expect(page.getByText('人在公共意见中失去自己的判断。')).toBeVisible({ timeout: 20000 })
+  const detail = page.getByTestId('motifs-detail-pane')
+  await expect(detail.getByRole('button', { name: /海德格尔 ×/ })).toBeVisible()
+  await detail.getByRole('button', { name: /海德格尔 ×/ }).click()
+  await expect(page.getByText('有未保存修改')).toBeVisible()
+  await page.getByRole('button', { name: '保存' }).click()
+  await expect(page.getByText('意象已保存')).toBeVisible()
+  await expect(detail.getByRole('button', { name: /海德格尔 ×/ })).toHaveCount(0)
+
+  await page.getByRole('button', { name: '查看详细' }).click()
+  await expect(page.getByText('写作转译')).toBeVisible()
+  await expect(page.getByText('他还没开口，答案已经替他说完。')).toBeVisible()
 })

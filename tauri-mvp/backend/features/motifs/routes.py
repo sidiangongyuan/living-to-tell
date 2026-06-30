@@ -22,6 +22,10 @@ from writer.domain.models.motif import (
     MotifGraphNode,
     MotifNode,
 )
+from writer.domain.models.reference_passage import (
+    REFERENCE_KIND_EXCERPT,
+    USAGE_KIND_PHILOSOPHY,
+)
 from writer.services.ai.provider_factory import provider_for_config
 from writer.services.ai.prompt_builder import PromptBuilder
 from writer.services.ai.task_service import AiTaskService
@@ -41,6 +45,7 @@ class MotifNodeOut(BaseModel):
     name: str
     aliases: list[str]
     note: str
+    profile: dict[str, Any]
     tags: list[str]
     pinned: bool
     excerpt_count: int
@@ -52,6 +57,7 @@ class MotifNodeCreate(BaseModel):
     name: str
     aliases: list[str] = Field(default_factory=list)
     note: str = ""
+    profile: dict[str, Any] = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)
     pinned: bool = False
 
@@ -60,6 +66,7 @@ class MotifNodeUpdate(BaseModel):
     name: str
     aliases: list[str] = Field(default_factory=list)
     note: str = ""
+    profile: Optional[dict[str, Any]] = None
     tags: list[str] = Field(default_factory=list)
     pinned: bool = False
 
@@ -134,18 +141,67 @@ class MotifSourceHintOut(BaseModel):
     note: str = ""
 
 
+class MotifProfileOut(BaseModel):
+    definition: str = ""
+    core_tension: str = ""
+    writing_functions: list[str] = Field(default_factory=list)
+    scene_triggers: list[str] = Field(default_factory=list)
+    character_signals: list[str] = Field(default_factory=list)
+    imagery_translations: list[str] = Field(default_factory=list)
+    short_examples: list[str] = Field(default_factory=list)
+    misuse_warnings: list[str] = Field(default_factory=list)
+    micro_exercises: list[str] = Field(default_factory=list)
+    source_hints: list[MotifSourceHintOut] = Field(default_factory=list)
+
+
+class MotifReferenceCandidateOut(BaseModel):
+    text: str
+    source_author: str
+    source_title: str
+    source_note: str = ""
+    reason: str = ""
+
+
 class MotifEnrichmentDraftOut(BaseModel):
     title: str
     concept: str
     aliases: list[str]
     tags: list[str]
     note: str
+    profile: MotifProfileOut
     related_suggestions: list[str]
     source_hints: list[MotifSourceHintOut]
+    reference_candidates: list[MotifReferenceCandidateOut] = Field(default_factory=list)
     provider: Optional[str] = None
     model: Optional[str] = None
     transport: Optional[str] = None
     elapsed_ms: int
+
+
+class MotifReferenceCandidateIn(BaseModel):
+    text: str
+    source_author: str
+    source_title: str
+    source_note: str = ""
+    reason: str = ""
+
+
+class MotifReferenceCandidateApplyRequest(BaseModel):
+    candidates: list[MotifReferenceCandidateIn] = Field(default_factory=list)
+
+
+class MotifReferenceCandidateApplyItemOut(BaseModel):
+    reference_id: str
+    excerpt_id: str
+    text: str
+    source_author: str
+    source_title: str
+    reused_reference: bool = False
+
+
+class MotifReferenceCandidateApplyOut(BaseModel):
+    imported: list[MotifReferenceCandidateApplyItemOut]
+    skipped: list[str] = Field(default_factory=list)
 
 
 class MotifGraphNodeOut(BaseModel):
@@ -175,6 +231,7 @@ def _node_to_dto(node: MotifNode) -> MotifNodeOut:
         name=node.name,
         aliases=node.aliases,
         note=node.note,
+        profile=_coerce_profile(node.profile),
         tags=node.tags,
         pinned=node.pinned,
         excerpt_count=node.excerpt_count,
@@ -262,6 +319,79 @@ _ENRICH_REQUIRED_HEADINGS = [
     "【误用提醒】",
     "【微练习】",
 ]
+
+_PROFILE_LIST_FIELDS = {
+    "writing_functions",
+    "scene_triggers",
+    "character_signals",
+    "imagery_translations",
+    "short_examples",
+    "misuse_warnings",
+    "micro_exercises",
+}
+
+
+def _clean_string(value: Any, *, limit: int = 600) -> str:
+    text = str(value or "").strip()
+    return text[:limit]
+
+
+def _clean_string_list(
+    values: Any,
+    *,
+    limit: int = 8,
+    item_limit: int = 220,
+) -> list[str]:
+    if isinstance(values, str):
+        raw_values = [part for part in values.splitlines() if part.strip()]
+    elif isinstance(values, list):
+        raw_values = values
+    else:
+        raw_values = []
+    result: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_values:
+        value = _clean_string(raw, limit=item_limit)
+        key = value.casefold()
+        if not value or key in seen:
+            continue
+        seen.add(key)
+        result.append(value)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _source_hints_to_dicts(hints: list[MotifSourceHintOut]) -> list[dict[str, Any]]:
+    return [hint.model_dump() for hint in hints]
+
+
+def _coerce_profile(value: Any) -> dict[str, Any]:
+    if isinstance(value, MotifProfileOut):
+        raw = value.model_dump()
+    elif isinstance(value, dict):
+        raw = value
+    else:
+        raw = {}
+    hints = _source_hints_from(raw.get("source_hints"), request_web_context=False)
+    return {
+        "definition": _clean_string(raw.get("definition"), limit=420),
+        "core_tension": _clean_string(raw.get("core_tension"), limit=520),
+        "writing_functions": _clean_string_list(raw.get("writing_functions"), limit=8),
+        "scene_triggers": _clean_string_list(raw.get("scene_triggers"), limit=8),
+        "character_signals": _clean_string_list(raw.get("character_signals"), limit=8),
+        "imagery_translations": _clean_string_list(raw.get("imagery_translations"), limit=8),
+        "short_examples": _clean_string_list(raw.get("short_examples"), limit=6, item_limit=360),
+        "misuse_warnings": _clean_string_list(raw.get("misuse_warnings"), limit=6),
+        "micro_exercises": _clean_string_list(raw.get("micro_exercises"), limit=6),
+        "source_hints": _source_hints_to_dicts(hints),
+    }
+
+
+def _profile_has_content(profile: dict[str, Any]) -> bool:
+    if profile.get("definition") or profile.get("core_tension"):
+        return True
+    return any(profile.get(field) for field in _PROFILE_LIST_FIELDS) or bool(profile.get("source_hints"))
 
 
 def _json_loads_object(candidate: str) -> dict[str, Any] | None:
@@ -375,6 +505,89 @@ def _split_loose_list(text: str, *, limit: int = 12) -> list[str]:
     return values
 
 
+def _section_lines(note: str, heading: str, *, limit: int = 8) -> list[str]:
+    text = _extract_section_text(note, heading)
+    values: list[str] = []
+    seen: set[str] = set()
+    for raw in text.splitlines():
+        value = raw.strip().lstrip("-*•0123456789.、)） ").strip()
+        if not value:
+            continue
+        key = value.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        values.append(value[:260])
+        if len(values) >= limit:
+            break
+    if values:
+        return values
+    return _split_loose_list(text, limit=limit)
+
+
+def _profile_from_template_note(note: str, *, request_web_context: bool) -> dict[str, Any]:
+    profile = {
+        "definition": _extract_section_text(note, "一句话定义")[:420],
+        "core_tension": _extract_section_text(note, "核心张力")[:520],
+        "writing_functions": _section_lines(note, "写作功能", limit=8),
+        "scene_triggers": _section_lines(note, "场景触发", limit=8),
+        "character_signals": _section_lines(note, "人物表现", limit=8),
+        "imagery_translations": _section_lines(note, "意象转译", limit=8),
+        "short_examples": _section_lines(note, "短例子", limit=6),
+        "misuse_warnings": _section_lines(note, "误用提醒", limit=6),
+        "micro_exercises": _section_lines(note, "微练习", limit=6),
+        "source_hints": [],
+    }
+    source_text = _extract_section_text(note, "来源线索（需核对）")
+    if request_web_context and source_text:
+        profile["source_hints"] = [
+            hint.model_dump()
+            for hint in _source_hints_from(
+                [
+                    {
+                        "title": line.strip().lstrip("-*• ").split("：", 1)[0],
+                        "note": line.strip().lstrip("-*• "),
+                    }
+                    for line in source_text.splitlines()
+                    if line.strip()
+                ],
+                request_web_context=True,
+            )
+        ]
+    return _coerce_profile(profile)
+
+
+def _note_from_profile(profile: dict[str, Any]) -> str:
+    clean = _coerce_profile(profile)
+    parts: list[str] = []
+    mapping: list[tuple[str, str | list[str]]] = [
+        ("一句话定义", clean.get("definition", "")),
+        ("核心张力", clean.get("core_tension", "")),
+        ("写作功能", clean.get("writing_functions", [])),
+        ("场景触发", clean.get("scene_triggers", [])),
+        ("人物表现", clean.get("character_signals", [])),
+        ("意象转译", clean.get("imagery_translations", [])),
+        ("短例子", clean.get("short_examples", [])),
+        ("误用提醒", clean.get("misuse_warnings", [])),
+        ("微练习", clean.get("micro_exercises", [])),
+    ]
+    for heading, value in mapping:
+        if isinstance(value, list):
+            body = "\n".join(f"- {item}" for item in value if item)
+        else:
+            body = value
+        parts.append(f"【{heading}】\n{body}".rstrip())
+    source_lines = []
+    for hint in clean.get("source_hints") or []:
+        if not isinstance(hint, dict):
+            continue
+        title = str(hint.get("title") or "来源线索").strip()
+        note = str(hint.get("note") or "").strip()
+        source_lines.append(f"- {title}" + (f"：{note}" if note else ""))
+    parts.append("【来源线索（需核对）】\n" + ("\n".join(source_lines) if source_lines else "- 需核对。"))
+    return "\n\n".join(parts).strip()
+
+
 def _fallback_payload_from_template_text(
     text: str,
     *,
@@ -411,8 +624,10 @@ def _fallback_payload_from_template_text(
         "aliases": [],
         "tags": [],
         "note": note,
+        "profile": _profile_from_template_note(note, request_web_context=request_web_context),
         "related_suggestions": related,
         "source_hints": source_hints,
+        "reference_candidates": [],
     }
 
 
@@ -504,6 +719,39 @@ def _source_hints_from(values: Any, *, request_web_context: bool) -> list[MotifS
     return hints
 
 
+def _reference_candidates_from(values: Any) -> list[MotifReferenceCandidateOut]:
+    candidates: list[MotifReferenceCandidateOut] = []
+    if not isinstance(values, list):
+        return candidates
+    seen: set[str] = set()
+    for raw in values:
+        if not isinstance(raw, dict):
+            continue
+        text = _clean_string(raw.get("text"), limit=600)
+        if not text:
+            continue
+        author = _clean_string(raw.get("source_author"), limit=120)
+        title = _clean_string(raw.get("source_title"), limit=160)
+        source_note = _clean_string(raw.get("source_note"), limit=260)
+        reason = _clean_string(raw.get("reason"), limit=260)
+        key = "|".join([text.casefold(), author.casefold(), title.casefold()])
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(
+            MotifReferenceCandidateOut(
+                text=text,
+                source_author=author,
+                source_title=title,
+                source_note=source_note,
+                reason=reason,
+            )
+        )
+        if len(candidates) >= 8:
+            break
+    return candidates
+
+
 def _ensure_source_section(note: str, hints: list[MotifSourceHintOut], *, request_web_context: bool) -> str:
     heading = "【来源线索（需核对）】"
     if heading in note:
@@ -532,12 +780,23 @@ def _coerce_enrichment_draft(
 ) -> MotifEnrichmentDraftOut:
     title = str(payload.get("title") or concept).strip()
     note = str(payload.get("note") or "").strip()
+    profile = _coerce_profile(payload.get("profile"))
+    if not _profile_has_content(profile) and note:
+        profile = _profile_from_template_note(note, request_web_context=request_web_context)
+    if not note and _profile_has_content(profile):
+        note = _note_from_profile(profile)
     if not note:
-        raise HTTPException(502, "AI 返回的意象草稿缺少概念或笔记。")
+        raise HTTPException(502, "AI 返回的意象草稿缺少概念档案。")
     missing = [heading for heading in _ENRICH_REQUIRED_HEADINGS if heading not in note]
     if missing:
-        raise HTTPException(502, f"AI 返回的意象草稿缺少模板标题：{missing[0]}")
+        if _profile_has_content(profile):
+            note = _note_from_profile(profile)
+        else:
+            raise HTTPException(502, f"AI 返回的意象草稿缺少模板标题：{missing[0]}")
     hints = _source_hints_from(payload.get("source_hints"), request_web_context=request_web_context)
+    if not hints and profile.get("source_hints"):
+        hints = _source_hints_from(profile.get("source_hints"), request_web_context=request_web_context)
+    profile["source_hints"] = _source_hints_to_dicts(hints)
     note = _ensure_source_section(note[:MAX_ENRICH_NOTE_CHARS], hints, request_web_context=request_web_context)
     return MotifEnrichmentDraftOut(
         title=title[:80],
@@ -545,8 +804,10 @@ def _coerce_enrichment_draft(
         aliases=_unique_clean(payload.get("aliases"), limit=10),
         tags=_unique_clean(payload.get("tags"), limit=10),
         note=note,
+        profile=MotifProfileOut(**profile),
         related_suggestions=_unique_clean(payload.get("related_suggestions"), limit=12),
         source_hints=hints,
+        reference_candidates=_reference_candidates_from(payload.get("reference_candidates")),
         provider=provider,
         model=model,
         transport=transport,
@@ -589,12 +850,25 @@ def _enrichment_system_prompt() -> str:
         "你的目标是把概念转成可记忆、可迁移、可写作调用的短卡。"
         "输出必须凝练、具体、克制，避免长篇思想史和空泛赞美。"
         "不要编造引文、页码、版本、作者原话或看似精确的出处。"
+        "如果给出相关句子候选，必须优先给作者和书名/篇名；不确定就留空或写需核对。"
         "只输出一个 JSON 对象，不要 Markdown，不要代码块，不要解释。"
         "JSON schema: {"
         "\"title\": string, \"concept\": string, \"aliases\": string[], "
         "\"tags\": string[], \"note\": string, "
-        "\"related_suggestions\": string[], "
+        "\"profile\": {"
+        "\"definition\": string, \"core_tension\": string, "
+        "\"writing_functions\": string[], \"scene_triggers\": string[], "
+        "\"character_signals\": string[], \"imagery_translations\": string[], "
+        "\"short_examples\": string[], \"misuse_warnings\": string[], "
+        "\"micro_exercises\": string[], "
         "\"source_hints\": [{\"title\": string, \"url\": string|null, \"note\": string}]"
+        "}, "
+        "\"related_suggestions\": string[], "
+        "\"source_hints\": [{\"title\": string, \"url\": string|null, \"note\": string}], "
+        "\"reference_candidates\": [{"
+        "\"text\": string, \"source_author\": string, \"source_title\": string, "
+        "\"source_note\": string, \"reason\": string"
+        "}]"
         "}。"
     )
 
@@ -632,6 +906,7 @@ def _enrichment_user_prompt(
     aliases = "、".join(node.aliases) if node and node.aliases else "无"
     tags = "、".join(node.tags) if node and node.tags else "无"
     existing_note = (node.note if node else "").strip() or "无"
+    existing_profile = json.dumps(node.profile, ensure_ascii=False) if node and node.profile else "{}"
     return f"""请为写作者生成一张“意象/概念短卡”草稿。
 
 概念：{concept}
@@ -640,6 +915,8 @@ def _enrichment_user_prompt(
 当前意象资料：
 - 已有别名：{aliases}
 - 已有标签：{tags}
+- 已有结构化档案 JSON：
+{existing_profile[:2400]}
 - 已有笔记：
 {existing_note[:1800]}
 
@@ -648,6 +925,8 @@ def _enrichment_user_prompt(
 
 生成要求：
 - note 必须控制在约 800-1200 中文字，不要写成百科长文。
+- profile 必须是可直接阅读的结构化档案；definition 和 core_tension 必须短而准确。
+- note 可以由 profile 内容整理成兼容旧版本的短卡文本。
 - note 必须完整使用这些标题，标题不可改名、不可遗漏：
 【一句话定义】
 【核心张力】
@@ -664,6 +943,8 @@ def _enrichment_user_prompt(
 - 【关联建议】列出可联想的概念/意象，但不要假设软件会自动建节点或连边。
 - aliases 给出少量别名、译名、近义称呼；tags 给出少量分类标签。
 - related_suggestions 只给概念名，不写解释。
+- reference_candidates 给 0-6 条外部相关句子候选；每条必须尽量包含 text、source_author、source_title、source_note、reason。
+- reference_candidates 不是你自己仿写的例句，而是你认为可追溯到具体作者和作品/文章的候选原句；没有明确作者和书名/篇名时，宁可少给。
 - {web_policy}
 - 不要生成页码、伪原文、伪精确引用；没有把握时写“需核对”。
 """
@@ -716,6 +997,7 @@ def create_motif(
             name=data.name,
             aliases=data.aliases,
             note=data.note,
+            profile=_coerce_profile(data.profile),
             tags=data.tags,
             pinned=data.pinned,
         )
@@ -908,6 +1190,80 @@ def set_motifs_for_excerpt(
     )
 
 
+@router.post("/{motif_id}/reference-candidates", response_model=MotifReferenceCandidateApplyOut)
+def apply_motif_reference_candidates(
+    motif_id: str,
+    data: MotifReferenceCandidateApplyRequest,
+    container: AppContainer = Depends(get_container),
+) -> MotifReferenceCandidateApplyOut:
+    motif = container.motif_repository.get_node(motif_id)
+    if motif is None:
+        raise HTTPException(404, "这个意象已经不存在，已刷新列表。")
+    imported: list[MotifReferenceCandidateApplyItemOut] = []
+    skipped: list[str] = []
+    candidates = data.candidates[:12]
+    for index, candidate in enumerate(candidates, start=1):
+        text = candidate.text.strip()
+        author = candidate.source_author.strip()
+        title = candidate.source_title.strip()
+        if not text or not author or not title:
+            skipped.append(f"第 {index} 条缺少句子、作者或书名/篇名，未录入。")
+            continue
+        reference = container.reference_repository.find_exact_source_match(
+            source_title=title,
+            source_author=author,
+            content=text,
+        )
+        reused_reference = reference is not None
+        if reference is None:
+            note_parts = [
+                "AI 候选相关句子，来源需人工核对。",
+                f"关联意象：{motif.name}",
+            ]
+            if candidate.source_note.strip():
+                note_parts.append(f"来源说明：{candidate.source_note.strip()}")
+            if candidate.reason.strip():
+                note_parts.append(f"关联理由：{candidate.reason.strip()}")
+            try:
+                reference = container.reference_repository.create(
+                    source_title=title,
+                    source_author=author,
+                    content=text,
+                    tags=", ".join([motif.name, "AI候选", "需核对"]),
+                    kind=REFERENCE_KIND_EXCERPT,
+                    usage_kind=USAGE_KIND_PHILOSOPHY,
+                    personal_note="\n".join(note_parts),
+                )
+            except ValueError as exc:
+                skipped.append(f"第 {index} 条未能保存为文脉标本：{exc}")
+                continue
+        try:
+            excerpt = container.motif_repository.create_excerpt(
+                source_kind=MOTIF_SOURCE_REFERENCE,
+                source_id=reference.id,
+                source_title_snapshot=reference.source_title,
+                excerpt_text=text,
+                note=candidate.reason.strip(),
+                selection_start=0,
+                selection_end=len(text),
+                motif_ids=[motif.id],
+            )
+        except ValueError as exc:
+            skipped.append(f"第 {index} 条未能挂入意象：{exc}")
+            continue
+        imported.append(
+            MotifReferenceCandidateApplyItemOut(
+                reference_id=reference.id,
+                excerpt_id=excerpt.id,
+                text=text,
+                source_author=author,
+                source_title=title,
+                reused_reference=reused_reference,
+            )
+        )
+    return MotifReferenceCandidateApplyOut(imported=imported, skipped=skipped)
+
+
 @router.delete("/excerpts/{excerpt_id}/motifs/{motif_id}", status_code=204)
 def unlink_motif_from_excerpt(
     excerpt_id: str,
@@ -950,6 +1306,7 @@ def update_motif(
             name=data.name,
             aliases=data.aliases,
             note=data.note,
+            profile=_coerce_profile(data.profile) if data.profile is not None else None,
             tags=data.tags,
             pinned=data.pinned,
         )

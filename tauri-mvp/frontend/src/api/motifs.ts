@@ -7,6 +7,7 @@ export interface MotifNode {
   name: string
   aliases: string[]
   note: string
+  profile: MotifProfile
   tags: string[]
   pinned: boolean
   excerpt_count: number
@@ -18,6 +19,7 @@ export interface MotifNodeInput {
   name: string
   aliases?: string[]
   note?: string
+  profile?: Partial<MotifProfile>
   tags?: string[]
   pinned?: boolean
 }
@@ -92,18 +94,53 @@ export interface MotifSourceHint {
   note: string
 }
 
+export interface MotifProfile {
+  definition: string
+  core_tension: string
+  writing_functions: string[]
+  scene_triggers: string[]
+  character_signals: string[]
+  imagery_translations: string[]
+  short_examples: string[]
+  misuse_warnings: string[]
+  micro_exercises: string[]
+  source_hints: MotifSourceHint[]
+}
+
+export interface MotifReferenceCandidate {
+  text: string
+  source_author: string
+  source_title: string
+  source_note: string
+  reason: string
+}
+
 export interface MotifEnrichmentDraft {
   title: string
   concept: string
   aliases: string[]
   tags: string[]
   note: string
+  profile: MotifProfile
   related_suggestions: string[]
   source_hints: MotifSourceHint[]
+  reference_candidates: MotifReferenceCandidate[]
   provider?: string | null
   model?: string | null
   transport?: string | null
   elapsed_ms: number
+}
+
+export interface ApplyMotifReferenceCandidatesResult {
+  imported: Array<{
+    reference_id: string
+    excerpt_id: string
+    text: string
+    source_author: string
+    source_title: string
+    reused_reference: boolean
+  }>
+  skipped: string[]
 }
 
 export interface MotifGraphNode {
@@ -173,6 +210,15 @@ export const motifsApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
       signal: AbortSignal.timeout(120000),
+    })
+    return handleResponse(res)
+  },
+
+  async applyReferenceCandidates(id: string, candidates: MotifReferenceCandidate[]): Promise<ApplyMotifReferenceCandidatesResult> {
+    const res = await apiFetch(`/api/motifs/${id}/reference-candidates`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ candidates }),
     })
     return handleResponse(res)
   },

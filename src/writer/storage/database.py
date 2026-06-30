@@ -192,6 +192,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "UPDATE entry_versions SET char_count = length(content) WHERE char_count = 0"
         )
 
+    motif_cols = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(motif_nodes)")
+    }
+    if "profile_json" not in motif_cols:
+        conn.execute(
+            "ALTER TABLE motif_nodes ADD COLUMN profile_json TEXT NOT NULL DEFAULT '{}'"
+        )
+
 
 def _ensure_reference_passages_fts_schema(
     conn: sqlite3.Connection, *, force_rebuild: bool = False
