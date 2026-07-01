@@ -8,12 +8,13 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterable
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from deps import get_container
@@ -132,6 +133,29 @@ class AiTaskCompareResult(BaseModel):
 class AiTaskCompareResponse(BaseModel):
     task_type: str
     results: list[AiTaskCompareResult]
+
+
+class AiTaskCompareProfileSnapshot(BaseModel):
+    profile_id: str
+    profile_name: str
+    provider: str
+    model: str
+
+
+class AiTaskCompareStartedEvent(BaseModel):
+    event: str = "started"
+    run_id: str
+    profiles: list[AiTaskCompareProfileSnapshot]
+
+
+class AiTaskCompareResultEvent(BaseModel):
+    event: str
+    result: AiTaskCompareResult
+
+
+class AiTaskCompareDoneEvent(BaseModel):
+    event: str = "done"
+    run_id: str
 
 
 @dataclass(frozen=True)
@@ -411,17 +435,18 @@ def _profile_config_from_raw(raw: dict[str, Any]) -> Optional[_ProfileRuntime]:
 def _resolve_compare_profiles(
     profile_ids: list[str],
     container: AppContainer,
+    *,
+    allow_default_fallback: bool = True,
 ) -> list[_ProfileRuntime]:
     unique_ids: list[str] = []
-    for raw in profile_ids or ["default"]:
+    raw_profile_ids = profile_ids if profile_ids else (["default"] if allow_default_fallback else [])
+    for raw in raw_profile_ids:
         value = str(raw or "").strip()
         if not value or value in unique_ids:
             continue
         unique_ids.append(value)
     if not unique_ids:
-        unique_ids = ["default"]
-    if len(unique_ids) > 3:
-        raise HTTPException(400, "一次最多只能对比 3 个 AI 配置。")
+        raise HTTPException(400, "请选择至少一个 AI 配置。")
 
     stored: dict[str, _ProfileRuntime] = {}
     for raw in container.settings.load_ai_provider_profiles():
@@ -453,6 +478,57 @@ def _resolve_compare_profiles(
         else:
             resolved.append(profile)
     return resolved
+
+
+def _compare_profile_snapshot(runtime: _ProfileRuntime) -> AiTaskCompareProfileSnapshot:
+    config = runtime.config
+    return AiTaskCompareProfileSnapshot(
+        profile_id=runtime.profile_id,
+        profile_name=runtime.profile_name,
+        provider=config.provider_key() if config is not None else "",
+        model=config.model if config is not None else "",
+    )
+
+
+def _json_line(payload: BaseModel | dict[str, Any]) -> str:
+    data = payload.model_dump() if isinstance(payload, BaseModel) else payload
+    return json.dumps(data, ensure_ascii=False) + "\n"
+
+
+def _stream_compare_results(
+    *,
+    run_id: str,
+    profiles: list[_ProfileRuntime],
+    domain_request: DomainAiTaskRequest,
+    input_text: str,
+    container: AppContainer,
+) -> Iterable[str]:
+    yield _json_line(
+        AiTaskCompareStartedEvent(
+            run_id=run_id,
+            profiles=[_compare_profile_snapshot(profile) for profile in profiles],
+        )
+    )
+    with ThreadPoolExecutor(max_workers=len(profiles)) as executor:
+        futures = [
+            executor.submit(
+                _run_compare_profile,
+                profile,
+                domain_request,
+                input_text,
+                container,
+            )
+            for profile in profiles
+        ]
+        for future in as_completed(futures):
+            result = future.result()
+            yield _json_line(
+                AiTaskCompareResultEvent(
+                    event="result" if result.status == "success" else "error",
+                    result=result,
+                )
+            )
+    yield _json_line(AiTaskCompareDoneEvent(run_id=run_id))
 
 
 def _default_thread_title(
@@ -652,10 +728,14 @@ def compare_ai_task(
     request: AiTaskCompareRequest,
     container: AppContainer = Depends(get_container),
 ) -> AiTaskCompareResponse:
-    """Run the same AI task against up to three configured AI profiles."""
+    """Run the same AI task against the selected AI profiles."""
 
     domain_request = _domain_task_request(request)
-    profiles = _resolve_compare_profiles(request.profile_ids, container)
+    profiles = _resolve_compare_profiles(
+        request.profile_ids,
+        container,
+        allow_default_fallback="profile_ids" not in request.model_fields_set,
+    )
     if len(profiles) == 1:
         results = [_run_compare_profile(profiles[0], domain_request, request.text, container)]
     else:
@@ -672,6 +752,32 @@ def compare_ai_task(
             ]
             results = [future.result() for future in futures]
     return AiTaskCompareResponse(task_type=request.task_type, results=results)
+
+
+@router.post("/task/compare/stream")
+def compare_ai_task_stream(
+    request: AiTaskCompareRequest,
+    container: AppContainer = Depends(get_container),
+) -> StreamingResponse:
+    """Run an AI comparison and stream each model result as it completes."""
+
+    domain_request = _domain_task_request(request)
+    profiles = _resolve_compare_profiles(
+        request.profile_ids,
+        container,
+        allow_default_fallback="profile_ids" not in request.model_fields_set,
+    )
+    run_id = uuid.uuid4().hex
+    return StreamingResponse(
+        _stream_compare_results(
+            run_id=run_id,
+            profiles=profiles,
+            domain_request=domain_request,
+            input_text=request.text,
+            container=container,
+        ),
+        media_type="application/x-ndjson",
+    )
 
 
 def _clean_task_presets(raw: Any) -> dict[str, list[AiTaskPreset]]:

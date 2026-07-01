@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import sqlite3
+import time
 from types import SimpleNamespace
 import sys
 import uuid
@@ -2038,8 +2039,25 @@ def test_tauri_ai_task_compare_uses_profile_models(monkeypatch):
     assert payload["results"][0]["input_tokens"] == 3
     assert payload["results"][0]["cost"] == 0.01
 
+    specific_only = client.post(
+        "/api/ai/task/compare",
+        json={
+            "task_type": "polish",
+            "text": "雨夜里，两个人在车站告别。",
+            "target_kind": "paste",
+            "profile_ids": [profile_a["id"], profile_b["id"]],
+        },
+    )
 
-def test_tauri_ai_task_compare_limits_and_sanitizes_partial_failure(monkeypatch):
+    assert specific_only.status_code == 200, specific_only.text
+    assert [item["profile_id"] for item in specific_only.json()["results"]] == [
+        profile_a["id"],
+        profile_b["id"],
+    ]
+    assert "default-model" not in [item["model"] for item in specific_only.json()["results"]]
+
+
+def test_tauri_ai_task_compare_allows_many_profiles_and_sanitizes_partial_failure(monkeypatch):
     client = _tauri_client(monkeypatch)
     from features.ai import routes as ai_routes
     from writer.services.ai.interfaces import AiError, ChatResponse
@@ -2047,7 +2065,7 @@ def test_tauri_ai_task_compare_limits_and_sanitizes_partial_failure(monkeypatch)
     monkeypatch.setenv("WRITER_TEST_PRESENT_KEY", "test-key")
 
     created_profiles = []
-    for index, model in enumerate(["ok-model", "bad-model", "extra-model"], start=1):
+    for index, model in enumerate(["ok-model", "bad-model", "extra-model", "fourth-model"], start=1):
         response = client.post(
             "/api/settings/ai/profiles",
             json={
@@ -2062,17 +2080,17 @@ def test_tauri_ai_task_compare_limits_and_sanitizes_partial_failure(monkeypatch)
         assert response.status_code == 201, response.text
         created_profiles.append(response.json())
 
-    too_many = client.post(
+    empty = client.post(
         "/api/ai/task/compare",
         json={
             "task_type": "polish",
             "text": "hello",
             "target_kind": "paste",
-            "profile_ids": ["default", *[profile["id"] for profile in created_profiles]],
+            "profile_ids": [],
         },
     )
-    assert too_many.status_code == 400
-    assert "最多" in too_many.text
+    assert empty.status_code == 400
+    assert "至少一个" in empty.text
 
     class FakeProvider:
         def __init__(self, config):
@@ -2101,15 +2119,91 @@ def test_tauri_ai_task_compare_limits_and_sanitizes_partial_failure(monkeypatch)
             "task_type": "polish",
             "text": "hello",
             "target_kind": "paste",
-            "profile_ids": [created_profiles[0]["id"], created_profiles[1]["id"]],
+            "profile_ids": [profile["id"] for profile in created_profiles],
         },
     )
 
     assert response.status_code == 200, response.text
     results = response.json()["results"]
-    assert [item["status"] for item in results] == ["success", "error"]
+    assert [item["status"] for item in results] == ["success", "error", "success", "success"]
     assert "网页错误页" in results[1]["error"]
     assert "<!doctype html>" not in results[1]["error"]
+
+
+def test_tauri_ai_task_compare_streams_individual_results(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.ai import routes as ai_routes
+    from writer.services.ai.interfaces import AiError, ChatResponse
+
+    monkeypatch.setenv("WRITER_TEST_PRESENT_KEY", "test-key")
+
+    profiles = []
+    for name, model in [
+        ("Slow", "slow-model"),
+        ("Fast", "fast-model"),
+        ("Bad", "bad-model"),
+    ]:
+        response = client.post(
+            "/api/settings/ai/profiles",
+            json={
+                "name": name,
+                "provider_name": "openai",
+                "base_url": "https://api.example/v1",
+                "wire_api": "chat_completions",
+                "model": model,
+                "api_key_source": "env:WRITER_TEST_PRESENT_KEY",
+            },
+        )
+        assert response.status_code == 201, response.text
+        profiles.append(response.json())
+
+    class FakeProvider:
+        def __init__(self, config):
+            self.config = config
+
+        def chat(self, messages, *, model=None):
+            used_model = model or self.config.model
+            if used_model == "slow-model":
+                time.sleep(0.05)
+            if used_model == "bad-model":
+                time.sleep(0.02)
+                raise AiError("provider failed: <html>403 forbidden</html>")
+            return ChatResponse(
+                content=f"{used_model}: ok",
+                model=used_model,
+                provider="openai",
+                transport="fake",
+            )
+
+    monkeypatch.setattr(
+        ai_routes,
+        "provider_for_config",
+        lambda config, prompt_builder=None: FakeProvider(config),
+    )
+
+    response = client.post(
+        "/api/ai/task/compare/stream",
+        json={
+            "task_type": "polish",
+            "text": "hello",
+            "target_kind": "paste",
+            "profile_ids": [profile["id"] for profile in profiles],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    events = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+    assert events[0]["event"] == "started"
+    assert [profile["profile_id"] for profile in events[0]["profiles"]] == [profile["id"] for profile in profiles]
+    assert events[-1]["event"] == "done"
+
+    result_events = [event for event in events if event["event"] in {"result", "error"}]
+    assert result_events[0]["result"]["model"] == "fast-model"
+    assert {event["result"]["model"] for event in result_events} == {"slow-model", "fast-model", "bad-model"}
+    bad_event = next(event for event in result_events if event["result"]["model"] == "bad-model")
+    assert bad_event["event"] == "error"
+    assert "网页错误页" in bad_event["result"]["error"]
+    assert "<html>" not in bad_event["result"]["error"]
 
 
 def test_tauri_ai_settings_read_save_and_validate(monkeypatch):

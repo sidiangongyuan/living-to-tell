@@ -5,6 +5,7 @@ import { appApi } from '../../api/app'
 import {
   aiApi,
   type AiContextAttachment,
+  type AiTaskCompareProfileSnapshot,
   type AiTaskCompareResult,
   type AiTaskPreset,
   type AiTaskPresetMap,
@@ -38,6 +39,7 @@ import {
   mergeControls,
 } from './taskControls'
 import { buildAiRequestDiagnostics, type AiRequestSizeLevel } from './requestDiagnostics'
+import { toggleAiTaskProfileSelection } from './profileSelection'
 
 type ChatScopeKind = 'global' | 'article' | 'collection'
 type ContextSource = 'cards' | 'notes' | 'references'
@@ -395,10 +397,8 @@ const aiProfileOptions = computed(() => [
     })),
 ])
 
-const selectedPendingProfiles = computed(() =>
-  selectedProfileIds.value
-    .map((id) => aiProfileOptions.value.find((profile) => profile.id === id))
-    .filter((profile): profile is NonNullable<typeof profile> => Boolean(profile))
+const pendingCompareCount = computed(() =>
+  compareResults.value.filter((result) => result.status === 'pending').length
 )
 
 const successfulCompareResults = computed(() =>
@@ -572,7 +572,6 @@ async function loadAiProfiles() {
     selectedProfileIds.value = selectedProfileIds.value.filter((id) =>
       id === 'default' || result.profiles.some((profile) => profile.id === id && profile.enabled)
     )
-    if (!selectedProfileIds.value.length) selectedProfileIds.value = ['default']
   } catch (e) {
     if (seq !== aiProfilesLoadSeq) return
     if (isHttpStatus(e, 404)) {
@@ -697,23 +696,80 @@ async function openChatTab() {
 }
 
 function toggleTaskProfile(profileId: string) {
-  if (selectedProfileIds.value.includes(profileId)) {
-    if (selectedProfileIds.value.length === 1) return
-    selectedProfileIds.value = selectedProfileIds.value.filter((id) => id !== profileId)
-    return
-  }
-  if (selectedProfileIds.value.length >= 3) {
-    error.value = t('ai.profileLimit')
-    return
-  }
   error.value = ''
-  selectedProfileIds.value = [...selectedProfileIds.value, profileId]
+  selectedProfileIds.value = toggleAiTaskProfileSelection(selectedProfileIds.value, profileId)
 }
 
 function selectCompareResult(result: AiTaskCompareResult) {
   if (result.status !== 'success' || !result.result.trim()) return
   selectedCompareProfileId.value = result.profile_id
   taskResult.value = result.result
+}
+
+function emptyTaskStats() {
+  return {
+    input_chars: originalText.value.length,
+    output_chars: 0,
+    delta_chars: 0,
+    output_ratio: null,
+    input_paragraphs: countParagraphs(originalText.value),
+    output_paragraphs: 0,
+  }
+}
+
+function pendingCompareResult(profile: AiTaskCompareProfileSnapshot): AiTaskCompareResult {
+  return {
+    profile_id: profile.profile_id,
+    profile_name: profile.profile_name,
+    provider: profile.provider,
+    model: profile.model,
+    transport: null,
+    status: 'pending',
+    result: '',
+    error: '',
+    elapsed_ms: 0,
+    input_tokens: null,
+    output_tokens: null,
+    cost: null,
+    finish_reason: null,
+    stats: emptyTaskStats(),
+  }
+}
+
+function pendingCompareResultForProfileId(profileId: string): AiTaskCompareResult {
+  const profile = aiProfileOptions.value.find((item) => item.id === profileId)
+  return pendingCompareResult({
+    profile_id: profileId,
+    profile_name: profile?.name ?? profileId,
+    provider: profile?.provider ?? '',
+    model: profile?.model ?? '',
+  })
+}
+
+function upsertCompareResult(result: AiTaskCompareResult) {
+  const index = compareResults.value.findIndex((item) => item.profile_id === result.profile_id)
+  if (index >= 0) {
+    compareResults.value = compareResults.value.map((item, itemIndex) => itemIndex === index ? result : item)
+  } else {
+    compareResults.value = [...compareResults.value, result]
+  }
+  if (result.status === 'success' && result.result.trim() && !selectedCompareProfileId.value) {
+    selectedCompareProfileId.value = result.profile_id
+    taskResult.value = result.result
+  }
+}
+
+function markPendingCompareResultsFailed(message: string) {
+  compareResults.value = compareResults.value.map((result) =>
+    result.status === 'pending'
+      ? {
+          ...result,
+          status: 'error',
+          error: message,
+          elapsed_ms: taskRunElapsedMs.value,
+        }
+      : result
+  )
 }
 
 function formatDelta(value: number): string {
@@ -788,32 +844,41 @@ async function handleRunTask() {
   }
 
   try {
+    const profileIds = [...selectedProfileIds.value]
+    if (!profileIds.length) {
+      error.value = t('ai.selectAtLeastOneProfile')
+      return
+    }
     const controls = controlsByTask.value[taskType.value].controls
     const taskOptions = buildTaskRequestOptions(taskType.value, controls)
-    compareResults.value = []
+    compareResults.value = profileIds.map(pendingCompareResultForProfileId)
     selectedCompareProfileId.value = null
     taskResult.value = ''
     showComparison.value = true
     startTaskRunTimer()
-    const response = await store.compareTask({
+    await store.compareTaskStream({
       task_type: taskType.value,
       text: subject,
       target_kind: scopeType.value === 'article' ? (hasArticleSelection.value ? 'selection' : 'article') : 'paste',
       target_ref_id: selectedArticleId.value,
       attachments: contextAttachments.value,
-      profile_ids: selectedProfileIds.value,
+      profile_ids: profileIds,
       ...taskOptions,
+    }, {
+      onStarted: (event) => {
+        compareResults.value = event.profiles.map(pendingCompareResult)
+      },
+      onResult: (event) => {
+        upsertCompareResult(event.result)
+      },
+      onError: (event) => {
+        upsertCompareResult(event.result)
+      },
     })
-    compareResults.value = response.results
-    const firstSuccess = response.results.find((result) => result.status === 'success' && result.result.trim())
-    selectedCompareProfileId.value = firstSuccess?.profile_id ?? null
-    taskResult.value = firstSuccess?.result ?? ''
     showComparison.value = true
   } catch (e) {
-    compareResults.value = []
-    selectedCompareProfileId.value = null
-    taskResult.value = ''
     error.value = errorMessage(e)
+    markPendingCompareResultsFailed(error.value)
     showComparison.value = true
   } finally {
     stopTaskRunTimer()
@@ -1863,9 +1928,6 @@ function makeId(): string {
             >
               {{ hasArticleSelection ? t('ai.insertAfterSelection') : t('ai.insertAtEnd') }}
             </button>
-            <button @click="showComparison = false" class="rounded-lg bg-gray-600 px-4 py-2 text-sm text-white transition-colors hover:bg-gray-700">
-              {{ t('ai.back') }}
-            </button>
           </div>
         </div>
 
@@ -1880,39 +1942,19 @@ function makeId(): string {
             <pre class="max-h-40 overflow-y-auto whitespace-pre-wrap font-sans text-sm leading-6 text-gray-700">{{ originalText }}</pre>
           </section>
 
-          <div v-if="store.taskRunning" class="mb-4 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
+          <div v-if="store.taskRunning && pendingCompareCount > 0" class="mb-4 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div class="font-semibold">{{ t('ai.waitingForModels', { count: selectedPendingProfiles.length }) }}</div>
+                <div class="font-semibold">{{ t('ai.waitingForModels', { count: pendingCompareCount }) }}</div>
                 <p class="mt-1 text-xs leading-5 text-blue-700">{{ t('ai.waitingForModelsHint') }}</p>
               </div>
               <span class="rounded-full bg-white px-3 py-1 text-xs font-semibold text-blue-700">
                 {{ formatElapsed(taskRunElapsedMs) }}
               </span>
             </div>
-            <div class="mt-3 grid gap-3 xl:grid-cols-2">
-              <article
-                v-for="profile in selectedPendingProfiles"
-                :key="profile.id"
-                class="rounded-xl border border-blue-100 bg-white p-4"
-              >
-                <div class="flex items-start justify-between gap-3">
-                  <div class="min-w-0">
-                    <h3 class="font-semibold text-gray-900">{{ profile.name }}</h3>
-                    <p class="mt-1 truncate text-xs text-gray-500">{{ profile.model || profile.provider }}</p>
-                  </div>
-                  <span class="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
-                    {{ t('ai.modelPending') }}
-                  </span>
-                </div>
-                <div class="mt-4 h-2 overflow-hidden rounded-full bg-blue-50">
-                  <div class="ai-pending-bar h-full w-1/3 rounded-full bg-blue-500"></div>
-                </div>
-              </article>
-            </div>
           </div>
 
-          <div v-else-if="!compareResults.length" class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div v-if="!compareResults.length" class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
             {{ error || t('ai.noCompareResults') }}
           </div>
 
@@ -1932,10 +1974,20 @@ function makeId(): string {
                     <span
                       :class="[
                         'rounded-full px-2 py-0.5 text-xs font-semibold',
-                        result.status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700',
+                        result.status === 'success'
+                          ? 'bg-green-100 text-green-700'
+                          : result.status === 'pending'
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-red-100 text-red-700',
                       ]"
                     >
-                      {{ result.status === 'success' ? t('ai.resultSuccess') : t('ai.resultFailed') }}
+                      {{
+                        result.status === 'success'
+                          ? t('ai.resultSuccess')
+                          : result.status === 'pending'
+                            ? t('ai.modelPending')
+                            : t('ai.resultFailed')
+                      }}
                     </span>
                   </div>
                   <p class="mt-1 break-all text-xs text-gray-500">
@@ -1957,7 +2009,14 @@ function makeId(): string {
                 </button>
               </div>
 
-              <div class="mb-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
+              <div v-if="result.status === 'pending'" class="rounded-lg border border-blue-100 bg-blue-50 p-3">
+                <div class="h-2 overflow-hidden rounded-full bg-white">
+                  <div class="ai-pending-bar h-full w-1/3 rounded-full bg-blue-500"></div>
+                </div>
+                <p class="mt-3 text-sm leading-6 text-blue-800">{{ t('ai.waitingForSingleModel') }}</p>
+              </div>
+
+              <div v-else class="mb-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
                 <div class="rounded-lg bg-gray-50 p-2">
                   <div class="text-gray-400">{{ t('ai.charDelta') }}</div>
                   <div class="mt-1 font-semibold text-gray-800">{{ formatDelta(result.stats.delta_chars) }}</div>
@@ -1985,7 +2044,7 @@ function makeId(): string {
               <div v-if="result.status === 'error'" class="rounded-lg bg-red-50 p-3 text-sm leading-6 text-red-800">
                 {{ result.error }}
               </div>
-              <pre v-else class="max-h-[48vh] overflow-y-auto whitespace-pre-wrap rounded-lg bg-[#fbfaf7] p-4 font-sans text-sm leading-7 text-gray-900">{{ result.result }}</pre>
+              <pre v-else-if="result.status === 'success'" class="max-h-[48vh] overflow-y-auto whitespace-pre-wrap rounded-lg bg-[#fbfaf7] p-4 font-sans text-sm leading-7 text-gray-900">{{ result.result }}</pre>
             </article>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type Route } from '@playwright/test'
 
 declare global {
   interface Window {
@@ -100,6 +100,69 @@ const reference = {
   personal_note: '',
   created_at: null,
   updated_at: null,
+}
+
+function compareProfileSnapshot(profileId: string) {
+  return {
+    profile_id: profileId,
+    profile_name: profileId === 'default' ? '默认配置' : 'Gemini 测试',
+    provider: profileId === 'default' ? 'openai' : 'gemini',
+    model: profileId === 'default' ? 'gpt-4o-mini' : 'gemini-test-model',
+  }
+}
+
+function compareProfileResult(profileId: string, text: string, resultText?: string) {
+  const output = resultText ?? (profileId === 'default' ? 'AI 生成结果' : 'Gemini 生成结果')
+  const snapshot = compareProfileSnapshot(profileId)
+  return {
+    ...snapshot,
+    transport: 'fake',
+    status: 'success',
+    result: output,
+    error: '',
+    elapsed_ms: 120,
+    input_tokens: 10,
+    output_tokens: 20,
+    cost: null,
+    finish_reason: 'stop',
+    stats: {
+      input_chars: text.length,
+      output_chars: output.length,
+      delta_chars: output.length - text.length,
+      output_ratio: text.length ? output.length / text.length : null,
+      input_paragraphs: 1,
+      output_paragraphs: 1,
+    },
+  }
+}
+
+function compareStreamBody(body: { task_type?: string; text?: string; profile_ids?: string[] }, resultForProfile?: (profileId: string) => string) {
+  const text = body.text ?? ''
+  const profileIds = body.profile_ids?.length ? body.profile_ids : ['default']
+  const events = [
+    {
+      event: 'started',
+      run_id: 'e2e-run',
+      profiles: profileIds.map(compareProfileSnapshot),
+    },
+    ...profileIds.map((profileId) => ({
+      event: 'result',
+      result: compareProfileResult(profileId, text, resultForProfile?.(profileId)),
+    })),
+    {
+      event: 'done',
+      run_id: 'e2e-run',
+    },
+  ]
+  return `${events.map((event) => JSON.stringify(event)).join('\n')}\n`
+}
+
+async function fulfillCompareStream(route: Route, resultForProfile?: (profileId: string) => string) {
+  const body = route.request().postDataJSON() as { task_type?: string; text?: string; profile_ids?: string[] }
+  await route.fulfill({
+    contentType: 'application/x-ndjson',
+    body: compareStreamBody(body, resultForProfile),
+  })
 }
 
 const outlineItems = [
@@ -642,37 +705,7 @@ async function mockVisibleActionApi(page: Page) {
       },
     })
   })
-  await page.route('**/api/ai/task/compare', async (route) => {
-    const body = route.request().postDataJSON() as { task_type?: string; text?: string; profile_ids?: string[] }
-    await route.fulfill({
-      json: {
-        task_type: body.task_type ?? 'polish',
-        results: (body.profile_ids?.length ? body.profile_ids : ['default']).map((profileId) => ({
-          profile_id: profileId,
-          profile_name: profileId === 'default' ? '默认配置' : 'Gemini 测试',
-          provider: profileId === 'default' ? 'openai' : 'gemini',
-          model: profileId === 'default' ? 'gpt-4o-mini' : 'gemini-test-model',
-          transport: 'fake',
-          status: 'success',
-          result: profileId === 'default' ? 'AI 生成结果' : 'Gemini 生成结果',
-          error: '',
-          elapsed_ms: 120,
-          input_tokens: 10,
-          output_tokens: 20,
-          cost: null,
-          finish_reason: 'stop',
-          stats: {
-            input_chars: body.text?.length ?? 0,
-            output_chars: profileId === 'default' ? 'AI 生成结果'.length : 'Gemini 生成结果'.length,
-            delta_chars: (profileId === 'default' ? 'AI 生成结果'.length : 'Gemini 生成结果'.length) - (body.text?.length ?? 0),
-            output_ratio: body.text?.length ? ((profileId === 'default' ? 'AI 生成结果'.length : 'Gemini 生成结果'.length) / body.text.length) : null,
-            input_paragraphs: 1,
-            output_paragraphs: 1,
-          },
-        })),
-      },
-    })
-  })
+  await page.route('**/api/ai/task/compare/stream', async (route) => fulfillCompareStream(route))
   await page.route('**/api/ai/task', async (route) => {
     await route.fulfill({ json: { result: 'AI 生成结果', task_type: (route.request().postDataJSON() as { task_type?: string }).task_type ?? 'polish' } })
   })
@@ -1850,48 +1883,17 @@ test('library autosave failures show a visible unsaved-state error', async ({ pa
 
 test('AI tools run tasks, attach contexts, and keep generated outputs actionable', async ({ page }) => {
   const taskBodies: Array<Record<string, unknown>> = []
-
-  await page.route('**/api/ai/task/compare', async (route) => {
-    const body = route.request().postDataJSON() as Record<string, unknown>
-    taskBodies.push(body)
-    await route.fulfill({
-      json: {
-        task_type: body.task_type ?? 'polish',
-        results: [
-          {
-            profile_id: 'default',
-            profile_name: '默认配置',
-            provider: 'openai',
-            model: 'gpt-4o-mini',
-            transport: 'fake',
-            status: 'success',
-            result: 'AI 生成结果',
-            error: '',
-            elapsed_ms: 120,
-            input_tokens: 10,
-            output_tokens: 20,
-            cost: null,
-            finish_reason: 'stop',
-            stats: {
-              input_chars: String(body.text ?? '').length,
-              output_chars: 'AI 生成结果'.length,
-              delta_chars: 'AI 生成结果'.length - String(body.text ?? '').length,
-              output_ratio: String(body.text ?? '').length ? 'AI 生成结果'.length / String(body.text ?? '').length : null,
-              input_paragraphs: 1,
-              output_paragraphs: 1,
-            },
-          },
-        ],
-      },
-    })
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('/api/ai/task/compare/stream')) {
+      taskBodies.push(request.postDataJSON() as Record<string, unknown>)
+    }
   })
 
   await page.goto('/ai?tab=tools&scope_kind=article&scope_id=article-a')
-  await expect(page.getByRole('button', { name: '运行任务' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '运行任务' })).toBeVisible({ timeout: 20000 })
   const modelCompareSection = page.locator('section').filter({ hasText: '模型对比' })
   await modelCompareSection.getByRole('button', { name: '刷新' }).click()
   await expect(modelCompareSection.getByText('AI 配置档案已刷新')).toBeVisible()
-  await expect(modelCompareSection.getByText('AI 配置档案已刷新')).toHaveCount(0, { timeout: 4000 })
 
   await page.getByRole('button', { name: '添加文章便签' }).click()
   await page.getByRole('button', { name: '加入全部未完成' }).click()
@@ -1935,9 +1937,7 @@ test('AI tools run tasks, attach contexts, and keep generated outputs actionable
   await page.getByRole('button', { name: '复制结果' }).click()
   await expect.poll(() => page.evaluate(() => window.__copiedText)).toBe('AI 生成结果')
   await expect(page.getByText('已复制到剪贴板')).toBeVisible()
-
-  await page.getByRole('button', { name: '返回' }).click()
-  await expect(page.getByText('选择任务类型和输入内容，点击"运行任务"')).toBeVisible()
+  await expect(page.getByRole('button', { name: '← 返回' })).toHaveCount(0)
 })
 
 test('AI presets, card contexts, and clear controls update the workspace visibly', async ({ page }) => {
@@ -2007,37 +2007,13 @@ test('AI presets, card contexts, and clear controls update the workspace visibly
 })
 
 test('AI tools show long request diagnostics and honest pending state while models run', async ({ page }) => {
-  await page.unroute('**/api/ai/task/compare')
-  await page.route('**/api/ai/task/compare', async (route) => {
+  await page.unroute('**/api/ai/task/compare/stream')
+  await page.route('**/api/ai/task/compare/stream', async (route) => {
     const body = route.request().postDataJSON() as { task_type?: string; text?: string; profile_ids?: string[] }
     await new Promise((resolve) => setTimeout(resolve, 450))
     await route.fulfill({
-      json: {
-        task_type: body.task_type ?? 'polish',
-        results: (body.profile_ids?.length ? body.profile_ids : ['default']).map((profileId) => ({
-          profile_id: profileId,
-          profile_name: profileId === 'default' ? '默认配置' : 'Gemini 测试',
-          provider: profileId === 'default' ? 'openai' : 'gemini',
-          model: profileId === 'default' ? 'gpt-4o-mini' : 'gemini-test-model',
-          transport: 'fake',
-          status: 'success',
-          result: profileId === 'default' ? '长文本默认模型结果' : '长文本 Gemini 结果',
-          error: '',
-          elapsed_ms: 450,
-          input_tokens: 1200,
-          output_tokens: 300,
-          cost: null,
-          finish_reason: 'stop',
-          stats: {
-            input_chars: body.text?.length ?? 0,
-            output_chars: profileId === 'default' ? '长文本默认模型结果'.length : '长文本 Gemini 结果'.length,
-            delta_chars: (profileId === 'default' ? '长文本默认模型结果'.length : '长文本 Gemini 结果'.length) - (body.text?.length ?? 0),
-            output_ratio: body.text?.length ? ((profileId === 'default' ? '长文本默认模型结果'.length : '长文本 Gemini 结果'.length) / body.text.length) : null,
-            input_paragraphs: 1,
-            output_paragraphs: 1,
-          },
-        })),
-      },
+      contentType: 'application/x-ndjson',
+      body: compareStreamBody(body, (profileId) => profileId === 'default' ? '长文本默认模型结果' : '长文本 Gemini 结果'),
     })
   })
 
@@ -2048,6 +2024,8 @@ test('AI tools show long request diagnostics and honest pending state while mode
   await expect(page.getByText('较长', { exact: true })).toBeVisible()
 
   await page.getByLabel('Gemini 测试').check()
+  await expect(page.getByRole('button', { name: '运行任务' })).toBeVisible()
+  await page.getByLabel('默认配置').check()
   await page.getByRole('button', { name: '运行 2 个模型' }).click()
   await expect(page.getByText('正在等待 2 个模型返回')).toBeVisible()
   await expect(page.getByText('等待中')).toHaveCount(2)

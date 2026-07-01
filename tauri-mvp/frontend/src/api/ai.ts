@@ -1,7 +1,7 @@
 /**
  * AI API client
  */
-import { apiFetch, handleResponse } from './base'
+import { apiFetch, handleResponse, HttpError } from './base'
 
 export interface AiTaskRequest {
   task_type: 'polish' | 'rewrite' | 'expand' | 'continue' | 'style_transfer' | 'summarize' | 'outline' | 'title' | 'structure_diagnose' | 'consistency_check'
@@ -42,7 +42,7 @@ export interface AiTaskCompareResult {
   provider: string
   model: string
   transport?: string | null
-  status: 'success' | 'error'
+  status: 'success' | 'error' | 'pending'
   result: string
   error: string
   elapsed_ms: number
@@ -60,6 +60,41 @@ export interface AiTaskCompareRequest extends AiTaskRequest {
 export interface AiTaskCompareResponse {
   task_type: string
   results: AiTaskCompareResult[]
+}
+
+export interface AiTaskCompareProfileSnapshot {
+  profile_id: string
+  profile_name: string
+  provider: string
+  model: string
+}
+
+export interface AiTaskCompareStartedEvent {
+  event: 'started'
+  run_id: string
+  profiles: AiTaskCompareProfileSnapshot[]
+}
+
+export interface AiTaskCompareResultEvent {
+  event: 'result' | 'error'
+  result: AiTaskCompareResult
+}
+
+export interface AiTaskCompareDoneEvent {
+  event: 'done'
+  run_id: string
+}
+
+export type AiTaskCompareStreamEvent =
+  | AiTaskCompareStartedEvent
+  | AiTaskCompareResultEvent
+  | AiTaskCompareDoneEvent
+
+export interface AiTaskCompareStreamHandlers {
+  onStarted?: (event: AiTaskCompareStartedEvent) => void
+  onResult?: (event: AiTaskCompareResultEvent) => void
+  onError?: (event: AiTaskCompareResultEvent) => void
+  onDone?: (event: AiTaskCompareDoneEvent) => void
 }
 
 export interface AiContextAttachment {
@@ -146,6 +181,61 @@ export const aiApi = {
       signal: AbortSignal.timeout(120000),
     })
     return handleResponse(res)
+  },
+
+  async compareTaskStream(
+    request: AiTaskCompareRequest,
+    handlers: AiTaskCompareStreamHandlers,
+  ): Promise<void> {
+    const res = await apiFetch('/api/ai/task/compare/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(600000),
+    })
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({
+        detail: `HTTP ${res.status}: ${res.statusText}`,
+      }))
+      throw new HttpError(res.status, res.statusText, error.detail)
+    }
+
+    const processLine = (line: string) => {
+      const trimmed = line.trim()
+      if (!trimmed) return
+      const event = JSON.parse(trimmed) as AiTaskCompareStreamEvent
+      if (event.event === 'started') {
+        handlers.onStarted?.(event)
+      } else if (event.event === 'done') {
+        handlers.onDone?.(event)
+      } else if (event.event === 'error') {
+        handlers.onError?.(event)
+      } else {
+        handlers.onResult?.(event)
+      }
+    }
+
+    if (!res.body) {
+      const text = await res.text()
+      for (const line of text.split('\n')) processLine(line)
+      return
+    }
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    while (true) {
+      const { value, done } = await reader.read()
+      if (value) {
+        buffer += decoder.decode(value, { stream: !done })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+        for (const line of lines) processLine(line)
+      }
+      if (done) break
+    }
+    buffer += decoder.decode()
+    if (buffer.trim()) processLine(buffer)
   },
 
   async listTaskPresets(): Promise<AiTaskPresetMap> {

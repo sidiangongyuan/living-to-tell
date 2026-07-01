@@ -1,6 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { aiApi, type Thread, type Message, type AiTaskCompareRequest, type AiTaskCompareResponse, type AiTaskRequest } from '../../api/ai'
+import {
+  aiApi,
+  type Thread,
+  type Message,
+  type AiTaskCompareRequest,
+  type AiTaskCompareResponse,
+  type AiTaskCompareStreamHandlers,
+  type AiTaskRequest,
+} from '../../api/ai'
 
 type ScopedMessage = Message & {
   __scope_kind?: 'global' | 'article' | 'collection'
@@ -165,6 +173,22 @@ export const useAiStore = defineStore('ai', () => {
     }
   }
 
+  async function compareTaskStream(
+    request: AiTaskCompareRequest,
+    handlers: AiTaskCompareStreamHandlers,
+  ): Promise<void> {
+    taskRunning.value = true
+    error.value = null
+    try {
+      await aiApi.compareTaskStream(request, handlers)
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e)
+      throw e
+    } finally {
+      taskRunning.value = false
+    }
+  }
+
   function selectThread(id: string) {
     selectedThreadId.value = id
     messages.value = []
@@ -185,6 +209,7 @@ export const useAiStore = defineStore('ai', () => {
     sendMessage,
     runTask,
     compareTask,
+    compareTaskStream,
     selectThread,
   }
 })

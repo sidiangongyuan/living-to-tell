@@ -12,6 +12,7 @@ API_CAPABILITIES = [
     "ai_task_presets",
     "ai_profiles",
     "ai_task_compare",
+    "ai_task_compare_stream",
     "motif_star_map",
     "motif_ai_enrichment",
     "update_check",
