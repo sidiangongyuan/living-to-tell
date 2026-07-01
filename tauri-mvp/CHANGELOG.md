@@ -1,5 +1,38 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.30 - Local AI Key Entry And Relay Model Presets (2026-07-01)
+
+### Added
+
+- Added a direct API key entry flow in Settings. Users can paste a key in the AI configuration or profile editor, save it to the current Windows user environment, and have the app switch the credential source to the generated `env:LTT_AI_...` value.
+- Added `deepseek-v4-pro` and `glm-5.2` to OpenAI-compatible model presets after real relay connectivity tests against `https://elysiver.h-e.top/`.
+
+### Changed
+
+- Settings now keeps custom `env:LTT_AI_...` credential sources visible in the credential-source dropdown instead of losing them when they are not one of the built-in options.
+- OpenAI-compatible provider configuration now accepts a relay origin such as `https://elysiver.h-e.top/` and normalizes it to the SDK-ready `/v1` base URL internally.
+- Updated AI settings copy so it distinguishes inline app settings from explicit local key saving through user environment variables.
+- Updated public documentation links and installer names to `0.1.30`.
+
+### Verification
+
+- Real relay smoke tests:
+  - `glm-5.2` through `https://elysiver.h-e.top/v1/chat/completions`: success.
+  - `deepseek-v4-pro` through `https://elysiver.h-e.top/v1/chat/completions`: success.
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py -q`
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\services\ai\test_preflight.py tests\services\ai\test_openai_provider.py tests\services\ai\test_gemini_provider.py -q`
+- `npm test -- --run`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.30_x64-setup.exe`
+  - SHA256: `CF00E16F78E39AC6BB20B1FBDFC6B1CAB97963654B4D04BFCD84A2C3CB5727E9`
+- `LivingToTell_0.1.30_x64_zh-CN.msi`
+  - SHA256: `35256E5C948FF63DE3A6696EBDA2575393663F193EDB64C1F37132E1CEF0B442`
+
 ## 0.1.29 - Motif Enrichment Logic And Resizable Dialog (2026-06-30)
 
 ### Fixed
