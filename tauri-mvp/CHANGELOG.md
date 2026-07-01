@@ -1,5 +1,32 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.31 - AI Profile Key Isolation (2026-07-01)
+
+### Fixed
+
+- AI configuration profiles can now keep separate locally saved API key sources even when they use the same OpenAI-compatible provider.
+- Saving a key again while editing an existing profile reuses that profile's `env:LTT_AI_...` source instead of creating a drifting replacement.
+- Settings keeps locally saved `env:LTT_AI_...` credential sources visible in the credential dropdown after switching to another credential source.
+
+### Verification
+
+- Real relay smoke tests:
+  - `glm-5.2` through `https://elysiver.h-e.top/v1/chat/completions`: success.
+  - `deepseek-v4-pro` through `https://elysiver.h-e.top/v1/chat/completions`: success.
+  - Multi-model comparison with both saved profiles: success.
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py tests\services\ai -q`
+- `npm test -- --run`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.31_x64-setup.exe`
+  - SHA256: `A966050500808490F9FE42B15FCD7EA25AC6E88B16BBC1F6120FA19EEEE4C0AA`
+- `LivingToTell_0.1.31_x64_zh-CN.msi`
+  - SHA256: `AB7C25E9EB14A6E9E1A2D6B9DCE171BFFD215431B6670644D8BA813B51B19E9F`
+
 ## 0.1.30 - Local AI Key Entry And Relay Model Presets (2026-07-01)
 
 ### Added
