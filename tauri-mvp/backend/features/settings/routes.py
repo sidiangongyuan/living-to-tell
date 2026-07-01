@@ -397,7 +397,7 @@ def _env_status(source: str) -> AiCredentialStatus:
 _ENV_VAR_RE = re.compile(r"^[A-Z_][A-Z0-9_]{1,80}$")
 
 
-def _local_key_env_name(data: AiLocalKeySaveRequest) -> str:
+def _local_key_env_name(data: AiLocalKeySaveRequest, profiles: Optional[list[AiProfileOut]] = None) -> str:
     requested = (data.env_var or "").strip().upper()
     if requested:
         if not _ENV_VAR_RE.match(requested):
@@ -406,6 +406,14 @@ def _local_key_env_name(data: AiLocalKeySaveRequest) -> str:
 
     profile_id = (data.profile_id or "").strip()
     if profile_id:
+        for profile in profiles or []:
+            if profile.id != profile_id:
+                continue
+            source = (profile.api_key_source or "").strip()
+            if source.startswith("env:LTT_AI_"):
+                existing = source.split(":", 1)[1].strip().upper()
+                if existing and _ENV_VAR_RE.match(existing):
+                    return existing
         cleaned = re.sub(r"[^A-Za-z0-9]", "", profile_id).upper()[:12]
         if cleaned:
             return f"LTT_AI_PROFILE_{cleaned}_KEY"
@@ -1030,14 +1038,17 @@ def list_ai_profiles(
 
 
 @router.post("/ai/local-key", response_model=AiLocalKeySaveOut)
-def save_ai_local_key(data: AiLocalKeySaveRequest) -> AiLocalKeySaveOut:
+def save_ai_local_key(
+    data: AiLocalKeySaveRequest,
+    container: AppContainer = Depends(get_container),
+) -> AiLocalKeySaveOut:
     key = (data.api_key or "").strip()
     if not key:
         raise HTTPException(400, "API Key 不能为空。")
     if "\n" in key or "\r" in key:
         raise HTTPException(400, "API Key 不能包含换行。")
 
-    env_var = _local_key_env_name(data)
+    env_var = _local_key_env_name(data, _load_ai_profiles(container))
     persisted = _set_user_environment_variable(env_var, key)
     return AiLocalKeySaveOut(
         api_key_source=f"env:{env_var}",

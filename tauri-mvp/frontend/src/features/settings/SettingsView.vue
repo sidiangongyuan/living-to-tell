@@ -18,6 +18,11 @@ import {
 import { useI18n } from '../../i18n'
 import { useAppUpdateStore } from '../../stores/appUpdate'
 import { useSettingsStore } from '../../stores/settings'
+import {
+  buildCredentialOptions,
+  collectSavedLocalCredentialSources,
+  localEnvVarFromCredentialSource,
+} from './credentialOptions'
 
 interface DataDirectoryOverrideState {
   override_path?: string | null
@@ -61,6 +66,7 @@ const modelFetchResult = ref<UiModelFetchResult | null>(null)
 const saveNotice = ref('')
 const saveError = ref('')
 const fetchedModelPresets = ref<Partial<Record<AiProviderName, string[]>>>({})
+const transientLocalCredentialSources = ref<Partial<Record<AiProviderName, string[]>>>({})
 let applyingAiSettings = false
 
 const aiProfiles = ref<AiProfile[]>([])
@@ -102,43 +108,19 @@ const providerOptions = computed<Array<{ value: AiProviderName; label: string }>
   { value: 'opencode', label: t('settings.providers.opencode') },
 ])
 
-function credentialOptionsFor(provider: AiProviderName, currentSource = ''): Array<{ value: string; label: string }> {
-  const appendCurrent = (items: Array<{ value: string; label: string }>) => {
-    const current = currentSource.trim()
-    if (current && !items.some((item) => item.value === current)) {
-      return [
-        ...items,
-        {
-          value: current,
-          label: current.startsWith('env:LTT_AI_')
-            ? t('settings.credentialSavedLocalWithSource', { source: current })
-            : current,
-        },
-      ]
-    }
-    return items
-  }
-  if (provider === 'gemini') {
-    return appendCurrent([
-      { value: 'env:GEMINI_API_KEY', label: 'env:GEMINI_API_KEY' },
-      { value: 'gemini', label: t('settings.credentialGemini') },
-    ])
-  }
-  if (provider === 'gemini_cli') {
-    return [{ value: 'gemini-cli', label: t('settings.credentialGeminiCli') }]
-  }
-  if (provider === 'opencode') {
-    return [{ value: 'opencode', label: t('settings.credentialOpenCode') }]
-  }
-  return appendCurrent([
-    { value: 'env:OPENAI_API_KEY', label: 'env:OPENAI_API_KEY' },
-    { value: 'codex', label: t('settings.credentialCodex') },
-  ])
-}
-
-const credentialOptions = computed<Array<{ value: string; label: string }>>(() => credentialOptionsFor(aiProvider.value, apiKeySource.value))
+const credentialOptions = computed<Array<{ value: string; label: string }>>(() => buildCredentialOptions(
+  aiProvider.value,
+  apiKeySource.value,
+  t,
+  savedLocalCredentialSourcesFor(aiProvider.value, apiKeySource.value),
+))
 const profileCredentialOptions = computed<Array<{ value: string; label: string }>>(() =>
-  credentialOptionsFor(profileDraft.value.provider_name, profileDraft.value.api_key_source)
+  buildCredentialOptions(
+    profileDraft.value.provider_name,
+    profileDraft.value.api_key_source,
+    t,
+    savedLocalCredentialSourcesFor(profileDraft.value.provider_name, profileDraft.value.api_key_source),
+  )
 )
 
 const modelPresets = computed(() =>
@@ -284,6 +266,24 @@ function diagnosticCredentialSource(): string {
   if (aiProvider.value === 'gemini_cli') return t('settings.credentialGeminiCli')
   const option = credentialOptions.value.find((item) => item.value === apiKeySource.value)
   return option?.label ?? apiKeySource.value.trim() ?? t('settings.diagnostics.empty')
+}
+
+function rememberLocalCredentialSource(provider: AiProviderName, source: string) {
+  const normalized = source.trim()
+  if (!localEnvVarFromCredentialSource(normalized)) return
+  const current = transientLocalCredentialSources.value[provider] ?? []
+  if (current.includes(normalized)) return
+  transientLocalCredentialSources.value = {
+    ...transientLocalCredentialSources.value,
+    [provider]: [...current, normalized],
+  }
+}
+
+function savedLocalCredentialSourcesFor(provider: AiProviderName, currentSource: string): string[] {
+  return Array.from(new Set([
+    ...collectSavedLocalCredentialSources(provider, currentSource, aiSettings.value, aiProfiles.value),
+    ...(transientLocalCredentialSources.value[provider] ?? []),
+  ]))
 }
 
 function diagnosticToneClass(tone: DiagnosticRow['tone']): string {
@@ -892,8 +892,10 @@ async function saveLocalApiKey() {
       provider_name: aiProvider.value,
       model: model.value.trim(),
       label: 'default',
+      env_var: localEnvVarFromCredentialSource(apiKeySource.value) ?? undefined,
     })
     apiKeySource.value = result.api_key_source
+    rememberLocalCredentialSource(aiProvider.value, result.api_key_source)
     localApiKeyInput.value = ''
     saveNotice.value = result.message + ' ' + t('settings.localApiKeySourceApplied')
   } catch (e) {
@@ -920,8 +922,10 @@ async function saveProfileLocalApiKey() {
       model: profileDraft.value.model.trim(),
       profile_id: editingProfileId.value,
       label: profileDraft.value.name.trim() || 'profile',
+      env_var: localEnvVarFromCredentialSource(profileDraft.value.api_key_source) ?? undefined,
     })
     profileDraft.value.api_key_source = result.api_key_source
+    rememberLocalCredentialSource(profileDraft.value.provider_name, result.api_key_source)
     profileLocalApiKeyInput.value = ''
     profileNotice.value = result.message + ' ' + t('settings.localApiKeyProfileSourceApplied')
   } catch (e) {

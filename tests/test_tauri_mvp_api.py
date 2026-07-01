@@ -2240,6 +2240,135 @@ def test_tauri_ai_settings_save_local_key_returns_env_source(monkeypatch):
     assert check.json()["ok"] is True
 
 
+def test_tauri_ai_local_key_profile_sources_are_distinct_and_reused(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.settings import routes as settings_routes
+    from deps import get_container
+
+    get_container().settings.save_ai_provider_profiles([])
+    saved = {}
+
+    def fake_set_user_environment_variable(name, value):
+        saved[name] = value
+        monkeypatch.setenv(name, value)
+        return True
+
+    monkeypatch.setattr(
+        settings_routes,
+        "_set_user_environment_variable",
+        fake_set_user_environment_variable,
+    )
+
+    glm = client.post(
+        "/api/settings/ai/local-key",
+        json={
+            "api_key": "test-glm-key-not-real",
+            "provider_name": "openai",
+            "model": "glm-5.2",
+            "label": "GLM 5.2 Relay",
+        },
+    )
+    deepseek = client.post(
+        "/api/settings/ai/local-key",
+        json={
+            "api_key": "test-deepseek-key-not-real",
+            "provider_name": "openai",
+            "model": "deepseek-v4-pro",
+            "label": "DeepSeek v4 Pro Relay",
+        },
+    )
+
+    assert glm.status_code == 200, glm.text
+    assert deepseek.status_code == 200, deepseek.text
+    glm_payload = glm.json()
+    deepseek_payload = deepseek.json()
+    assert glm_payload["api_key_source"].startswith("env:LTT_AI_")
+    assert deepseek_payload["api_key_source"].startswith("env:LTT_AI_")
+    assert glm_payload["api_key_source"] != deepseek_payload["api_key_source"]
+    assert "test-glm-key-not-real" not in glm.text
+    assert "test-deepseek-key-not-real" not in deepseek.text
+
+    profile = client.post(
+        "/api/settings/ai/profiles",
+        json={
+            "name": "GLM 5.2 Relay",
+            "provider_name": "openai",
+            "base_url": "https://elysiver.h-e.top/",
+            "wire_api": "chat_completions",
+            "model": "glm-5.2",
+            "api_key_source": glm_payload["api_key_source"],
+            "enabled": True,
+        },
+    )
+    assert profile.status_code == 201, profile.text
+
+    reused = client.post(
+        "/api/settings/ai/local-key",
+        json={
+            "api_key": "test-glm-replacement-key-not-real",
+            "provider_name": "openai",
+            "model": "glm-5.2",
+            "profile_id": profile.json()["id"],
+            "label": "GLM 5.2 Relay",
+        },
+    )
+
+    assert reused.status_code == 200, reused.text
+    assert reused.json()["api_key_source"] == glm_payload["api_key_source"]
+    assert reused.json()["env_var"] == glm_payload["env_var"]
+    assert saved[glm_payload["env_var"]] == "test-glm-replacement-key-not-real"
+    assert saved[deepseek_payload["env_var"]] == "test-deepseek-key-not-real"
+    assert "test-glm-replacement-key-not-real" not in reused.text
+
+
+def test_tauri_ai_live_test_uses_requested_profile_credential_source(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.settings import routes as settings_routes
+    from writer.services.ai.interfaces import ChatResponse
+
+    monkeypatch.setenv("LTT_AI_DEEPSEEK_PROFILE_KEY", "test-profile-key-not-real")
+    seen = {}
+
+    class FakeProvider:
+        def chat(self, messages, *, model=None):
+            return ChatResponse(
+                content="OK",
+                model=model or "deepseek-v4-pro",
+                provider="openai",
+                transport="openai_chat_completions",
+            )
+
+    def fake_provider_for_config(config):
+        seen["api_key_source"] = config.api_key_source
+        seen["model"] = config.model
+        seen["base_url"] = config.base_url
+        return FakeProvider()
+
+    monkeypatch.setattr(settings_routes, "_provider_for_config", fake_provider_for_config)
+
+    response = client.post(
+        "/api/settings/ai/test-live",
+        json={
+            "provider_name": "openai",
+            "base_url": "https://elysiver.h-e.top/",
+            "wire_api": "chat_completions",
+            "model": "deepseek-v4-pro",
+            "api_key_source": "env:LTT_AI_DEEPSEEK_PROFILE_KEY",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["model"] == "deepseek-v4-pro"
+    assert payload["transport"] == "openai_chat_completions"
+    assert seen == {
+        "api_key_source": "env:LTT_AI_DEEPSEEK_PROFILE_KEY",
+        "model": "deepseek-v4-pro",
+        "base_url": "https://elysiver.h-e.top/",
+    }
+
+
 def test_tauri_ai_profiles_crud_and_validation(monkeypatch):
     client = _tauri_client(monkeypatch)
 
