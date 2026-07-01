@@ -45,8 +45,10 @@ def test_tauri_app_version_capabilities(monkeypatch):
         "ai_task_presets",
         "ai_profiles",
         "ai_task_compare",
+        "ai_jobs",
         "motif_star_map",
         "motif_ai_enrichment",
+        "motif_ai_enrichment_jobs",
         "update_check",
         "article_versions",
         "collection_outline",
@@ -1098,6 +1100,191 @@ def test_tauri_motifs_enrich_draft_new_concept_does_not_create_node(monkeypatch)
     found = client.get(f"/api/motifs?q={suffix}&limit=10")
     assert found.status_code == 200
     assert all(item["name"] != concept for item in found.json())
+
+
+def test_tauri_motifs_enrichment_job_runs_in_background_and_keeps_result(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from deps import get_container
+    import threading
+
+    concept = f"后台任务概念-{uuid.uuid4().hex[:8]}"
+    release_provider = threading.Event()
+
+    class BlockingTaskService:
+        def generate_from_messages(self, messages, *, cost_tier, model_override=None):
+            assert release_provider.wait(3), "provider was not released by the test"
+            return SimpleNamespace(
+                content=json.dumps(
+                    {
+                        "title": concept,
+                        "concept": concept,
+                        "aliases": ["后台别名"],
+                        "tags": ["后台任务"],
+                        "note": (
+                            "【一句话定义】\n后台任务定义。\n\n"
+                            "【核心张力】\n等待与恢复。\n\n"
+                            "【写作功能】\n让长请求可被找回。\n\n"
+                            "【场景触发】\n模型迟迟不返回。\n\n"
+                            "【人物表现】\n人物继续做别的事。\n\n"
+                            "【意象转译】\n灯、队列、回声。\n\n"
+                            "【短例子】\n他关上窗，炉火还在慢慢烧。\n\n"
+                            "【关联建议】\n等待、回声。\n\n"
+                            "【误用提醒】\n不要把进度写成假百分比。\n\n"
+                            "【微练习】\n写一个关闭界面后仍在发生的动作。\n\n"
+                            "【来源线索（需核对）】\n- 未请求联网补充。"
+                        ),
+                        "related_suggestions": ["等待", "回声"],
+                        "source_hints": [],
+                        "reference_candidates": [],
+                    },
+                    ensure_ascii=False,
+                ),
+                provider="fake",
+                model="fake-model",
+                transport="fake",
+            )
+
+    get_container().ai_task_service = BlockingTaskService()
+
+    created = client.post(
+        "/api/ai/jobs/motif-enrichment",
+        json={"concept": concept, "include_excerpts": False, "profile_id": "default"},
+    )
+    assert created.status_code == 200, created.text
+    payload = created.json()
+    assert payload["job_id"]
+    assert payload["kind"] == "motif_enrichment"
+    assert payload["concept"] == concept
+    assert payload["status"] in {
+        "queued",
+        "preparing_context",
+        "sending_request",
+        "waiting_model",
+    }
+    assert payload["result"] is None
+
+    release_provider.set()
+    deadline = time.time() + 4
+    final = None
+    while time.time() < deadline:
+        response = client.get(f"/api/ai/jobs/{payload['job_id']}")
+        assert response.status_code == 200, response.text
+        final = response.json()
+        if final["status"] == "succeeded":
+            break
+        time.sleep(0.05)
+
+    assert final is not None
+    assert final["status"] == "succeeded"
+    assert final["stage_label"] == "已完成"
+    assert final["result"]["concept"] == concept
+    assert final["result"]["profile"]["definition"] == "后台任务定义。"
+    assert final["provider"] == "fake"
+    assert final["model"] == "fake-model"
+
+    found = client.get(f"/api/motifs?q={concept}&limit=10")
+    assert found.status_code == 200
+    assert found.json() == []
+
+
+def test_tauri_motifs_enrichment_job_cancel_discards_late_result(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from deps import get_container
+    import threading
+
+    concept = f"取消后台任务-{uuid.uuid4().hex[:8]}"
+    release_provider = threading.Event()
+
+    class BlockingTaskService:
+        def generate_from_messages(self, messages, *, cost_tier, model_override=None):
+            assert release_provider.wait(3), "provider was not released by the test"
+            return SimpleNamespace(
+                content=json.dumps(
+                    {
+                        "title": concept,
+                        "concept": concept,
+                        "aliases": [],
+                        "tags": [],
+                        "note": (
+                            "【一句话定义】\n取消后不采用。\n\n"
+                            "【核心张力】\n本地中断与远端计费。\n\n"
+                            "【写作功能】\n说明取消语义。\n\n"
+                            "【场景触发】\n用户关闭等待。\n\n"
+                            "【人物表现】\n人物停止倾听。\n\n"
+                            "【意象转译】\n断线。\n\n"
+                            "【短例子】\n他摘下耳机，但远处还在说话。\n\n"
+                            "【关联建议】\n断线。\n\n"
+                            "【误用提醒】\n不要承诺远端停止。\n\n"
+                            "【微练习】\n写一个本地停止但远处仍继续的瞬间。\n\n"
+                            "【来源线索（需核对）】\n- 未请求联网补充。"
+                        ),
+                        "related_suggestions": [],
+                        "source_hints": [],
+                        "reference_candidates": [],
+                    },
+                    ensure_ascii=False,
+                ),
+                provider="fake",
+                model="fake-model",
+                transport="fake",
+            )
+
+    get_container().ai_task_service = BlockingTaskService()
+    created = client.post(
+        "/api/ai/jobs/motif-enrichment",
+        json={"concept": concept, "include_excerpts": False},
+    )
+    assert created.status_code == 200, created.text
+    job_id = created.json()["job_id"]
+
+    cancelled = client.post(f"/api/ai/jobs/{job_id}/cancel")
+    assert cancelled.status_code == 200, cancelled.text
+    cancelled_payload = cancelled.json()
+    assert cancelled_payload["status"] == "cancelled"
+    assert "远端仍可能完成并计费" in cancelled_payload["error"]
+
+    release_provider.set()
+    time.sleep(0.15)
+    after = client.get(f"/api/ai/jobs/{job_id}")
+    assert after.status_code == 200, after.text
+    assert after.json()["status"] == "cancelled"
+    assert after.json()["result"] is None
+
+
+def test_tauri_motifs_enrichment_job_failure_is_sanitized(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from deps import get_container
+
+    class HtmlErrorTaskService:
+        def generate_from_messages(self, messages, *, cost_tier, model_override=None):
+            raise RuntimeError(
+                "AI request failed: <!doctype html><html><title>403 | Forbidden</title></html>"
+            )
+
+    get_container().ai_task_service = HtmlErrorTaskService()
+    created = client.post("/api/ai/jobs/motif-enrichment", json={"concept": "神话模式"})
+    assert created.status_code == 200, created.text
+    job_id = created.json()["job_id"]
+
+    deadline = time.time() + 3
+    final = None
+    while time.time() < deadline:
+        response = client.get(f"/api/ai/jobs/{job_id}")
+        assert response.status_code == 200, response.text
+        final = response.json()
+        if final["status"] == "failed":
+            break
+        time.sleep(0.05)
+
+    assert final is not None
+    assert final["status"] == "failed"
+    assert "AI 丰富意象失败" in final["error"]
+    assert "<html" not in final["error"].lower()
+    assert "traceback" not in final["error"].lower()
+
+    missing = client.get("/api/ai/jobs/does-not-exist")
+    assert missing.status_code == 404
+    assert "后台任务已不存在" in missing.json()["detail"]
 
 
 def test_tauri_motifs_enrich_draft_keeps_user_concept_name(monkeypatch):

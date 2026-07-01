@@ -157,6 +157,7 @@ async function mockMotifFlowApi(page: Page) {
   let motifs: MotifNode[] = []
   let excerpts: MotifExcerpt[] = []
   let enrichmentDraftCalls = 0
+  const enrichmentJobs = new Map<string, Record<string, unknown> & { polls_remaining?: number }>()
 
   await page.route('**/api/app/version', async (route) => {
     await route.fulfill({
@@ -164,7 +165,7 @@ async function mockMotifFlowApi(page: Page) {
         app_name: 'Living to Tell',
         version: '0.1.13',
         api_version: '2.0.0',
-        capabilities: ['data_location', 'ai_chat_settings', 'ai_task_presets', 'update_check'],
+        capabilities: ['data_location', 'ai_chat_settings', 'ai_task_presets', 'update_check', 'ai_jobs', 'motif_ai_enrichment_jobs'],
       },
     })
   })
@@ -430,12 +431,147 @@ async function mockMotifFlowApi(page: Page) {
         app_name: 'Living to Tell',
         version: '0.1.13',
         api_version: '2.0.0',
-        capabilities: ['motif_star_map'],
+        capabilities: ['motif_star_map', 'ai_jobs', 'motif_ai_enrichment_jobs'],
       },
     })
   })
   await page.route(/\/api\/settings\/ai\/profiles$/, async (route) => {
     await route.fulfill({ json: { profiles: [] } })
+  })
+  function makeEnrichmentDraft(concept: string, suffix: string) {
+    return {
+      title: `${concept}短卡 ${suffix}`,
+      concept,
+      aliases: [`${concept}别名`, 'das Man'],
+      tags: ['哲学概念', `测试标签${suffix}`],
+      note: `【一句话定义】\n定义 ${suffix}\n\n【核心张力】\n张力 ${suffix}\n\n【写作功能】\n- 功能 ${suffix}\n\n【场景触发】\n- 场景 ${suffix}\n\n【人物表现】\n- 表现 ${suffix}\n\n【意象转译】\n- 转译 ${suffix}\n\n【短例子】\n- 例子 ${suffix}\n\n【关联建议】\n建议 ${suffix}\n\n【误用提醒】\n- 提醒 ${suffix}\n\n【微练习】\n- 练习 ${suffix}\n\n【来源线索（需核对）】\n- 需核对。`,
+      profile: {
+        definition: `定义 ${suffix}`,
+        core_tension: `张力 ${suffix}`,
+        writing_functions: [`功能 ${suffix}`],
+        scene_triggers: [`场景 ${suffix}`],
+        character_signals: [`表现 ${suffix}`],
+        imagery_translations: [`转译 ${suffix}`],
+        short_examples: [`例子 ${suffix}`],
+        misuse_warnings: [`提醒 ${suffix}`],
+        micro_exercises: [`练习 ${suffix}`],
+        source_hints: [{ title: '测试来源线索', url: null, note: '需核对。' }],
+      },
+      related_suggestions: ['建议一', '建议二'],
+      source_hints: [{ title: '测试来源线索', url: null, note: '需核对。' }],
+      reference_candidates: Array.from({ length: 18 }, (_, index) => ({
+        text: `第 ${index + 1} 条候选句：这是一段很长的相关句子，用来验证小窗口中候选卡片是否能换行、滚动，并且不会遮挡底部操作按钮。`,
+        source_author: `测试作者${index + 1}`,
+        source_title: `测试书名${index + 1}：一个非常长的副标题用于验证断行`,
+        source_note: 'AI 候选，来源需人工核对。',
+        reason: '用于验证候选句卡片在紧凑窗口内仍然可读。',
+      })),
+      provider: 'fake',
+      model: 'fake-model',
+      transport: 'fake',
+      elapsed_ms: 120 + enrichmentDraftCalls,
+    }
+  }
+
+  function makeEnrichmentJob(
+    jobId: string,
+    body: { concept?: string; motif_id?: string | null; profile_id?: string },
+    result: ReturnType<typeof makeEnrichmentDraft> | null,
+    status = result ? 'succeeded' : 'waiting_model',
+  ) {
+    const now = new Date().toISOString()
+    const concept = body.concept?.trim() || '测试概念'
+    return {
+      job_id: jobId,
+      kind: 'motif_enrichment',
+      status,
+      stage: status,
+      stage_label: status === 'succeeded' ? '已完成' : '已发送请求，等待模型返回',
+      concept,
+      motif_id: body.motif_id ?? null,
+      profile_id: body.profile_id ?? 'default',
+      started_at: now,
+      updated_at: now,
+      elapsed_ms: status === 'succeeded' ? result?.elapsed_ms ?? 120 : 0,
+      result,
+      error: '',
+      provider: result?.provider ?? null,
+      model: result?.model ?? null,
+      transport: result?.transport ?? null,
+    }
+  }
+
+  await page.route(/\/api\/ai\/jobs(?:\/|\?|$)/, async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const path = url.pathname
+
+    if (path === '/api/ai/jobs/motif-enrichment' && request.method() === 'POST') {
+      enrichmentDraftCalls += 1
+      const body = request.postDataJSON() as { concept?: string; motif_id?: string | null; profile_id?: string }
+      const concept = body.concept?.trim() || '测试概念'
+      const suffix = enrichmentDraftCalls === 1 ? 'A' : 'B'
+      const shouldDelay = enrichmentDraftCalls === 2 || concept.includes('慢任务')
+      const jobId = `job-${enrichmentDraftCalls}`
+      const draft = makeEnrichmentDraft(concept, suffix)
+      const job = shouldDelay
+        ? { ...makeEnrichmentJob(jobId, body, null, 'waiting_model'), polls_remaining: concept.includes('慢任务') ? 20 : 1, result_after_wait: draft }
+        : makeEnrichmentJob(jobId, body, draft)
+      enrichmentJobs.set(jobId, job)
+      await route.fulfill({ json: job })
+      return
+    }
+
+    const cancelMatch = path.match(/^\/api\/ai\/jobs\/([^/]+)\/cancel$/)
+    if (cancelMatch && request.method() === 'POST') {
+      const job = enrichmentJobs.get(cancelMatch[1])
+      if (!job) {
+        await route.fulfill({ status: 404, json: { detail: '后台任务已不存在，可能是应用重启或任务已过期。' } })
+        return
+      }
+      Object.assign(job, {
+        status: 'cancelled',
+        stage: 'cancelled',
+        stage_label: '已中断',
+        error: '已停止本地等待。若请求已经发给服务商，远端仍可能完成并计费。',
+        updated_at: new Date().toISOString(),
+      })
+      await route.fulfill({ json: job })
+      return
+    }
+
+    const jobMatch = path.match(/^\/api\/ai\/jobs\/([^/]+)$/)
+    if (jobMatch && request.method() === 'GET') {
+      const job = enrichmentJobs.get(jobMatch[1])
+      if (!job) {
+        await route.fulfill({ status: 404, json: { detail: '后台任务已不存在，可能是应用重启或任务已过期。' } })
+        return
+      }
+      if (job.status === 'waiting_model' && typeof job.polls_remaining === 'number') {
+        if (job.polls_remaining <= 0) {
+          const result = job.result_after_wait as ReturnType<typeof makeEnrichmentDraft>
+          Object.assign(job, {
+            status: 'succeeded',
+            stage: 'succeeded',
+            stage_label: '已完成',
+            result,
+            provider: result.provider,
+            model: result.model,
+            transport: result.transport,
+            elapsed_ms: result.elapsed_ms,
+            updated_at: new Date().toISOString(),
+          })
+        } else {
+          job.polls_remaining -= 1
+          job.elapsed_ms = 1500
+          job.updated_at = new Date().toISOString()
+        }
+      }
+      await route.fulfill({ json: job })
+      return
+    }
+
+    await route.fulfill({ status: 404, json: { detail: 'Not Found' } })
   })
   await page.route(/\/api\/dates\//, async (route) => route.fulfill({ json: [] }))
   await page.route(/\/api\/collections\/for-entry\//, async (route) => route.fulfill({ json: [] }))
@@ -1158,6 +1294,31 @@ test('AI enrichment keeps a draft across close and reopen, and clears it only wh
   await expect(page.getByText('定义 A', { exact: true })).toHaveCount(0)
   await expect(page.getByText('神话模式短卡 B')).toBeVisible()
   await expect(page.getByText('定义 B', { exact: true })).toBeVisible()
+})
+
+test('AI enrichment can keep running after the dialog is closed and can be interrupted', async ({ page }) => {
+  await page.goto('/motifs')
+  const listPane = page.getByTestId('motifs-list-pane')
+  await listPane.getByRole('button', { name: 'AI', exact: true }).click()
+
+  await page.getByPlaceholder('例如：神话模式、奴隶道德、常人').fill('慢任务概念')
+  await page.getByRole('button', { name: '生成短卡草稿' }).click()
+  const modal = page.getByTestId('motif-enrichment-modal')
+  await expect(modal.getByText(/AI 正在丰富：慢任务概念/)).toBeVisible()
+  await expect(modal.getByText('已发送请求，等待模型返回', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: '收起界面' }).click()
+  await expect(page.getByTestId('motif-enrichment-modal')).toHaveCount(0)
+  const jobBar = page.getByTestId('motif-enrichment-job-bar')
+  await expect(jobBar).toBeVisible()
+  await expect(jobBar.getByText(/AI 正在丰富：慢任务概念/)).toBeVisible()
+
+  await jobBar.getByRole('button', { name: '查看' }).click()
+  await expect(modal).toBeVisible()
+  await expect(modal.getByText('已发送请求，等待模型返回', { exact: true })).toBeVisible()
+  await modal.getByRole('button', { name: '中断' }).click()
+  await expect(page.getByText(/AI 已中断：慢任务概念/)).toBeVisible()
+  await expect(modal.getByText(/远端仍可能完成并计费/)).toBeVisible()
 })
 
 test('AI enrichment opens without a prefilled motif name and can apply a preserved new-concept draft', async ({ page }) => {

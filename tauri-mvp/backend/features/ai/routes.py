@@ -18,6 +18,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from deps import get_container
+from features.ai.job_manager import AiJobRecord, ai_job_manager
+from features.motifs.routes import (
+    MotifEnrichmentDraftOut,
+    MotifEnrichmentRequest,
+    generate_motif_enrichment_draft_core,
+)
 from writer.app.settings import SUPPORTED_AI_PROVIDERS, SUPPORTED_WIRE_APIS
 from writer.app.container import AppContainer
 from writer.domain.enums import AiCostTier, AiTargetKind, AiTaskType
@@ -133,6 +139,25 @@ class AiTaskCompareResult(BaseModel):
 class AiTaskCompareResponse(BaseModel):
     task_type: str
     results: list[AiTaskCompareResult]
+
+
+class AiJobSnapshot(BaseModel):
+    job_id: str
+    kind: str
+    status: str
+    stage: str
+    stage_label: str
+    concept: str
+    motif_id: Optional[str] = None
+    profile_id: str
+    started_at: str
+    updated_at: str
+    elapsed_ms: int
+    result: Optional[MotifEnrichmentDraftOut] = None
+    error: str = ""
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    transport: Optional[str] = None
 
 
 class AiTaskCompareProfileSnapshot(BaseModel):
@@ -495,6 +520,27 @@ def _json_line(payload: BaseModel | dict[str, Any]) -> str:
     return json.dumps(data, ensure_ascii=False) + "\n"
 
 
+def _job_snapshot(record: AiJobRecord) -> AiJobSnapshot:
+    return AiJobSnapshot(
+        job_id=record.job_id,
+        kind=record.kind,
+        status=record.status,
+        stage=record.stage,
+        stage_label=record.stage_label,
+        concept=record.concept,
+        motif_id=record.motif_id,
+        profile_id=record.profile_id,
+        started_at=record.started_at or record.created_at,
+        updated_at=record.updated_at,
+        elapsed_ms=record.elapsed_ms(),
+        result=record.result,
+        error=record.error,
+        provider=record.provider,
+        model=record.model,
+        transport=record.transport,
+    )
+
+
 def _stream_compare_results(
     *,
     run_id: str,
@@ -647,6 +693,42 @@ def run_ai_task(
         return AiTaskResponse(result=result.content, task_type=request.task_type)
     except Exception as e:
         raise HTTPException(500, f"AI task failed: {_friendly_ai_error(e)}")
+
+
+@router.post("/jobs/motif-enrichment", response_model=AiJobSnapshot)
+def create_motif_enrichment_job(
+    request: MotifEnrichmentRequest,
+    container: AppContainer = Depends(get_container),
+) -> AiJobSnapshot:
+    concept = (request.concept or "").strip()
+    if not concept and request.motif_id:
+        node = container.motif_repository.get_node(request.motif_id)
+        concept = node.name if node is not None else ""
+    if not concept:
+        raise HTTPException(400, "请先输入要丰富的概念或意象。")
+
+    record = ai_job_manager.create(
+        kind="motif_enrichment",
+        concept=concept,
+        motif_id=request.motif_id,
+        profile_id=(request.profile_id or "default").strip() or "default",
+        worker=lambda update_stage: generate_motif_enrichment_draft_core(
+            request,
+            container,
+            update_stage=update_stage,
+        ),
+    )
+    return _job_snapshot(record)
+
+
+@router.get("/jobs/{job_id}", response_model=AiJobSnapshot)
+def get_ai_job(job_id: str) -> AiJobSnapshot:
+    return _job_snapshot(ai_job_manager.get(job_id))
+
+
+@router.post("/jobs/{job_id}/cancel", response_model=AiJobSnapshot)
+def cancel_ai_job(job_id: str) -> AiJobSnapshot:
+    return _job_snapshot(ai_job_manager.cancel(job_id))
 
 
 def _run_compare_profile(

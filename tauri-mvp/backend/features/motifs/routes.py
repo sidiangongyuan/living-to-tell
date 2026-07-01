@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from typing import Any, Literal, Optional
+from typing import Any, Callable, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -980,6 +980,84 @@ def _generate_with_profile(
     ), config
 
 
+def generate_motif_enrichment_draft_core(
+    request: MotifEnrichmentRequest,
+    container: AppContainer,
+    *,
+    update_stage: Optional[Callable[[str], None]] = None,
+) -> MotifEnrichmentDraftOut:
+    def stage(value: str) -> None:
+        if update_stage is not None:
+            update_stage(value)
+
+    stage("preparing_context")
+    node: Optional[MotifNode] = None
+    if request.motif_id:
+        node = container.motif_repository.get_node(request.motif_id)
+        if node is None:
+            raise HTTPException(404, "这个意象已经不存在，已刷新列表。")
+
+    concept = (request.concept or node.name if node else request.concept).strip()
+    if not concept:
+        raise HTTPException(400, "请先输入要丰富的概念或意象。")
+
+    excerpts: list[MotifExcerpt] = []
+    if node is not None and request.include_excerpts:
+        excerpts = container.motif_repository.list_excerpts_for_node(
+            node.id,
+            limit=MAX_ENRICH_EXCERPTS,
+        )
+
+    messages = [
+        {"role": "system", "content": _enrichment_system_prompt()},
+        {
+            "role": "user",
+            "content": _enrichment_user_prompt(
+                concept=concept,
+                direction=request.direction,
+                request_web_context=request.request_web_context,
+                node=node,
+                excerpts=excerpts,
+            ),
+        },
+    ]
+    started = time.perf_counter()
+    stage("sending_request")
+    try:
+        stage("waiting_model")
+        response, config = _generate_with_profile(
+            messages,
+            request=request,
+            container=container,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(500, f"AI 丰富意象失败：{_friendly_ai_error(exc)}") from exc
+
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    stage("parsing_response")
+    parsed = _parse_enrichment_payload(
+        response.content,
+        concept=concept,
+        request_web_context=request.request_web_context,
+    )
+    if parsed is None:
+        raise HTTPException(
+            502,
+            "AI 没有返回可整理的意象草稿。请重试，或关闭联网补充后换用更强模型。",
+        )
+    return _coerce_enrichment_draft(
+        parsed,
+        concept=concept,
+        request_web_context=request.request_web_context,
+        provider=getattr(response, "provider", None) or config.provider_key(),
+        model=getattr(response, "model", None) or config.model,
+        transport=getattr(response, "transport", None),
+        elapsed_ms=elapsed_ms,
+    )
+
+
 @router.get("", response_model=list[MotifNodeOut])
 def list_motifs(
     q: str = "",
@@ -1025,68 +1103,7 @@ def generate_motif_enrichment_draft(
     request: MotifEnrichmentRequest,
     container: AppContainer = Depends(get_container),
 ) -> MotifEnrichmentDraftOut:
-    node: Optional[MotifNode] = None
-    if request.motif_id:
-        node = container.motif_repository.get_node(request.motif_id)
-        if node is None:
-            raise HTTPException(404, "这个意象已经不存在，已刷新列表。")
-
-    concept = (request.concept or node.name if node else request.concept).strip()
-    if not concept:
-        raise HTTPException(400, "请先输入要丰富的概念或意象。")
-
-    excerpts: list[MotifExcerpt] = []
-    if node is not None and request.include_excerpts:
-        excerpts = container.motif_repository.list_excerpts_for_node(
-            node.id,
-            limit=MAX_ENRICH_EXCERPTS,
-        )
-
-    messages = [
-        {"role": "system", "content": _enrichment_system_prompt()},
-        {
-            "role": "user",
-            "content": _enrichment_user_prompt(
-                concept=concept,
-                direction=request.direction,
-                request_web_context=request.request_web_context,
-                node=node,
-                excerpts=excerpts,
-            ),
-        },
-    ]
-    started = time.perf_counter()
-    try:
-        response, config = _generate_with_profile(
-            messages,
-            request=request,
-            container=container,
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(500, f"AI 丰富意象失败：{_friendly_ai_error(exc)}") from exc
-
-    elapsed_ms = int((time.perf_counter() - started) * 1000)
-    parsed = _parse_enrichment_payload(
-        response.content,
-        concept=concept,
-        request_web_context=request.request_web_context,
-    )
-    if parsed is None:
-        raise HTTPException(
-            502,
-            "AI 没有返回可整理的意象草稿。请重试，或关闭联网补充后换用更强模型。",
-        )
-    return _coerce_enrichment_draft(
-        parsed,
-        concept=concept,
-        request_web_context=request.request_web_context,
-        provider=getattr(response, "provider", None) or config.provider_key(),
-        model=getattr(response, "model", None) or config.model,
-        transport=getattr(response, "transport", None),
-        elapsed_ms=elapsed_ms,
-    )
+    return generate_motif_enrichment_draft_core(request, container)
 
 
 @router.post("/excerpts", response_model=MotifExcerptOut, status_code=201)

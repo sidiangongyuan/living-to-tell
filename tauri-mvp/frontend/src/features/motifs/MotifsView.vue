@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   motifsApi,
@@ -13,6 +13,7 @@ import {
   type MotifReferenceCandidate,
 } from '../../api/motifs'
 import { errorMessage, isHttpStatus } from '../../api/base'
+import { aiJobsApi, type AiJobSnapshot } from '../../api/aiJobs'
 import { settingsApi, type AiProfile } from '../../api/settings'
 import { useI18n } from '../../i18n'
 import ContextMenu from '../../components/ContextMenu.vue'
@@ -66,6 +67,11 @@ const enrichmentApplyAliases = ref(true)
 const enrichmentApplyTags = ref(true)
 const enrichmentApplyReferenceKeys = ref<string[]>([])
 const enrichmentDraftTargetKey = ref<string | null>(null)
+const activeEnrichmentJobId = ref<string | null>(null)
+const activeEnrichmentJob = ref<AiJobSnapshot | null>(null)
+const enrichmentReconnectCount = ref(0)
+const enrichmentReconnectMessage = ref('')
+let enrichmentPollingTimer: number | null = null
 const motifListPane = useResizablePane({
   key: 'motifs:list',
   defaultSize: 260,
@@ -159,6 +165,27 @@ const enrichmentApplyDisabled = computed(() =>
 const enrichmentWillApplyToExisting = computed(() =>
   Boolean(enrichmentMotifId.value || findMotifByName(enrichmentConcept.value))
 )
+const activeEnrichmentJobIsRunning = computed(() =>
+  Boolean(activeEnrichmentJob.value && !ENRICHMENT_JOB_TERMINAL.has(activeEnrichmentJob.value.status))
+)
+const activeEnrichmentJobCanClear = computed(() =>
+  Boolean(activeEnrichmentJob.value && ENRICHMENT_JOB_TERMINAL.has(activeEnrichmentJob.value.status))
+)
+const activeEnrichmentJobTitle = computed(() => {
+  const job = activeEnrichmentJob.value
+  if (!job) return ''
+  if (job.status === 'succeeded') return t('motifs.enrichJobDone', { concept: job.concept })
+  if (job.status === 'failed') return t('motifs.enrichJobFailed', { concept: job.concept })
+  if (job.status === 'cancelled') return t('motifs.enrichJobCancelled', { concept: job.concept })
+  return t('motifs.enrichJobRunning', { concept: job.concept })
+})
+const activeEnrichmentJobDetail = computed(() => {
+  const job = activeEnrichmentJob.value
+  if (!job) return ''
+  if (enrichmentReconnectMessage.value) return enrichmentReconnectMessage.value
+  if (job.status === 'failed' || job.status === 'cancelled') return job.error
+  return `${job.stage_label} · ${formatElapsed(job.elapsed_ms)}`
+})
 const deleteContextMenuItems = computed(() => [{
   key: 'delete',
   label: deleteContextTarget.value?.kind === 'excerpt' ? t('motifs.removeFromMotif') : t('common.delete'),
@@ -185,10 +212,16 @@ type MotifProfileListField =
   | 'misuse_warnings'
   | 'micro_exercises'
 
+const ENRICHMENT_JOB_TERMINAL = new Set(['succeeded', 'failed', 'cancelled'])
+
 onMounted(async () => {
   void loadAiProfiles()
   await loadMotifs()
   applyRouteMotif()
+})
+
+onUnmounted(() => {
+  stopEnrichmentPolling()
 })
 
 watch(
@@ -563,6 +596,124 @@ function resetEnrichmentDraft() {
   enrichmentApplyReferenceKeys.value = []
 }
 
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (minutes <= 0) return `${seconds}s`
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
+function stopEnrichmentPolling() {
+  if (enrichmentPollingTimer) {
+    window.clearTimeout(enrichmentPollingTimer)
+    enrichmentPollingTimer = null
+  }
+}
+
+function scheduleEnrichmentPolling(delayMs = 1500) {
+  stopEnrichmentPolling()
+  enrichmentPollingTimer = window.setTimeout(() => {
+    void pollActiveEnrichmentJob()
+  }, delayMs)
+}
+
+function handleEnrichmentJobSnapshot(job: AiJobSnapshot) {
+  activeEnrichmentJobId.value = job.job_id
+  activeEnrichmentJob.value = job
+  const isRunning = !ENRICHMENT_JOB_TERMINAL.has(job.status)
+  enrichmentGenerating.value = isRunning
+  if (isRunning) return
+  stopEnrichmentPolling()
+  if (job.status === 'succeeded' && job.result) {
+    enrichmentDraft.value = job.result
+    enrichmentApplyReferenceKeys.value = []
+    enrichmentError.value = ''
+  } else if (job.status === 'failed' || job.status === 'cancelled') {
+    enrichmentError.value = job.error
+  }
+}
+
+async function pollActiveEnrichmentJob() {
+  const jobId = activeEnrichmentJobId.value
+  if (!jobId) return
+  try {
+    const job = await aiJobsApi.getJob(jobId)
+    if (activeEnrichmentJobId.value !== jobId) return
+    enrichmentReconnectCount.value = 0
+    enrichmentReconnectMessage.value = ''
+    handleEnrichmentJobSnapshot(job)
+    if (!ENRICHMENT_JOB_TERMINAL.has(job.status)) {
+      scheduleEnrichmentPolling(1500)
+    }
+  } catch (e) {
+    if (activeEnrichmentJobId.value !== jobId) return
+    if (isHttpStatus(e, 404)) {
+      const message = t('motifs.enrichJobMissing')
+      enrichmentReconnectMessage.value = message
+      enrichmentGenerating.value = false
+      if (activeEnrichmentJob.value) {
+        activeEnrichmentJob.value = {
+          ...activeEnrichmentJob.value,
+          status: 'failed',
+          stage: 'failed',
+          stage_label: t('motifs.enrichJobLocalMissing'),
+          error: message,
+        }
+      }
+      stopEnrichmentPolling()
+      return
+    }
+    enrichmentReconnectCount.value += 1
+    enrichmentReconnectMessage.value = t('motifs.enrichReconnecting', { count: enrichmentReconnectCount.value })
+    scheduleEnrichmentPolling(Math.min(5000, 1500 + enrichmentReconnectCount.value * 700))
+  }
+}
+
+function viewActiveEnrichmentJob() {
+  const job = activeEnrichmentJob.value
+  if (!job) return
+  enrichmentMotifId.value = job.motif_id ?? null
+  enrichmentConcept.value = job.concept
+  enrichmentProfileId.value = job.profile_id || 'default'
+  enrichmentDraftTargetKey.value = enrichmentTargetKey(job.motif_id ?? null)
+  if (job.status === 'succeeded' && job.result) {
+    enrichmentDraft.value = job.result
+    enrichmentError.value = ''
+  } else if (job.status === 'failed' || job.status === 'cancelled') {
+    enrichmentError.value = job.error
+  } else {
+    enrichmentError.value = ''
+  }
+  enrichmentOpen.value = true
+  if (!ENRICHMENT_JOB_TERMINAL.has(job.status)) {
+    scheduleEnrichmentPolling(1500)
+  }
+  void loadAiProfiles()
+}
+
+async function cancelActiveEnrichmentJob() {
+  const jobId = activeEnrichmentJobId.value
+  if (!jobId) return
+  try {
+    const job = await aiJobsApi.cancelJob(jobId)
+    enrichmentReconnectCount.value = 0
+    enrichmentReconnectMessage.value = ''
+    handleEnrichmentJobSnapshot(job)
+  } catch (e) {
+    enrichmentError.value = errorMessage(e)
+  }
+}
+
+function clearActiveEnrichmentJob() {
+  if (activeEnrichmentJobIsRunning.value) return
+  stopEnrichmentPolling()
+  activeEnrichmentJobId.value = null
+  activeEnrichmentJob.value = null
+  enrichmentReconnectCount.value = 0
+  enrichmentReconnectMessage.value = ''
+}
+
 function openEnrichmentForSelected() {
   const motif = selectedMotif.value
   if (!motif) return
@@ -602,7 +753,7 @@ function openEnrichmentForNewConcept() {
 }
 
 function closeEnrichment() {
-  if (enrichmentGenerating.value || enrichmentApplying.value) return
+  if (enrichmentApplying.value) return
   enrichmentOpen.value = false
 }
 
@@ -612,12 +763,18 @@ async function generateEnrichmentDraft() {
     enrichmentError.value = t('motifs.enrichConceptRequired')
     return
   }
+  if (activeEnrichmentJobIsRunning.value) {
+    enrichmentError.value = t('motifs.enrichJobAlreadyRunning')
+    return
+  }
   enrichmentGenerating.value = true
   enrichmentError.value = ''
+  enrichmentReconnectCount.value = 0
+  enrichmentReconnectMessage.value = ''
   resetEnrichmentDraft()
   const targetKey = enrichmentCurrentTargetKey.value
   try {
-    enrichmentDraft.value = await motifsApi.generateEnrichmentDraft({
+    const job = await aiJobsApi.createMotifEnrichmentJob({
       motif_id: enrichmentMotifId.value,
       concept,
       direction: enrichmentDirection.value,
@@ -627,10 +784,12 @@ async function generateEnrichmentDraft() {
       cost_tier: 'strong',
     })
     enrichmentDraftTargetKey.value = targetKey
-    enrichmentApplyReferenceKeys.value = []
+    handleEnrichmentJobSnapshot(job)
+    if (!ENRICHMENT_JOB_TERMINAL.has(job.status)) {
+      scheduleEnrichmentPolling(1500)
+    }
   } catch (e) {
-    enrichmentError.value = friendlyMotifError(e)
-  } finally {
+    enrichmentError.value = isHttpStatus(e, 404) ? t('motifs.enrichJobsUnsupported') : friendlyMotifError(e)
     enrichmentGenerating.value = false
   }
 }
@@ -1130,6 +1289,53 @@ function previewExcerpt(text: string): string {
           :style="motifDetailPane.paneStyle.value"
           data-testid="motifs-detail-pane"
         >
+          <div
+            v-if="activeEnrichmentJob"
+            class="m-4 rounded-2xl border p-3 shadow-sm"
+            :class="activeEnrichmentJob.status === 'failed'
+              ? 'border-rose-200 bg-rose-50'
+              : activeEnrichmentJob.status === 'succeeded'
+                ? 'border-teal-200 bg-teal-50'
+                : activeEnrichmentJob.status === 'cancelled'
+                  ? 'border-stone-200 bg-stone-50'
+                  : 'border-amber-200 bg-amber-50'"
+            data-testid="motif-enrichment-job-bar"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="truncate text-sm font-semibold text-stone-900">{{ activeEnrichmentJobTitle }}</div>
+                <div class="mt-1 text-xs leading-5 text-stone-600">{{ activeEnrichmentJobDetail }}</div>
+                <div
+                  v-if="activeEnrichmentJobIsRunning"
+                  class="mt-2 h-1.5 overflow-hidden rounded-full bg-white/80"
+                >
+                  <div class="ai-pending-bar h-full w-1/3 rounded-full bg-teal-600"></div>
+                </div>
+              </div>
+              <div class="flex shrink-0 flex-wrap justify-end gap-2">
+                <button
+                  @click="viewActiveEnrichmentJob"
+                  class="rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-700 ring-1 ring-stone-200 hover:bg-stone-50"
+                >
+                  {{ activeEnrichmentJob.status === 'succeeded' ? t('motifs.enrichViewDraft') : t('motifs.enrichViewJob') }}
+                </button>
+                <button
+                  v-if="activeEnrichmentJobIsRunning"
+                  @click="cancelActiveEnrichmentJob"
+                  class="rounded-lg bg-rose-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-rose-700"
+                >
+                  {{ t('motifs.enrichCancelJob') }}
+                </button>
+                <button
+                  v-if="activeEnrichmentJobCanClear"
+                  @click="clearActiveEnrichmentJob"
+                  class="rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-500 ring-1 ring-stone-200 hover:bg-stone-50"
+                >
+                  {{ t('motifs.enrichClearJob') }}
+                </button>
+              </div>
+            </div>
+          </div>
           <div v-if="selectedMotif" class="p-6">
             <div class="mb-5">
               <div class="flex items-start justify-between gap-4">
@@ -1723,7 +1929,32 @@ function previewExcerpt(text: string): string {
 
             <section class="flex min-h-0 flex-col rounded-2xl border border-stone-200 bg-white p-3 sm:p-4">
               <div v-if="!enrichmentDraft" class="flex min-h-[220px] items-center justify-center rounded-xl border border-dashed border-stone-200 bg-stone-50 px-6 text-center text-sm leading-6 text-stone-400 sm:min-h-[300px]">
-                {{ t('motifs.enrichEmptyPreview') }}
+                <div v-if="activeEnrichmentJob && activeEnrichmentJobIsRunning" class="w-full max-w-lg text-left">
+                  <div class="mb-4">
+                    <div class="text-sm font-semibold text-stone-800">{{ activeEnrichmentJobTitle }}</div>
+                    <div class="mt-1 text-xs text-stone-500">{{ activeEnrichmentJobDetail }}</div>
+                  </div>
+                  <div class="mb-4 h-2 overflow-hidden rounded-full bg-white">
+                    <div class="ai-pending-bar h-full w-1/3 rounded-full bg-teal-600"></div>
+                  </div>
+                  <ol class="grid gap-2 text-xs leading-5 text-stone-600">
+                    <li
+                      v-for="stage in ['preparing_context', 'sending_request', 'waiting_model', 'parsing_response']"
+                      :key="stage"
+                      class="flex items-center gap-2"
+                    >
+                      <span
+                        class="h-2 w-2 rounded-full"
+                        :class="activeEnrichmentJob.stage === stage ? 'bg-teal-600' : 'bg-stone-300'"
+                      ></span>
+                      <span>{{ t(`motifs.enrichStage.${stage}`) }}</span>
+                    </li>
+                  </ol>
+                  <p class="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                    {{ t('motifs.enrichCancelCostHint') }}
+                  </p>
+                </div>
+                <span v-else>{{ t('motifs.enrichEmptyPreview') }}</span>
               </div>
               <div v-else class="flex min-h-0 flex-1 flex-col">
                 <div class="mb-3 flex shrink-0 items-start justify-between gap-3">
@@ -1863,8 +2094,15 @@ function previewExcerpt(text: string): string {
               </label>
             </div>
             <div class="flex justify-end gap-2">
+              <button
+                v-if="activeEnrichmentJobIsRunning"
+                @click="cancelActiveEnrichmentJob"
+                class="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700"
+              >
+                {{ t('motifs.enrichCancelJob') }}
+              </button>
               <button @click="closeEnrichment" class="rounded-xl bg-stone-100 px-4 py-2 text-sm font-semibold text-stone-600 hover:bg-stone-200">
-                {{ t('common.cancel') }}
+                {{ activeEnrichmentJobIsRunning ? t('motifs.enrichClosePanel') : t('common.cancel') }}
               </button>
               <button
                 @click="applyEnrichmentDraft"
@@ -1880,3 +2118,18 @@ function previewExcerpt(text: string): string {
     </div>
   </div>
 </template>
+
+<style scoped>
+.ai-pending-bar {
+  animation: motif-ai-pending-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes motif-ai-pending-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+</style>
