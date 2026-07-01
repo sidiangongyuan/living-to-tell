@@ -206,15 +206,17 @@ class Settings:
                 f"Supported values: {SUPPORTED_WIRE_APIS}."
             )
 
-        # M7B: reject legacy literal:<key> syntax. API keys are *never*
-        # stored on disk — only the name of the env var that holds one,
-        # or the sentinel "codex" meaning "read ~/.codex/auth.json".
+        # M7B: reject legacy literal:<key> syntax. Inline API keys are never
+        # stored in the app settings database. The UI may save a key to a
+        # user environment variable, but this setting still stores only the
+        # resulting env:VARNAME source.
         api_key_source = (config.api_key_source or "").strip()
         if api_key_source.startswith("literal:"):
             raise ValueError(
                 "literal:<key> is not supported. The API key is never stored "
-                "on disk — set api_key_source to env:VARNAME (and export the "
-                "key in your shell), or to 'codex' to reuse ~/.codex/auth.json."
+                "inline in app settings — set api_key_source to env:VARNAME "
+                "(and export the key in your shell or save it from Settings), "
+                "or to 'codex' to reuse ~/.codex/auth.json."
             )
         if (
             api_key_source

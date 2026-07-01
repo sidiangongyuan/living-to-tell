@@ -2190,6 +2190,56 @@ def test_tauri_ai_settings_read_save_and_validate(monkeypatch):
     assert invalid.status_code == 400
 
 
+def test_tauri_ai_settings_save_local_key_returns_env_source(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.settings import routes as settings_routes
+
+    saved = {}
+
+    def fake_set_user_environment_variable(name, value):
+        saved[name] = value
+        monkeypatch.setenv(name, value)
+        return True
+
+    monkeypatch.setattr(
+        settings_routes,
+        "_set_user_environment_variable",
+        fake_set_user_environment_variable,
+    )
+
+    response = client.post(
+        "/api/settings/ai/local-key",
+        json={
+            "api_key": "test-local-api-key",
+            "provider_name": "openai",
+            "model": "deepseek-v4-pro",
+            "label": "default",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["api_key_source"] == "env:LTT_AI_OPENAI_KEY"
+    assert payload["env_var"] == "LTT_AI_OPENAI_KEY"
+    assert payload["persisted"] is True
+    assert saved == {"LTT_AI_OPENAI_KEY": "test-local-api-key"}
+    assert "test-local-api-key" not in response.text
+
+    check = client.post(
+        "/api/settings/ai/test",
+        json={
+            "provider_name": "openai",
+            "base_url": "https://relay.example",
+            "wire_api": "chat_completions",
+            "model": "deepseek-v4-pro",
+            "api_key_source": payload["api_key_source"],
+        },
+    )
+
+    assert check.status_code == 200
+    assert check.json()["ok"] is True
+
+
 def test_tauri_ai_profiles_crud_and_validation(monkeypatch):
     client = _tauri_client(monkeypatch)
 

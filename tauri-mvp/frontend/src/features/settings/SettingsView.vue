@@ -52,6 +52,8 @@ const savingSettings = ref(false)
 const testingConnection = ref(false)
 const testingLiveConnection = ref(false)
 const fetchingModels = ref(false)
+const localApiKeyInput = ref('')
+const savingLocalApiKey = ref(false)
 const importing = ref<'codex' | 'gemini' | null>(null)
 const testResult = ref<{ success: boolean; message: string } | null>(null)
 const liveTestResult = ref<UiLiveTestResult | null>(null)
@@ -74,6 +76,8 @@ const profileError = ref('')
 const profileTestResult = ref<UiLiveTestResult | null>(null)
 const profileModelFetchResult = ref<UiModelFetchResult | null>(null)
 const profileModelPresets = ref<Partial<Record<AiProviderName, string[]>>>({})
+const profileLocalApiKeyInput = ref('')
+const savingProfileLocalApiKey = ref(false)
 const discoveredProfiles = ref<AiDiscoveredProfile[]>([])
 const discoveringProfiles = ref(false)
 const importingLocalProfiles = ref(false)
@@ -98,12 +102,27 @@ const providerOptions = computed<Array<{ value: AiProviderName; label: string }>
   { value: 'opencode', label: t('settings.providers.opencode') },
 ])
 
-function credentialOptionsFor(provider: AiProviderName): Array<{ value: string; label: string }> {
+function credentialOptionsFor(provider: AiProviderName, currentSource = ''): Array<{ value: string; label: string }> {
+  const appendCurrent = (items: Array<{ value: string; label: string }>) => {
+    const current = currentSource.trim()
+    if (current && !items.some((item) => item.value === current)) {
+      return [
+        ...items,
+        {
+          value: current,
+          label: current.startsWith('env:LTT_AI_')
+            ? t('settings.credentialSavedLocalWithSource', { source: current })
+            : current,
+        },
+      ]
+    }
+    return items
+  }
   if (provider === 'gemini') {
-    return [
+    return appendCurrent([
       { value: 'env:GEMINI_API_KEY', label: 'env:GEMINI_API_KEY' },
       { value: 'gemini', label: t('settings.credentialGemini') },
-    ]
+    ])
   }
   if (provider === 'gemini_cli') {
     return [{ value: 'gemini-cli', label: t('settings.credentialGeminiCli') }]
@@ -111,13 +130,16 @@ function credentialOptionsFor(provider: AiProviderName): Array<{ value: string; 
   if (provider === 'opencode') {
     return [{ value: 'opencode', label: t('settings.credentialOpenCode') }]
   }
-  return [
+  return appendCurrent([
     { value: 'env:OPENAI_API_KEY', label: 'env:OPENAI_API_KEY' },
     { value: 'codex', label: t('settings.credentialCodex') },
-  ]
+  ])
 }
 
-const credentialOptions = computed<Array<{ value: string; label: string }>>(() => credentialOptionsFor(aiProvider.value))
+const credentialOptions = computed<Array<{ value: string; label: string }>>(() => credentialOptionsFor(aiProvider.value, apiKeySource.value))
+const profileCredentialOptions = computed<Array<{ value: string; label: string }>>(() =>
+  credentialOptionsFor(profileDraft.value.provider_name, profileDraft.value.api_key_source)
+)
 
 const modelPresets = computed(() =>
   fetchedModelPresets.value[aiProvider.value]
@@ -290,6 +312,7 @@ watch(aiProvider, (provider, previous) => {
   testResult.value = null
   liveTestResult.value = null
   modelFetchResult.value = null
+  localApiKeyInput.value = ''
   saveNotice.value = ''
   saveError.value = ''
   if (provider === 'openai') {
@@ -449,6 +472,7 @@ function startCreateProfile() {
   profileError.value = ''
   profileTestResult.value = null
   profileModelFetchResult.value = null
+  profileLocalApiKeyInput.value = ''
 }
 
 function startEditProfile(profile: AiProfile) {
@@ -459,6 +483,7 @@ function startEditProfile(profile: AiProfile) {
   profileError.value = ''
   profileTestResult.value = null
   profileModelFetchResult.value = null
+  profileLocalApiKeyInput.value = ''
 }
 
 function cancelProfileEdit() {
@@ -468,6 +493,7 @@ function cancelProfileEdit() {
   profileError.value = ''
   profileTestResult.value = null
   profileModelFetchResult.value = null
+  profileLocalApiKeyInput.value = ''
 }
 
 async function saveProfile() {
@@ -624,6 +650,7 @@ function fillDraftFromDiscovered(candidate: AiDiscoveredProfile) {
   profileError.value = ''
   profileTestResult.value = null
   profileModelFetchResult.value = null
+  profileLocalApiKeyInput.value = ''
 }
 
 async function focusRequestedSection() {
@@ -845,6 +872,62 @@ async function fetchModels() {
     }
   } finally {
     fetchingModels.value = false
+  }
+}
+
+async function saveLocalApiKey() {
+  const key = localApiKeyInput.value.trim()
+  saveNotice.value = ''
+  saveError.value = ''
+  testResult.value = null
+  liveTestResult.value = null
+  if (!key) {
+    saveError.value = t('settings.localApiKeyRequired')
+    return
+  }
+  savingLocalApiKey.value = true
+  try {
+    const result = await settingsApi.saveLocalAiKey({
+      api_key: key,
+      provider_name: aiProvider.value,
+      model: model.value.trim(),
+      label: 'default',
+    })
+    apiKeySource.value = result.api_key_source
+    localApiKeyInput.value = ''
+    saveNotice.value = result.message + ' ' + t('settings.localApiKeySourceApplied')
+  } catch (e) {
+    saveError.value = errorMessage(e)
+  } finally {
+    savingLocalApiKey.value = false
+  }
+}
+
+async function saveProfileLocalApiKey() {
+  const key = profileLocalApiKeyInput.value.trim()
+  profileNotice.value = ''
+  profileError.value = ''
+  profileTestResult.value = null
+  if (!key) {
+    profileError.value = t('settings.localApiKeyRequired')
+    return
+  }
+  savingProfileLocalApiKey.value = true
+  try {
+    const result = await settingsApi.saveLocalAiKey({
+      api_key: key,
+      provider_name: profileDraft.value.provider_name,
+      model: profileDraft.value.model.trim(),
+      profile_id: editingProfileId.value,
+      label: profileDraft.value.name.trim() || 'profile',
+    })
+    profileDraft.value.api_key_source = result.api_key_source
+    profileLocalApiKeyInput.value = ''
+    profileNotice.value = result.message + ' ' + t('settings.localApiKeyProfileSourceApplied')
+  } catch (e) {
+    profileError.value = errorMessage(e)
+  } finally {
+    savingProfileLocalApiKey.value = false
   }
 }
 
@@ -1116,6 +1199,26 @@ async function openReleasePage() {
               </option>
             </select>
             <p class="mt-1 text-xs text-gray-500">{{ t('settings.credentialHelp') }}</p>
+            <div class="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <label class="mb-2 block text-xs font-semibold text-slate-600">{{ t('settings.localApiKeyLabel') }}</label>
+              <div class="grid gap-2 md:grid-cols-[1fr_auto]">
+                <input
+                  v-model="localApiKeyInput"
+                  type="password"
+                  autocomplete="off"
+                  class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  :placeholder="t('settings.localApiKeyPlaceholder')"
+                />
+                <button
+                  @click="saveLocalApiKey"
+                  :disabled="savingLocalApiKey"
+                  class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                >
+                  {{ savingLocalApiKey ? t('common.saving') : t('settings.saveLocalApiKey') }}
+                </button>
+              </div>
+              <p class="mt-2 text-xs leading-5 text-slate-500">{{ t('settings.localApiKeyHelp') }}</p>
+            </div>
           </div>
 
           <div v-else-if="aiProvider === 'gemini_cli'">
@@ -1503,11 +1606,31 @@ async function openReleasePage() {
                 v-model="profileDraft.api_key_source"
                 class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option v-for="option in credentialOptionsFor(profileDraft.provider_name)" :key="option.value" :value="option.value">
+                <option v-for="option in profileCredentialOptions" :key="option.value" :value="option.value">
                   {{ option.label }}
                 </option>
               </select>
               <p class="mt-1 text-xs text-gray-500">{{ t('settings.credentialHelp') }}</p>
+              <div class="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <label class="mb-2 block text-xs font-semibold text-slate-600">{{ t('settings.localApiKeyLabel') }}</label>
+                <div class="grid gap-2 md:grid-cols-[1fr_auto]">
+                  <input
+                    v-model="profileLocalApiKeyInput"
+                    type="password"
+                    autocomplete="off"
+                    class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                    :placeholder="t('settings.localApiKeyPlaceholder')"
+                  />
+                  <button
+                    @click="saveProfileLocalApiKey"
+                    :disabled="savingProfileLocalApiKey"
+                    class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                  >
+                    {{ savingProfileLocalApiKey ? t('common.saving') : t('settings.saveLocalApiKey') }}
+                  </button>
+                </div>
+                <p class="mt-2 text-xs leading-5 text-slate-500">{{ t('settings.localApiKeyProfileHelp') }}</p>
+              </div>
             </div>
 
             <div v-else-if="profileDraft.provider_name === 'gemini_cli'" class="md:col-span-2">

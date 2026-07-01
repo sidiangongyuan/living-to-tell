@@ -7,6 +7,7 @@ import shutil
 import sqlite3
 import time
 import uuid
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -213,6 +214,22 @@ class AiModelListOut(BaseModel):
     message: str = ""
 
 
+class AiLocalKeySaveRequest(BaseModel):
+    api_key: str
+    provider_name: str = "openai"
+    model: str = ""
+    profile_id: Optional[str] = None
+    label: Optional[str] = None
+    env_var: Optional[str] = None
+
+
+class AiLocalKeySaveOut(BaseModel):
+    api_key_source: str
+    env_var: str
+    message: str
+    persisted: bool
+
+
 class DataLocationInfo(BaseModel):
     data_dir: str
     default_data_dir: str
@@ -377,6 +394,78 @@ def _env_status(source: str) -> AiCredentialStatus:
     )
 
 
+_ENV_VAR_RE = re.compile(r"^[A-Z_][A-Z0-9_]{1,80}$")
+
+
+def _local_key_env_name(data: AiLocalKeySaveRequest) -> str:
+    requested = (data.env_var or "").strip().upper()
+    if requested:
+        if not _ENV_VAR_RE.match(requested):
+            raise HTTPException(400, "环境变量名只能包含大写字母、数字和下划线，且不能以数字开头。")
+        return requested
+
+    profile_id = (data.profile_id or "").strip()
+    if profile_id:
+        cleaned = re.sub(r"[^A-Za-z0-9]", "", profile_id).upper()[:12]
+        if cleaned:
+            return f"LTT_AI_PROFILE_{cleaned}_KEY"
+
+    label = (data.label or "").strip()
+    provider = re.sub(r"[^A-Za-z0-9]", "_", (data.provider_name or "AI").upper()).strip("_")
+    if label.lower() == "default":
+        return f"LTT_AI_{provider or 'DEFAULT'}_KEY"
+
+    seed = "|".join(
+        [
+            label,
+            data.provider_name or "",
+            data.model or "",
+            uuid.uuid4().hex,
+        ]
+    )
+    suffix = uuid.uuid5(uuid.NAMESPACE_URL, seed).hex[:10].upper()
+    return f"LTT_AI_KEY_{suffix}"
+
+
+def _broadcast_environment_change() -> None:
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        hwnd_broadcast = 0xFFFF
+        wm_settingchange = 0x001A
+        smto_abortifhung = 0x0002
+        result = ctypes.c_ulong()
+        ctypes.windll.user32.SendMessageTimeoutW(
+            hwnd_broadcast,
+            wm_settingchange,
+            0,
+            "Environment",
+            smto_abortifhung,
+            5000,
+            ctypes.byref(result),
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _set_user_environment_variable(name: str, value: str) -> bool:
+    os.environ[name] = value
+    if os.name != "nt":
+        return False
+
+    try:
+        import winreg
+
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+            winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
+        _broadcast_environment_change()
+        return True
+    except OSError as exc:
+        raise HTTPException(500, f"无法写入 Windows 用户环境变量：{exc}") from exc
+
+
 def _codex_status() -> AiCredentialStatus:
     status = CodexAuthResolver().status()
     return AiCredentialStatus(
@@ -474,13 +563,19 @@ def _request_to_config(data: AiSettingsUpdate) -> AiConfig:
         if not model or model.lower() in {"gpt-4o-mini", "default", "auto"}:
             model = OPENCODE_DEFAULT_MODEL
     if api_key_source.startswith("literal:"):
-        raise HTTPException(400, "literal:<key> is not supported. Use an environment variable or a local auth source.")
+        raise HTTPException(
+            400,
+            "literal:<key> is not supported. Use an environment variable, save the key locally from Settings, or use a local auth source.",
+        )
     if (
         api_key_source
         and api_key_source.lower() not in RUNTIME_AUTH_SOURCES
         and not api_key_source.startswith("env:")
     ):
-        raise HTTPException(400, "Unsupported api_key_source. Use env:VARNAME, codex, gemini, gemini-cli, or opencode.")
+        raise HTTPException(
+            400,
+            "Unsupported api_key_source. Use env:VARNAME, codex, gemini, gemini-cli, or opencode.",
+        )
     return AiConfig(
         provider_name=provider,
         base_url=base_url,
@@ -932,6 +1027,28 @@ def list_ai_profiles(
     container: AppContainer = Depends(get_container),
 ) -> AiProfileListOut:
     return AiProfileListOut(profiles=_load_ai_profiles(container))
+
+
+@router.post("/ai/local-key", response_model=AiLocalKeySaveOut)
+def save_ai_local_key(data: AiLocalKeySaveRequest) -> AiLocalKeySaveOut:
+    key = (data.api_key or "").strip()
+    if not key:
+        raise HTTPException(400, "API Key 不能为空。")
+    if "\n" in key or "\r" in key:
+        raise HTTPException(400, "API Key 不能包含换行。")
+
+    env_var = _local_key_env_name(data)
+    persisted = _set_user_environment_variable(env_var, key)
+    return AiLocalKeySaveOut(
+        api_key_source=f"env:{env_var}",
+        env_var=env_var,
+        persisted=persisted,
+        message=(
+            f"密钥已保存到 Windows 用户环境变量 {env_var}。"
+            if persisted
+            else f"密钥已写入当前应用进程环境变量 {env_var}；当前系统不支持自动持久化，请在重启应用前手动同步。"
+        ),
+    )
 
 
 @router.get("/ai/profiles/discover", response_model=list[AiDiscoveredProfileOut])

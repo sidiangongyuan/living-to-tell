@@ -7,7 +7,7 @@ Checks, in order:
   1. Target text is non-empty.
   2. Model is configured.
   3. wire_api is supported.
-    4. api_key_source is supported (env:VAR / codex / gemini / opencode).
+  4. api_key_source is supported (env:VAR / codex / gemini / opencode).
     5. The selected runtime credential source is available.
 
 Each failure carries a short user-facing message describing *what* is
@@ -200,8 +200,8 @@ def preflight_rewrite(
                 "env:OPENAI_API_KEY, or switch to 'codex' to reuse "
                 "~/.codex/auth.json, 'gemini' to reuse ~/.gemini/.env, "
                 "'gemini-cli' to reuse Gemini CLI OAuth, or 'opencode' "
-                "to reuse OpenCode CLI local auth. "
-                "The key itself is never stored on disk.",
+                "to reuse OpenCode CLI local auth. You can also save a key "
+                "from Settings, which stores it as a user environment variable.",
             )
         )
     else:
@@ -221,8 +221,8 @@ def preflight_rewrite(
                     "missing_env_var",
                     f"Environment variable {var} is not set. "
                     f"Export {var} in your shell (or System → Environment "
-                    "Variables on Windows) before invoking AI rewrite. "
-                    "The app never stores the key itself.",
+                    "Variables on Windows), or paste and save the key from "
+                    "AI Settings before invoking AI rewrite.",
                 )
             )
 

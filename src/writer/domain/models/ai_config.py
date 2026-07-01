@@ -11,8 +11,9 @@ Supported values for ``api_key_source``:
 - ``gemini-cli``  — reuse Gemini CLI OAuth state at request time.
 - ``opencode``    — reuse OpenCode CLI local auth at request time.
 
-Both paths read the secret strictly at runtime; Writer never persists the
-key itself on disk.
+The config stores the credential source, not an inline key. If the desktop
+settings UI saves a key locally, it writes it to a user environment variable
+and stores only the corresponding ``env:VARNAME`` source here.
 """
 from __future__ import annotations
 

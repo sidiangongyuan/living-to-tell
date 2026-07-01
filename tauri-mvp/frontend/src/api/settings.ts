@@ -116,6 +116,22 @@ export interface AiModelListResult {
   message: string
 }
 
+export interface AiLocalKeySaveRequest {
+  api_key: string
+  provider_name?: AiProviderName
+  model?: string
+  profile_id?: string | null
+  label?: string | null
+  env_var?: string | null
+}
+
+export interface AiLocalKeySaveResult {
+  api_key_source: string
+  env_var: string
+  message: string
+  persisted: boolean
+}
+
 export interface DataLocationInfo {
   data_dir: string
   default_data_dir: string
@@ -222,6 +238,15 @@ export const settingsApi = {
     if (config?.base_url) params.set('base_url', config.base_url)
     if (config?.api_key_source) params.set('api_key_source', config.api_key_source)
     const res = await apiFetch(`/api/settings/ai/models?${params.toString()}`)
+    return handleResponse(res)
+  },
+
+  async saveLocalAiKey(data: AiLocalKeySaveRequest): Promise<AiLocalKeySaveResult> {
+    const res = await apiFetch('/api/settings/ai/local-key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
     return handleResponse(res)
   },
 
