@@ -1,5 +1,35 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.32 - Recoverable AI Jobs And Error Polish (2026-07-03)
+
+### Added
+
+- AI Tools multi-model comparison now streams model results as they complete, so a faster model can be reviewed before slower models finish.
+- Motif Star Map AI Enrich now runs through a recoverable background job during the current app session. Users can close the dialog, reopen it, inspect the current stage, and cancel local waiting without resending the AI request.
+
+### Changed
+
+- Multi-model comparison no longer injects the default AI profile when the user selected other profiles, and it no longer has a hard three-model limit.
+- AI result pages keep completed comparison results visible until the user explicitly clears them; the confusing result-hiding return path was removed.
+- Central frontend API error handling now translates raw `Not Found`, `Failed to fetch`, HTML provider pages, traceback text, and key-shaped secrets into safer user-facing messages.
+- Sample-project wording and date prompts are localized more consistently for Chinese/English UI states.
+- Updated public documentation links and installer names to `0.1.32`.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py tests\storage\test_motif_repository.py -q`
+- `npm test -- --run`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.32_x64-setup.exe`
+  - SHA256: `0F54953DC103CDD92FD3F3ABA7E93FA2EE44F757ED038360737242714BE98264`
+- `LivingToTell_0.1.32_x64_zh-CN.msi`
+  - SHA256: `2C30E4FA49FE5D17DDDD586317D654E66119BBA80DBA769C3E70FE32554DA79B`
+
 ## 0.1.31 - AI Profile Key Isolation (2026-07-01)
 
 ### Fixed

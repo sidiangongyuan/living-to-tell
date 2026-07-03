@@ -10,8 +10,8 @@
 
 步骤：
 
-1. 从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.31) 下载最新 Windows 预览版。
-2. 推荐运行 `LivingToTell_0.1.31_x64-setup.exe`；也可以使用 `LivingToTell_0.1.31_x64_zh-CN.msi`。
+1. 从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.32) 下载最新 Windows 预览版。
+2. 推荐运行 `LivingToTell_0.1.32_x64-setup.exe`；也可以使用 `LivingToTell_0.1.32_x64_zh-CN.msi`。
 3. 从开始菜单或桌面快捷方式打开 **活着为了讲述**。
 4. 进入 **设置 → 数据与存储**，查看当前 SQLite 数据库、备份目录和检查点目录。
 5. 大篇幅修改前，进入 **导出与备份** 创建一次备份或命名检查点。
