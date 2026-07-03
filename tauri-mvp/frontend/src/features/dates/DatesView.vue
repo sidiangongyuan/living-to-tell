@@ -6,6 +6,7 @@ import { libraryApi } from '../../api/library'
 import { settingsApi, type AiSettings } from '../../api/settings'
 import { appApi } from '../../api/app'
 import { onboardingApi, type SampleProjectState } from '../../api/onboarding'
+import { errorMessage } from '../../api/base'
 import { buildDailyQuoteLibraryQuery } from './quoteLink'
 import { formatDateKey, useDatesStore } from './store'
 import { useI18n } from '../../i18n'
@@ -115,7 +116,7 @@ async function loadOnboardingProgress() {
     }
     if (sample) sampleProjectState.value = sample
   } catch (e) {
-    onboardingError.value = e instanceof Error ? e.message : String(e)
+    onboardingError.value = errorMessage(e)
   } finally {
     onboardingLoading.value = false
   }
@@ -262,18 +263,18 @@ async function createSampleProject() {
     const result = await onboardingApi.createSampleProject()
     sampleProjectState.value = result
     sampleProjectNotice.value = result.action === 'already_installed'
-      ? '示例项目已经存在。'
-      : '已创建示例项目：包含文章、作品集大纲、文脉标本、文章便签和场景 AI Card。'
+      ? t('welcome.sampleProjectAlreadyInstalled')
+      : t('welcome.sampleProjectCreated')
     await loadOnboardingProgress()
   } catch (e) {
-    sampleProjectError.value = e instanceof Error ? e.message : String(e)
+    sampleProjectError.value = errorMessage(e)
   } finally {
     sampleProjectLoading.value = false
   }
 }
 
 async function deleteSampleProject() {
-  if (!confirm('删除示例项目？只会删除应用为示例项目记录的文章、作品集、文脉和 AI Card，不会按标题或标签删除你的其他内容。')) {
+  if (!confirm(t('welcome.sampleProjectDeleteConfirm'))) {
     return
   }
   sampleProjectLoading.value = true
@@ -282,10 +283,10 @@ async function deleteSampleProject() {
   try {
     const result = await onboardingApi.deleteSampleProject()
     sampleProjectState.value = result
-    sampleProjectNotice.value = '示例项目已删除。'
+    sampleProjectNotice.value = t('welcome.sampleProjectDeleted')
     await loadOnboardingProgress()
   } catch (e) {
-    sampleProjectError.value = e instanceof Error ? e.message : String(e)
+    sampleProjectError.value = errorMessage(e)
   } finally {
     sampleProjectLoading.value = false
   }
@@ -307,7 +308,7 @@ async function startWritingForSelectedDate() {
     })
     router.push({ name: 'articles', query: { id: created.id } })
   } catch (e) {
-    createError.value = e instanceof Error ? e.message : String(e)
+    createError.value = errorMessage(e)
   }
 }
 </script>
@@ -469,7 +470,7 @@ async function startWritingForSelectedDate() {
           <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2">
-                <h3 class="text-base font-bold text-slate-950">示例项目</h3>
+                <h3 class="text-base font-bold text-slate-950">{{ t('welcome.sampleProjectTitle') }}</h3>
                 <span
                   :class="[
                     'rounded-full px-2.5 py-1 text-xs font-semibold',
@@ -478,15 +479,15 @@ async function startWritingForSelectedDate() {
                       : 'bg-slate-100 text-slate-600',
                   ]"
                 >
-                  {{ sampleProjectState.installed ? '已安装' : '可选' }}
+                  {{ sampleProjectState.installed ? t('welcome.sampleProjectInstalled') : t('welcome.sampleProjectOptional') }}
                 </span>
               </div>
               <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-                创建一个可删除的本地演示项目，包含两篇文章、一个作品集大纲、一个文脉标本、一张文章便签和一张场景 AI Card。它不会自动创建；删除时只删除被标记为示例项目的内容。
+                {{ t('welcome.sampleProjectDetail') }}
               </p>
               <div v-if="sampleProjectState.installed" class="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
-                <span class="rounded-full bg-slate-50 px-2.5 py-1">文章 {{ sampleProjectState.entry_ids.length }}</span>
-                <span class="rounded-full bg-slate-50 px-2.5 py-1">文脉 {{ sampleProjectState.reference_ids.length }}</span>
+                <span class="rounded-full bg-slate-50 px-2.5 py-1">{{ t('welcome.sampleProjectArticles', { count: sampleProjectState.entry_ids.length }) }}</span>
+                <span class="rounded-full bg-slate-50 px-2.5 py-1">{{ t('welcome.sampleProjectReferences', { count: sampleProjectState.reference_ids.length }) }}</span>
                 <span class="rounded-full bg-slate-50 px-2.5 py-1">AI Card {{ sampleProjectState.ai_card_ids.length }}</span>
                 <span v-if="sampleProjectState.created_at" class="rounded-full bg-slate-50 px-2.5 py-1">
                   {{ new Date(sampleProjectState.created_at).toLocaleDateString() }}
@@ -501,7 +502,7 @@ async function startWritingForSelectedDate() {
                 :disabled="sampleProjectLoading"
                 @click="createSampleProject"
               >
-                {{ sampleProjectLoading ? '创建中…' : '创建示例项目' }}
+                {{ sampleProjectLoading ? t('welcome.sampleProjectCreating') : t('welcome.sampleProjectCreate') }}
               </button>
               <button
                 v-if="sampleProjectState.installed"
@@ -509,7 +510,7 @@ async function startWritingForSelectedDate() {
                 class="rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200"
                 @click="openSampleProject"
               >
-                打开作品集
+                {{ t('welcome.sampleProjectOpenCollection') }}
               </button>
               <button
                 v-if="sampleProjectState.installed"
@@ -518,12 +519,12 @@ async function startWritingForSelectedDate() {
                 :disabled="sampleProjectLoading"
                 @click="deleteSampleProject"
               >
-                删除示例
+                {{ t('welcome.sampleProjectDelete') }}
               </button>
             </div>
           </div>
           <div v-if="sampleProjectSupported === false" class="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700">
-            当前后台版本不支持示例项目。重新安装最新版本后可使用；你的写作数据不会被删除。
+            {{ t('welcome.sampleProjectUnsupported') }}
           </div>
           <div v-if="sampleProjectNotice" class="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
             {{ sampleProjectNotice }}

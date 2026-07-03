@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { apiFetch, BackendUnavailableError, clearCachedApiBaseUrl, handleResponse, HttpError, isHttpStatus } from './base'
+import { apiFetch, BackendUnavailableError, clearCachedApiBaseUrl, errorMessage, handleResponse, HttpError, isHttpStatus } from './base'
 
 const invokeMock = vi.fn()
 
@@ -34,6 +34,15 @@ describe('api base errors', () => {
     expect(isHttpStatus(error, 404)).toBe(true)
     expect(isHttpStatus(error, 500)).toBe(false)
     expect(isHttpStatus(new Error('Not Found'), 404)).toBe(false)
+  })
+
+  it('sanitizes raw technical errors for user-facing messages', () => {
+    expect(errorMessage(new HttpError(404, 'Not Found', 'Not Found'))).toContain('请求的内容不存在')
+    expect(errorMessage(new TypeError('Failed to fetch'))).toContain('后台服务正在启动或连接中')
+    expect(errorMessage(new Error('<!doctype html><html><title>403</title></html>'))).not.toContain('<html')
+    expect(errorMessage(new Error('Traceback (most recent call last): boom'))).not.toContain('Traceback')
+    const fakeKey = `sk-${'1234567890abcdefghijkl'}`
+    expect(errorMessage(new Error(`provider rejected ${fakeKey}`))).toBe('provider rejected sk-***')
   })
 
   it('refreshes the backend URL and retries once after a network failure', async () => {

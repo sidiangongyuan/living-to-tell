@@ -51,7 +51,22 @@ export function isHttpStatus(error: unknown, status: number): boolean {
 }
 
 export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+  const raw = (error instanceof Error ? error.message : String(error ?? '')).trim()
+  if (!raw) return '操作失败，请稍后重试。'
+  const lowered = raw.toLowerCase()
+  if (lowered === 'not found' || lowered === 'http 404: not found') {
+    return '请求的内容不存在或已被刷新，请返回后重试。'
+  }
+  if (lowered === 'failed to fetch') {
+    return BACKEND_UNAVAILABLE_MESSAGE
+  }
+  if (lowered.includes('<!doctype html') || lowered.includes('<html')) {
+    return '后台或 AI 服务返回了网页错误页，请检查服务状态、接口地址或稍后重试。'
+  }
+  if (lowered.includes('traceback')) {
+    return '后台返回了异常信息，请重试；如果持续出现，请保留操作步骤用于排查。'
+  }
+  return raw.replace(/sk-[A-Za-z0-9]{12,}/g, 'sk-***')
 }
 
 function apiBaseFromWindow(): string | null {
