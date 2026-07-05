@@ -1,5 +1,34 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.33 - Motif Writing Lens (2026-07-05)
+
+### Added
+
+- Added a read-only Motif Star Map Writing Lens that groups existing motifs by tags, writing functions, and sources, then surfaces callable concept cards with related sentence snippets.
+- Added `/api/motifs/writing-index` and the `motif_writing_index` backend capability for deriving writing material from existing motif profiles and excerpts without changing graph relationships.
+
+### Changed
+
+- The co-occurrence star map remains unchanged and continues to show only real excerpt/source co-occurrence links.
+- Documentation now describes AI multi-model comparison as supporting one or more selected profiles, with a cost and latency reminder when many models are selected.
+- Updated public documentation links and installer names to `0.1.33`.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py tests\storage\test_motif_repository.py -q`
+- `npm test -- --run`
+- `npm run test:e2e -- --project=msedge --workers=1`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.33_x64-setup.exe`
+  - SHA256: `D58CF805921EADD3ACEDAEE1EDADFEA4CEAB384C3EBA1B1119E9CF123636115E`
+- `LivingToTell_0.1.33_x64_zh-CN.msi`
+  - SHA256: `5FDEAD596C71D9B2A6FE52BC21095D6555B2DA67EDDFFEDD9826D6DA3D7E42EF`
+
 ## 0.1.32 - Recoverable AI Jobs And Error Polish (2026-07-03)
 
 ### Added

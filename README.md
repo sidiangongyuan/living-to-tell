@@ -4,9 +4,9 @@
 
 ### A local-first writing studio for articles, collections, references, and scoped AI
 
-[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.32)
+[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.33)
 
-[![Version](https://img.shields.io/badge/preview-0.1.32-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.33-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **Writing, photography, singing, and speaking are all ways to tell. To live is to tell.**
 
-[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.32) · [User Guide](docs/user-guide.md) · [GIF Tutorials](docs/tutorials.md) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
+[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.33) · [User Guide](docs/user-guide.md) · [GIF Tutorials](docs/tutorials.md) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
 
 </div>
 
@@ -31,7 +31,7 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 | **Reference Library** | Keep quotes, source titles, authors, usage notes, and citation-ready snippets in one place. |
 | **Article AI** | Use focused AI tools, compare multiple configured models, and keep every write-back explicit. |
 | **AI Cards** | Save reusable style, character, and scene cards with templates and AI-assisted draft generation. |
-| **Motif Star Map** | Mark selected text as motifs, revisit source anchors, explore co-occurrence, and enrich concepts with AI. |
+| **Motif Star Map** | Mark selected text as motifs, revisit source anchors, explore co-occurrence, use the Writing Lens, and enrich concepts with AI. |
 | **Export & Backup** | Review restore points, local data paths, backups/checkpoints, storage folders, backup reminders, and recent article/collection exports. |
 | **Local First** | Store writing data locally and send text to AI only when you explicitly run an AI action. |
 
@@ -104,6 +104,7 @@ For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They
 - Reopen an existing source selection without creating duplicate excerpts.
 - Use source anchors to jump from the article context pane back to the marked sentence.
 - Explore a literary star map where node size, color, and links reflect excerpt usage and co-occurrence.
+- Switch to the Writing Lens to browse existing motifs by tag, writing function, source, and callable sentence snippets without changing graph links.
 - Use **AI Enrich** in the detail pane to turn concepts such as mythic pattern, slave morality, or das Man into compact writing cards.
 - Read enriched motifs as structured concept archives with definition, tension, writing functions, examples, warnings, and exercises instead of one long note.
 - Review AI-suggested reference sentence candidates before importing them into the Reference Library and linking them to the current motif.
@@ -117,7 +118,7 @@ For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They
 - Standing chat instructions let you keep long-term style preferences without rewriting them in every message.
 - AI results are previewed before writing back, with explicit replace, insert, and copy actions.
 - Long AI requests show size, paragraph, estimated-token, and selected-model diagnostics before running, then show honest pending cards while models are still working.
-- AI Tools can run the same task across up to three saved AI profiles and compare output length, paragraph changes, latency, tokens, and cost when available.
+- AI Tools can run the same task across one or more saved AI profiles and compare output length, paragraph changes, latency, tokens, and cost when available. Selecting more models may increase wait time, token use, and provider cost.
 - Personal presets for each writing tool.
 - AI Cards for reusable style, character, and scene modules, with fixed templates, AI-assisted draft generation, type/source filters, and keyword search.
 - Scene modules can be searched and manually attached to AI tasks, so narrative structure is sent only when you choose it.
@@ -137,15 +138,15 @@ For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.32).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.33).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.32_x64-setup.exe`
+- `LivingToTell_0.1.33_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.32_x64_zh-CN.msi`
+- `LivingToTell_0.1.33_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 

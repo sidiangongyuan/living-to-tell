@@ -11,6 +11,10 @@ import {
   type MotifNode,
   type MotifProfile,
   type MotifReferenceCandidate,
+  type MotifWritingGroup,
+  type MotifWritingIndex,
+  type MotifWritingMotif,
+  type MotifWritingSource,
 } from '../../api/motifs'
 import { errorMessage, isHttpStatus } from '../../api/base'
 import { aiJobsApi, type AiJobSnapshot } from '../../api/aiJobs'
@@ -32,9 +36,12 @@ const selectedMotifId = ref<string | null>(null)
 const excerpts = ref<MotifExcerpt[]>([])
 const query = ref('')
 const density = ref(34)
+const motifViewMode = ref<'graph' | 'writing'>('graph')
 const loading = ref(false)
+const writingIndexLoading = ref(false)
 const detailLoading = ref(false)
 const error = ref('')
+const writingIndexError = ref('')
 const notice = ref('')
 const newMotifName = ref('')
 const savingMotif = ref(false)
@@ -93,11 +100,18 @@ const deleteContextTarget = ref<
   | { kind: 'excerpt'; excerpt: MotifExcerpt }
   | null
 >(null)
+const writingIndex = ref<MotifWritingIndex | null>(null)
+const writingLensFilter = ref<{
+  kind: 'tag' | 'function' | 'source'
+  label: string
+  motifIds: string[]
+} | null>(null)
 
 let searchTimer: number | null = null
 let motifsLoadToken = 0
 let homeGraphToken = 0
 let motifDetailToken = 0
+let writingIndexToken = 0
 
 const selectedMotif = computed(() =>
   motifs.value.find((motif) => motif.id === selectedMotifId.value) ?? null
@@ -115,6 +129,17 @@ const graphCountLabel = computed(() =>
     : t('motifs.noGraphNodes')
 )
 const filteredMotifs = computed(() => motifs.value)
+const writingLensMotifs = computed(() => {
+  const index = writingIndex.value
+  if (!index) return []
+  const filter = writingLensFilter.value
+  if (!filter) return index.motifs
+  const ids = new Set(filter.motifIds)
+  return index.motifs.filter((motif) => ids.has(motif.id))
+})
+const writingLensTags = computed(() => (writingIndex.value?.tags ?? []).slice(0, 14))
+const writingLensFunctions = computed(() => (writingIndex.value?.functions ?? []).slice(0, 14))
+const writingLensSources = computed(() => (writingIndex.value?.sources ?? []).slice(0, 10))
 const localRelatedNodes = computed(() =>
   localGraph.value.nodes
     .filter((node) => !node.is_center)
@@ -292,6 +317,7 @@ async function loadMotifs() {
       syncFormFromSelected()
     }
     await loadHomeGraph()
+    await loadWritingIndex()
     await loadSelectedMotifDetail()
   } catch (e) {
     if (token !== motifsLoadToken) return
@@ -299,6 +325,29 @@ async function loadMotifs() {
   } finally {
     if (token === motifsLoadToken) {
       loading.value = false
+    }
+  }
+}
+
+async function loadWritingIndex() {
+  const token = ++writingIndexToken
+  writingIndexLoading.value = true
+  writingIndexError.value = ''
+  try {
+    const index = await motifsApi.writingIndex(query.value, 120, 3)
+    if (token !== writingIndexToken) return
+    writingIndex.value = index
+    const filter = writingLensFilter.value
+    if (filter && !index.motifs.some((motif) => filter.motifIds.includes(motif.id))) {
+      writingLensFilter.value = null
+    }
+  } catch (e) {
+    if (token !== writingIndexToken) return
+    writingIndex.value = null
+    writingIndexError.value = friendlyMotifError(e)
+  } finally {
+    if (token === writingIndexToken) {
+      writingIndexLoading.value = false
     }
   }
 }
@@ -937,6 +986,7 @@ async function saveSelectedMotif() {
     formProfile.value = normalizeProfile(updated.profile)
     notice.value = t('motifs.saved')
     await loadHomeGraph()
+    await loadWritingIndex()
   } catch (e) {
     error.value = friendlyMotifError(e)
   } finally {
@@ -1005,6 +1055,54 @@ function selectMotif(id: string) {
 
 function sourceLabel(excerpt: MotifExcerpt): string {
   return excerpt.source_current_title || excerpt.source_title_snapshot || t('motifs.unknownSource')
+}
+
+function writingSourceLabel(source: MotifWritingSource): string {
+  if (source.source_kind === 'reference' && source.source_author) {
+    return `${source.source_title} · ${source.source_author}`
+  }
+  return source.source_title || t('motifs.unknownSource')
+}
+
+function writingSnippetSourceLabel(snippet: { source_title: string; source_author?: string }): string {
+  if (snippet.source_author) return `${snippet.source_title} · ${snippet.source_author}`
+  return snippet.source_title || t('motifs.unknownSource')
+}
+
+function setWritingLensFilter(
+  kind: 'tag' | 'function' | 'source',
+  item: MotifWritingGroup | MotifWritingSource,
+) {
+  writingLensFilter.value = {
+    kind,
+    label: kind === 'source' ? writingSourceLabel(item as MotifWritingSource) : (item as MotifWritingGroup).label,
+    motifIds: item.motif_ids,
+  }
+}
+
+function clearWritingLensFilter() {
+  writingLensFilter.value = null
+}
+
+function writingLensChipActive(
+  kind: 'tag' | 'function' | 'source',
+  item: MotifWritingGroup | MotifWritingSource,
+): boolean {
+  const filter = writingLensFilter.value
+  if (!filter) return false
+  if (filter.kind !== kind) return false
+  return filter.motifIds.length === item.motif_ids.length
+    && filter.motifIds.every((id) => item.motif_ids.includes(id))
+}
+
+function motifHasWritingProfile(motif: MotifWritingMotif): boolean {
+  return Boolean(
+    motif.definition
+      || motif.core_tension
+      || motif.writing_functions.length
+      || motif.scene_triggers.length
+      || motif.character_signals.length
+  )
 }
 
 function relationLabel(edgeCount: number): string {
@@ -1157,7 +1255,29 @@ function previewExcerpt(text: string): string {
             <p class="text-sm text-stone-500">{{ t('motifs.subtitle') }}</p>
             <p class="mt-1 text-xs text-stone-400">{{ relationLabel(visibleHomeGraph.edges.length) }}</p>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-3">
+            <div class="flex rounded-full bg-stone-100 p-1 text-xs font-semibold text-stone-500" data-testid="motifs-view-switch">
+              <button
+                type="button"
+                @click="motifViewMode = 'graph'"
+                :class="[
+                  'rounded-full px-3 py-1.5 transition',
+                  motifViewMode === 'graph' ? 'bg-white text-teal-800 shadow-sm' : 'hover:text-stone-800',
+                ]"
+              >
+                {{ t('motifs.viewGraph') }}
+              </button>
+              <button
+                type="button"
+                @click="motifViewMode = 'writing'"
+                :class="[
+                  'rounded-full px-3 py-1.5 transition',
+                  motifViewMode === 'writing' ? 'bg-white text-teal-800 shadow-sm' : 'hover:text-stone-800',
+                ]"
+              >
+                {{ t('motifs.viewWritingLens') }}
+              </button>
+            </div>
             <span v-if="notice" class="text-sm text-teal-700">{{ notice }}</span>
             <span v-if="error" class="text-sm text-red-600">{{ error }}</span>
           </div>
@@ -1166,7 +1286,7 @@ function previewExcerpt(text: string): string {
 
       <div class="flex min-h-0 flex-1 overflow-hidden">
         <section class="min-w-0 flex-1 overflow-hidden p-5">
-          <div class="h-full rounded-[1.75rem] border border-amber-100 bg-[#fff9ed] p-3 shadow-sm">
+          <div v-if="motifViewMode === 'graph'" class="h-full rounded-[1.75rem] border border-amber-100 bg-[#fff9ed] p-3 shadow-sm" data-testid="motifs-cooccurrence-graph">
             <svg viewBox="0 0 1080 620" class="h-full min-h-[520px] w-full overflow-visible" role="img" :aria-label="t('motifs.graphAria')">
               <defs>
                 <linearGradient id="motif-paper-bg" x1="0" x2="1" y1="0" y2="1">
@@ -1280,6 +1400,175 @@ function previewExcerpt(text: string): string {
                 {{ t('motifs.emptyGraph') }}
               </text>
             </svg>
+          </div>
+          <div
+            v-else
+            class="h-full overflow-y-auto rounded-[1.75rem] border border-teal-100 bg-[#fffdf8] p-5 shadow-sm"
+            data-testid="motifs-writing-lens"
+          >
+            <div class="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-teal-700">{{ t('motifs.writingLensEyebrow') }}</p>
+                <h2 class="mt-2 text-2xl font-semibold text-stone-950">{{ t('motifs.writingLensTitle') }}</h2>
+                <p class="mt-1 max-w-2xl text-sm leading-6 text-stone-500">{{ t('motifs.writingLensHint') }}</p>
+              </div>
+              <button
+                v-if="writingLensFilter"
+                type="button"
+                @click="clearWritingLensFilter"
+                class="rounded-xl bg-stone-100 px-3 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-200"
+              >
+                {{ t('motifs.writingLensClear') }}
+              </button>
+            </div>
+
+            <div v-if="writingIndexLoading" class="rounded-2xl border border-stone-200 bg-white p-5 text-sm text-stone-400">
+              {{ t('motifs.writingLensLoading') }}
+            </div>
+            <div v-else-if="writingIndexError" class="rounded-2xl border border-rose-100 bg-rose-50 p-5 text-sm text-rose-700">
+              {{ writingIndexError }}
+            </div>
+            <div v-else-if="!writingIndex || !writingIndex.motifs.length" class="rounded-2xl border border-dashed border-stone-200 bg-white/70 p-6 text-sm leading-6 text-stone-500">
+              {{ t('motifs.writingLensEmpty') }}
+            </div>
+            <div v-else class="space-y-5">
+              <div class="grid gap-3 xl:grid-cols-3">
+                <section class="rounded-2xl border border-amber-100 bg-[#fffaf0] p-4">
+                  <div class="mb-3 flex items-center justify-between gap-3">
+                    <h3 class="text-sm font-semibold text-stone-900">{{ t('motifs.writingLensTags') }}</h3>
+                    <span class="rounded-full bg-white px-2 py-1 text-xs text-stone-500">{{ writingIndex.tags.length }}</span>
+                  </div>
+                  <div v-if="writingLensTags.length" class="flex flex-wrap gap-2">
+                    <button
+                      v-for="item in writingLensTags"
+                      :key="`writing-tag-${item.label}`"
+                      type="button"
+                      @click="setWritingLensFilter('tag', item)"
+                      :class="[
+                        'rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition',
+                        writingLensChipActive('tag', item)
+                          ? 'bg-amber-200 text-amber-950 ring-amber-300'
+                          : 'bg-white text-amber-800 ring-amber-100 hover:bg-amber-50',
+                      ]"
+                    >
+                      {{ item.label }}
+                      <span class="ml-1 text-amber-600">{{ item.motif_count }}</span>
+                    </button>
+                  </div>
+                  <p v-else class="text-sm leading-6 text-stone-400">{{ t('motifs.writingLensNoTags') }}</p>
+                </section>
+
+                <section class="rounded-2xl border border-teal-100 bg-teal-50/50 p-4">
+                  <div class="mb-3 flex items-center justify-between gap-3">
+                    <h3 class="text-sm font-semibold text-stone-900">{{ t('motifs.writingLensFunctions') }}</h3>
+                    <span class="rounded-full bg-white px-2 py-1 text-xs text-stone-500">{{ writingIndex.functions.length }}</span>
+                  </div>
+                  <div v-if="writingLensFunctions.length" class="flex flex-wrap gap-2">
+                    <button
+                      v-for="item in writingLensFunctions"
+                      :key="`writing-function-${item.label}`"
+                      type="button"
+                      @click="setWritingLensFilter('function', item)"
+                      :class="[
+                        'rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition',
+                        writingLensChipActive('function', item)
+                          ? 'bg-teal-200 text-teal-950 ring-teal-300'
+                          : 'bg-white text-teal-800 ring-teal-100 hover:bg-teal-50',
+                      ]"
+                    >
+                      {{ item.label }}
+                      <span class="ml-1 text-teal-600">{{ item.motif_count }}</span>
+                    </button>
+                  </div>
+                  <p v-else class="text-sm leading-6 text-stone-400">{{ t('motifs.writingLensNoFunctions') }}</p>
+                </section>
+
+                <section class="rounded-2xl border border-stone-200 bg-white p-4">
+                  <div class="mb-3 flex items-center justify-between gap-3">
+                    <h3 class="text-sm font-semibold text-stone-900">{{ t('motifs.writingLensSources') }}</h3>
+                    <span class="rounded-full bg-stone-100 px-2 py-1 text-xs text-stone-500">{{ writingIndex.sources.length }}</span>
+                  </div>
+                  <div v-if="writingLensSources.length" class="flex flex-wrap gap-2">
+                    <button
+                      v-for="item in writingLensSources"
+                      :key="`writing-source-${item.source_kind}-${item.source_id}`"
+                      type="button"
+                      @click="setWritingLensFilter('source', item)"
+                      :class="[
+                        'max-w-full rounded-full px-3 py-1.5 text-left text-xs font-medium ring-1 transition',
+                        writingLensChipActive('source', item)
+                          ? 'bg-stone-900 text-white ring-stone-900'
+                          : 'bg-stone-50 text-stone-700 ring-stone-200 hover:bg-stone-100',
+                      ]"
+                    >
+                      <span class="break-all">{{ writingSourceLabel(item) }}</span>
+                      <span class="ml-1 opacity-70">{{ item.excerpt_count }}</span>
+                    </button>
+                  </div>
+                  <p v-else class="text-sm leading-6 text-stone-400">{{ t('motifs.writingLensNoSources') }}</p>
+                </section>
+              </div>
+
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="text-sm font-semibold text-stone-900">
+                  {{ t('motifs.writingLensResults', { count: writingLensMotifs.length }) }}
+                </div>
+                <div v-if="writingLensFilter" class="rounded-full bg-white px-3 py-1.5 text-xs text-stone-500 ring-1 ring-stone-200">
+                  {{ t('motifs.writingLensFilter', { label: writingLensFilter.label }) }}
+                </div>
+              </div>
+
+              <div v-if="!writingLensMotifs.length" class="rounded-2xl border border-dashed border-stone-200 bg-white/70 p-6 text-sm leading-6 text-stone-500">
+                {{ t('motifs.writingLensNoMatches') }}
+              </div>
+              <div v-else class="grid gap-3 2xl:grid-cols-2">
+                <button
+                  v-for="item in writingLensMotifs"
+                  :key="`writing-motif-${item.id}`"
+                  type="button"
+                  @click="selectMotif(item.id)"
+                  :class="[
+                    'rounded-2xl border bg-white p-4 text-left shadow-sm transition',
+                    selectedMotifId === item.id ? 'border-teal-300 ring-2 ring-teal-100' : 'border-stone-200 hover:border-teal-200',
+                  ]"
+                >
+                  <div class="mb-3 flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <h3 class="break-words text-lg font-semibold leading-tight text-stone-950">{{ item.name }}</h3>
+                      <div v-if="item.tags.length" class="mt-2 flex flex-wrap gap-1.5">
+                        <span v-for="tag in item.tags.slice(0, 5)" :key="`writing-card-tag-${item.id}-${tag}`" class="rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-800 ring-1 ring-amber-100">{{ tag }}</span>
+                      </div>
+                    </div>
+                    <span class="shrink-0 rounded-full bg-stone-100 px-2.5 py-1 text-xs text-stone-500">{{ t('motifs.excerptCount', { count: item.excerpt_count }) }}</span>
+                  </div>
+                  <div v-if="motifHasWritingProfile(item)" class="space-y-2">
+                    <p v-if="item.definition" class="text-sm leading-6 text-stone-750">{{ item.definition }}</p>
+                    <p v-if="item.core_tension" class="rounded-xl bg-rose-50 px-3 py-2 text-sm leading-6 text-rose-900">{{ item.core_tension }}</p>
+                    <div v-if="item.writing_functions.length" class="flex flex-wrap gap-1.5">
+                      <span v-for="fn in item.writing_functions.slice(0, 4)" :key="`writing-card-fn-${item.id}-${fn}`" class="rounded-full bg-teal-50 px-2.5 py-1 text-xs text-teal-800 ring-1 ring-teal-100">{{ fn }}</span>
+                    </div>
+                    <div v-if="item.scene_triggers.length || item.character_signals.length" class="grid gap-2 md:grid-cols-2">
+                      <div v-if="item.scene_triggers.length" class="rounded-xl bg-[#fffaf0] px-3 py-2">
+                        <div class="text-xs font-semibold text-amber-800">{{ t('motifs.profileSceneTriggers') }}</div>
+                        <p class="mt-1 line-clamp-3 text-xs leading-5 text-stone-600">{{ item.scene_triggers.slice(0, 3).join(' / ') }}</p>
+                      </div>
+                      <div v-if="item.character_signals.length" class="rounded-xl bg-stone-50 px-3 py-2">
+                        <div class="text-xs font-semibold text-stone-600">{{ t('motifs.profileCharacterSignals') }}</div>
+                        <p class="mt-1 line-clamp-3 text-xs leading-5 text-stone-600">{{ item.character_signals.slice(0, 3).join(' / ') }}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <p v-else class="rounded-xl border border-dashed border-stone-200 bg-stone-50 px-3 py-2 text-sm leading-6 text-stone-400">{{ t('motifs.writingLensNoProfile') }}</p>
+                  <div v-if="item.excerpts.length" class="mt-3 space-y-2">
+                    <div class="text-xs font-semibold text-stone-500">{{ t('motifs.writingLensExcerpts') }}</div>
+                    <div v-for="snippet in item.excerpts" :key="`writing-snippet-${item.id}-${snippet.id}`" class="rounded-xl bg-[#fffaf0] px-3 py-2">
+                      <p class="line-clamp-3 text-sm leading-6 text-stone-800">{{ snippet.excerpt_text }}</p>
+                      <p class="mt-1 text-xs text-stone-400">{{ writingSnippetSourceLabel(snippet) }}</p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 

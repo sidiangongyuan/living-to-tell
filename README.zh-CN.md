@@ -4,9 +4,9 @@
 
 ### 本地优先的写作工作室：文章、作品集、文脉标本与边界清晰的 AI
 
-中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.32)
+中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.33)
 
-[![Version](https://img.shields.io/badge/preview-0.1.32-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.33-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **写作、拍照、唱歌、讲话，都是为了讲述。活着，就是为了讲述。**
 
-[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.32) · [官方手册](docs/user-guide.zh-CN.md) · [GIF 教程](docs/tutorials.zh-CN.md) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
+[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.33) · [官方手册](docs/user-guide.zh-CN.md) · [GIF 教程](docs/tutorials.zh-CN.md) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
 
 </div>
 
@@ -31,7 +31,7 @@
 | **文脉标本库** | 保存摘录、书名、作者、用途、笔记和可复制引用。 |
 | **文章 AI** | 使用 AI 工具、文章对话和多模型结果对比，所有写回都需要明确确认。 |
 | **AI Cards** | 保存可复用的风格、人物、场景卡片，支持固定模板和 AI 草稿生成。 |
-| **意象星图** | 把选中文字标记为意象，回到原文锚点，查看共现关系，并用 AI 丰富抽象概念。 |
+| **意象星图** | 把选中文字标记为意象，回到原文锚点，查看共现关系，用写作调用视图检索素材，并用 AI 丰富抽象概念。 |
 | **导出与备份** | 查看恢复点、本地数据路径、备份/检查点、存储目录、备份提醒，并导出最近文章或作品集。 |
 | **本地优先** | 写作数据保存在本地，只有主动运行 AI 时才发送文本。 |
 
@@ -104,6 +104,7 @@
 - 再次打开同一句话时会回填已加入意象，不重复创建摘录。
 - 文章右侧意象锚点可跳回原文句子。
 - 星图用节点大小、颜色和连线表达摘录数量与意象共现关系。
+- 可切到“写作调用”视图，按标签、写作功能、来源和可调用句子浏览已有意象，不改变星图连线。
 - 右侧详情支持 **AI 丰富**，可把“神话模式”“奴隶道德”“常人”等概念生成可保存的写作短卡。
 - 意象详情改为结构化概念档案，可快速阅读定义、核心张力、写作功能、例子、误用提醒和练习，而不是一整段长笔记。
 - AI 可提出带作者和书名 / 篇名的相关句子候选；只有用户勾选后才会录入文脉库并挂到当前意象。
@@ -117,7 +118,7 @@
 - 常驻指令可保存长期风格偏好，不需要每次重新输入。
 - AI 结果先预览，再通过明确的替换、插入、复制动作写回。
 - 长文本请求会显示字数、段落、估算 token 和模型数量，并在模型运行时显示真实等待状态。
-- AI 工具可用最多三个已保存配置档案并行运行同一任务，对比字数、段落、耗时、token 和成本信息，再手动选择胜出结果。
+- AI 工具可用一个或多个已保存配置档案并行运行同一任务，对比字数、段落、耗时、token 和成本信息，再手动选择胜出结果。选择模型越多，等待时间、token 使用和供应商成本可能越高。
 - 支持为每个写作工具保存个人 prompt 预设。
 - AI Card 支持风格、人物、场景卡片，提供固定模板、AI 草稿生成、类型筛选和关键词搜索。
 - 场景模块可在 AI 工具中手动搜索并勾选调用，只有确认选择后才会进入本轮上下文。
@@ -137,15 +138,15 @@
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.32) 下载最新公开预览版。
+从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.33) 下载最新公开预览版。
 
 推荐 Windows 资产：
 
-- `LivingToTell_0.1.32_x64-setup.exe`
+- `LivingToTell_0.1.33_x64-setup.exe`
 
 可选资产：
 
-- `LivingToTell_0.1.32_x64_zh-CN.msi`
+- `LivingToTell_0.1.33_x64_zh-CN.msi`
 
 预览版暂未签名，Windows SmartScreen 可能会提示风险。请只运行来自本仓库 Release 页的安装包。
 

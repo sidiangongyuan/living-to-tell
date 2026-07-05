@@ -13,6 +13,11 @@ from writer.domain.models.motif import (
     MotifExcerpt,
     MotifGraphEdge,
     MotifGraphNode,
+    MotifWritingExcerptSnippet,
+    MotifWritingGroup,
+    MotifWritingIndex,
+    MotifWritingMotif,
+    MotifWritingSource,
     MotifNode,
 )
 
@@ -52,6 +57,27 @@ def _optional_int(value: object) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _profile_string(profile: dict[str, Any], key: str) -> str:
+    value = profile.get(key)
+    return str(value or "").strip()
+
+
+def _profile_list(profile: dict[str, Any], key: str, *, limit: int = 8) -> list[str]:
+    value = profile.get(key)
+    if isinstance(value, list):
+        raw_values = value
+    else:
+        raw_values = str(value or "").split("\n")
+    result: list[str] = []
+    for item in raw_values:
+        text = str(item or "").strip()
+        if text and text not in result:
+            result.append(text)
+        if len(result) >= limit:
+            break
+    return result
 
 
 def _all_exact_ranges(source_text: str, excerpt_text: str) -> list[tuple[int, int]]:
@@ -1039,6 +1065,193 @@ class MotifRepository:
             for row in related_rows
         ]
         return graph_nodes, edges
+
+    def writing_index(
+        self,
+        *,
+        query: str = "",
+        limit: int = 120,
+        excerpt_limit: int = 3,
+    ) -> MotifWritingIndex:
+        nodes = self.list_nodes(query=query, limit=limit)
+        if not nodes:
+            return MotifWritingIndex()
+
+        node_ids = [node.id for node in nodes]
+        node_by_id = {node.id: node for node in nodes}
+        excerpts_by_motif: dict[str, set[str]] = {node.id: set() for node in nodes}
+        snippets_by_motif: dict[str, list[MotifWritingExcerptSnippet]] = {
+            node.id: [] for node in nodes
+        }
+        source_groups: dict[str, dict[str, Any]] = {}
+        placeholders = ",".join("?" for _ in node_ids)
+        max_snippets = max(0, int(excerpt_limit))
+        rows = self._conn.execute(
+            f"""
+            SELECT l.motif_id,
+                   e.id AS excerpt_id,
+                   e.source_kind,
+                   e.source_id,
+                   e.source_title_snapshot,
+                   e.excerpt_text,
+                   e.note,
+                   e.updated_at,
+                   e.created_at,
+                   entries.title AS article_title,
+                   reference_passages.source_title AS reference_title,
+                   reference_passages.source_author AS reference_author
+              FROM motif_excerpt_links l
+              JOIN motif_excerpts e ON e.id = l.excerpt_id
+              LEFT JOIN entries
+                ON e.source_kind = ? AND entries.id = e.source_id
+              LEFT JOIN reference_passages
+                ON e.source_kind = ? AND reference_passages.id = e.source_id
+             WHERE l.motif_id IN ({placeholders})
+             ORDER BY e.updated_at DESC, e.created_at DESC
+            """,
+            tuple([MOTIF_SOURCE_ARTICLE, MOTIF_SOURCE_REFERENCE] + node_ids),
+        ).fetchall()
+
+        for row in rows:
+            motif_id = row["motif_id"]
+            if motif_id not in node_by_id:
+                continue
+            excerpt_id = row["excerpt_id"]
+            source_kind = row["source_kind"]
+            source_id = row["source_id"]
+            source_author = (
+                (row["reference_author"] or "").strip()
+                if source_kind == MOTIF_SOURCE_REFERENCE
+                else ""
+            )
+            if source_kind == MOTIF_SOURCE_ARTICLE:
+                source_title = (row["article_title"] or "").strip()
+            else:
+                source_title = (row["reference_title"] or "").strip()
+            if not source_title:
+                source_title = (row["source_title_snapshot"] or "").strip()
+            if not source_title:
+                source_title = "未命名来源"
+
+            excerpts_by_motif[motif_id].add(excerpt_id)
+            source_key = f"{source_kind}:{source_id}"
+            source_group = source_groups.setdefault(
+                source_key,
+                {
+                    "source_kind": source_kind,
+                    "source_id": source_id,
+                    "source_title": source_title,
+                    "source_author": source_author,
+                    "motif_ids": set(),
+                    "excerpt_ids": set(),
+                },
+            )
+            source_group["motif_ids"].add(motif_id)
+            source_group["excerpt_ids"].add(excerpt_id)
+            if len(snippets_by_motif[motif_id]) < max_snippets:
+                snippets_by_motif[motif_id].append(
+                    MotifWritingExcerptSnippet(
+                        id=excerpt_id,
+                        source_kind=source_kind,
+                        source_id=source_id,
+                        source_title=source_title,
+                        source_author=source_author,
+                        excerpt_text=row["excerpt_text"] or "",
+                        note=row["note"] or "",
+                    )
+                )
+
+        tag_groups: dict[str, dict[str, Any]] = {}
+        function_groups: dict[str, dict[str, Any]] = {}
+
+        def add_group_value(
+            groups: dict[str, dict[str, Any]],
+            label: str,
+            motif_id: str,
+        ) -> None:
+            clean_label = label.strip()
+            if not clean_label:
+                return
+            group = groups.setdefault(
+                clean_label.casefold(),
+                {
+                    "label": clean_label,
+                    "motif_ids": set(),
+                    "excerpt_ids": set(),
+                },
+            )
+            group["motif_ids"].add(motif_id)
+            group["excerpt_ids"].update(excerpts_by_motif.get(motif_id, set()))
+
+        motif_cards: list[MotifWritingMotif] = []
+        for node in nodes:
+            profile = node.profile if isinstance(node.profile, dict) else {}
+            writing_functions = _profile_list(profile, "writing_functions")
+            for tag in node.tags:
+                add_group_value(tag_groups, tag, node.id)
+            for function in writing_functions:
+                add_group_value(function_groups, function, node.id)
+            motif_cards.append(
+                MotifWritingMotif(
+                    id=node.id,
+                    name=node.name,
+                    tags=node.tags,
+                    excerpt_count=node.excerpt_count,
+                    pinned=node.pinned,
+                    definition=_profile_string(profile, "definition"),
+                    core_tension=_profile_string(profile, "core_tension"),
+                    writing_functions=writing_functions,
+                    scene_triggers=_profile_list(profile, "scene_triggers"),
+                    character_signals=_profile_list(profile, "character_signals"),
+                    excerpts=snippets_by_motif.get(node.id, []),
+                )
+            )
+
+        def build_groups(groups: dict[str, dict[str, Any]]) -> list[MotifWritingGroup]:
+            result = [
+                MotifWritingGroup(
+                    label=value["label"],
+                    motif_count=len(value["motif_ids"]),
+                    excerpt_count=len(value["excerpt_ids"]),
+                    motif_ids=sorted(value["motif_ids"]),
+                )
+                for value in groups.values()
+            ]
+            result.sort(
+                key=lambda item: (
+                    -item.motif_count,
+                    -item.excerpt_count,
+                    item.label.casefold(),
+                )
+            )
+            return result
+
+        sources = [
+            MotifWritingSource(
+                source_kind=value["source_kind"],
+                source_id=value["source_id"],
+                source_title=value["source_title"],
+                source_author=value["source_author"],
+                motif_count=len(value["motif_ids"]),
+                excerpt_count=len(value["excerpt_ids"]),
+                motif_ids=sorted(value["motif_ids"]),
+            )
+            for value in source_groups.values()
+        ]
+        sources.sort(
+            key=lambda item: (
+                -item.excerpt_count,
+                -item.motif_count,
+                item.source_title.casefold(),
+            )
+        )
+
+        return MotifWritingIndex(
+            tags=build_groups(tag_groups),
+            functions=build_groups(function_groups),
+            sources=sources,
+            motifs=motif_cards,
+        )
 
     # internals ---------------------------------------------------------
     def _resolve_nodes(

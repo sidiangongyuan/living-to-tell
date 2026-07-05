@@ -165,7 +165,7 @@ async function mockMotifFlowApi(page: Page) {
         app_name: 'Living to Tell',
         version: '0.1.13',
         api_version: '2.0.0',
-        capabilities: ['data_location', 'ai_chat_settings', 'ai_task_presets', 'update_check', 'ai_jobs', 'motif_ai_enrichment_jobs'],
+        capabilities: ['data_location', 'ai_chat_settings', 'ai_task_presets', 'update_check', 'ai_jobs', 'motif_writing_index', 'motif_ai_enrichment_jobs'],
       },
     })
   })
@@ -200,6 +200,107 @@ async function mockMotifFlowApi(page: Page) {
     return sourceKind === 'article'
       ? articlesById[sourceId]?.title ?? ''
       : referencesById[sourceId]?.source_title ?? ''
+  }
+
+  function writingIndexFromState() {
+    const excerptIdsByMotif = new Map<string, Set<string>>()
+    const snippetsByMotif = new Map<string, MotifExcerpt[]>()
+    const tags = new Map<string, { motif_ids: Set<string>; excerpt_ids: Set<string> }>()
+    const functions = new Map<string, { motif_ids: Set<string>; excerpt_ids: Set<string> }>()
+    const sources = new Map<string, {
+      source_kind: SourceKind
+      source_id: string
+      source_title: string
+      source_author: string
+      motif_ids: Set<string>
+      excerpt_ids: Set<string>
+    }>()
+    for (const motif of motifs) {
+      excerptIdsByMotif.set(motif.id, new Set())
+      snippetsByMotif.set(motif.id, [])
+    }
+    for (const excerpt of excerpts) {
+      for (const motifId of excerpt.motif_ids) {
+        excerptIdsByMotif.get(motifId)?.add(excerpt.id)
+        const snippets = snippetsByMotif.get(motifId)
+        if (snippets && snippets.length < 3) snippets.push(excerpt)
+      }
+      const sourceTitle = getSourceTitle(excerpt.source_kind, excerpt.source_id) || excerpt.source_title_snapshot || '未知来源'
+      const sourceAuthor = excerpt.source_kind === 'reference'
+        ? referencesById[excerpt.source_id]?.source_author ?? ''
+        : ''
+      const sourceKey = `${excerpt.source_kind}:${excerpt.source_id}`
+      const source = sources.get(sourceKey) ?? {
+        source_kind: excerpt.source_kind,
+        source_id: excerpt.source_id,
+        source_title: sourceTitle,
+        source_author: sourceAuthor,
+        motif_ids: new Set<string>(),
+        excerpt_ids: new Set<string>(),
+      }
+      for (const motifId of excerpt.motif_ids) source.motif_ids.add(motifId)
+      source.excerpt_ids.add(excerpt.id)
+      sources.set(sourceKey, source)
+    }
+    function addGroupValue(
+      groups: Map<string, { motif_ids: Set<string>; excerpt_ids: Set<string> }>,
+      label: string,
+      motifId: string,
+    ) {
+      const group = groups.get(label) ?? { motif_ids: new Set<string>(), excerpt_ids: new Set<string>() }
+      group.motif_ids.add(motifId)
+      for (const excerptId of excerptIdsByMotif.get(motifId) ?? []) group.excerpt_ids.add(excerptId)
+      groups.set(label, group)
+    }
+    for (const motif of motifs) {
+      for (const tag of motif.tags) addGroupValue(tags, tag, motif.id)
+      for (const item of motif.profile.writing_functions) addGroupValue(functions, item, motif.id)
+    }
+    const toGroups = (groups: Map<string, { motif_ids: Set<string>; excerpt_ids: Set<string> }>) =>
+      [...groups.entries()]
+        .map(([label, group]) => ({
+          label,
+          motif_count: group.motif_ids.size,
+          excerpt_count: group.excerpt_ids.size,
+          motif_ids: [...group.motif_ids],
+        }))
+        .sort((a, b) => b.motif_count - a.motif_count || b.excerpt_count - a.excerpt_count || a.label.localeCompare(b.label))
+    return {
+      tags: toGroups(tags),
+      functions: toGroups(functions),
+      sources: [...sources.values()]
+        .map((source) => ({
+          source_kind: source.source_kind,
+          source_id: source.source_id,
+          source_title: source.source_title,
+          source_author: source.source_author,
+          motif_count: source.motif_ids.size,
+          excerpt_count: source.excerpt_ids.size,
+          motif_ids: [...source.motif_ids],
+        }))
+        .sort((a, b) => b.excerpt_count - a.excerpt_count || a.source_title.localeCompare(b.source_title)),
+      motifs: motifs.map((motif) => ({
+        id: motif.id,
+        name: motif.name,
+        tags: motif.tags,
+        excerpt_count: motif.excerpt_count,
+        pinned: motif.pinned,
+        definition: motif.profile.definition,
+        core_tension: motif.profile.core_tension,
+        writing_functions: motif.profile.writing_functions,
+        scene_triggers: motif.profile.scene_triggers,
+        character_signals: motif.profile.character_signals,
+        excerpts: (snippetsByMotif.get(motif.id) ?? []).map((excerpt) => ({
+          id: excerpt.id,
+          source_kind: excerpt.source_kind,
+          source_id: excerpt.source_id,
+          source_title: getSourceTitle(excerpt.source_kind, excerpt.source_id) || excerpt.source_title_snapshot || '未知来源',
+          source_author: excerpt.source_kind === 'reference' ? referencesById[excerpt.source_id]?.source_author ?? '' : '',
+          excerpt_text: excerpt.excerpt_text,
+          note: excerpt.note,
+        })),
+      })),
+    }
   }
 
   function allExactRanges(sourceText: string, excerptText: string): Array<[number, number]> {
@@ -431,7 +532,7 @@ async function mockMotifFlowApi(page: Page) {
         app_name: 'Living to Tell',
         version: '0.1.13',
         api_version: '2.0.0',
-        capabilities: ['motif_star_map', 'ai_jobs', 'motif_ai_enrichment_jobs'],
+        capabilities: ['motif_star_map', 'motif_writing_index', 'ai_jobs', 'motif_ai_enrichment_jobs'],
       },
     })
   })
@@ -718,6 +819,11 @@ async function mockMotifFlowApi(page: Page) {
       return
     }
 
+    if (path === '/api/motifs/writing-index') {
+      await route.fulfill({ json: writingIndexFromState() })
+      return
+    }
+
     if (path === '/api/motifs/enrich-draft' && request.method() === 'POST') {
       enrichmentDraftCalls += 1
       const body = request.postDataJSON() as { concept?: string }
@@ -838,10 +944,18 @@ async function mockMotifFlowApi(page: Page) {
         selection_end?: number
         before_context?: string
         after_context?: string
+        motif_ids?: string[]
         motif_names?: string[]
       }
       const names = uniqueNames(body.motif_names ?? [])
-      const linkedMotifs = names.map((name) => ensureMotif(name))
+      const linkedById = uniqueNames(body.motif_ids ?? [])
+        .map((id) => motifs.find((motif) => motif.id === id))
+        .filter((motif): motif is MotifNode => Boolean(motif))
+      const linkedByName = names.map((name) => ensureMotif(name))
+      const linkedMotifs = [...linkedById]
+      for (const motif of linkedByName) {
+        if (!linkedMotifs.some((item) => item.id === motif.id)) linkedMotifs.push(motif)
+      }
       const sourceTitle = getSourceTitle(body.source_kind, body.source_id)
       const existing = findExcerptForSelection(body)
       if (existing) {
@@ -1222,6 +1336,88 @@ test('reference selection can be saved as a motif excerpt', async ({ page }) => 
   await page.goto('/motifs')
   await page.getByRole('button', { name: /天空/ }).first().click()
   await expect(page.getByText('天空像一块被擦亮的黑石。')).toBeVisible()
+})
+
+test('motif writing lens groups existing motifs by tags, functions, sources, and selects cards', async ({ page }) => {
+  await page.goto('/motifs')
+  await page.evaluate(async () => {
+    const firstResponse = await fetch('/api/motifs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: '海德格尔的常人',
+        tags: ['哲学概念', '人物压力'],
+        profile: {
+          definition: '人在公共意见中失去自己的判断。',
+          core_tension: '自我选择与平均化生活互相拉扯。',
+          writing_functions: ['制造日常压力'],
+          scene_triggers: ['大家都这样说'],
+          character_signals: ['人物不断引用别人说的话'],
+          imagery_translations: [],
+          short_examples: [],
+          misuse_warnings: [],
+          micro_exercises: [],
+          source_hints: [],
+        },
+      }),
+    })
+    const first = await firstResponse.json() as MotifNode
+    const secondResponse = await fetch('/api/motifs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: '黑石天空',
+        tags: ['意象转译'],
+        profile: {
+          definition: '天空被压缩成坚硬的物质。',
+          core_tension: '',
+          writing_functions: ['制造压迫感'],
+          scene_triggers: [],
+          character_signals: [],
+          imagery_translations: [],
+          short_examples: [],
+          misuse_warnings: [],
+          micro_exercises: [],
+          source_hints: [],
+        },
+      }),
+    })
+    const second = await secondResponse.json() as MotifNode
+    await fetch('/api/motifs/excerpts', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        source_kind: 'article',
+        source_id: 'article-a',
+        excerpt_text: '玫瑰在夜里像血一样醒着。',
+        motif_ids: [first.id],
+      }),
+    })
+    await fetch('/api/motifs/excerpts', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        source_kind: 'reference',
+        source_id: 'ref-a',
+        excerpt_text: '天空像一块被擦亮的黑石。',
+        motif_ids: [first.id, second.id],
+      }),
+    })
+  })
+
+  await page.goto('/motifs')
+  await page.getByTestId('motifs-view-switch').getByRole('button', { name: '写作调用' }).click()
+  const lens = page.getByTestId('motifs-writing-lens')
+  await expect(lens.getByRole('button', { name: '哲学概念 1' })).toBeVisible()
+  await expect(lens.getByRole('button', { name: '制造日常压力 1' })).toBeVisible()
+  await expect(lens.getByRole('button', { name: '夜航西飞 · 柏瑞尔·马卡姆1' })).toBeVisible()
+  await expect(lens.getByText('天空像一块被擦亮的黑石。').first()).toBeVisible()
+
+  await lens.getByRole('button', { name: '哲学概念 1' }).click()
+  await expect(lens.getByText('筛选：哲学概念')).toBeVisible()
+  await expect(lens.getByRole('button', { name: /海德格尔的常人/ })).toBeVisible()
+  await lens.getByRole('button', { name: /海德格尔的常人/ }).click()
+  await expect(page.getByTestId('motifs-detail-pane').getByText('人在公共意见中失去自己的判断。')).toBeVisible()
 })
 
 test('motif profile reader uses chips and saves chip edits explicitly', async ({ page }) => {

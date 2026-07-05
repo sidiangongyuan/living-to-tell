@@ -144,8 +144,8 @@ Steps:
 3. Click **Send Real Test Request** to verify the provider, model, base URL, key, and transport with a real minimal request.
 4. For multi-model comparison, create or import GPT, Gemini, DeepSeek, or OpenCode profiles.
 5. Open **AI Workspace**, choose the task, scope, and input text.
-6. Select up to three profiles and run the same task.
-7. Compare output length, paragraph changes, latency, tokens, and cost when available.
+6. Select one or more profiles and run the same task.
+7. Compare output length, paragraph changes, latency, tokens, and cost when available. More selected models can mean longer waits and higher provider cost.
 8. Pick a winning result before copying, replacing, or inserting.
 9. Open **AI Cards** to create style, character, or scene cards. Use Card Generator AI for drafts, then review before saving.
 

@@ -135,6 +135,93 @@ def test_motif_node_profile_persists_and_searches(tmp_path):
     assert preserved.profile["definition"] == "常人是日常公共性中的平均化自我。"
 
 
+def test_motif_writing_index_empty_database_returns_empty_sections(tmp_path):
+    conn = open_and_initialize(tmp_path / "writer.db")
+    motifs = MotifRepository(conn)
+
+    index = motifs.writing_index()
+
+    assert index.tags == []
+    assert index.functions == []
+    assert index.sources == []
+    assert index.motifs == []
+
+
+def test_motif_writing_index_aggregates_existing_writing_material_without_mutation(tmp_path):
+    conn = open_and_initialize(tmp_path / "writer.db")
+    entries = EntryRepository(conn)
+    references = ReferenceRepository(conn)
+    motifs = MotifRepository(conn)
+
+    entry = entries.create(title="城市草稿", body="他们在同一张餐桌上沉默。")
+    reference = references.create(
+        source_title="存在与时间",
+        source_author="海德格尔",
+        content="常人在日常公共性中把一切磨平。",
+        usage_kind="philosophy",
+    )
+    common_profile = {
+        "definition": "人在公共意见中失去自己的判断。",
+        "core_tension": "自我选择与平均化生活互相拉扯。",
+        "writing_functions": ["制造日常压力", "表现从众"],
+        "scene_triggers": ["饭桌沉默"],
+        "character_signals": ["重复别人说法"],
+    }
+    das_man = motifs.create_node(
+        name="海德格尔的常人",
+        tags=["哲学概念", "人物压力"],
+        profile=common_profile,
+    )
+    city = motifs.create_node(
+        name="城市",
+        tags=["空间", "人物压力"],
+        profile={"writing_functions": ["制造日常压力"]},
+    )
+    motifs.create_excerpt(
+        source_kind="article",
+        source_id=entry.id,
+        excerpt_text="他们在同一张餐桌上沉默。",
+        motif_ids=[das_man.id, city.id],
+    )
+    motifs.create_excerpt(
+        source_kind="reference",
+        source_id=reference.id,
+        excerpt_text="常人在日常公共性中把一切磨平。",
+        motif_ids=[das_man.id],
+    )
+    before_counts = {
+        table: conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"]
+        for table in ("motif_nodes", "motif_excerpts", "motif_excerpt_links")
+    }
+
+    index = motifs.writing_index(limit=20, excerpt_limit=1)
+
+    assert {item.label for item in index.tags} >= {"哲学概念", "人物压力", "空间"}
+    pressure = next(item for item in index.tags if item.label == "人物压力")
+    assert pressure.motif_count == 2
+    assert pressure.excerpt_count == 2
+    pressure_function = next(item for item in index.functions if item.label == "制造日常压力")
+    assert pressure_function.motif_count == 2
+    assert {source.source_title for source in index.sources} == {"城市草稿", "存在与时间"}
+    motif_card = next(item for item in index.motifs if item.id == das_man.id)
+    assert motif_card.definition == common_profile["definition"]
+    assert motif_card.core_tension == common_profile["core_tension"]
+    assert motif_card.writing_functions == ["制造日常压力", "表现从众"]
+    assert motif_card.scene_triggers == ["饭桌沉默"]
+    assert motif_card.character_signals == ["重复别人说法"]
+    assert len(motif_card.excerpts) == 1
+
+    queried = motifs.writing_index(query="公共意见", limit=20, excerpt_limit=3)
+    assert [item.id for item in queried.motifs] == [das_man.id]
+    assert {item.source_title for item in queried.sources} == {"城市草稿", "存在与时间"}
+
+    after_counts = {
+        table: conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"]
+        for table in ("motif_nodes", "motif_excerpts", "motif_excerpt_links")
+    }
+    assert after_counts == before_counts
+
+
 def test_motif_excerpt_can_use_reference_source(tmp_path):
     conn = open_and_initialize(tmp_path / "writer.db")
     references = ReferenceRepository(conn)
