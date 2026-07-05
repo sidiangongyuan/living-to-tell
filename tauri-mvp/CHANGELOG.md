@@ -1,5 +1,34 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.34 - Article Motif Invocation (2026-07-06)
+
+### Added
+
+- Added an article-side Motif Invocation section in the right context pane, so existing motif profiles and related sentences can be called while drafting.
+- Added explicit actions to copy motif material, insert the selected material into the current article body, save it as an article note, or open the source motif in the Motif Star Map.
+
+### Changed
+
+- Motif invocation reuses the existing read-only writing index and does not create motifs, excerpts, or graph links automatically.
+- Article context pane tests now wait more reliably for the editor to mount in the mocked browser environment.
+- Updated public documentation links and installer names to `0.1.34`.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py tests\storage\test_motif_repository.py -q`
+- `npm test -- --run`
+- `npm run test:e2e -- --project=msedge --workers=1`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.34_x64-setup.exe`
+  - SHA256: `FDDDF2B8093D0420F0B3E46888469CC661C979614334A512198085C030075654`
+- `LivingToTell_0.1.34_x64_zh-CN.msi`
+  - SHA256: `B3C119F0F5B8C7D0B280AC7F1DE5DDBC7337150A5B49063640055F2A493A49F3`
+
 ## 0.1.33 - Motif Writing Lens (2026-07-05)
 
 ### Added

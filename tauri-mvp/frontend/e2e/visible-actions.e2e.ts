@@ -272,6 +272,10 @@ async function updatePublicScreenshot(page: Page, name: string) {
   })
 }
 
+async function expectArticleEditorBody(page: Page, body: string) {
+  await expect(page.getByTestId('article-body-editor')).toHaveValue(body, { timeout: 20000 })
+}
+
 async function mockVisibleActionApi(page: Page) {
   let sampleProjectInstalled = false
   const sampleProjectState = () => ({
@@ -287,6 +291,10 @@ async function mockVisibleActionApi(page: Page) {
 
   await page.addInitScript(() => {
     window.localStorage.clear()
+    ;(window as Window & {
+      __WRITER_API_BASE__?: string
+      __WRITER_DISABLE_AUTO_UPDATE__?: boolean
+    }).__WRITER_API_BASE__ = 'http://backend.test'
     ;(window as Window & { __WRITER_DISABLE_AUTO_UPDATE__?: boolean }).__WRITER_DISABLE_AUTO_UPDATE__ = true
     Object.defineProperty(navigator, 'clipboard', {
       value: {
@@ -515,7 +523,11 @@ async function mockVisibleActionApi(page: Page) {
     await route.fulfill({ json: id === articleB.id ? articleB : article })
   })
   await page.route('**/api/articles', async (route) => {
-    await route.fulfill({ status: 201, json: { ...article, id: 'article-created', title: '新文章' } })
+    if (route.request().method() === 'POST') {
+      await route.fulfill({ status: 201, json: { ...article, id: 'article-created', title: '新文章' } })
+      return
+    }
+    await route.fulfill({ json: [article, articleB] })
   })
 
   await page.route('**/api/collections/for-entry/*', async (route) => route.fulfill({ json: [] }))
@@ -756,7 +768,7 @@ test.beforeEach(async ({ page }) => {
 
 test('article export buttons trigger downloads for MD, TXT, and DOCX', async ({ page }) => {
   await page.goto('/articles?id=article-a')
-  await expect(page.getByTestId('article-body-editor')).toHaveValue(article.body)
+  await expectArticleEditorBody(page, article.body)
 
   for (const format of ['md', 'txt', 'docx']) {
     const downloadPromise = page.waitForEvent('download')
@@ -803,7 +815,7 @@ test('article delete failures show a visible error', async ({ page }) => {
   await page.getByTestId('article-action-delete').click()
 
   await expect(page.getByText('删除文章失败')).toBeVisible()
-  await expect(page.getByTestId('article-body-editor')).toHaveValue(article.body)
+  await expectArticleEditorBody(page, article.body)
 })
 
 test('article sidebar new button shows a visible error when creation fails', async ({ page }) => {
@@ -902,7 +914,7 @@ test('article find and replace updates the editor and autosaves the change', asy
   })
 
   await page.goto('/articles?id=article-a')
-  await expect(page.getByTestId('article-body-editor')).toHaveValue(article.body)
+  await expectArticleEditorBody(page, article.body)
 
   await page.getByTitle('查找与替换 (Ctrl+F)').click()
   await page.getByPlaceholder('查找').fill('正文')
@@ -984,7 +996,7 @@ test('article pending edits are flushed before switching, AI chat, and archive a
   })
 
   await page.goto('/articles?id=article-a')
-  await expect(page.getByTestId('article-body-editor')).toHaveValue(article.body)
+  await expectArticleEditorBody(page, article.body)
 
   await page.getByTestId('article-body-editor').fill('切换前未保存正文')
   await page.getByTestId('article-entry-article-b').click()
@@ -1132,6 +1144,149 @@ test('article writing notes can be added, pinned, edited, completed, restored, a
   await expect.poll(() => requests.deleted).toBe(1)
 })
 
+test('article motif invocation can copy, insert, save as note, and open motif detail', async ({ page }) => {
+  const motif = {
+    id: 'motif-invocation',
+    name: '海德格尔的常人',
+    aliases: ['das Man'],
+    note: '',
+    profile: {
+      definition: '人在公共意见中失去自己的判断。',
+      core_tension: '自我判断和公共意见之间的拉扯。',
+      writing_functions: ['制造日常压迫感'],
+      scene_triggers: ['公共场合'],
+      character_signals: ['用大家都这么说替代判断'],
+      imagery_translations: [],
+      short_examples: [],
+      misuse_warnings: [],
+      micro_exercises: [],
+      source_hints: [],
+    },
+    tags: ['哲学'],
+    pinned: false,
+    excerpt_count: 1,
+    created_at: null,
+    updated_at: null,
+  }
+  const writingIndex = {
+    tags: [{ label: '哲学', motif_count: 1, excerpt_count: 1, motif_ids: [motif.id] }],
+    functions: [{ label: '制造日常压迫感', motif_count: 1, excerpt_count: 1, motif_ids: [motif.id] }],
+    sources: [{
+      source_kind: 'reference',
+      source_id: 'ref-being-time',
+      source_title: '存在与时间',
+      source_author: '海德格尔',
+      motif_count: 1,
+      excerpt_count: 1,
+      motif_ids: [motif.id],
+    }],
+    motifs: [{
+      id: motif.id,
+      name: motif.name,
+      tags: motif.tags,
+      excerpt_count: 1,
+      pinned: false,
+      definition: motif.profile.definition,
+      core_tension: motif.profile.core_tension,
+      writing_functions: motif.profile.writing_functions,
+      scene_triggers: motif.profile.scene_triggers,
+      character_signals: motif.profile.character_signals,
+      excerpts: [{
+        id: 'excerpt-callable',
+        source_kind: 'reference',
+        source_id: 'ref-being-time',
+        source_title: '存在与时间',
+        source_author: '海德格尔',
+        excerpt_text: '人首先和通常沉没在常人之中。',
+        note: 'AI 候选，来源需核对。',
+      }],
+    }],
+  }
+  const updates: Array<{ title?: string; body?: string; tags?: string[] }> = []
+  const noteBodies: string[] = []
+
+  await page.route(/\/api\/motifs(?:\/|\?|$)/, async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (url.pathname === '/api/motifs/writing-index') {
+      await route.fulfill({ json: writingIndex })
+      return
+    }
+    if (url.pathname === '/api/motifs') {
+      await route.fulfill({ json: [motif] })
+      return
+    }
+    if (url.pathname === '/api/motifs/graph' || url.pathname === `/api/motifs/${motif.id}/graph`) {
+      await route.fulfill({
+        json: {
+          nodes: [{ id: motif.id, name: motif.name, excerpt_count: 1, pinned: false, is_center: true }],
+          edges: [],
+        },
+      })
+      return
+    }
+    if (url.pathname === `/api/motifs/${motif.id}/excerpts`) {
+      await route.fulfill({ json: [] })
+      return
+    }
+    if (url.pathname === '/api/motifs/excerpts/source/article/article-a') {
+      await route.fulfill({ json: [] })
+      return
+    }
+    await route.fulfill({ json: [] })
+  })
+  await page.route('**/api/articles/article-a', async (route) => {
+    const request = route.request()
+    if (request.method() === 'PUT') {
+      const body = request.postDataJSON() as { title?: string; body?: string; tags?: string[] }
+      updates.push(body)
+      await route.fulfill({ json: { ...article, ...body } })
+      return
+    }
+    await route.fulfill({ json: article })
+  })
+  await page.route('**/api/articles/article-a/notes**', async (route) => {
+    const request = route.request()
+    if (request.method() === 'POST') {
+      const body = request.postDataJSON() as { body?: string }
+      noteBodies.push(body.body ?? '')
+      await route.fulfill({ status: 201, json: { ...openNote, id: 'note-from-motif', body: body.body ?? '' } })
+      return
+    }
+    await route.fulfill({ json: [openNote] })
+  })
+
+  await page.goto('/articles?id=article-a')
+  const editor = page.getByTestId('article-body-editor')
+  await expect(editor).toHaveValue(article.body, { timeout: 20000 })
+  await editor.focus()
+  await page.keyboard.press('Control+End')
+
+  const invocation = page.getByTestId('article-motif-invocation')
+  await invocation.getByRole('button', { name: /意象调用/ }).click()
+  await expect(invocation.getByText('海德格尔的常人')).toBeVisible()
+
+  await invocation.getByRole('button', { name: '哲学 · 1' }).click()
+  await expect(invocation.getByText(/标签：哲学/)).toBeVisible()
+  await invocation.getByRole('button', { name: '清除' }).click()
+  await invocation.getByTestId('article-motif-invocation-card').getByRole('button').first().click()
+
+  await invocation.getByRole('button', { name: '复制' }).click()
+  await expect.poll(() => page.evaluate(() => window.__copiedText)).toContain('核心张力：自我判断和公共意见之间的拉扯。')
+
+  await invocation.getByRole('button', { name: '插入正文' }).click()
+  await expect(editor).toHaveValue(/核心张力：自我判断和公共意见之间的拉扯。/)
+  await expect.poll(() => updates.some((body) => body.body?.includes('制造日常压迫感'))).toBe(true)
+
+  await invocation.getByRole('button', { name: /人首先和通常沉没在常人之中/ }).click()
+  await invocation.getByRole('button', { name: '存为便签' }).click()
+  await expect.poll(() => noteBodies).toEqual([expect.stringContaining('人首先和通常沉没在常人之中。')])
+  await expect(invocation.getByText('已保存为文章便签。')).toBeVisible()
+
+  await invocation.getByRole('button', { name: '查看意象' }).click()
+  await expect(page).toHaveURL(/\/motifs\?.*id=motif-invocation/)
+})
+
 test('article list filters, context pane, save, AI navigation, archive, and collection picker actions work', async ({ page }) => {
   const updates: Array<Record<string, unknown>> = []
   const archiveRequests: string[] = []
@@ -1166,7 +1321,7 @@ test('article list filters, context pane, save, AI navigation, archive, and coll
   })
 
   await page.goto('/articles?id=article-a')
-  await expect(page.getByTestId('article-body-editor')).toHaveValue(article.body)
+  await expectArticleEditorBody(page, article.body)
 
   await page.getByPlaceholder('搜索文章...').fill('备选')
   await expect(page.getByText('备选文章')).toBeVisible()
@@ -1329,7 +1484,7 @@ test('date article cards open the selected article from the calendar', async ({ 
   await page.locator('article').filter({ hasText: '导出测试文章' }).click()
 
   await expect(page).toHaveURL(/\/articles\?.*id=article-a/)
-  await expect(page.getByTestId('article-body-editor')).toHaveValue(article.body)
+  await expectArticleEditorBody(page, article.body)
 })
 
 test('command palette groups commands and searches local writing content', async ({ page }) => {
@@ -1350,7 +1505,7 @@ test('command palette groups commands and searches local writing content', async
 
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/\/articles\?.*id=article-a/)
-  await expect(page.getByTestId('article-body-editor')).toHaveValue(article.body)
+  await expectArticleEditorBody(page, article.body)
 })
 
 test('welcome checklist creates a real reference and opens article chat with article scope', async ({ page }) => {
