@@ -10,8 +10,8 @@ Use this to confirm where the app lives, where your writing lives, and what upgr
 
 Steps:
 
-1. Download the latest Windows preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.32).
-2. Run the recommended installer: `LivingToTell_0.1.32_x64-setup.exe`. The MSI asset is `LivingToTell_0.1.32_x64_zh-CN.msi`.
+1. Download the latest Windows preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.35).
+2. Run the recommended installer: `LivingToTell_0.1.35_x64-setup.exe`. The MSI asset is `LivingToTell_0.1.35_x64_zh-CN.msi`.
 3. Open **活着为了讲述** from the Start menu or desktop shortcut.
 4. Open **Settings → Data and Storage** to review the active SQLite database, backup folder, and checkpoint folder.
 5. Before major edits, open **Export & Backup** and create a backup or named checkpoint.
