@@ -46,13 +46,14 @@ Goal: organize multiple articles into a project and plan longer work with outlin
 Steps:
 
 1. Open **Collections** and review article order plus preview.
-2. Switch to **Outline** and edit parts, chapters, scenes, or notes.
-3. Switch to **Planning Board** to scan idea, draft, revision, done, and parked items.
-4. Select an outline item and edit summary, point of view, timeline, target words, and linked article.
+2. If the interactive tutorial appears, use **Next** to walk through Article Order, Outline, Planning Board, Linked Article, and Export; restart it later from Settings if needed.
+3. Switch to **Outline** and edit parts, chapters, scenes, or notes.
+4. Switch to **Planning Board** to scan idea, draft, revision, done, and parked items.
+5. Select an outline item and edit summary, point of view, timeline, target words, and linked article.
 
 Expected result: Collections become both a manuscript order and a long-form planning surface.
 
-Safety note: removing an article from a collection does not delete the article.
+Safety note: removing an article from a collection does not delete the article. Linked Article only connects a planning card to a draft; it does not copy or move text.
 
 ## 4. References and Motifs: From Excerpt to Star Map
 

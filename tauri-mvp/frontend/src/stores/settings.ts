@@ -8,6 +8,7 @@ export type CloseBehavior = 'ask' | 'tray' | 'exit'
 export const WELCOME_CHECKLIST_DISMISSED_KEY = 'living_to_tell_welcome_checklist_dismissed'
 export const ONBOARDING_AI_REVIEWED_KEY = 'living_to_tell_onboarding_ai_reviewed'
 export const ONBOARDING_STORAGE_REVIEWED_KEY = 'living_to_tell_onboarding_storage_reviewed'
+export const COLLECTIONS_TOUR_DISMISSED_KEY = 'living_to_tell_collections_tour_dismissed'
 
 export const useSettingsStore = defineStore('settings', () => {
   // 从 localStorage 读取保存的设置
@@ -21,6 +22,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const welcomeChecklistDismissed = ref(localStorage.getItem(WELCOME_CHECKLIST_DISMISSED_KEY) === 'true')
   const onboardingAiReviewed = ref(localStorage.getItem(ONBOARDING_AI_REVIEWED_KEY) === 'true')
   const onboardingStorageReviewed = ref(localStorage.getItem(ONBOARDING_STORAGE_REVIEWED_KEY) === 'true')
+  const collectionsTourDismissed = ref(localStorage.getItem(COLLECTIONS_TOUR_DISMISSED_KEY) === 'true')
 
   function toggleTheme() {
     theme.value = 'light'
@@ -82,6 +84,16 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.removeItem(ONBOARDING_STORAGE_REVIEWED_KEY)
   }
 
+  function dismissCollectionsTour() {
+    collectionsTourDismissed.value = true
+    localStorage.setItem(COLLECTIONS_TOUR_DISMISSED_KEY, 'true')
+  }
+
+  function resetCollectionsTour() {
+    collectionsTourDismissed.value = false
+    localStorage.removeItem(COLLECTIONS_TOUR_DISMISSED_KEY)
+  }
+
   function markOnboardingAiReviewed() {
     onboardingAiReviewed.value = true
     localStorage.setItem(ONBOARDING_AI_REVIEWED_KEY, 'true')
@@ -124,6 +136,7 @@ export const useSettingsStore = defineStore('settings', () => {
     welcomeChecklistDismissed,
     onboardingAiReviewed,
     onboardingStorageReviewed,
+    collectionsTourDismissed,
     toggleTheme,
     toggleLanguage,
     toggleFocusMode,
@@ -132,6 +145,8 @@ export const useSettingsStore = defineStore('settings', () => {
     saveCloseBehavior,
     dismissWelcomeChecklist,
     resetWelcomeChecklist,
+    dismissCollectionsTour,
+    resetCollectionsTour,
     markOnboardingAiReviewed,
     markOnboardingStorageReviewed,
   }

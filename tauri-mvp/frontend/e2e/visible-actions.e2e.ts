@@ -291,6 +291,7 @@ async function mockVisibleActionApi(page: Page) {
 
   await page.addInitScript(() => {
     window.localStorage.clear()
+    window.localStorage.setItem('living_to_tell_collections_tour_dismissed', 'true')
     ;(window as Window & {
       __WRITER_API_BASE__?: string
       __WRITER_DISABLE_AUTO_UPDATE__?: boolean

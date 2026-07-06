@@ -4,7 +4,7 @@
 
 ### The current Windows desktop preview for 活着为了讲述 / Living to Tell
 
-[![Version](https://img.shields.io/badge/version-0.1.35-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.36-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-preview-orange.svg)](#download)
@@ -52,7 +52,7 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 ### Collections
 
 - Create article collections and add multiple articles at once.
-- Drag to reorder articles, or use up/down controls as a fallback.
+- Manage **Article Order** by dragging articles or using up/down controls as a fallback.
 - Preview the selected article in a paper-like reading pane.
 - Plan long-form projects in the collection outline tab with part, chapter, scene, and note cards.
 - Track outline status, summary, point of view, timeline, setting, tags, target word count, and linked article.
@@ -60,6 +60,7 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 - Review outline progress summaries, filter by type/status/unlinked items, and export the visible outline to Markdown.
 - Create a linked article from an outline card or connect an existing article.
 - Export a collection in Markdown, TXT, or DOCX using the current order.
+- Use the built-in collection tutorial to walk through Article Order, Outline, Planning Board, Linked Article, and Export; restart it from Settings.
 
 ### Reference Library
 
@@ -109,15 +110,15 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.35).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.36).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.35_x64-setup.exe`
+- `LivingToTell_0.1.36_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.35_x64_zh-CN.msi`
+- `LivingToTell_0.1.36_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 

@@ -10,8 +10,8 @@ Use this to confirm where the app lives, where your writing lives, and what upgr
 
 Steps:
 
-1. Download the latest Windows preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.35).
-2. Run the recommended installer: `LivingToTell_0.1.35_x64-setup.exe`. The MSI asset is `LivingToTell_0.1.35_x64_zh-CN.msi`.
+1. Download the latest Windows preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.36).
+2. Run the recommended installer: `LivingToTell_0.1.36_x64-setup.exe`. The MSI asset is `LivingToTell_0.1.36_x64_zh-CN.msi`.
 3. Open **活着为了讲述** from the Start menu or desktop shortcut.
 4. Open **Settings → Data and Storage** to review the active SQLite database, backup folder, and checkpoint folder.
 5. Before major edits, open **Export & Backup** and create a backup or named checkpoint.
@@ -86,20 +86,22 @@ Use Collections to arrange articles into a reading order or plan a longer projec
 Steps:
 
 1. Open **Collections**.
-2. Create a collection with a title and description.
-3. Add existing articles.
-4. Reorder articles and use the preview pane to check reading flow.
-5. Switch to **Outline** and add parts, chapters, scenes, or notes.
-6. Track status, summary, point of view, timeline, setting, tags, and target word count.
-7. Switch to **Planning Board** to scan idea, draft, revision, done, and parked items.
-8. Create an article from an outline item, or link an existing article.
-9. Export the collection as Markdown, TXT, or DOCX.
+2. Follow the interactive tutorial the first time it appears; if it was dismissed, restart it from **Settings > Interface Settings > Collection tutorial**.
+3. Create a collection with a title and description.
+4. Add existing articles.
+5. Use **Article Order** to reorder articles and check reading flow in the preview pane.
+6. Switch to **Outline** and add parts, chapters, scenes, or notes.
+7. Track status, summary, point of view, timeline, setting, tags, and target word count.
+8. Switch to **Planning Board** to scan idea, draft, revision, done, and parked items.
+9. Create an article from an outline item, or link an existing article.
+10. Export the collection as Markdown, TXT, or DOCX.
 
 Safety notes:
 
 - A collection stores membership and order; it does not copy the article body.
 - Removing an article from a collection does not delete the article.
 - The outline enhancement uses existing collection outline fields and does not require a schema migration.
+- An outline item's Title is the planning card name; Type means part, chapter, scene, or note; Linked Article creates a relationship only and does not copy or move article text.
 
 Common mistakes:
 

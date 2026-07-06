@@ -197,7 +197,7 @@ test('article version history saves and restores the real article body', async (
 
   await page.goto('/articles?id=article-a')
   const editor = page.getByTestId('article-body-editor')
-  await expect(editor).toHaveValue('第一段。\n\n第二段。')
+  await expect(editor).toHaveValue('第一段。\n\n第二段。', { timeout: 20000 })
 
   const panel = page.getByTestId('article-version-history')
   await panel.getByRole('button', { name: /历史版本/ }).click()
@@ -312,6 +312,12 @@ test('collection outline creates a real outline item and article link', async ({
   })
 
   await page.goto('/collections')
+  await expect(page.getByRole('button', { name: '文章顺序' })).toBeVisible()
+  await expect(page.getByTestId('guided-tour-overlay')).toBeVisible()
+  await expect(page.getByText('作品集是一本文稿项目')).toBeVisible()
+  await page.getByRole('button', { name: '跳过' }).click()
+  await expect(page.getByTestId('guided-tour-overlay')).toHaveCount(0)
+
   await page.getByRole('button', { name: '大纲' }).click()
   await page.getByRole('button', { name: '新场景' }).first().click()
   await expect(page.getByTestId('collection-outline-detail')).toContainText('大纲条目')

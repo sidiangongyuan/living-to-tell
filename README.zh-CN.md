@@ -4,9 +4,9 @@
 
 ### 本地优先的写作工作室：文章、作品集、文脉标本与边界清晰的 AI
 
-中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.35)
+中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.36)
 
-[![Version](https://img.shields.io/badge/preview-0.1.35-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.36-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **写作、拍照、唱歌、讲话，都是为了讲述。活着，就是为了讲述。**
 
-[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.35) · [官方手册](docs/user-guide.zh-CN.md) · [GIF 教程](docs/tutorials.zh-CN.md) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
+[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.36) · [官方手册](docs/user-guide.zh-CN.md) · [GIF 教程](docs/tutorials.zh-CN.md) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
 
 </div>
 
@@ -84,13 +84,14 @@
 ### 作品集
 
 - 从多篇文章创建作品集。
-- 支持批量加入文章，拖拽排序，也保留上移 / 下移按钮。
+- 支持批量加入文章，并在 **文章顺序** 中拖拽排序，也保留上移 / 下移按钮。
 - 右侧纸页预览当前文章。
 - 可切到“大纲”标签，在作品集层面规划长篇项目，支持分部、章节、场景、笔记。
 - 大纲项可记录状态、摘要、视角、时间线、场景地点、标签、目标字数和关联文章。
 - 可切到“规划看板”，按构思、草稿、修订、完成、暂停查看整个长篇项目的结构状态。
 - 可从大纲项一键创建文章，也可以把已有文章关联到大纲。
 - 按当前顺序导出 Markdown、TXT、DOCX。
+- 作品集页内置手把手教程，解释文章顺序、大纲、规划看板、关联文章和导出；之后可在设置中重新打开。
 
 ### 文脉标本库
 
@@ -138,15 +139,15 @@
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.35) 下载最新公开预览版。
+从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.36) 下载最新公开预览版。
 
 推荐 Windows 资产：
 
-- `LivingToTell_0.1.35_x64-setup.exe`
+- `LivingToTell_0.1.36_x64-setup.exe`
 
 可选资产：
 
-- `LivingToTell_0.1.35_x64_zh-CN.msi`
+- `LivingToTell_0.1.36_x64_zh-CN.msi`
 
 预览版暂未签名，Windows SmartScreen 可能会提示风险。请只运行来自本仓库 Release 页的安装包。
 

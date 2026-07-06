@@ -4,9 +4,9 @@
 
 ### A local-first writing studio for articles, collections, references, and scoped AI
 
-[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.35)
+[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.36)
 
-[![Version](https://img.shields.io/badge/preview-0.1.35-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.36-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **Writing, photography, singing, and speaking are all ways to tell. To live is to tell.**
 
-[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.35) · [User Guide](docs/user-guide.md) · [GIF Tutorials](docs/tutorials.md) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
+[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.36) · [User Guide](docs/user-guide.md) · [GIF Tutorials](docs/tutorials.md) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
 
 </div>
 
@@ -84,13 +84,14 @@ For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They
 ### Collections
 
 - Build article collections from multiple articles.
-- Add articles in batches, then reorder with drag-and-drop or up/down controls.
+- Add articles in batches, then manage the **Article Order** with drag-and-drop or up/down controls.
 - Preview the selected article in a paper-like reading pane.
 - Switch to the outline tab to plan long-form projects with part, chapter, scene, and note cards.
 - Track outline status, summary, point of view, timeline, setting, tags, target word count, and linked article.
 - Use the planning board to scan idea, draft, revision, done, and parked items across the whole collection.
 - Create a linked article from an outline item or connect an existing article to the plan.
 - Export a collection in Markdown, TXT, or DOCX using the current order.
+- Follow the built-in guided tutorial for Article Order, Outline, Planning Board, Linked Article, and Export; restart it from Settings when needed.
 
 ### Reference Library
 
@@ -138,15 +139,15 @@ For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.35).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.36).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.35_x64-setup.exe`
+- `LivingToTell_0.1.36_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.35_x64_zh-CN.msi`
+- `LivingToTell_0.1.36_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 

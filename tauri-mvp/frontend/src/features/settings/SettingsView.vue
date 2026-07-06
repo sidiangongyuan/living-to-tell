@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { appApi } from '../../api/app'
 import { errorMessage, isHttpStatus } from '../../api/base'
 import {
@@ -42,6 +42,7 @@ interface DiagnosticRow {
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 const settings = useSettingsStore()
 const appUpdate = useAppUpdateStore()
 const OPENCODE_DEFAULT_MODEL = 'opencode/deepseek-v4-flash-free'
@@ -938,6 +939,12 @@ async function saveProfileLocalApiKey() {
 function resetWelcomeChecklist() {
   settings.resetWelcomeChecklist()
   saveNotice.value = t('settings.welcomeChecklistReset')
+}
+
+async function showCollectionsTutorial() {
+  settings.resetCollectionsTour()
+  saveNotice.value = t('settings.collectionsTutorialReset')
+  await router.push({ name: 'collections', query: { tour: 'collection' } })
 }
 
 async function invokeNative<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -1846,6 +1853,21 @@ async function openReleasePage() {
                 class="shrink-0 rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-700"
               >
                 {{ t('settings.showWelcomeChecklist') }}
+              </button>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <div class="text-sm font-semibold text-gray-800">{{ t('settings.collectionsTutorial') }}</div>
+                <p class="mt-1 text-xs leading-5 text-gray-500">{{ t('settings.collectionsTutorialHelp') }}</p>
+              </div>
+              <button
+                @click="showCollectionsTutorial"
+                class="shrink-0 rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-700"
+              >
+                {{ t('settings.showCollectionsTutorial') }}
               </button>
             </div>
           </div>

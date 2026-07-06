@@ -1,5 +1,35 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.36 - Collection Guided Tutorial (2026-07-06)
+
+### Added
+
+- Added an interactive Collections tutorial with a focused spotlight, floating explanation card, Previous / Next / Skip / Finish controls, and a no-data path that does not create user content.
+- The tutorial explains Collections as book/project containers, then walks through Article Order, Outline, outline item Type and Title fields, Linked Article, Planning Board, and Export.
+- Added a Settings entry to restart the Collections tutorial after it has been dismissed.
+
+### Changed
+
+- Renamed the Collections `Manuscript` tab to `Article Order` / `文章顺序`.
+- Added short in-context explanations for Article Order, Outline, Planning Board, outline item Title, Type, and Linked Article fields.
+- Updated public README and user guide copy for the new terminology and tutorial restart path.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py tests\storage\test_motif_repository.py -q`
+- `npm test -- --run`
+- `npm run test:e2e -- --project=msedge --workers=1`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.36_x64-setup.exe`
+  - SHA256: `5E21EA0DE137E5219B7C4176B7D17AB3A0EA4B011AEFB6DD43B8AFF03376E409`
+- `LivingToTell_0.1.36_x64_zh-CN.msi`
+  - SHA256: `1A0A9977A323E78C761DA8E530BF08626F646871501558CE523D769ACB5D068C`
+
 ## 0.1.35 - Bidirectional Motif Anchors (2026-07-06)
 
 ### Removed

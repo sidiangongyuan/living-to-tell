@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useCollectionsStore } from './store'
 import { articlesApi, type Entry } from '../../api/articles'
 import type { CollectionOutlineItem, CollectionOutlineItemInput, OutlineItemStatus, OutlineItemType } from '../../api/collections'
 import { useI18n } from '../../i18n'
 import ContextMenu from '../../components/ContextMenu.vue'
+import GuidedTourOverlay from '../../components/GuidedTourOverlay.vue'
 import PaneResizeHandle from '../../components/PaneResizeHandle.vue'
 import { useResizablePane } from '../../composables/useResizablePane'
+import { useSettingsStore } from '../../stores/settings'
 import { saveBlobWithDialog } from '../../utils/exportFile'
 import {
   buildOutlineMarkdown,
@@ -21,6 +23,8 @@ const LAST_SELECTED_COLLECTION_KEY = 'living_to_tell_last_selected_collection_id
 const store = useCollectionsStore()
 const { t } = useI18n()
 const router = useRouter()
+const route = useRoute()
+const settings = useSettingsStore()
 
 const allArticles = ref<Entry[]>([])
 const articlePickerOpen = ref(false)
@@ -52,6 +56,8 @@ const outlineFilterType = ref<OutlineFilters['type']>('all')
 const outlineFilterStatus = ref<OutlineFilters['status']>('all')
 const outlineFilterUnlinkedOnly = ref(false)
 const outlineExporting = ref(false)
+const tourOpen = ref(false)
+const tourStepIndex = ref(0)
 const collectionListPane = useResizablePane({
   key: 'collections:list',
   defaultSize: 240,
@@ -115,6 +121,159 @@ const outlineBoardColumns = computed(() =>
   }))
 )
 
+interface CollectionTourStep {
+  id: string
+  title: string
+  body: string
+  target?: string
+}
+
+const collectionTourSteps = computed<CollectionTourStep[]>(() => {
+  if (!store.selectedCollection) {
+    return [
+      {
+        id: 'intro',
+        title: t('collectionsTour.introTitle'),
+        body: t('collectionsTour.introBody'),
+        target: '[data-tour="collections-list"]',
+      },
+      {
+        id: 'create',
+        title: t('collectionsTour.createTitle'),
+        body: t('collectionsTour.createBody'),
+        target: '[data-tour="collections-create"]',
+      },
+    ]
+  }
+
+  const outlineTypeTarget = store.selectedOutlineItem
+    ? '[data-tour="outline-type-field"]'
+    : '[data-tour="collections-outline-pane"]'
+  const outlineDetailTarget = store.selectedOutlineItem
+    ? '[data-tour="outline-detail-fields"]'
+    : '[data-tour="collections-outline-pane"]'
+  const outlineLinkedArticleTarget = store.selectedOutlineItem
+    ? '[data-tour="outline-linked-article"]'
+    : '[data-tour="collections-outline-pane"]'
+
+  return [
+    {
+      id: 'intro',
+      title: t('collectionsTour.introTitle'),
+      body: t('collectionsTour.introBody'),
+      target: '[data-tour="collections-header"]',
+    },
+    {
+      id: 'list',
+      title: t('collectionsTour.listTitle'),
+      body: t('collectionsTour.listBody'),
+      target: '[data-tour="collections-list"]',
+    },
+    {
+      id: 'article-order',
+      title: t('collectionsTour.articleOrderTitle'),
+      body: t('collectionsTour.articleOrderBody'),
+      target: '[data-tour="collections-article-order"]',
+    },
+    {
+      id: 'outline',
+      title: t('collectionsTour.outlineTitle'),
+      body: t('collectionsTour.outlineBody'),
+      target: '[data-tour="collections-outline-pane"]',
+    },
+    {
+      id: 'outline-type',
+      title: t('collectionsTour.typeTitle'),
+      body: t('collectionsTour.typeBody'),
+      target: outlineTypeTarget,
+    },
+    {
+      id: 'outline-fields',
+      title: t('collectionsTour.fieldsTitle'),
+      body: t('collectionsTour.fieldsBody'),
+      target: outlineDetailTarget,
+    },
+    {
+      id: 'linked-article',
+      title: t('collectionsTour.linkedArticleTitle'),
+      body: t('collectionsTour.linkedArticleBody'),
+      target: outlineLinkedArticleTarget,
+    },
+    {
+      id: 'board',
+      title: t('collectionsTour.boardTitle'),
+      body: t('collectionsTour.boardBody'),
+      target: '[data-tour="collections-board"]',
+    },
+    {
+      id: 'export',
+      title: t('collectionsTour.exportTitle'),
+      body: t('collectionsTour.exportBody'),
+      target: '[data-tour="collections-export"]',
+    },
+    {
+      id: 'done',
+      title: t('collectionsTour.doneTitle'),
+      body: t('collectionsTour.doneBody'),
+      target: '[data-tour="collections-tabs"]',
+    },
+  ]
+})
+
+const currentTourProgressLabel = computed(() =>
+  t('collectionsTour.progress', {
+    current: Math.min(tourStepIndex.value + 1, collectionTourSteps.value.length),
+    total: collectionTourSteps.value.length,
+  })
+)
+
+function prepareCollectionTourStep(index = tourStepIndex.value) {
+  const step = collectionTourSteps.value[index]
+  if (!step || !store.selectedCollection) return
+  if (['outline', 'outline-type', 'outline-fields', 'linked-article'].includes(step.id)) {
+    viewMode.value = 'outline'
+  } else if (step.id === 'board') {
+    viewMode.value = 'board'
+  } else if (['article-order', 'export'].includes(step.id)) {
+    viewMode.value = 'manuscript'
+  }
+}
+
+function startCollectionTour() {
+  tourStepIndex.value = 0
+  tourOpen.value = true
+  prepareCollectionTourStep(0)
+}
+
+function closeCollectionTour() {
+  tourOpen.value = false
+  settings.dismissCollectionsTour()
+  void clearCollectionTourQuery()
+}
+
+function finishCollectionTour() {
+  closeCollectionTour()
+}
+
+async function clearCollectionTourQuery() {
+  if (route.query.tour !== 'collection') return
+  const query = { ...route.query }
+  delete query.tour
+  await router.replace({ name: 'collections', query })
+}
+
+async function nextCollectionTourStep() {
+  tourStepIndex.value = Math.min(tourStepIndex.value + 1, collectionTourSteps.value.length - 1)
+  prepareCollectionTourStep()
+  await nextTick()
+}
+
+async function previousCollectionTourStep() {
+  tourStepIndex.value = Math.max(tourStepIndex.value - 1, 0)
+  prepareCollectionTourStep()
+  await nextTick()
+}
+
 function articlePreview(body: string): string {
   const compact = body.trim().replace(/\s+/g, ' ')
   return compact.slice(0, 140) || t('collections.emptyArticle')
@@ -132,6 +291,12 @@ onMounted(async () => {
     await store.selectCollection(lastCollectionId)
   }
   allArticles.value = await articlesApi.listArticles(500)
+  if (route.query.tour === 'collection' || !settings.collectionsTourDismissed) {
+    startCollectionTour()
+    if (route.query.tour === 'collection') {
+      void clearCollectionTourQuery()
+    }
+  }
 })
 
 watch(
@@ -157,6 +322,25 @@ watch(
     loadOutlineDraft(item)
   },
   { immediate: true }
+)
+
+watch(
+  () => route.query.tour,
+  (value) => {
+    if (value === 'collection') {
+      startCollectionTour()
+      void clearCollectionTourQuery()
+    }
+  }
+)
+
+watch(
+  () => store.selectedCollectionId,
+  () => {
+    if (!tourOpen.value) return
+    tourStepIndex.value = 0
+    prepareCollectionTourStep(0)
+  }
 )
 
 async function openCreateDialog() {
@@ -555,6 +739,7 @@ async function openLinkedOutlineArticle() {
       class="shrink-0 border-r border-stone-200 bg-[#2d2a25] text-stone-100 flex flex-col"
       :style="collectionListPane.paneStyle.value"
       data-testid="collections-list-pane"
+      data-tour="collections-list"
     >
       <div class="p-5 border-b border-white/10">
         <div class="flex items-center justify-between gap-3">
@@ -565,6 +750,7 @@ async function openLinkedOutlineArticle() {
           <button
             @click="openCreateDialog"
             class="rounded-xl bg-amber-200 px-3 py-2 text-sm font-semibold text-stone-900 hover:bg-amber-100"
+            data-tour="collections-create"
           >
             {{ t('collections.newCollection') }}
           </button>
@@ -608,7 +794,7 @@ async function openLinkedOutlineArticle() {
       <header class="border-b border-stone-200 bg-[#fbf7ef]/95 px-6 py-5">
         <template v-if="store.selectedCollection">
           <div class="flex items-start justify-between gap-4">
-            <div class="min-w-0 flex-1 space-y-3">
+            <div class="min-w-0 flex-1 space-y-3" data-tour="collections-header">
               <input
                 v-model="draftTitle"
                 @blur="saveCollectionMeta"
@@ -654,7 +840,8 @@ async function openLinkedOutlineArticle() {
                   <div class="mt-1 text-base font-semibold text-stone-900">{{ outlineProgressPercent === null ? '—' : `${outlineProgressPercent}%` }}</div>
                 </div>
               </div>
-              <div class="inline-flex rounded-xl bg-stone-100 p-1 text-sm font-semibold text-stone-600">
+              <div class="space-y-2" data-tour="collections-tabs">
+                <div class="inline-flex rounded-xl bg-stone-100 p-1 text-sm font-semibold text-stone-600">
                 <button
                   type="button"
                   :class="[
@@ -673,7 +860,7 @@ async function openLinkedOutlineArticle() {
                   ]"
                   @click="viewMode = 'board'"
                 >
-                  规划看板
+                  {{ t('collectionOutline.boardTab') }}
                 </button>
                 <button
                   type="button"
@@ -685,9 +872,19 @@ async function openLinkedOutlineArticle() {
                 >
                   {{ t('collectionOutline.outlineTab') }}
                 </button>
+                </div>
+                <p class="max-w-3xl text-xs leading-5 text-stone-500">
+                  {{
+                    viewMode === 'manuscript'
+                      ? t('collectionOutline.articleOrderHelp')
+                      : viewMode === 'board'
+                        ? t('collectionOutline.boardHelp')
+                        : t('collectionOutline.outlineHelp')
+                  }}
+                </p>
               </div>
             </div>
-            <div class="flex flex-wrap justify-end gap-2">
+            <div class="flex flex-wrap justify-end gap-2" data-tour="collections-export">
               <button
                 @click="openArticlePicker"
                 class="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700"
@@ -750,6 +947,7 @@ async function openLinkedOutlineArticle() {
           class="shrink-0 overflow-y-auto border-r border-stone-200 p-5"
           :style="collectionArticlePane.paneStyle.value"
           data-testid="collections-article-pane"
+          data-tour="collections-article-order"
         >
           <div v-if="!store.selectedCollection" class="mt-16 text-center text-stone-400">
             {{ t('collections.noCollectionSelected') }}
@@ -862,13 +1060,13 @@ async function openLinkedOutlineArticle() {
         </template>
 
         <template v-else-if="viewMode === 'board'">
-          <section class="flex-1 overflow-y-auto p-6" data-testid="collection-planning-board">
+          <section class="flex-1 overflow-y-auto p-6" data-testid="collection-planning-board" data-tour="collections-board">
             <div class="mb-5 flex flex-col gap-4 rounded-3xl border border-stone-200 bg-white/75 p-5 shadow-sm lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <p class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">Planning Board</p>
-                <h3 class="mt-1 text-2xl font-semibold text-stone-900">长篇规划看板</h3>
+                <h3 class="mt-1 text-2xl font-semibold text-stone-900">{{ t('collectionOutline.boardTitle') }}</h3>
                 <p class="mt-2 max-w-3xl text-sm leading-6 text-stone-500">
-                  按状态查看章节、场景和笔记。这里适合扫全局节奏；需要编辑细节时点开卡片，右侧大纲页仍是精修入口。
+                  {{ t('collectionOutline.boardDescription') }}
                 </p>
               </div>
               <div class="flex flex-wrap gap-2">
@@ -957,6 +1155,7 @@ async function openLinkedOutlineArticle() {
             class="shrink-0 overflow-y-auto border-r border-stone-200 bg-[#fbf7ef] p-5"
             :style="collectionArticlePane.paneStyle.value"
             data-testid="collection-outline-pane"
+            data-tour="collections-outline-pane"
           >
             <div class="mb-4 flex items-center justify-between gap-3">
               <div>
@@ -1124,16 +1323,18 @@ async function openLinkedOutlineArticle() {
                   </div>
                 </div>
 
-                <div class="grid gap-4 md:grid-cols-2">
-                  <label class="md:col-span-2">
+                <div class="grid gap-4 md:grid-cols-2" data-tour="outline-detail-fields">
+                  <label class="md:col-span-2" data-tour="outline-title-field">
                     <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldTitle') }}</span>
                     <input v-model="outlineDraftTitle" class="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" />
+                    <span class="mt-1 block text-xs leading-5 text-stone-400">{{ t('collectionOutline.fieldTitleHelp') }}</span>
                   </label>
-                  <label>
+                  <label data-tour="outline-type-field">
                     <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldType') }}</span>
                     <select v-model="outlineDraftType" class="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200">
                       <option v-for="option in outlineTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
                     </select>
+                    <span class="mt-1 block text-xs leading-5 text-stone-400">{{ t('collectionOutline.fieldTypeHelp') }}</span>
                   </label>
                   <label>
                     <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldStatus') }}</span>
@@ -1149,6 +1350,7 @@ async function openLinkedOutlineArticle() {
                         {{ article.title || t('articles.untitled') }}
                       </option>
                     </select>
+                    <span class="mt-1 block text-xs leading-5 text-stone-400">{{ t('collectionOutline.fieldEntryHelp') }}</span>
                   </label>
                   <label>
                     <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldTargetWords') }}</span>
@@ -1181,13 +1383,14 @@ async function openLinkedOutlineArticle() {
                 </div>
               </div>
 
-              <div class="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+              <div class="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm" data-tour="outline-linked-article">
                 <div class="flex items-center justify-between gap-4">
                   <div>
                     <h4 class="font-semibold text-stone-900">{{ t('collectionOutline.linkedArticle') }}</h4>
                     <p class="mt-1 text-sm text-stone-500">
                       {{ outlineLinkedArticle?.title || t('collectionOutline.noLinkedArticle') }}
                     </p>
+                    <p class="mt-1 text-xs leading-5 text-stone-400">{{ t('collectionOutline.linkedArticleHelp') }}</p>
                   </div>
                   <button
                     class="rounded-xl bg-stone-100 px-3 py-2 text-sm text-stone-700 disabled:opacity-40"
@@ -1321,6 +1524,21 @@ async function openLinkedOutlineArticle() {
         </div>
       </div>
     </div>
+
+    <GuidedTourOverlay
+      :open="tourOpen"
+      :steps="collectionTourSteps"
+      :step-index="tourStepIndex"
+      :progress-label="currentTourProgressLabel"
+      :previous-label="t('collectionsTour.previous')"
+      :next-label="t('collectionsTour.next')"
+      :skip-label="t('collectionsTour.skip')"
+      :finish-label="t('collectionsTour.finish')"
+      @previous="previousCollectionTourStep"
+      @next="nextCollectionTourStep"
+      @close="closeCollectionTour"
+      @finish="finishCollectionTour"
+    />
   </div>
 </template>
 

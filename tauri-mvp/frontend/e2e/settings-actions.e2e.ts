@@ -341,6 +341,10 @@ async function mockSettingsPage(
     await route.fulfill({ json: [] })
   })
 
+  await page.route('http://backend.test/api/collections', async (route) => {
+    await route.fulfill({ json: [] })
+  })
+
   await page.route('http://backend.test/api/ai-cards', async (route) => {
     await route.fulfill({ json: [] })
   })
@@ -510,8 +514,15 @@ test('settings AI buttons import, test, save, and reset with visible feedback', 
   await expect(page.getByText('设置已保存')).toBeVisible()
   await expect(page.getByText('当前环境无法使用系统托盘')).toBeVisible()
 
-  await page.getByRole('button', { name: '重新显示' }).click()
+  await page.getByRole('button', { name: '重新显示', exact: true }).click()
   await expect(page.getByText('欢迎清单会在日期页重新显示。')).toBeVisible()
+
+  await page.getByRole('button', { name: '重新显示教程' }).click()
+  await expect(page).toHaveURL(/\/collections/)
+  await expect(page.getByTestId('guided-tour-overlay')).toBeVisible()
+  await expect(page.getByText('作品集是一本文稿项目')).toBeVisible()
+  await page.getByRole('button', { name: '下一步' }).click()
+  await expect(page.getByText('先新建或打开一个作品集')).toBeVisible()
 })
 
 test('settings supports OpenCode model refresh and local login config', async ({ page }) => {
