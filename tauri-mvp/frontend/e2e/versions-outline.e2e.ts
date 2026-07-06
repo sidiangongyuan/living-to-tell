@@ -82,6 +82,7 @@ async function installBaseMocks(page: Page) {
           'update_check',
           'article_versions',
           'collection_outline',
+          'collection_manuscript_structure',
         ],
       },
     })
@@ -219,6 +220,7 @@ test('collection outline creates a real outline item and article link', async ({
     id: 'collection-a',
     title: '长篇项目',
     description: '一部长篇小说',
+    project_type: 'novel',
     article_count: 0,
     created_at: null,
     updated_at: null,
@@ -312,23 +314,22 @@ test('collection outline creates a real outline item and article link', async ({
   })
 
   await page.goto('/collections')
-  await expect(page.getByRole('button', { name: '文章顺序' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '书稿' })).toBeVisible({ timeout: 20000 })
   await expect(page.getByTestId('guided-tour-overlay')).toBeVisible()
   await expect(page.getByText('作品集是一本文稿项目')).toBeVisible()
   await page.getByRole('button', { name: '跳过' }).click()
   await expect(page.getByTestId('guided-tour-overlay')).toHaveCount(0)
 
-  await page.getByRole('button', { name: '大纲' }).click()
-  await page.getByRole('button', { name: '新场景' }).first().click()
-  await expect(page.getByTestId('collection-outline-detail')).toContainText('大纲条目')
+  await page.getByRole('button', { name: '+ 场景' }).click()
+  await expect(page.getByTestId('collection-outline-detail')).toContainText('结构节点')
 
   await page.getByLabel('标题').fill('雨夜来信')
   await page.getByLabel('摘要').fill('一封信推动关系升级。')
   await page.getByRole('button', { name: '保存' }).click()
   await expect.poll(() => outline[0]?.title).toBe('雨夜来信')
 
-  await page.getByRole('button', { name: '从大纲创建文章' }).click()
+  await page.getByRole('button', { name: '从节点创建文章' }).click()
   await expect.poll(() => articles[0]?.title).toBe('雨夜来信')
   await expect.poll(() => outline[0]?.entry_id).toBe('article-1')
-  await expect(page.getByRole('heading', { name: '雨夜来信' })).toBeVisible()
+  await expect(page.getByTestId('collection-outline-detail').locator('p').filter({ hasText: '雨夜来信' })).toBeVisible()
 })

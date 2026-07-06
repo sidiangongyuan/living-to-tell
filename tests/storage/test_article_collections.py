@@ -41,6 +41,23 @@ def test_entry_can_belong_to_multiple_collections(tmp_path):
     }
 
 
+def test_collection_project_type_is_saved_and_validated(tmp_path):
+    conn = open_and_initialize(tmp_path / "writer.db")
+    collections = CollectionRepository(conn)
+
+    collection = collections.create("Novel", project_type="novel")
+
+    assert collection.project_type == "novel"
+    assert collections.update_project_type(collection.id, "essay").project_type == "essay"
+
+    try:
+        collections.update_project_type(collection.id, "bad")
+    except ValueError as exc:
+        assert "Unsupported collection project type" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("invalid project type should fail")
+
+
 def test_deleting_entry_removes_collection_membership(tmp_path):
     conn = open_and_initialize(tmp_path / "writer.db")
     entries = EntryRepository(conn)

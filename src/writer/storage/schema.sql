@@ -271,6 +271,7 @@ CREATE TABLE IF NOT EXISTS collections (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT '',
+    project_type TEXT NOT NULL DEFAULT 'general',
     created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );

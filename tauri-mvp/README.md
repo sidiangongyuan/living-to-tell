@@ -4,7 +4,7 @@
 
 ### The current Windows desktop preview for 活着为了讲述 / Living to Tell
 
-[![Version](https://img.shields.io/badge/version-0.1.36-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.37-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-preview-orange.svg)](#download)
@@ -52,15 +52,13 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 ### Collections
 
 - Create article collections and add multiple articles at once.
-- Manage **Article Order** by dragging articles or using up/down controls as a fallback.
-- Preview the selected article in a paper-like reading pane.
-- Plan long-form projects in the collection outline tab with part, chapter, scene, and note cards.
-- Track outline status, summary, point of view, timeline, setting, tags, target word count, and linked article.
-- Switch to the planning board to review outline cards grouped by idea, draft, revision, done, and parked status.
-- Review outline progress summaries, filter by type/status/unlinked items, and export the visible outline to Markdown.
-- Create a linked article from an outline card or connect an existing article.
-- Export a collection in Markdown, TXT, or DOCX using the current order.
-- Use the built-in collection tutorial to walk through Article Order, Outline, Planning Board, Linked Article, and Export; restart it from Settings.
+- Choose a project type and manage one **Manuscript Structure** tree for hierarchy, order, linked drafts, and export.
+- Use project-aware labels: novel part/chapter/scene, essay section/group/essay, nonfiction part/chapter/section.
+- Link one article to one structure node, then add child nodes when a chapter needs several articles below it.
+- Keep added-but-unplaced drafts in **Unplanned Articles** until they are placed into the tree.
+- Switch to the board to review the same structure grouped by idea, draft, revision, done, and parked status.
+- Export the manuscript to Markdown, TXT, or DOCX from the structure tree, and export a separate planning file when needed.
+- Use the built-in collection tutorial to walk through Manuscript Structure, Project Type, Unplanned Articles, Linked Article, Board, and Export; restart it from Settings.
 
 ### Reference Library
 
@@ -100,7 +98,7 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 - Export & Backup now starts from recovery: safety summary, restore-point selection, backup age reminder, and a restore confirmation path that auto-backs up the current database first.
 - Ctrl+K opens a command palette that now searches articles, collections, references, motifs, and AI cards as well as commands.
 - The Date view includes a first-run checklist that reads local state without creating sample data.
-- The first-run checklist can explicitly create a disposable sample project with articles, a collection outline, a reference, a writing note, and a scene AI Card.
+- The first-run checklist can explicitly create a disposable sample project with articles, a collection manuscript structure, a reference, a writing note, and a scene AI Card.
 - Startup uses a light splash window so users see progress while the backend sidecar starts.
 - The app checks GitHub Releases in the background after startup and shows a clear update notice when a newer public build is available.
 - Close behavior can be set to ask every time, minimize to tray, or exit directly.
@@ -110,15 +108,15 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.36).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.37).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.36_x64-setup.exe`
+- `LivingToTell_0.1.37_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.36_x64_zh-CN.msi`
+- `LivingToTell_0.1.37_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 

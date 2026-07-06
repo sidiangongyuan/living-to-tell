@@ -150,7 +150,11 @@ def build_container(db_path: Optional[Path] = None) -> AppContainer:
     work_export_service = WorkExportService(
         work_repo, section_repo, collection_repo
     )
-    collection_export_service = CollectionExportService(collection_repo)
+    collection_export_service = CollectionExportService(
+        collection_repo,
+        collection_outline_repo,
+        entry_repo,
+    )
     legacy_work_import_service = LegacyWorkImportService(
         conn,
         settings_repo,

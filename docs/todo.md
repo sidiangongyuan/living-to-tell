@@ -63,9 +63,9 @@ This list tracks product-facing work that would make Living to Tell more reliabl
 - Added a motif star map with right-click capture, source anchors, co-occurrence links, deduplication, and safer unlink behavior.
 - Upgraded AI Cards into style / character / scene templates, added AI draft generation, and added manual scene-module attachment.
 - Added first-run checklist progress, AI settings diagnostics, long-request size feedback, and grouped global command palette search.
-- Added an explicit disposable sample project that demonstrates articles, a collection outline, references, writing notes, and scene AI Cards.
+- Added an explicit disposable sample project that demonstrates articles, a collection manuscript structure, references, writing notes, and scene AI Cards.
 - Expanded Export & Backup with restore-point selection, safety summary, real data paths, backup reminders, and recent article/collection export shortcuts.
-- Added a collection planning board for reviewing long-form outline items by status.
+- Reworked Collections around one manuscript structure tree and kept the board as a status overview.
 - Added reference-library overview cards and AI chat capture previews for saving assistant replies as reference material or new articles.
 - Added OpenCode local-auth support, live OpenCode model fetching, and real OpenCode test requests through the unified AI provider path.
 - Added a real AI connectivity test and fixed Gemini proxy transport selection for custom-base `sk-...` keys.

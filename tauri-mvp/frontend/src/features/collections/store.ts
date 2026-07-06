@@ -5,6 +5,7 @@ import {
   type Collection,
   type CollectionArticle,
   type CollectionExportFormat,
+  type CollectionProjectType,
   type CollectionOutlineItem,
   type CollectionOutlineItemInput,
 } from '../../api/collections'
@@ -65,7 +66,7 @@ export const useCollectionsStore = defineStore('collections', () => {
         selectedOutlineItemId.value = null
       }
     } catch (e) {
-      error.value = collectionErrorMessage(e, '当前后台版本不支持作品集大纲。请退出应用后安装最新版本。')
+      error.value = collectionErrorMessage(e, '当前后台版本不支持书稿结构。请退出应用后安装最新版本。')
     } finally {
       loading.value = false
     }
@@ -116,10 +117,10 @@ export const useCollectionsStore = defineStore('collections', () => {
     }
   }
 
-  async function createCollection(title: string, description = '') {
+  async function createCollection(title: string, description = '', projectType: CollectionProjectType = 'general') {
     error.value = null
     try {
-      const created = await collectionsApi.createCollection({ title, description })
+      const created = await collectionsApi.createCollection({ title, description, project_type: projectType })
       collections.value.unshift(created)
       selectedCollectionId.value = created.id
       articles.value = []
@@ -128,20 +129,25 @@ export const useCollectionsStore = defineStore('collections', () => {
       selectedOutlineItemId.value = null
       return created
     } catch (e) {
-      error.value = collectionErrorMessage(e, '当前后台版本不支持作品集大纲。请退出应用后安装最新版本。')
+      error.value = collectionErrorMessage(e, '当前后台版本不支持书稿结构。请退出应用后安装最新版本。')
       throw e
     }
   }
 
-  async function updateCollection(id: string, title: string, description: string) {
+  async function updateCollection(
+    id: string,
+    title: string,
+    description: string,
+    projectType: CollectionProjectType = 'general',
+  ) {
     error.value = null
     try {
-      const updated = await collectionsApi.updateCollection(id, { title, description })
+      const updated = await collectionsApi.updateCollection(id, { title, description, project_type: projectType })
       const idx = collections.value.findIndex((c) => c.id === id)
       if (idx !== -1) collections.value[idx] = updated
       return updated
     } catch (e) {
-      error.value = collectionErrorMessage(e, '这个大纲条目已不存在，已刷新列表。')
+      error.value = collectionErrorMessage(e, '这个结构节点已不存在，已刷新列表。')
       throw e
     }
   }
@@ -166,7 +172,7 @@ export const useCollectionsStore = defineStore('collections', () => {
         }
       }
     } catch (e) {
-      error.value = collectionErrorMessage(e, '这个大纲条目已不存在，已刷新列表。')
+      error.value = collectionErrorMessage(e, '这个结构节点已不存在，已刷新列表。')
       throw e
     }
   }
@@ -181,7 +187,7 @@ export const useCollectionsStore = defineStore('collections', () => {
         ?? null
       await refreshSelectedCollection()
     } catch (e) {
-      error.value = collectionErrorMessage(e, '当前后台版本不支持作品集大纲。请退出应用后安装最新版本。')
+      error.value = collectionErrorMessage(e, '当前后台版本不支持书稿结构。请退出应用后安装最新版本。')
       throw e
     }
   }

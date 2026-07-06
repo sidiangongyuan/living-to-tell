@@ -10,6 +10,7 @@ class Collection:
     id: str
     name: str = ""
     description: str = ""
+    project_type: str = "general"
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 

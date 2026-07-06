@@ -26,7 +26,7 @@ function outlineItem(partial: Partial<CollectionOutlineItem>): CollectionOutline
 }
 
 describe('outline enhancements', () => {
-  it('summarizes progress from outline items and linked articles', () => {
+  it('summarizes progress from structure nodes and linked articles', () => {
     const outline = [
       outlineItem({ id: 'a', status: 'idea', entry_id: 'article-1', target_word_count: 1200 }),
       outlineItem({ id: 'b', status: 'done', entry_id: 'article-2', target_word_count: 800 }),
@@ -48,7 +48,7 @@ describe('outline enhancements', () => {
     expect(summary.byStatus.done).toBe(2)
   })
 
-  it('filters outline items without mutating the original list', () => {
+  it('filters structure nodes without mutating the original list', () => {
     const outline = [
       outlineItem({ id: 'scene', item_type: 'scene', status: 'drafting' }),
       outlineItem({ id: 'chapter', item_type: 'chapter', status: 'drafting', entry_id: 'article-1' }),
@@ -86,7 +86,7 @@ describe('outline enhancements', () => {
     })
 
     expect(markdown).toContain('# 长篇计划')
-    expect(markdown).toContain('## 大纲')
+    expect(markdown).toContain('## 书稿结构')
     expect(markdown).toContain('关联文章：返乡章节')
     expect(markdown).toContain('标签：返乡、等待')
   })

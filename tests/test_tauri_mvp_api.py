@@ -52,6 +52,7 @@ def test_tauri_app_version_capabilities(monkeypatch):
         "update_check",
         "article_versions",
         "collection_outline",
+        "collection_manuscript_structure",
         "sample_project",
     }.issubset(
         set(payload["capabilities"])
@@ -347,10 +348,11 @@ def test_tauri_collection_outline_crud(monkeypatch):
 
     collection = client.post(
         "/api/collections",
-        json={"title": "长篇项目测试", "description": "大纲容器"},
+        json={"title": "长篇项目测试", "description": "大纲容器", "project_type": "novel"},
     )
     assert collection.status_code == 201, collection.text
     collection_id = collection.json()["id"]
+    assert collection.json()["project_type"] == "novel"
     article = client.post(
         "/api/articles",
         json={"title": "雨夜来信", "body": "正文", "tags": []},

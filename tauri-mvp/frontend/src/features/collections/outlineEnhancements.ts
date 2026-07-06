@@ -74,12 +74,12 @@ export function buildOutlineMarkdown(options: {
   articleTitleForId?: (entryId: string) => string
 }): string {
   const lines: string[] = []
-  const title = options.collectionTitle.trim() || '作品集大纲'
+  const title = options.collectionTitle.trim() || '书稿规划'
   lines.push(`# ${title}`)
   if (options.collectionDescription?.trim()) {
     lines.push('', options.collectionDescription.trim())
   }
-  lines.push('', '## 大纲')
+  lines.push('', '## 书稿结构')
 
   for (const [index, item] of options.outline.entries()) {
     const headerParts = [
@@ -87,7 +87,7 @@ export function buildOutlineMarkdown(options: {
       options.statusLabel(item.status),
       item.target_word_count ? `目标 ${item.target_word_count} 字` : '',
     ]
-    lines.push('', `### ${index + 1}. ${item.title || '未命名大纲'}`)
+    lines.push('', `### ${index + 1}. ${item.title || '未命名节点'}`)
     lines.push(`- 状态：${joinInline(headerParts) || '未设置'}`)
     if (item.entry_id) {
       const articleTitle = options.articleTitleForId?.(item.entry_id) || item.entry_id
@@ -107,7 +107,7 @@ export function buildOutlineMarkdown(options: {
   }
 
   if (!options.outline.length) {
-    lines.push('', '暂无大纲条目。')
+    lines.push('', '暂无结构节点。')
   }
 
   return `${lines.join('\n')}\n`

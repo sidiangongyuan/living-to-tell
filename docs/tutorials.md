@@ -37,23 +37,25 @@ Expected result: body text, notes, and versions stay separate; focus mode remove
 
 Safety note: versions are meaningful checkpoints, not a record of every autosave.
 
-## 3. Collection Planning: From Reading Order to Project Board
+## 3. Collection Planning: From Manuscript Structure to Board
 
 ![Collection planning tutorial](../tauri-mvp/docs/assets/tutorials/03-collection-planning.gif)
 
-Goal: organize multiple articles into a project and plan longer work with outline and board views.
+Goal: organize multiple articles into one book project with a single structure tree and board.
 
 Steps:
 
-1. Open **Collections** and review article order plus preview.
-2. If the interactive tutorial appears, use **Next** to walk through Article Order, Outline, Planning Board, Linked Article, and Export; restart it later from Settings if needed.
-3. Switch to **Outline** and edit parts, chapters, scenes, or notes.
-4. Switch to **Planning Board** to scan idea, draft, revision, done, and parked items.
-5. Select an outline item and edit summary, point of view, timeline, target words, and linked article.
+1. Open **Collections** and create or open a manuscript project.
+2. If the interactive tutorial appears, use **Next** to walk through Manuscript Structure, Project Type, Unplanned Articles, Linked Article, Board, and Export; restart it later from Settings if needed.
+3. In **Manuscript**, add top-level nodes such as parts, chapters, sections, essays, or scenes.
+4. Select a chapter or group, then click **New Child**, or place **Unplanned Articles** under the selected node.
+5. Select a structure node and edit title, type, parent, status, summary, target words, and linked article.
+6. Switch to **Board** to scan idea, draft, revision, done, and parked items across the same tree.
+7. Switch to **Export** to export the manuscript, or export a separate planning file for your own review.
 
-Expected result: Collections become both a manuscript order and a long-form planning surface.
+Expected result: Collections use one clear manuscript structure tree; articles not yet in the tree stay in Unplanned Articles.
 
-Safety note: removing an article from a collection does not delete the article. Linked Article only connects a planning card to a draft; it does not copy or move text.
+Safety note: removing an article from a collection does not delete the article. Linked Article only connects a structure node to a draft; it does not copy or move text. Once the tree has linked draft nodes, unplanned articles are not included automatically in manuscript export.
 
 ## 4. References and Motifs: From Excerpt to Star Map
 

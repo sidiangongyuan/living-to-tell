@@ -1,5 +1,30 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.37 - Manuscript Structure Collections (2026-07-06)
+
+### Changed
+
+- Reworked Collections around one canonical **Manuscript Structure** tree instead of separate Article Order and Outline surfaces.
+- Added project types for General, Novel, Essay Collection, and Nonfiction; labels now adapt to the project, such as part / chapter / scene for novels and section / group / essay for essay collections.
+- Structure nodes can now have parents and children in the UI, so a chapter can contain multiple article-bearing child nodes while still optionally linking one article directly.
+- Added an **Unplanned Articles** area for articles that belong to the collection but have not yet been placed into the manuscript tree.
+- Export now prefers the manuscript tree when structure nodes link articles; old article-list export remains as a fallback for collections that do not have linked structure nodes yet.
+- Updated the Collections guided tutorial, user guide, README copy, and Tauri README for the new book-project workflow.
+
+### Added
+
+- Added collection project-type persistence with a safe migration default of `general`.
+- Added cycle protection so a structure node cannot be moved under its own child.
+- Added helper coverage for manuscript-tree building, project-aware labels, unplanned articles, and parent-cycle checks.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py tests\storage\test_motif_repository.py tests\storage\test_collection_outline_repository.py tests\storage\test_article_collections.py tests\services\test_article_collection_export.py -q`
+- `npm test -- --run`
+- `npm run test:e2e -- --project=msedge --workers=1`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+
 ## 0.1.36 - Collection Guided Tutorial (2026-07-06)
 
 ### Added

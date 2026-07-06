@@ -112,3 +112,27 @@ def test_collection_outline_rejects_bad_links(container):
             title="Missing article",
             entry_id="missing-entry",
         )
+
+
+def test_collection_outline_rejects_parent_cycle(container):
+    collection = container.collection_repository.create("Novel")
+    parent = container.collection_outline_repository.create(
+        collection.id,
+        title="Part",
+        item_type="part",
+    )
+    child = container.collection_outline_repository.create(
+        collection.id,
+        title="Chapter",
+        item_type="chapter",
+        parent_id=parent.id,
+    )
+
+    with pytest.raises(ValueError):
+        container.collection_outline_repository.update(
+            parent.id,
+            title="Bad parent",
+            item_type="part",
+            status="idea",
+            parent_id=child.id,
+        )

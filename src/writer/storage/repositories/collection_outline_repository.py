@@ -247,6 +247,11 @@ class CollectionOutlineRepository:
             parent = self.get(parent_id)
             if parent is None or parent.collection_id != collection_id:
                 raise ValueError("Parent outline item is not in this collection")
+            if current_id is not None and self._is_descendant(
+                parent_id,
+                descendant_of=current_id,
+            ):
+                raise ValueError("Outline item cannot be moved below its own child")
         if entry_id is not None:
             entry = self._conn.execute(
                 "SELECT 1 FROM entries WHERE id = ?",
@@ -265,6 +270,18 @@ class CollectionOutlineRepository:
             (collection_id,),
         ).fetchone()
         return int(row["next_order"])
+
+    def _is_descendant(self, item_id: str, *, descendant_of: str) -> bool:
+        current = self.get(item_id)
+        seen: set[str] = set()
+        while current is not None and current.parent_id is not None:
+            if current.parent_id == descendant_of:
+                return True
+            if current.parent_id in seen:
+                return True
+            seen.add(current.parent_id)
+            current = self.get(current.parent_id)
+        return False
 
     def _compact(self, collection_id: str) -> None:
         rows = self._conn.execute(

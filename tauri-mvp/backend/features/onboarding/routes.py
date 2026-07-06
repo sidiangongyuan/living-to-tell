@@ -173,6 +173,7 @@ def create_sample_project(
         collection = container.collection_repository.create(
             "示例项目｜雨夜来信",
             "一个可删除的长篇写作示例，用来演示文章、作品集、大纲、文脉和 AI Cards 如何协同。",
+            project_type="novel",
         )
         created_collection_id = collection.id
         container.collection_repository.add_entry(collection.id, article_one.id)

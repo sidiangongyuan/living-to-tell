@@ -4,9 +4,9 @@
 
 ### A local-first writing studio for articles, collections, references, and scoped AI
 
-[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.36)
+[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.37)
 
-[![Version](https://img.shields.io/badge/preview-0.1.36-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.37-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **Writing, photography, singing, and speaking are all ways to tell. To live is to tell.**
 
-[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.36) · [User Guide](docs/user-guide.md) · [GIF Tutorials](docs/tutorials.md) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
+[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.37) · [User Guide](docs/user-guide.md) · [GIF Tutorials](docs/tutorials.md) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
 
 </div>
 
@@ -27,7 +27,7 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 | | |
 | --- | --- |
 | **Article Studio** | Draft long-form writing with autosave, tags, search, epigraphs, focus mode, notes, version history, motif anchors, and export. |
-| **Collections** | Arrange articles into a manuscript and plan longer projects with outline items, planning board, progress summaries, filters, and Markdown outline export. |
+| **Collections** | Organize articles into a book project with one manuscript structure tree for hierarchy, order, board status, linked drafts, and export. |
 | **Reference Library** | Keep quotes, source titles, authors, usage notes, and citation-ready snippets in one place. |
 | **Article AI** | Use focused AI tools, compare multiple configured models, and keep every write-back explicit. |
 | **AI Cards** | Save reusable style, character, and scene cards with templates and AI-assisted draft generation. |
@@ -75,7 +75,7 @@ For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They
 
 - Article editor with autosave, tags, full-text search, find/replace, and a collapsible context pane.
 - Article notes for reminders, fragments, and next-step ideas that stay out of the manuscript.
-- The article context pane can invoke existing motif profiles and related sentences, then copy, insert, save as an article note, or open the motif map.
+- The article context pane shows motif anchors already linked in the current article, with navigation back to the source text or motif map.
 - Article version history with manual checkpoints, AI-before-apply snapshots, pre-restore snapshots, paragraph comparison, restore, clone, copy, and delete actions.
 - Epigraph editing for opening quotes, with clean Markdown, TXT, and DOCX export.
 - Focus mode that leaves only the writing area and an exit control.
@@ -84,14 +84,14 @@ For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They
 ### Collections
 
 - Build article collections from multiple articles.
-- Add articles in batches, then manage the **Article Order** with drag-and-drop or up/down controls.
-- Preview the selected article in a paper-like reading pane.
-- Switch to the outline tab to plan long-form projects with part, chapter, scene, and note cards.
-- Track outline status, summary, point of view, timeline, setting, tags, target word count, and linked article.
-- Use the planning board to scan idea, draft, revision, done, and parked items across the whole collection.
-- Create a linked article from an outline item or connect an existing article to the plan.
-- Export a collection in Markdown, TXT, or DOCX using the current order.
-- Follow the built-in guided tutorial for Article Order, Outline, Planning Board, Linked Article, and Export; restart it from Settings when needed.
+- Choose a project type: General, Novel, Essay Collection, or Nonfiction. It changes labels without restricting structure.
+- Use one **Manuscript** tree for hierarchy and order: novels can use part / chapter / scene; essay collections can use section / group / essay; nonfiction can use part / chapter / section.
+- One structure node directly links one article; to put several articles under a chapter, create several child nodes.
+- Articles not yet placed in the tree appear as **Unplanned Articles** and can be placed under the selected node or at the top level.
+- Use the board to scan idea, draft, revision, done, and parked items across the same manuscript tree.
+- Create a linked article from a structure node or connect an existing article.
+- Export Markdown, TXT, or DOCX from the manuscript tree; unplanned articles are not silently included.
+- Follow the built-in guided tutorial for Manuscript Structure, Project Type, Unplanned Articles, Linked Article, Board, and Export; restart it from Settings when needed.
 
 ### Reference Library
 
@@ -129,7 +129,7 @@ For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They
 
 - Windows desktop preview with a simple installer.
 - Light startup splash gives immediate feedback while the bundled backend is starting.
-- First-run onboarding can create an explicit disposable sample project with articles, a collection outline, a reference, a writing note, and a scene AI Card. It is never created automatically and can be removed without touching user content.
+- First-run onboarding can create an explicit disposable sample project with articles, a collection manuscript structure, a reference, a writing note, and a scene AI Card. It is never created automatically and can be removed without touching user content.
 - The app checks GitHub Releases in the background after startup and shows a clear update notice when a newer public build is available.
 - Close behavior can be set to ask every time, minimize to tray, or exit directly.
 - Export & Backup now centers restore points first: it shows the latest backup/checkpoint state, lets you choose a restore point, reminds you when backups are stale, and still auto-backs up before restore.
@@ -139,15 +139,15 @@ For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.36).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.37).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.36_x64-setup.exe`
+- `LivingToTell_0.1.37_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.36_x64_zh-CN.msi`
+- `LivingToTell_0.1.37_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 
@@ -158,7 +158,7 @@ Windows SmartScreen may warn because preview builds are unsigned. Only run insta
 3. Use the Date view checklist to create a first article, review backups, or create the optional sample project.
 4. Open the [GIF tutorials](docs/tutorials.md) if you want to see the six core workflows first.
 5. Open Articles and start writing, or open the sample collection to inspect the long-form workflow.
-6. Use Collections to arrange multiple articles into a reading order and plan outlines.
+6. Use Collections to organize multiple articles into a manuscript structure and planning board.
 7. Save quotes and sources in the Reference Library.
 8. Configure AI in Settings if you want AI tools or scoped chat.
 
@@ -207,7 +207,7 @@ Long Gemini requests default to a 120 second wait. Advanced users can tune this 
 - Added a motif star map with right-click text capture, source anchors, co-occurrence links, deduplication, and safer unlink behavior.
 - Added article-scoped AI chat, standing instructions, copy actions, and save-as-note actions.
 - Added first-run checklist progress, AI settings diagnostics, long-request size feedback, and grouped global command palette search.
-- Added an explicit disposable sample project that demonstrates articles, collection outline planning, references, notes, and scene AI Cards without modifying user content automatically.
+- Added an explicit disposable sample project that demonstrates articles, collection manuscript structure planning, references, notes, and scene AI Cards without modifying user content automatically.
 - Expanded Export & Backup into a recovery-focused center with restore-point selection, data-path visibility, backup reminders, and recent article/collection export shortcuts.
 - Enhanced collection outlines with a planning board for long-form projects, showing outline cards grouped by status.
 - Added reference-library overview cards and current-group summaries for source count, duplicate hints, usage distribution, and character totals.
@@ -246,8 +246,8 @@ The public TODO list is kept visible but folded so the README stays readable.
 - [x] Add article version history with restore and clone flows.
 - [ ] Add editor layout presets for compact, balanced, and wide screens.
 - [ ] Improve keyboard-only navigation across Dates, Articles, Collections, and AI Workspace.
-- [x] Add collection-level outline planning for long-form projects.
-- [x] Add a collection planning board for outline status review.
+- [x] Add collection-level manuscript structure planning for long-form projects.
+- [x] Add a collection planning board for manuscript status review.
 - [ ] Add richer collection publishing options such as cover notes, section dividers, and saved export presets.
 
 ### AI

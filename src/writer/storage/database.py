@@ -94,6 +94,16 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "NOT NULL DEFAULT 'unsorted'"
         )
 
+    collection_cols = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(collections)")
+    }
+    if "project_type" not in collection_cols:
+        conn.execute(
+            "ALTER TABLE collections ADD COLUMN project_type TEXT "
+            "NOT NULL DEFAULT 'general'"
+        )
+
     # M-RefTypes: typed reference passages.
     ref_cols = {
         row["name"]

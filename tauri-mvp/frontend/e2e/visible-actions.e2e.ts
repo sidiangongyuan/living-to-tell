@@ -34,6 +34,7 @@ const collection = {
   id: 'collection-a',
   title: '测试作品集',
   description: '用于检查作品集按钮',
+  project_type: 'novel',
   article_count: 1,
   created_at: null,
   updated_at: null,
@@ -208,7 +209,7 @@ const outlineItems = [
     id: 'outline-scene-a',
     collection_id: collection.id,
     parent_id: 'outline-chapter-a',
-    entry_id: articleB.id,
+    entry_id: null,
     title: '河岸清单',
     item_type: 'scene',
     status: 'idea',
@@ -322,6 +323,7 @@ async function mockVisibleActionApi(page: Page) {
           'update_check',
           'article_versions',
           'collection_outline',
+          'collection_manuscript_structure',
           'sample_project',
         ],
       },
@@ -1608,7 +1610,7 @@ test('collection export buttons trigger downloads and article management actions
   const addedRequests: string[][] = []
   let removedRequests = 0
   let deleteCollectionRequests = 0
-  let reorderRequests: string[][] = []
+  const outlineCreateRequests: Array<Record<string, unknown>> = []
 
   await page.route('**/api/collections/collection-a/articles', async (route) => {
     const request = route.request()
@@ -1621,11 +1623,39 @@ test('collection export buttons trigger downloads and article management actions
     await route.fulfill({ json: [collectionArticle] })
   })
   await page.route('**/api/collections/collection-a/articles/order', async (route) => {
-    const body = route.request().postDataJSON() as { entry_ids?: string[] }
-    reorderRequests.push(body.entry_ids ?? [])
     await route.fulfill({ json: [collectionArticleB, collectionArticle] })
   })
-  await page.route('**/api/collections/collection-a/articles/article-a', async (route) => {
+  await page.route('**/api/collections/collection-a/outline', async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      outlineCreateRequests.push(body)
+      await route.fulfill({
+        status: 201,
+        json: {
+          id: `outline-created-${outlineCreateRequests.length}`,
+          collection_id: collection.id,
+          parent_id: body.parent_id ?? null,
+          entry_id: body.entry_id ?? null,
+          title: body.title ?? '新结构节点',
+          item_type: body.item_type ?? 'scene',
+          status: body.status ?? 'idea',
+          summary: body.summary ?? '',
+          notes: body.notes ?? '',
+          pov: body.pov ?? '',
+          setting: body.setting ?? '',
+          timeline: body.timeline ?? '',
+          tags: body.tags ?? [],
+          target_word_count: body.target_word_count ?? null,
+          sort_order: outlineItems.length + outlineCreateRequests.length,
+          created_at: null,
+          updated_at: null,
+        },
+      })
+      return
+    }
+    await route.fulfill({ json: outlineItems })
+  })
+  await page.route('**/api/collections/collection-a/articles/article-b', async (route) => {
     if (route.request().method() === 'DELETE') {
       removedRequests += 1
       await route.fulfill({ status: 204 })
@@ -1650,17 +1680,19 @@ test('collection export buttons trigger downloads and article management actions
   await page.getByRole('button', { name: '取消' }).click()
   await expect(page.getByRole('heading', { name: '新建作品集' })).toHaveCount(0)
 
+  await page.getByRole('button', { name: '导出', exact: true }).click()
   for (const [buttonName, extension] of [
     ['Markdown', 'md'],
     ['TXT', 'txt'],
     ['DOCX', 'docx'],
   ] as const) {
     const downloadPromise = page.waitForEvent('download')
-    await page.getByRole('button', { name: buttonName }).click()
+    await page.getByRole('button', { name: buttonName, exact: true }).click()
     const download = await downloadPromise
     expect(download.suggestedFilename()).toBe(`测试作品集.${extension}`)
   }
 
+  await page.getByRole('button', { name: '书稿' }).click()
   await page.getByRole('button', { name: '添加文章' }).first().click()
   await expect(page.getByRole('heading', { name: '添加文章到作品集' })).toBeVisible()
   await page.getByRole('button', { name: '取消' }).click()
@@ -1672,20 +1704,24 @@ test('collection export buttons trigger downloads and article management actions
   await page.getByRole('button', { name: /加入所选文章/ }).click()
   await expect.poll(() => addedRequests).toEqual([[articleB.id]])
 
-  const firstCard = page.locator('article').filter({ hasText: '导出测试文章' }).first()
-  await firstCard.hover()
-  await firstCard.getByRole('button', { name: '↓' }).click()
-  await expect.poll(() => reorderRequests).toEqual([[articleB.id, article.id]])
-
-  await firstCard.hover()
+  const unplannedCard = page.locator('article').filter({ hasText: '备选文章' }).first()
+  await unplannedCard.hover()
   page.once('dialog', async (dialog) => dialog.dismiss())
-  await firstCard.getByRole('button', { name: '删除' }).click()
+  await unplannedCard.getByRole('button', { name: '移出作品集' }).click()
   expect(removedRequests).toBe(0)
 
-  await firstCard.hover()
+  await unplannedCard.hover()
   page.once('dialog', async (dialog) => dialog.accept())
-  await firstCard.getByRole('button', { name: '删除' }).click()
+  await unplannedCard.getByRole('button', { name: '移出作品集' }).click()
   await expect.poll(() => removedRequests).toBe(1)
+
+  await page.getByRole('button', { name: '添加文章' }).first().click()
+  await page.getByRole('button', { name: /备选文章/ }).click()
+  await page.getByRole('button', { name: /加入所选文章/ }).click()
+  await expect.poll(() => addedRequests).toEqual([[articleB.id], [articleB.id]])
+  await page.locator('article').filter({ hasText: '备选文章' }).getByRole('button', { name: '放到当前节点下' }).click()
+  await expect.poll(() => outlineCreateRequests.at(-1)?.entry_id).toBe(articleB.id)
+  expect(outlineCreateRequests.at(-1)?.parent_id).toBe('outline-part-a')
 
   page.once('dialog', async (dialog) => dialog.dismiss())
   await page.getByRole('button', { name: '删除' }).first().click()
@@ -1700,9 +1736,9 @@ test('collection planning board groups outline items and opens the selected outl
   await page.goto('/collections')
   await expect(page.getByText('测试作品集')).toBeVisible()
 
-  await page.getByRole('button', { name: '规划看板' }).click()
+  await page.getByRole('button', { name: '看板' }).click()
   const board = page.getByTestId('collection-planning-board')
-  await expect(board.getByRole('heading', { name: '长篇规划看板' })).toBeVisible()
+  await expect(board.getByRole('heading', { name: '看板' })).toBeVisible()
   await expect(board.locator('div').filter({ hasText: /^构思$/ })).toBeVisible()
   await expect(board.locator('div').filter({ hasText: /^草稿$/ })).toBeVisible()
   await expect(board.locator('div').filter({ hasText: /^完成$/ })).toBeVisible()
@@ -1714,7 +1750,7 @@ test('collection planning board groups outline items and opens the selected outl
   const detail = page.getByTestId('collection-outline-detail')
   await expect(detail).toBeVisible()
   await expect(detail.locator('input').first()).toHaveValue('河岸清单')
-  await expect(detail.locator('input').nth(2)).toHaveValue('林澄')
+  await expect(detail.getByLabel('POV')).toHaveValue('林澄')
 })
 
 test('collection export flushes edited title before downloading', async ({ page }) => {
@@ -1743,8 +1779,9 @@ test('collection export flushes edited title before downloading', async ({ page 
   await expect(page.getByText('测试作品集')).toBeVisible()
   await page.getByPlaceholder('作品集标题').fill('刚修改的作品集标题')
 
+  await page.getByRole('button', { name: '导出', exact: true }).click()
   const downloadPromise = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Markdown' }).click()
+  await page.getByRole('button', { name: 'Markdown', exact: true }).click()
   const download = await downloadPromise
 
   await expect.poll(() => updates.some((body) => body.title === '刚修改的作品集标题')).toBe(true)
@@ -1752,21 +1789,18 @@ test('collection export flushes edited title before downloading', async ({ page 
 })
 
 test('collection reorder failures show a visible error', async ({ page }) => {
-  await page.route('**/api/collections/collection-a/articles', async (route) => {
-    await route.fulfill({ json: [collectionArticle, collectionArticleB] })
-  })
-  await page.route('**/api/collections/collection-a/articles/order', async (route) => {
+  await page.route('**/api/collections/collection-a/outline/order', async (route) => {
     await route.fulfill({ status: 500, json: { detail: '排序保存失败' } })
   })
 
   await page.goto('/collections')
   await expect(page.getByText('测试作品集')).toBeVisible()
 
-  const firstCard = page.locator('article').filter({ hasText: '导出测试文章' }).first()
+  const firstCard = page.locator('article').filter({ hasText: '第一部：回到旧城' }).first()
   await firstCard.hover()
   await firstCard.getByRole('button', { name: '↓' }).click()
 
-  await expect(page.getByRole('main').getByText('排序保存失败')).toBeVisible()
+  await expect(page.getByTestId('collection-outline-pane').getByText('排序保存失败')).toBeVisible()
 })
 
 test('collection create failures show a visible dialog error', async ({ page }) => {
@@ -1800,7 +1834,8 @@ test('collection actions show validation instead of acting like no-ops when the 
   await expect(titleInput).toHaveValue('测试作品集')
   await titleInput.fill('')
 
-  await page.getByRole('button', { name: 'Markdown' }).click()
+  await page.getByRole('button', { name: '导出', exact: true }).click()
+  await page.getByRole('button', { name: 'Markdown', exact: true }).click()
   await expect(page.getByText('作品集标题不能为空。')).toBeVisible()
   expect(exportRequests).toBe(0)
 

@@ -23,6 +23,7 @@ class CollectionOut(BaseModel):
     id: str
     title: str
     description: str
+    project_type: str = "general"
     article_count: int = 0
     created_at: Optional[str]
     updated_at: Optional[str]
@@ -31,11 +32,13 @@ class CollectionOut(BaseModel):
 class CollectionCreate(BaseModel):
     title: str
     description: str = ""
+    project_type: str = "general"
 
 
 class CollectionUpdate(BaseModel):
     title: str
     description: str = ""
+    project_type: str = "general"
 
 
 class OutlineItemOut(BaseModel):
@@ -139,6 +142,7 @@ def _collection_to_dto(
         id=c.id,
         title=c.name or "",
         description=c.description or "",
+        project_type=c.project_type or "general",
         article_count=len(container.collection_repository.list_entry_items(c.id)),
         created_at=c.created_at,
         updated_at=c.updated_at,
@@ -212,10 +216,14 @@ def create_collection(
     data: CollectionCreate,
     container: AppContainer = Depends(get_container),
 ) -> CollectionOut:
-    collection = container.collection_repository.create(
-        name=data.title.strip() or "未命名作品集",
-        description=data.description,
-    )
+    try:
+        collection = container.collection_repository.create(
+            name=data.title.strip() or "未命名作品集",
+            description=data.description,
+            project_type=data.project_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return _collection_to_dto(collection, container=container)
 
 
@@ -274,6 +282,15 @@ def update_collection(
         collection_id,
         data.description,
     )
+    if collection is None:
+        raise HTTPException(404, "Collection not found")
+    try:
+        collection = container.collection_repository.update_project_type(
+            collection_id,
+            data.project_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     if collection is None:
         raise HTTPException(404, "Collection not found")
     return _collection_to_dto(collection, container=container)

@@ -11,12 +11,15 @@ from writer.domain.models.work import Work
 from writer.storage.repositories.entry_repository import _row_to_entry
 from writer.storage.repositories.work_repository import _row_to_work
 
+VALID_COLLECTION_PROJECT_TYPES = {"general", "novel", "essay", "nonfiction"}
+
 
 def _row_to_collection(row: sqlite3.Row) -> Collection:
     return Collection(
         id=row["id"],
         name=row["name"],
         description=row["description"],
+        project_type=row["project_type"] if "project_type" in row.keys() else "general",
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -37,11 +40,16 @@ class CollectionRepository:
         self._conn = conn
 
     # writes — collections ---------------------------------------------
-    def create(self, name: str = "", description: str = "") -> Collection:
+    def create(
+        self,
+        name: str = "",
+        description: str = "",
+        project_type: str = "general",
+    ) -> Collection:
         new_id = str(uuid.uuid4())
         self._conn.execute(
-            "INSERT INTO collections (id, name, description) VALUES (?, ?, ?)",
-            (new_id, name, description),
+            "INSERT INTO collections (id, name, description, project_type) VALUES (?, ?, ?, ?)",
+            (new_id, name, description, self._normalize_project_type(project_type)),
         )
         loaded = self.get(new_id)
         assert loaded is not None
@@ -64,6 +72,18 @@ class CollectionRepository:
             "UPDATE collections SET description = ?, "
             "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
             (description, collection_id),
+        )
+        if cur.rowcount == 0:
+            return None
+        return self.get(collection_id)
+
+    def update_project_type(
+        self, collection_id: str, project_type: str
+    ) -> Optional[Collection]:
+        cur = self._conn.execute(
+            "UPDATE collections SET project_type = ?, "
+            "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
+            (self._normalize_project_type(project_type), collection_id),
         )
         if cur.rowcount == 0:
             return None
@@ -356,3 +376,10 @@ class CollectionRepository:
             "strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?",
             (collection_id,),
         )
+
+    @staticmethod
+    def _normalize_project_type(value: str) -> str:
+        clean = (value or "general").strip()
+        if clean not in VALID_COLLECTION_PROJECT_TYPES:
+            raise ValueError(f"Unsupported collection project type: {value}")
+        return clean

@@ -39,7 +39,7 @@ Steps:
 1. Open **Dates**.
 2. Review the welcome checklist: first article, first reference, AI setup, backup location, and article chat.
 3. Click **创建示例项目** if you want a disposable local walkthrough.
-4. Click **打开作品集** to inspect sample articles, collection outline, reference material, article note, and scene AI Card.
+4. Click **打开作品集** to inspect sample articles, collection manuscript structure, reference material, article note, and scene AI Card.
 5. Return to Dates and click **删除示例** when you are done.
 
 Safety notes:
@@ -79,34 +79,35 @@ Common mistakes:
 - **I saw a Not Found while switching articles**: stale requests are ignored; if the current article is truly missing, the app refreshes the list and shows Chinese copy.
 - **Writing near the bottom feels cramped**: the editor keeps bottom breathing room for long-form drafting.
 
-## 4. Collections and Long-Form Outlines
+## 4. Collections and Manuscript Structure
 
-Use Collections to arrange articles into a reading order or plan a longer project with parts, chapters, scenes, and notes.
+Use Collections to organize multiple articles into a book project. Collections now have one main line: **Manuscript Structure**. It controls hierarchy, order, planning status, linked drafts, and export.
 
 Steps:
 
 1. Open **Collections**.
 2. Follow the interactive tutorial the first time it appears; if it was dismissed, restart it from **Settings > Interface Settings > Collection tutorial**.
-3. Create a collection with a title and description.
-4. Add existing articles.
-5. Use **Article Order** to reorder articles and check reading flow in the preview pane.
-6. Switch to **Outline** and add parts, chapters, scenes, or notes.
+3. Create a collection with a title, description, and project type: General, Novel, Essay Collection, or Nonfiction.
+4. In **Manuscript**, add top-level nodes such as parts, chapters, sections, essays, or scenes. Labels change by project type.
+5. To put several articles under one chapter, select that chapter and click **New Child**, or place **Unplanned Articles** under the selected node.
+6. One structure node directly links one article; use multiple child nodes for multiple articles.
 7. Track status, summary, point of view, timeline, setting, tags, and target word count.
-8. Switch to **Planning Board** to scan idea, draft, revision, done, and parked items.
-9. Create an article from an outline item, or link an existing article.
-10. Export the collection as Markdown, TXT, or DOCX.
+8. Switch to **Board** to scan idea, draft, revision, done, and parked items across the same tree.
+9. Create an article from a structure node, or link an existing article.
+10. Export the collection as Markdown, TXT, or DOCX. Export prefers the manuscript tree.
 
 Safety notes:
 
-- A collection stores membership and order; it does not copy the article body.
+- A collection stores relationships, structure, and export order; it does not copy the article body.
 - Removing an article from a collection does not delete the article.
-- The outline enhancement uses existing collection outline fields and does not require a schema migration.
-- An outline item's Title is the planning card name; Type means part, chapter, scene, or note; Linked Article creates a relationship only and does not copy or move article text.
+- Unplanned Articles belong to the collection but are not in the manuscript tree. Once the collection has linked structure nodes, unplanned articles are not included in manuscript export automatically.
+- Title names the structure node; Type describes its role; Parent places it in the tree; Linked Article creates a relationship only and does not copy or move article text.
+- Project type changes terminology only: novels use part / chapter / scene, essay collections use section / group / essay, and nonfiction uses part / chapter / section.
 
 Common mistakes:
 
-- **Is this ready for novel-length projects?** It is a V1 long-form planning surface: structure, status, target words, and linked articles. Richer publishing options can come later.
-- **Can I outline before writing articles?** Yes. Outline items can stay unlinked until you create or attach articles.
+- **How do I put several articles under one chapter?** A chapter can link one article directly and also contain child nodes. Select the chapter, then create children or place unplanned articles below it.
+- **Can I plan before writing articles?** Yes. Structure nodes can stay unlinked until you create or attach articles.
 
 ## 5. Reference Library and Motif Star Map
 

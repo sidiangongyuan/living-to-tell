@@ -7,19 +7,24 @@ export interface Collection {
   id: string
   title: string
   description: string
+  project_type: CollectionProjectType
   article_count: number
   created_at: string | null
   updated_at: string | null
 }
 
+export type CollectionProjectType = 'general' | 'novel' | 'essay' | 'nonfiction'
+
 export interface CollectionCreate {
   title: string
   description?: string
+  project_type?: CollectionProjectType
 }
 
 export interface CollectionUpdate {
   title: string
   description: string
+  project_type: CollectionProjectType
 }
 
 export interface CollectionArticle {
