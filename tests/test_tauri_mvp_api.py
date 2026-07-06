@@ -53,6 +53,7 @@ def test_tauri_app_version_capabilities(monkeypatch):
         "article_versions",
         "collection_outline",
         "collection_manuscript_structure",
+        "collection_agent",
         "sample_project",
     }.issubset(
         set(payload["capabilities"])
@@ -396,6 +397,155 @@ def test_tauri_collection_outline_crud(monkeypatch):
     delete = client.delete(f"/api/collections/{collection_id}/outline/{item['id']}")
     assert delete.status_code == 204, delete.text
     assert client.get(f"/api/collections/{collection_id}/outline").json() == []
+
+
+def test_tauri_collection_agent_run_memory_and_actions(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    collection = client.post(
+        "/api/collections",
+        json={"title": "长篇 Agent 项目", "description": "一部关于记忆的小说", "project_type": "novel"},
+    )
+    assert collection.status_code == 201, collection.text
+    collection_id = collection.json()["id"]
+    article = client.post(
+        "/api/articles",
+        json={"title": "第一章", "body": "雨夜里，主角收到一封旧信。", "tags": ["开端"]},
+    ).json()
+    added = client.post(
+        f"/api/collections/{collection_id}/articles",
+        json={"entry_ids": [article["id"]]},
+    )
+    assert added.status_code == 201, added.text
+    outline = client.post(
+        f"/api/collections/{collection_id}/outline",
+        json={
+            "title": "旧信",
+            "item_type": "chapter",
+            "status": "drafting",
+            "summary": "主角收到旧信。",
+            "entry_id": article["id"],
+        },
+    )
+    assert outline.status_code == 201, outline.text
+
+    state = client.get(f"/api/collections/{collection_id}/agent")
+    assert state.status_code == 200, state.text
+    assert state.json()["settings"]["profile_id"] == "default"
+    assert {section["id"] for section in state.json()["memory"]["sections"]} >= {
+        "project_core",
+        "characters",
+        "open_questions",
+    }
+
+    refs = client.get(f"/api/collections/{collection_id}/agent/references?q=旧信")
+    assert refs.status_code == 200, refs.text
+    assert any(item["kind"] == "outline" for item in refs.json())
+
+    import features.collections.routes as collection_routes
+    from writer.services.ai.interfaces import ChatResponse
+
+    calls = []
+
+    class FakeProvider:
+        name = "fake-agent"
+
+        def chat(self, messages, *, model=None):
+            calls.append({"messages": messages, "model": model})
+            return ChatResponse(
+                content=json.dumps(
+                    {
+                        "answer": "结构清楚，但人物欲望需要更早显影。",
+                        "evidence": ["第一章已经有旧信触发事件。"],
+                        "next_steps": ["给第一章添加人物欲望便签。"],
+                        "actions": [
+                            {
+                                "action_type": "update_memory",
+                                "title": "记录核心冲突",
+                                "summary": "把旧信作为叙事承诺写入项目核心。",
+                                "payload": {
+                                    "section_id": "project_core",
+                                    "content": "旧信触发主角追索被删除的记忆。",
+                                    "mode": "append",
+                                },
+                                "preview": {"项目核心": "旧信触发主角追索被删除的记忆。"},
+                                "reason": "这是已确认的核心动因。",
+                                "risk": "如果后续废弃旧信，需要再更新。",
+                            },
+                            {
+                                "action_type": "create_article_note",
+                                "title": "添加写作便签",
+                                "summary": "提醒第一章提前显影人物欲望。",
+                                "payload": {
+                                    "entry_id": article["id"],
+                                    "body": "让主角在收到旧信前已经表现出对空白记忆的焦虑。",
+                                    "pinned": True,
+                                },
+                                "preview": {"文章": "第一章", "便签": "让主角在收到旧信前已经表现出对空白记忆的焦虑。"},
+                                "reason": "便签不会修改正文。",
+                                "risk": "",
+                            },
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                model=model or "fake-model",
+                provider=self.name,
+                transport="fake",
+                input_tokens=10,
+                output_tokens=20,
+            )
+
+    monkeypatch.setattr(collection_routes, "provider_for_config", lambda config, prompt_builder: FakeProvider())
+
+    created = client.post(
+        f"/api/collections/{collection_id}/agent/runs",
+        json={
+            "message": "请体检这个作品集。",
+            "task_type": "health",
+            "context_refs": [{"kind": "article", "ref_id": article["id"]}],
+        },
+    )
+    assert created.status_code == 202, created.text
+    run_id = created.json()["id"]
+
+    run_payload = None
+    for _ in range(40):
+        time.sleep(0.1)
+        polled = client.get(f"/api/collections/{collection_id}/agent/runs/{run_id}")
+        assert polled.status_code == 200, polled.text
+        run_payload = polled.json()
+        if run_payload["status"] == "succeeded":
+            break
+    assert run_payload is not None
+    assert run_payload["status"] == "succeeded", run_payload
+    assert run_payload["result"]["answer"] == "结构清楚，但人物欲望需要更早显影。"
+    assert len(run_payload["actions"]) == 2
+    assert "雨夜里，主角收到一封旧信。" in calls[-1]["messages"][-1]["content"]
+
+    actions = {action["action_type"]: action for action in run_payload["actions"]}
+    memory_action = actions["update_memory"]
+    applied_memory = client.post(
+        f"/api/collections/{collection_id}/agent/actions/{memory_action['id']}/apply"
+    )
+    assert applied_memory.status_code == 200, applied_memory.text
+    memory = client.get(f"/api/collections/{collection_id}/agent/memory").json()
+    project_core = next(section for section in memory["sections"] if section["id"] == "project_core")
+    assert "旧信触发主角追索" in project_core["content"]
+
+    note_action = actions["create_article_note"]
+    applied_note = client.post(
+        f"/api/collections/{collection_id}/agent/actions/{note_action['id']}/apply"
+    )
+    assert applied_note.status_code == 200, applied_note.text
+    applied_note_again = client.post(
+        f"/api/collections/{collection_id}/agent/actions/{note_action['id']}/apply"
+    )
+    assert applied_note_again.status_code == 200, applied_note_again.text
+    from deps import get_container
+
+    notes = get_container().entry_writing_note_repository.list_for_entry(article["id"], include_done=True)
+    assert [note.body for note in notes].count("让主角在收到旧信前已经表现出对空白记忆的焦虑。") == 1
 
 
 def test_tauri_ai_cards_do_not_seed_samples_and_crud_tags(monkeypatch):

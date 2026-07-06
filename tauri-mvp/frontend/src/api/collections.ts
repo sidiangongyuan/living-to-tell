@@ -80,6 +80,111 @@ export interface CollectionOutlineItemInput {
 
 export type CollectionExportFormat = 'txt' | 'md' | 'docx'
 
+export interface CollectionAgentMemorySection {
+  id: string
+  title: string
+  help: string
+  content: string
+}
+
+export interface CollectionAgentMemory {
+  collection_id: string
+  sections: CollectionAgentMemorySection[]
+  updated_at: string | null
+}
+
+export interface CollectionAgentSettings {
+  collection_id: string
+  profile_id: string
+  enabled: boolean
+  updated_at: string | null
+}
+
+export interface CollectionAgentReference {
+  kind: 'outline' | 'article' | 'ai_card' | 'motif' | 'reference' | string
+  ref_id: string
+  name: string
+  body_preview: string
+  meta: Record<string, unknown>
+}
+
+export interface CollectionAgentMessage {
+  id: string | null
+  thread_id: string | null
+  role: 'user' | 'assistant' | string
+  content: string
+  timestamp: string | null
+  meta: Record<string, unknown>
+}
+
+export type CollectionAgentActionType =
+  | 'update_memory'
+  | 'create_outline_item'
+  | 'update_outline_item'
+  | 'create_article_note'
+
+export interface CollectionAgentAction {
+  id: string
+  collection_id: string
+  run_id: string | null
+  action_type: CollectionAgentActionType
+  status: 'pending' | 'applied' | 'rejected' | 'deferred' | string
+  title: string
+  summary: string
+  payload: Record<string, unknown>
+  preview: Record<string, unknown>
+  reason: string
+  risk: string
+  applied_ref_id: string | null
+  created_at: string | null
+  updated_at: string | null
+  applied_at: string | null
+}
+
+export interface CollectionAgentRun {
+  id: string
+  collection_id: string
+  thread_id: string | null
+  status: 'queued' | 'preparing_context' | 'sending_request' | 'waiting_model' | 'parsing_response' | 'building_proposals' | 'succeeded' | 'failed' | 'cancelled' | string
+  stage: string
+  stage_label: string
+  request: Record<string, unknown>
+  result: Record<string, unknown>
+  error: string
+  profile_id: string
+  provider: string | null
+  model: string | null
+  transport: string | null
+  created_at: string | null
+  started_at: string | null
+  updated_at: string | null
+  completed_at: string | null
+  actions: CollectionAgentAction[]
+}
+
+export interface CollectionAgentProfileOption {
+  id: string
+  name: string
+}
+
+export interface CollectionAgentState {
+  settings: CollectionAgentSettings
+  memory: CollectionAgentMemory
+  thread_id: string | null
+  messages: CollectionAgentMessage[]
+  runs: CollectionAgentRun[]
+  actions: CollectionAgentAction[]
+  profiles: CollectionAgentProfileOption[]
+}
+
+export interface CollectionAgentRunCreate {
+  message: string
+  task_type?: string
+  context_refs?: Array<{ kind: string; ref_id: string }>
+  request_web_context?: boolean
+  profile_id?: string | null
+}
+
 export const collectionsApi = {
   async listCollections(): Promise<Collection[]> {
     const res = await apiFetch('/api/collections')
@@ -203,6 +308,70 @@ export const collectionsApi = {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ item_ids: itemIds }),
+    })
+    return handleResponse(res)
+  },
+
+  async getAgentState(collectionId: string): Promise<CollectionAgentState> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent`)
+    return handleResponse(res)
+  },
+
+  async saveAgentSettings(collectionId: string, data: { profile_id: string; enabled: boolean }): Promise<CollectionAgentSettings> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async saveAgentMemory(collectionId: string, sections: Record<string, string>): Promise<CollectionAgentMemory> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/memory`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sections }),
+    })
+    return handleResponse(res)
+  },
+
+  async searchAgentReferences(collectionId: string, query = '', limit = 30): Promise<CollectionAgentReference[]> {
+    const params = new URLSearchParams({ q: query, limit: String(limit) })
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/references?${params}`)
+    return handleResponse(res)
+  },
+
+  async createAgentRun(collectionId: string, data: CollectionAgentRunCreate): Promise<CollectionAgentRun> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/runs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async getAgentRun(collectionId: string, runId: string): Promise<CollectionAgentRun> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/runs/${runId}`)
+    return handleResponse(res)
+  },
+
+  async cancelAgentRun(collectionId: string, runId: string): Promise<CollectionAgentRun> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/runs/${runId}/cancel`, {
+      method: 'POST',
+    })
+    return handleResponse(res)
+  },
+
+  async applyAgentAction(collectionId: string, actionId: string): Promise<CollectionAgentAction> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/actions/${actionId}/apply`, {
+      method: 'POST',
+    })
+    return handleResponse(res)
+  },
+
+  async rejectAgentAction(collectionId: string, actionId: string): Promise<CollectionAgentAction> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/actions/${actionId}/reject`, {
+      method: 'POST',
     })
     return handleResponse(res)
   },

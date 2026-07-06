@@ -33,6 +33,9 @@ from writer.storage.repositories.chapter_repository import ChapterRepository
 from writer.storage.repositories.collection_outline_repository import (
     CollectionOutlineRepository,
 )
+from writer.storage.repositories.collection_agent_repository import (
+    CollectionAgentRepository,
+)
 from writer.storage.repositories.collection_repository import CollectionRepository
 from writer.storage.repositories.entry_repository import EntryRepository
 from writer.storage.repositories.entry_writing_note_repository import (
@@ -79,6 +82,7 @@ class AppContainer:
     work_section_repository: WorkSectionRepository
     collection_repository: CollectionRepository
     collection_outline_repository: CollectionOutlineRepository
+    collection_agent_repository: CollectionAgentRepository
     work_fragment_ref_repository: WorkFragmentRefRepository
     work_version_repository: WorkVersionRepository
     work_service: WorkService
@@ -137,6 +141,7 @@ def build_container(db_path: Optional[Path] = None) -> AppContainer:
     section_repo = WorkSectionRepository(conn)
     collection_repo = CollectionRepository(conn)
     collection_outline_repo = CollectionOutlineRepository(conn)
+    collection_agent_repo = CollectionAgentRepository(conn)
     work_ref_repo = WorkFragmentRefRepository(conn)
     work_version_repo = WorkVersionRepository(conn)
     work_service = WorkService(
@@ -225,6 +230,7 @@ def build_container(db_path: Optional[Path] = None) -> AppContainer:
         work_section_repository=section_repo,
         collection_repository=collection_repo,
         collection_outline_repository=collection_outline_repo,
+        collection_agent_repository=collection_agent_repo,
         work_fragment_ref_repository=work_ref_repo,
         work_version_repository=work_version_repo,
         work_service=work_service,

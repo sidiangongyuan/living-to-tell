@@ -4,7 +4,7 @@
 
 ### The current Windows desktop preview for 活着为了讲述 / Living to Tell
 
-[![Version](https://img.shields.io/badge/version-0.1.37-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.38-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-preview-orange.svg)](#download)
@@ -42,7 +42,7 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 - Article editor with autosave, tags, full-text search, find/replace, and a collapsible context pane.
 - Article notes live beside the current article without entering the manuscript.
-- The article context pane can invoke existing motif profiles and related sentences, then copy, insert, save as an article note, or open the motif map.
+- The article context pane shows motif anchors already linked in the current article, with navigation back to the source text or motif map.
 - Article version history supports manual checkpoints, AI-before-apply snapshots, pre-restore snapshots, paragraph comparison, restore, clone, copy, and delete.
 - Epigraphs can be edited as a separate section at the top of an article.
 - Focus mode hides the surrounding interface and leaves only the writing area.
@@ -59,6 +59,7 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 - Switch to the board to review the same structure grouped by idea, draft, revision, done, and parked status.
 - Export the manuscript to Markdown, TXT, or DOCX from the structure tree, and export a separate planning file when needed.
 - Use the built-in collection tutorial to walk through Manuscript Structure, Project Type, Unplanned Articles, Linked Article, Board, and Export; restart it from Settings.
+- Use the collection-bound Agent tab as a book-project editor with persistent project memory, explicit `@` references, background analysis runs, and reviewable proposals.
 
 ### Reference Library
 
@@ -108,15 +109,15 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.37).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.38).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.37_x64-setup.exe`
+- `LivingToTell_0.1.38_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.37_x64_zh-CN.msi`
+- `LivingToTell_0.1.38_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 

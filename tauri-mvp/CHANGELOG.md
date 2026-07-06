@@ -1,5 +1,27 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.38 - Collection Agent (2026-07-06)
+
+### Added
+
+- Added a collection-bound **Agent** tab for long-form book projects. It works as a manuscript editor / continuity assistant rather than a prose-writing bot.
+- Added persistent project memory for each collection, organized into project core, characters, timeline, world, style, foreshadowing, decisions, and open questions.
+- Added explicit `@`-style reference chips for structure nodes, articles, AI Cards, motifs, and reference passages so each Agent run shows what context it will read.
+- Added background Agent runs with honest stages, reconnectable status, and local cancellation semantics that do not resend provider requests.
+- Added reviewable Agent proposals for updating project memory, creating or updating structure nodes, and creating article notes. Proposals only write data after the user applies them.
+- Added backend persistence for Agent settings, memory, runs, and actions, plus the `collection_agent` capability.
+
+### Changed
+
+- Collection Agent uses a per-collection AI profile setting, falling back to the global default only when the collection has not chosen a profile.
+- Agent context is index-first: it reads manuscript structure and project memory by default, and reads full article/card/reference text only when explicitly referenced.
+- Public README, Chinese README, and Tauri README now point to `0.1.38`.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py::test_tauri_app_version_capabilities tests\test_tauri_mvp_api.py::test_tauri_collection_agent_run_memory_and_actions -q`
+- `npm run build`
+
 ## 0.1.37 - Manuscript Structure Collections (2026-07-06)
 
 ### Changed

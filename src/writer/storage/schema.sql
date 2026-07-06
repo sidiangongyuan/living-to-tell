@@ -332,6 +332,67 @@ CREATE INDEX IF NOT EXISTS idx_collection_outline_collection_order
 CREATE INDEX IF NOT EXISTS idx_collection_outline_entry
     ON collection_outline_items (entry_id);
 
+CREATE TABLE IF NOT EXISTS collection_agent_settings (
+    collection_id TEXT PRIMARY KEY REFERENCES collections(id) ON DELETE CASCADE,
+    profile_id    TEXT NOT NULL DEFAULT 'default',
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS collection_agent_memory (
+    collection_id TEXT PRIMARY KEY REFERENCES collections(id) ON DELETE CASCADE,
+    memory_json   TEXT NOT NULL DEFAULT '{}',
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS collection_agent_runs (
+    id                   TEXT PRIMARY KEY,
+    collection_id        TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    thread_id            TEXT REFERENCES ai_threads(id) ON DELETE SET NULL,
+    user_message_id      TEXT REFERENCES ai_messages(id) ON DELETE SET NULL,
+    assistant_message_id TEXT REFERENCES ai_messages(id) ON DELETE SET NULL,
+    status               TEXT NOT NULL DEFAULT 'queued',
+    stage                TEXT NOT NULL DEFAULT 'queued',
+    stage_label          TEXT NOT NULL DEFAULT '排队中',
+    request_json         TEXT NOT NULL DEFAULT '{}',
+    result_json          TEXT NOT NULL DEFAULT '{}',
+    error                TEXT NOT NULL DEFAULT '',
+    profile_id           TEXT NOT NULL DEFAULT 'default',
+    provider             TEXT,
+    model                TEXT,
+    transport            TEXT,
+    created_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    started_at           TEXT,
+    updated_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    completed_at         TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_collection_agent_runs_collection
+    ON collection_agent_runs (collection_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS collection_agent_actions (
+    id             TEXT PRIMARY KEY,
+    collection_id  TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    run_id         TEXT REFERENCES collection_agent_runs(id) ON DELETE CASCADE,
+    action_type    TEXT NOT NULL,
+    status         TEXT NOT NULL DEFAULT 'pending',
+    title          TEXT NOT NULL DEFAULT '',
+    summary        TEXT NOT NULL DEFAULT '',
+    payload_json   TEXT NOT NULL DEFAULT '{}',
+    preview_json   TEXT NOT NULL DEFAULT '{}',
+    reason         TEXT NOT NULL DEFAULT '',
+    risk           TEXT NOT NULL DEFAULT '',
+    applied_ref_id TEXT,
+    created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    applied_at     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_collection_agent_actions_collection
+    ON collection_agent_actions (collection_id, status, updated_at DESC);
+
 -- ---------------------------------------------------------------------------
 -- Motif star map: imagery nodes, saved excerpts, and multi-motif links.
 -- ---------------------------------------------------------------------------

@@ -4,9 +4,9 @@
 
 ### 本地优先的写作工作室：文章、作品集、文脉标本与边界清晰的 AI
 
-中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.37)
+中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.38)
 
-[![Version](https://img.shields.io/badge/preview-0.1.37-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.38-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **写作、拍照、唱歌、讲话，都是为了讲述。活着，就是为了讲述。**
 
-[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.37) · [官方手册](docs/user-guide.zh-CN.md) · [GIF 教程](docs/tutorials.zh-CN.md) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
+[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.38) · [官方手册](docs/user-guide.zh-CN.md) · [GIF 教程](docs/tutorials.zh-CN.md) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
 
 </div>
 
@@ -27,7 +27,7 @@
 | | |
 | --- | --- |
 | **文章工作台** | 写长文，自动保存，管理标签、搜索、题记、专注模式、文章便签、历史版本、意象锚点和导出。 |
-| **作品集** | 把多篇文章组织成一本书稿项目，用统一的书稿结构树管理层级、顺序、看板状态、关联文章和导出。 |
+| **作品集** | 把多篇文章组织成一本书稿项目，用统一的书稿结构树管理层级、顺序、看板状态、关联文章、导出和作品集 Agent。 |
 | **文脉标本库** | 保存摘录、书名、作者、用途、笔记和可复制引用。 |
 | **文章 AI** | 使用 AI 工具、文章对话和多模型结果对比，所有写回都需要明确确认。 |
 | **AI Cards** | 保存可复用的风格、人物、场景卡片，支持固定模板和 AI 草稿生成。 |
@@ -88,6 +88,7 @@
 - 用 **书稿结构** 树统一管理层级和顺序：小说可用分部 / 章节 / 场景，散文集可用辑 / 篇组 / 篇章，非虚构可用部分 / 章节 / 小节。
 - 一个结构节点直接关联一篇文章；如果一个章节下要放多篇文章，就在章节下创建多个子项。
 - 未放入结构的文章会进入 **未编排文章** 区，可一键放到当前节点下或作为顶层节点。
+- 使用作品集内的 **Agent** 标签页作为书稿总编：它读取书稿结构、项目记忆和你显式添加的 `@` 引用，返回诊断与可确认提案，不会自动修改正文。
 - 可切到 **看板**，按构思、草稿、修订、完成、暂停查看同一棵书稿结构的推进状态。
 - 可从结构节点一键创建文章，也可以把已有文章关联到节点。
 - 导出 Markdown、TXT、DOCX 时优先读取书稿结构；未编排文章不会偷偷进入结构导出。
@@ -139,15 +140,15 @@
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.37) 下载最新公开预览版。
+从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.38) 下载最新公开预览版。
 
 推荐 Windows 资产：
 
-- `LivingToTell_0.1.37_x64-setup.exe`
+- `LivingToTell_0.1.38_x64-setup.exe`
 
 可选资产：
 
-- `LivingToTell_0.1.37_x64_zh-CN.msi`
+- `LivingToTell_0.1.38_x64_zh-CN.msi`
 
 预览版暂未签名，Windows SmartScreen 可能会提示风险。请只运行来自本仓库 Release 页的安装包。
 
