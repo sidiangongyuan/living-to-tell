@@ -10,11 +10,6 @@ import {
   motifsApi,
   type MotifExcerpt,
   type MotifNode,
-  type MotifWritingGroup,
-  type MotifWritingIndex,
-  type MotifWritingMotif,
-  type MotifWritingSource,
-  type MotifWritingExcerptSnippet,
 } from '../../api/motifs'
 import { errorMessage, isHttpStatus } from '../../api/base'
 import {
@@ -88,15 +83,6 @@ const notesError = ref('')
 const notesLoading = ref(false)
 const showDoneNotes = ref(false)
 const motifAnchorsExpanded = ref(true)
-const motifInvocationExpanded = ref(false)
-const motifInvocationQuery = ref('')
-const motifInvocationIndex = ref<MotifWritingIndex | null>(null)
-const motifInvocationLoading = ref(false)
-const motifInvocationError = ref('')
-const motifInvocationNotice = ref('')
-const motifInvocationFilter = ref<MotifInvocationFilter | null>(null)
-const motifInvocationSelection = ref<MotifInvocationSelection | null>(null)
-const motifInvocationSavingNote = ref(false)
 const writingNotesExpanded = ref(true)
 const articleListPane = useResizablePane({
   key: 'articles:list',
@@ -159,7 +145,7 @@ const hasSavedEditInteraction = ref(false)
 let restoreToken = 0
 let motifAttachLookupToken = 0
 let articleSideDataToken = 0
-let motifInvocationSearchTimer: number | null = null
+const articleMotifAnchorCursor = ref<Record<string, number>>({})
 let motifAttachDragState: {
   pointerId: number
   startClientX: number
@@ -175,21 +161,13 @@ interface ArticleSaveSnapshot {
   tags: string[]
 }
 
-type MotifInvocationFilterKind = 'tag' | 'function' | 'source'
-
-interface MotifInvocationFilter {
-  kind: MotifInvocationFilterKind
-  label: string
-  motifIds: string[]
-}
-
-interface MotifInvocationSelection {
+interface ArticleMotifAnchorGroup {
   motifId: string
   motifName: string
-  kind: 'summary' | 'excerpt'
-  label: string
-  text: string
-  excerptId?: string
+  anchors: Array<{
+    excerpt: MotifExcerpt
+    range: ReturnType<typeof resolveMotifExcerptRange>
+  }>
 }
 
 interface EpigraphDraftState {
@@ -273,31 +251,49 @@ const sortedMotifSourceExcerpts = computed(() =>
     return a.excerpt_text.localeCompare(b.excerpt_text)
   })
 )
-const activeMotifExcerptId = computed(() =>
-  typeof route.query.motif_excerpt === 'string' ? route.query.motif_excerpt : ''
-)
 const resolvedMotifSourceExcerpts = computed(() =>
   sortedMotifSourceExcerpts.value.map((excerpt) => ({
     excerpt,
     range: resolveMotifExcerptRange(bodyDraft.value, excerpt),
   }))
 )
-const motifInvocationMotifs = computed(() => {
-  const motifs = motifInvocationIndex.value?.motifs ?? []
-  const filter = motifInvocationFilter.value
-  if (!filter) return motifs
-  const allowedIds = new Set(filter.motifIds)
-  return motifs.filter((motif) => allowedIds.has(motif.id))
+const articleMotifAnchorGroups = computed<ArticleMotifAnchorGroup[]>(() => {
+  const groups = new Map<string, ArticleMotifAnchorGroup>()
+  for (const item of resolvedMotifSourceExcerpts.value) {
+    item.excerpt.motif_ids.forEach((motifId, index) => {
+      const motifName = item.excerpt.motif_names[index] || t('motifs.unknownMotif')
+      const group = groups.get(motifId)
+      if (group) {
+        group.anchors.push(item)
+        return
+      }
+      groups.set(motifId, {
+        motifId,
+        motifName,
+        anchors: [item],
+      })
+    })
+  }
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      anchors: [...group.anchors].sort((a, b) => {
+        const aStart = a.range.start ?? Number.MAX_SAFE_INTEGER
+        const bStart = b.range.start ?? Number.MAX_SAFE_INTEGER
+        if (aStart !== bStart) return aStart - bStart
+        return a.excerpt.created_at?.localeCompare(b.excerpt.created_at ?? '') ?? 0
+      }),
+    }))
+    .sort((a, b) => {
+      const aStart = a.anchors[0]?.range.start ?? Number.MAX_SAFE_INTEGER
+      const bStart = b.anchors[0]?.range.start ?? Number.MAX_SAFE_INTEGER
+      if (aStart !== bStart) return aStart - bStart
+      return a.motifName.localeCompare(b.motifName)
+    })
 })
-const motifInvocationTags = computed(() => (motifInvocationIndex.value?.tags ?? []).slice(0, 10))
-const motifInvocationFunctions = computed(() => (motifInvocationIndex.value?.functions ?? []).slice(0, 10))
-const motifInvocationSources = computed(() => (motifInvocationIndex.value?.sources ?? []).slice(0, 8))
-const motifInvocationCountLabel = computed(() => {
-  if (!motifInvocationIndex.value) return t('articles.motifInvocationCountUnknown')
-  return t('articles.motifInvocationCount', { count: motifInvocationMotifs.value.length })
-})
-const motifInvocationSelectedText = computed(() => motifInvocationSelection.value?.text.trim() ?? '')
-const motifInvocationCanAct = computed(() => Boolean(motifInvocationSelectedText.value && store.selectedEntry))
+const articleMotifAnchorCount = computed(() =>
+  articleMotifAnchorGroups.value.reduce((total, group) => total + group.anchors.length, 0)
+)
 
 function isStaleArticleRequest(articleId: string, token: number): boolean {
   return token !== articleSideDataToken || store.selectedEntry?.id !== articleId
@@ -311,17 +307,13 @@ function resetArticleSideData() {
   collectionsForEntry.value = []
   writingNotes.value = []
   motifSourceExcerpts.value = []
-  motifInvocationIndex.value = null
-  motifInvocationSelection.value = null
+  articleMotifAnchorCursor.value = {}
   collectionError.value = ''
   notesError.value = ''
   motifSourceError.value = ''
-  motifInvocationError.value = ''
-  motifInvocationNotice.value = ''
   collectionLoading.value = false
   notesLoading.value = false
   motifSourceLoading.value = false
-  motifInvocationLoading.value = false
 }
 
 function friendlyArticleSideError(e: unknown): string {
@@ -474,225 +466,6 @@ async function refreshMotifSourceExcerpts(
       motifSourceLoading.value = false
     }
   }
-}
-
-function motifInvocationErrorMessage(e: unknown): string {
-  if (isHttpStatus(e, 404)) return t('articles.motifInvocationUnsupported')
-  return errorMessage(e)
-}
-
-async function refreshMotifInvocationIndex(
-  entryId = store.selectedEntry?.id,
-  token = articleSideDataToken,
-) {
-  motifInvocationError.value = ''
-  if (!entryId) {
-    motifInvocationIndex.value = null
-    motifInvocationSelection.value = null
-    motifInvocationLoading.value = false
-    return
-  }
-  if (!motifInvocationExpanded.value) {
-    motifInvocationLoading.value = false
-    return
-  }
-  motifInvocationLoading.value = true
-  try {
-    const index = await motifsApi.writingIndex(motifInvocationQuery.value, 80, 3)
-    if (isStaleArticleRequest(entryId, token)) return
-    motifInvocationIndex.value = index
-    const filter = motifInvocationFilter.value
-    if (filter && !index.motifs.some((motif) => filter.motifIds.includes(motif.id))) {
-      motifInvocationFilter.value = null
-    }
-    if (
-      motifInvocationSelection.value &&
-      !index.motifs.some((motif) => motif.id === motifInvocationSelection.value?.motifId)
-    ) {
-      motifInvocationSelection.value = null
-    }
-  } catch (e) {
-    if (isStaleArticleRequest(entryId, token)) return
-    motifInvocationIndex.value = null
-    motifInvocationSelection.value = null
-    motifInvocationError.value = motifInvocationErrorMessage(e)
-  } finally {
-    if (!isStaleArticleRequest(entryId, token)) {
-      motifInvocationLoading.value = false
-    }
-  }
-}
-
-function scheduleMotifInvocationSearch() {
-  if (motifInvocationSearchTimer) {
-    clearTimeout(motifInvocationSearchTimer)
-    motifInvocationSearchTimer = null
-  }
-  if (!motifInvocationExpanded.value || !store.selectedEntry?.id) return
-  const entryId = store.selectedEntry.id
-  const token = articleSideDataToken
-  motifInvocationSearchTimer = window.setTimeout(() => {
-    motifInvocationSearchTimer = null
-    void refreshMotifInvocationIndex(entryId, token)
-  }, 220)
-}
-
-function motifInvocationSourceLabel(source: MotifWritingSource): string {
-  const title = source.source_title || t('motifs.unknownSource')
-  return source.source_author ? `${title} · ${source.source_author}` : title
-}
-
-function motifInvocationFilterLabel(kind: MotifInvocationFilterKind): string {
-  if (kind === 'tag') return t('articles.motifInvocationTags')
-  if (kind === 'function') return t('articles.motifInvocationFunctions')
-  return t('articles.motifInvocationSources')
-}
-
-function setMotifInvocationFilter(kind: MotifInvocationFilterKind, item: MotifWritingGroup | MotifWritingSource) {
-  const label = kind === 'source'
-    ? motifInvocationSourceLabel(item as MotifWritingSource)
-    : (item as MotifWritingGroup).label
-  motifInvocationFilter.value = {
-    kind,
-    label,
-    motifIds: [...item.motif_ids],
-  }
-  if (
-    motifInvocationSelection.value &&
-    !motifInvocationFilter.value.motifIds.includes(motifInvocationSelection.value.motifId)
-  ) {
-    motifInvocationSelection.value = null
-  }
-}
-
-function isMotifInvocationFilterActive(kind: MotifInvocationFilterKind, item: MotifWritingGroup | MotifWritingSource): boolean {
-  const filter = motifInvocationFilter.value
-  if (!filter || filter.kind !== kind) return false
-  return filter.motifIds.length === item.motif_ids.length
-    && filter.motifIds.every((id) => item.motif_ids.includes(id))
-}
-
-function clearMotifInvocationFilter() {
-  motifInvocationFilter.value = null
-}
-
-function motifInvocationSummaryText(motif: MotifWritingMotif): string {
-  const lines = [`${motif.name}`]
-  if (motif.definition.trim()) lines.push(`定义：${motif.definition.trim()}`)
-  if (motif.core_tension.trim()) lines.push(`核心张力：${motif.core_tension.trim()}`)
-  if (motif.writing_functions.length) lines.push(`写作功能：${motif.writing_functions.join('；')}`)
-  if (motif.scene_triggers.length) lines.push(`场景触发：${motif.scene_triggers.join('；')}`)
-  if (motif.character_signals.length) lines.push(`人物表现：${motif.character_signals.join('；')}`)
-  return lines.join('\n')
-}
-
-function motifInvocationExcerptText(motif: MotifWritingMotif, excerpt: MotifWritingExcerptSnippet): string {
-  const source = excerpt.source_author
-    ? `${excerpt.source_author}《${excerpt.source_title || t('motifs.unknownSource')}》`
-    : excerpt.source_title || t('motifs.unknownSource')
-  return `${excerpt.excerpt_text.trim()}\n\n意象：${motif.name}\n来源：${source}${excerpt.note.trim() ? `\n备注：${excerpt.note.trim()}` : ''}`
-}
-
-function selectMotifInvocationSummary(motif: MotifWritingMotif) {
-  motifInvocationSelection.value = {
-    motifId: motif.id,
-    motifName: motif.name,
-    kind: 'summary',
-    label: t('articles.motifInvocationSummary'),
-    text: motifInvocationSummaryText(motif),
-  }
-}
-
-function selectMotifInvocationExcerpt(motif: MotifWritingMotif, excerpt: MotifWritingExcerptSnippet) {
-  motifInvocationSelection.value = {
-    motifId: motif.id,
-    motifName: motif.name,
-    kind: 'excerpt',
-    label: t('articles.motifInvocationExcerpt'),
-    text: motifInvocationExcerptText(motif, excerpt),
-    excerptId: excerpt.id,
-  }
-}
-
-function isMotifInvocationSummarySelected(motif: MotifWritingMotif): boolean {
-  return motifInvocationSelection.value?.motifId === motif.id && motifInvocationSelection.value.kind === 'summary'
-}
-
-function isMotifInvocationExcerptSelected(excerpt: MotifWritingExcerptSnippet): boolean {
-  return motifInvocationSelection.value?.excerptId === excerpt.id
-}
-
-function setMotifInvocationNotice(message: string) {
-  motifInvocationNotice.value = message
-  window.setTimeout(() => {
-    if (motifInvocationNotice.value === message) {
-      motifInvocationNotice.value = ''
-    }
-  }, 1800)
-}
-
-async function copyMotifInvocationSelection() {
-  const text = motifInvocationSelectedText.value
-  if (!text) return
-  try {
-    await navigator.clipboard.writeText(text)
-    setMotifInvocationNotice(t('articles.motifInvocationCopied'))
-  } catch (e) {
-    motifInvocationError.value = errorMessage(e)
-  }
-}
-
-async function insertMotifInvocationSelectionIntoBody() {
-  const text = motifInvocationSelectedText.value
-  const entry = store.selectedEntry
-  if (!entry || !text) return
-  const textarea = bodyRef.value
-  const start = textarea ? Math.max(0, Math.min(textarea.selectionStart, bodyDraft.value.length)) : bodyDraft.value.length
-  const end = textarea ? Math.max(start, Math.min(textarea.selectionEnd, bodyDraft.value.length)) : bodyDraft.value.length
-  const before = bodyDraft.value.slice(0, start)
-  const after = bodyDraft.value.slice(end)
-  const prefix = before.trim() && !before.endsWith('\n') ? '\n\n' : ''
-  const suffix = after.trim() && !after.startsWith('\n') ? '\n\n' : ''
-  const insertion = `${prefix}${text}${suffix}`
-  bodyDraft.value = `${before}${insertion}${after}`
-  const nextPosition = before.length + insertion.length
-  lastEditorInteraction.value = 'edit'
-  hasSavedEditInteraction.value = true
-  scheduleSave()
-  await nextTick()
-  resizeBodyEditor()
-  bodyRef.value?.focus({ preventScroll: true })
-  bodyRef.value?.setSelectionRange(nextPosition, nextPosition)
-  saveEditorPositionForArticle(entry.id, 'edit')
-  setMotifInvocationNotice(t('articles.motifInvocationInserted'))
-}
-
-async function saveMotifInvocationSelectionAsNote() {
-  const text = motifInvocationSelectedText.value
-  const entryId = store.selectedEntry?.id
-  if (!entryId || !text) return
-  motifInvocationSavingNote.value = true
-  motifInvocationError.value = ''
-  try {
-    const note = await notesApi.createNote(entryId, text)
-    if (store.selectedEntry?.id !== entryId) return
-    writingNotes.value = sortWritingNotes([note, ...writingNotes.value.filter((item) => item.id !== note.id)])
-    writingNotesExpanded.value = true
-    setMotifInvocationNotice(t('articles.motifInvocationNoteSaved'))
-  } catch (e) {
-    if (store.selectedEntry?.id !== entryId) return
-    motifInvocationError.value = await articleOperationErrorMessage(e, entryId)
-  } finally {
-    if (store.selectedEntry?.id === entryId) {
-      motifInvocationSavingNote.value = false
-    }
-  }
-}
-
-async function openMotifInvocationDetail() {
-  const selection = motifInvocationSelection.value
-  if (!selection) return
-  await router.push({ name: 'motifs', query: { id: selection.motifId } })
 }
 
 function prepareMotifSelection() {
@@ -874,18 +647,6 @@ function countWords(body: string): number {
   }
   if (buffer.trim()) total += buffer.trim().split(/\s+/).length
   return total
-}
-
-function previewMotifExcerptText(text: string, limit = 64): string {
-  const compact = text.replace(/\s+/g, ' ').trim()
-  const chars = Array.from(compact)
-  return chars.length > limit ? `${chars.slice(0, limit).join('')}...` : compact
-}
-
-function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string {
-  if (status === 'matched') return t('motifs.rangeMatched')
-  if (status === 'moved') return t('motifs.rangeMoved')
-  return t('motifs.rangeMissing')
 }
 
 function preview(body: string): string {
@@ -1510,6 +1271,25 @@ async function jumpToMotifSourceExcerpt(excerpt: MotifExcerpt) {
   return false
 }
 
+async function locateArticleMotifAnchor(group: ArticleMotifAnchorGroup) {
+  const availableAnchors = group.anchors.filter((item) => item.range.start !== null && item.range.end !== null)
+  if (!availableAnchors.length) {
+    activateMotifJumpHighlight(t('motifs.sourceChanged'))
+    return false
+  }
+  const currentIndex = articleMotifAnchorCursor.value[group.motifId] ?? -1
+  const nextIndex = (currentIndex + 1) % availableAnchors.length
+  articleMotifAnchorCursor.value = {
+    ...articleMotifAnchorCursor.value,
+    [group.motifId]: nextIndex,
+  }
+  return jumpToMotifSourceExcerpt(availableAnchors[nextIndex].excerpt)
+}
+
+async function openArticleMotifAnchor(group: ArticleMotifAnchorGroup) {
+  await router.push({ name: 'motifs', query: { id: group.motifId } })
+}
+
 async function applyRouteFocusRange() {
   if (typeof route.query.id === 'string' && store.selectedEntry?.id && route.query.id !== store.selectedEntry.id) {
     return false
@@ -1959,7 +1739,6 @@ async function refreshArticleSideData(entryId = store.selectedEntry?.id) {
     refreshEntryCollections(entryId, token),
     refreshWritingNotes(entryId, token),
     refreshMotifSourceExcerpts(entryId, token),
-    refreshMotifInvocationIndex(entryId, token),
   ])
 }
 
@@ -2138,10 +1917,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopMotifAttachDrag()
-  if (motifInvocationSearchTimer) {
-    clearTimeout(motifInvocationSearchTimer)
-    motifInvocationSearchTimer = null
-  }
   flushPendingEditorPosition()
   saveCurrentEditorPositionNow()
   void flushPendingArticleSave()
@@ -2188,16 +1963,6 @@ watch(
     void restoreEditorPositionIfNeeded()
   }
 )
-
-watch(motifInvocationQuery, () => {
-  scheduleMotifInvocationSearch()
-})
-
-watch(motifInvocationExpanded, (expanded) => {
-  if (expanded && store.selectedEntry?.id && !motifInvocationIndex.value && !motifInvocationLoading.value) {
-    void refreshMotifInvocationIndex(store.selectedEntry.id, articleSideDataToken)
-  }
-})
 
 </script>
 
@@ -2633,289 +2398,58 @@ watch(motifInvocationExpanded, (expanded) => {
               @click="motifAnchorsExpanded = !motifAnchorsExpanded"
             >
               <span class="text-sm font-semibold text-stone-700">
-                {{ motifAnchorsExpanded ? '⌄' : '›' }} {{ t('motifs.sourceAnchors') }}
+                {{ motifAnchorsExpanded ? '⌄' : '›' }} {{ t('motifs.articleSourceAnchors') }}
               </span>
               <span class="rounded-full bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-700">
-                {{ sortedMotifSourceExcerpts.length }}
+                {{ articleMotifAnchorCount }}
               </span>
             </button>
             <div v-show="motifAnchorsExpanded">
-              <p class="mb-3 text-xs leading-5 text-stone-500">{{ t('motifs.sourceAnchorsHint') }}</p>
+              <p class="mb-3 text-xs leading-5 text-stone-500">{{ t('motifs.articleSourceAnchorsHint') }}</p>
               <div v-if="motifSourceError" class="mb-2 rounded-lg bg-red-50 p-2 text-xs text-red-700">
                 {{ motifSourceError }}
               </div>
               <div v-if="motifSourceLoading" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-400">
                 {{ t('common.loading') }}
               </div>
-              <div v-else-if="!resolvedMotifSourceExcerpts.length" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-400">
-                {{ t('motifs.noSourceAnchors') }}
+              <div v-else-if="!articleMotifAnchorGroups.length" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-400">
+                {{ t('motifs.noArticleSourceAnchors') }}
               </div>
               <div v-else class="space-y-2">
-                <button
-                  v-for="item in resolvedMotifSourceExcerpts"
-                  :key="item.excerpt.id"
-                  type="button"
-                  :disabled="item.range.status === 'missing'"
-                  @click="jumpToMotifSourceExcerpt(item.excerpt)"
-                  :class="[
-                    'w-full rounded-2xl border p-3 text-left transition',
-                    activeMotifExcerptId === item.excerpt.id
-                      ? 'border-teal-300 bg-teal-50/80 shadow-sm'
-                      : 'border-stone-200 bg-white hover:border-teal-200 hover:bg-teal-50/40',
-                    item.range.status === 'missing' ? 'cursor-not-allowed opacity-70' : '',
-                  ]"
+                <div
+                  v-for="group in articleMotifAnchorGroups"
+                  :key="group.motifId"
+                  class="rounded-2xl border border-stone-200 bg-white p-3"
                 >
-                  <p class="motif-anchor-preview text-sm leading-6 text-stone-800">
-                    {{ previewMotifExcerptText(item.excerpt.excerpt_text) }}
-                  </p>
-                  <div class="mt-2 flex flex-wrap gap-1.5">
-                    <span
-                      v-for="name in item.excerpt.motif_names"
-                      :key="`${item.excerpt.id}-${name}`"
-                      class="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-medium text-teal-800 ring-1 ring-teal-100"
+                  <div class="flex items-start justify-between gap-2">
+                    <button
+                      type="button"
+                      class="min-w-0 rounded-full bg-teal-50 px-2.5 py-1 text-left text-xs font-semibold text-teal-800 ring-1 ring-teal-100 hover:bg-teal-100"
+                      @click="openArticleMotifAnchor(group)"
                     >
-                      {{ name }}
+                      <span class="block truncate">{{ group.motifName }}</span>
+                    </button>
+                    <span class="shrink-0 rounded-full bg-stone-100 px-2 py-1 text-[11px] text-stone-500">
+                      {{ t('motifs.anchorCount', { count: group.anchors.length }) }}
                     </span>
                   </div>
-                  <div class="mt-2 flex items-center justify-between gap-2 text-[11px] text-stone-400">
-                    <span>{{ motifRangeStatusLabel(item.range.status) }}</span>
-                    <span v-if="item.range.status !== 'missing'" class="font-semibold text-teal-700">{{ t('motifs.locateAnchor') }}</span>
-                  </div>
-                </button>
-              </div>
-            </div>
-          </section>
-
-          <section data-testid="article-motif-invocation">
-            <button
-              type="button"
-              class="mb-2 flex w-full items-center justify-between gap-2 rounded-xl px-2 py-1 text-left hover:bg-stone-50"
-              @click="motifInvocationExpanded = !motifInvocationExpanded"
-            >
-              <span class="text-sm font-semibold text-stone-700">
-                {{ motifInvocationExpanded ? '⌄' : '›' }} {{ t('articles.motifInvocation') }}
-              </span>
-              <span class="rounded-full bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-700">
-                {{ motifInvocationCountLabel }}
-              </span>
-            </button>
-            <div v-show="motifInvocationExpanded" class="space-y-3">
-              <p class="text-xs leading-5 text-stone-500">{{ t('articles.motifInvocationHint') }}</p>
-              <input
-                v-model="motifInvocationQuery"
-                class="w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-teal-400 focus:ring-2 focus:ring-teal-100"
-                :placeholder="t('articles.motifInvocationSearch')"
-              />
-
-              <div v-if="motifInvocationError" class="rounded-lg bg-red-50 p-2 text-xs leading-5 text-red-700">
-                {{ motifInvocationError }}
-              </div>
-              <div v-if="motifInvocationNotice" class="rounded-lg bg-emerald-50 p-2 text-xs leading-5 text-emerald-700">
-                {{ motifInvocationNotice }}
-              </div>
-
-              <div
-                v-if="motifInvocationFilter"
-                class="flex items-center justify-between gap-2 rounded-xl border border-teal-100 bg-teal-50/70 px-3 py-2 text-xs text-teal-800"
-              >
-                <span class="min-w-0 truncate">
-                  {{ t('articles.motifInvocationFilter', {
-                    kind: motifInvocationFilterLabel(motifInvocationFilter.kind),
-                    label: motifInvocationFilter.label,
-                  }) }}
-                </span>
-                <button
-                  type="button"
-                  class="shrink-0 rounded-lg bg-white/80 px-2 py-1 font-semibold text-teal-800 hover:bg-white"
-                  @click="clearMotifInvocationFilter"
-                >
-                  {{ t('articles.motifInvocationClearFilter') }}
-                </button>
-              </div>
-
-              <div v-if="motifInvocationIndex" class="space-y-2">
-                <div v-if="motifInvocationTags.length" class="space-y-1">
-                  <div class="text-[11px] font-semibold uppercase text-stone-400">{{ t('articles.motifInvocationTags') }}</div>
-                  <div class="flex flex-wrap gap-1.5">
+                  <div class="mt-3 flex flex-wrap gap-2">
                     <button
-                      v-for="item in motifInvocationTags"
-                      :key="`tag-${item.label}`"
                       type="button"
-                      @click="setMotifInvocationFilter('tag', item)"
-                      :class="[
-                        'rounded-full px-2 py-1 text-[11px] transition',
-                        isMotifInvocationFilterActive('tag', item)
-                          ? 'bg-teal-700 text-white'
-                          : 'bg-stone-100 text-stone-600 hover:bg-teal-50 hover:text-teal-800',
-                      ]"
+                      class="rounded-lg bg-stone-900 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-stone-700"
+                      @click="locateArticleMotifAnchor(group)"
                     >
-                      {{ item.label }} · {{ item.motif_count }}
+                      {{ t('motifs.locateAnchor') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-lg bg-stone-100 px-2.5 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-200"
+                      @click="openArticleMotifAnchor(group)"
+                    >
+                      {{ t('motifs.openMotif') }}
                     </button>
                   </div>
                 </div>
-                <div v-if="motifInvocationFunctions.length" class="space-y-1">
-                  <div class="text-[11px] font-semibold uppercase text-stone-400">{{ t('articles.motifInvocationFunctions') }}</div>
-                  <div class="flex flex-wrap gap-1.5">
-                    <button
-                      v-for="item in motifInvocationFunctions"
-                      :key="`function-${item.label}`"
-                      type="button"
-                      @click="setMotifInvocationFilter('function', item)"
-                      :class="[
-                        'rounded-full px-2 py-1 text-[11px] transition',
-                        isMotifInvocationFilterActive('function', item)
-                          ? 'bg-teal-700 text-white'
-                          : 'bg-stone-100 text-stone-600 hover:bg-teal-50 hover:text-teal-800',
-                      ]"
-                    >
-                      {{ item.label }} · {{ item.motif_count }}
-                    </button>
-                  </div>
-                </div>
-                <div v-if="motifInvocationSources.length" class="space-y-1">
-                  <div class="text-[11px] font-semibold uppercase text-stone-400">{{ t('articles.motifInvocationSources') }}</div>
-                  <div class="flex flex-wrap gap-1.5">
-                    <button
-                      v-for="item in motifInvocationSources"
-                      :key="`source-${item.source_kind}-${item.source_id}`"
-                      type="button"
-                      @click="setMotifInvocationFilter('source', item)"
-                      :class="[
-                        'max-w-full rounded-full px-2 py-1 text-[11px] transition',
-                        isMotifInvocationFilterActive('source', item)
-                          ? 'bg-teal-700 text-white'
-                          : 'bg-stone-100 text-stone-600 hover:bg-teal-50 hover:text-teal-800',
-                      ]"
-                    >
-                      <span class="inline-block max-w-[14rem] truncate align-bottom">{{ motifInvocationSourceLabel(item) }}</span>
-                      · {{ item.excerpt_count }}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div
-                v-if="motifInvocationSelection"
-                class="rounded-2xl border border-teal-100 bg-teal-50/60 p-3"
-                data-testid="article-motif-invocation-selection"
-              >
-                <div class="mb-2 flex items-start justify-between gap-2">
-                  <div class="min-w-0">
-                    <p class="truncate text-xs font-semibold text-teal-900">
-                      {{ motifInvocationSelection.motifName }} · {{ motifInvocationSelection.label }}
-                    </p>
-                    <p class="mt-1 text-[11px] text-teal-700">{{ t('articles.motifInvocationSelectedHint') }}</p>
-                  </div>
-                </div>
-                <p class="line-clamp-5 whitespace-pre-wrap text-xs leading-5 text-stone-700">
-                  {{ motifInvocationSelection.text }}
-                </p>
-                <div class="mt-3 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    class="rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40"
-                    :disabled="!motifInvocationCanAct"
-                    @click="copyMotifInvocationSelection"
-                  >
-                    {{ t('articles.motifInvocationCopy') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded-lg bg-stone-900 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-stone-700 disabled:opacity-40"
-                    :disabled="!motifInvocationCanAct"
-                    @click="insertMotifInvocationSelectionIntoBody"
-                  >
-                    {{ t('articles.motifInvocationInsert') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40"
-                    :disabled="!motifInvocationCanAct || motifInvocationSavingNote"
-                    @click="saveMotifInvocationSelectionAsNote"
-                  >
-                    {{ motifInvocationSavingNote ? t('common.saving') : t('articles.motifInvocationSaveNote') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-50"
-                    @click="openMotifInvocationDetail"
-                  >
-                    {{ t('articles.motifInvocationOpenMotif') }}
-                  </button>
-                </div>
-              </div>
-
-              <div v-if="motifInvocationLoading" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-400">
-                {{ t('articles.motifInvocationLoading') }}
-              </div>
-              <div v-else-if="motifInvocationIndex && !motifInvocationIndex.motifs.length" class="rounded-xl bg-stone-50 p-3 text-sm leading-6 text-stone-400">
-                {{ t('articles.motifInvocationEmpty') }}
-              </div>
-              <div v-else-if="motifInvocationIndex && !motifInvocationMotifs.length" class="rounded-xl bg-stone-50 p-3 text-sm leading-6 text-stone-400">
-                {{ t('articles.motifInvocationNoMatches') }}
-              </div>
-              <div v-else-if="motifInvocationIndex" class="space-y-2">
-                <article
-                  v-for="motif in motifInvocationMotifs.slice(0, 8)"
-                  :key="motif.id"
-                  :class="[
-                    'rounded-2xl border bg-white p-3 transition',
-                    isMotifInvocationSummarySelected(motif) ? 'border-teal-300 ring-2 ring-teal-100' : 'border-stone-200',
-                  ]"
-                  data-testid="article-motif-invocation-card"
-                >
-                  <button type="button" class="w-full text-left" @click="selectMotifInvocationSummary(motif)">
-                    <div class="flex items-start justify-between gap-2">
-                      <div class="min-w-0">
-                        <p class="truncate text-sm font-semibold text-stone-900">{{ motif.name }}</p>
-                        <p v-if="motif.definition" class="mt-1 text-xs leading-5 text-stone-600">{{ motif.definition }}</p>
-                        <p v-if="motif.core_tension" class="mt-1 text-xs leading-5 text-stone-500">
-                          {{ t('motifs.profileCoreTension') }}：{{ motif.core_tension }}
-                        </p>
-                      </div>
-                      <span class="shrink-0 rounded-full bg-stone-100 px-2 py-1 text-[11px] text-stone-500">
-                        {{ motif.excerpt_count }}
-                      </span>
-                    </div>
-                    <div v-if="motif.tags.length" class="mt-2 flex flex-wrap gap-1">
-                      <span
-                        v-for="tag in motif.tags.slice(0, 3)"
-                        :key="`${motif.id}-${tag}`"
-                        class="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] text-teal-800"
-                      >
-                        {{ tag }}
-                      </span>
-                    </div>
-                    <div v-if="motif.writing_functions.length || motif.scene_triggers.length" class="mt-2 space-y-1 text-[11px] leading-5 text-stone-500">
-                      <p v-if="motif.writing_functions.length">
-                        {{ t('articles.motifInvocationFunctions') }}：{{ motif.writing_functions.slice(0, 2).join('；') }}
-                      </p>
-                      <p v-if="motif.scene_triggers.length">
-                        {{ t('articles.motifInvocationSceneTriggers') }}：{{ motif.scene_triggers.slice(0, 2).join('；') }}
-                      </p>
-                    </div>
-                  </button>
-                  <div v-if="motif.excerpts.length" class="mt-3 space-y-2">
-                    <div class="text-[11px] font-semibold text-stone-400">{{ t('articles.motifInvocationCallableSentences') }}</div>
-                    <button
-                      v-for="excerpt in motif.excerpts.slice(0, 2)"
-                      :key="excerpt.id"
-                      type="button"
-                      @click="selectMotifInvocationExcerpt(motif, excerpt)"
-                      :class="[
-                        'w-full rounded-xl border px-3 py-2 text-left text-xs leading-5 transition',
-                        isMotifInvocationExcerptSelected(excerpt)
-                          ? 'border-teal-300 bg-teal-50 text-stone-800'
-                          : 'border-stone-100 bg-stone-50 text-stone-600 hover:border-teal-200 hover:bg-teal-50/50',
-                      ]"
-                    >
-                      <span class="line-clamp-3">{{ excerpt.excerpt_text }}</span>
-                      <span class="mt-1 block truncate text-[11px] text-stone-400">
-                        {{ excerpt.source_author ? `${excerpt.source_author} · ` : '' }}{{ excerpt.source_title || t('motifs.unknownSource') }}
-                      </span>
-                    </button>
-                  </div>
-                </article>
               </div>
             </div>
           </section>
@@ -3152,30 +2686,8 @@ watch(motifInvocationExpanded, (expanded) => {
   overflow: hidden;
 }
 
-.line-clamp-3 {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.line-clamp-5 {
-  display: -webkit-box;
-  -webkit-line-clamp: 5;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
 .motif-source-highlight::selection {
   background: rgba(252, 211, 77, 0.68);
   color: inherit;
-}
-
-.motif-anchor-preview {
-  text-decoration-line: underline;
-  text-decoration-style: dashed;
-  text-decoration-color: rgba(13, 148, 136, 0.65);
-  text-decoration-thickness: 1px;
-  text-underline-offset: 4px;
 }
 </style>

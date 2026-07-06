@@ -47,7 +47,6 @@ def test_tauri_app_version_capabilities(monkeypatch):
         "ai_task_compare",
         "ai_jobs",
         "motif_star_map",
-        "motif_writing_index",
         "motif_ai_enrichment",
         "motif_ai_enrichment_jobs",
         "update_check",
@@ -57,72 +56,6 @@ def test_tauri_app_version_capabilities(monkeypatch):
     }.issubset(
         set(payload["capabilities"])
     )
-
-
-def test_tauri_motif_writing_index_summarizes_existing_material_without_mutation(monkeypatch):
-    client = _tauri_client(monkeypatch)
-    from deps import get_container
-
-    container = get_container()
-    marker = uuid.uuid4().hex[:8]
-    entry = container.entry_repository.create(
-        title=f"写作调用文章 {marker}",
-        body=f"测试句子 {marker} 在夜里发亮。",
-    )
-    reference = container.reference_repository.create(
-        source_title=f"写作调用来源 {marker}",
-        source_author="测试作者",
-        content=f"参考句子 {marker} 把概念压进场景。",
-        usage_kind="philosophy",
-    )
-    motif = container.motif_repository.create_node(
-        name=f"写作调用意象 {marker}",
-        tags=["测试标签", f"索引-{marker}"],
-        profile={
-            "definition": f"定义 {marker}",
-            "core_tension": "概念与场景互相拉扯。",
-            "writing_functions": ["制造压力"],
-            "scene_triggers": ["晚餐沉默"],
-            "character_signals": ["重复他人的句子"],
-        },
-    )
-    container.motif_repository.create_excerpt(
-        source_kind="article",
-        source_id=entry.id,
-        excerpt_text=f"测试句子 {marker} 在夜里发亮。",
-        motif_ids=[motif.id],
-    )
-    container.motif_repository.create_excerpt(
-        source_kind="reference",
-        source_id=reference.id,
-        excerpt_text=f"参考句子 {marker} 把概念压进场景。",
-        motif_ids=[motif.id],
-    )
-    before_counts = {
-        table: container.connection.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"]
-        for table in ("motif_nodes", "motif_excerpts", "motif_excerpt_links")
-    }
-
-    response = client.get(f"/api/motifs/writing-index?q={marker}&excerpt_limit=1")
-
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    assert [item["id"] for item in payload["motifs"]] == [motif.id]
-    assert payload["motifs"][0]["definition"] == f"定义 {marker}"
-    assert payload["motifs"][0]["writing_functions"] == ["制造压力"]
-    assert len(payload["motifs"][0]["excerpts"]) == 1
-    assert {item["label"] for item in payload["tags"]} >= {"测试标签", f"索引-{marker}"}
-    assert payload["functions"][0]["label"] == "制造压力"
-    assert {item["source_title"] for item in payload["sources"]} == {
-        f"写作调用文章 {marker}",
-        f"写作调用来源 {marker}",
-    }
-    after_counts = {
-        table: container.connection.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"]
-        for table in ("motif_nodes", "motif_excerpts", "motif_excerpt_links")
-    }
-    assert after_counts == before_counts
-
 
 def test_tauri_onboarding_sample_project_is_explicit_and_disposable(monkeypatch):
     client = _tauri_client(monkeypatch)

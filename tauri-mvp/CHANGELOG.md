@@ -1,5 +1,40 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.35 - Bidirectional Motif Anchors (2026-07-06)
+
+### Removed
+
+- Removed the article-side Motif Invocation section and its copy/insert/save-as-note material actions.
+- Removed the Motif Star Map Writing Lens, `/api/motifs/writing-index`, and the `motif_writing_index` capability.
+
+### Added
+
+- Added a lighter article-side "Motifs in this article" anchor list that shows linked motif names and anchor counts only.
+- Added motif detail source-anchor grouping by article/reference source, with a chooser for sources that contain multiple anchors.
+- Added direct anchor navigation from article to motif and from motif back to the original article/reference location without creating new graph links.
+
+### Changed
+
+- Motif UI now keeps authorship explicit: motifs are linked from selected text and navigated as anchors, not inserted as prepared writing material.
+- AI enrichment wording now frames results as concept archives for reference, not automatic writing invocation.
+- Public README links and installer names now point to `0.1.35`.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py tests\storage\test_motif_repository.py -q`
+- `npm test -- --run`
+- `npm run test:e2e -- --project=msedge --workers=1`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+- `.\tauri-mvp\build-release.ps1 -PythonExe D:\anaconda\envs\writer\python.exe`
+
+### Release artifacts
+
+- `LivingToTell_0.1.35_x64-setup.exe`
+  - SHA256: `E0EAF08814A9CD181907213B85A78299DB3E1903A68994C0494D35CB578703D9`
+- `LivingToTell_0.1.35_x64_zh-CN.msi`
+  - SHA256: `2EDA2AE6E7A6D84C761773CB5132DA61E2B6273B4F661958A2BBD60336B460EE`
+
 ## 0.1.34 - Article Motif Invocation (2026-07-06)
 
 ### Added

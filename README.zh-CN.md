@@ -4,9 +4,9 @@
 
 ### 本地优先的写作工作室：文章、作品集、文脉标本与边界清晰的 AI
 
-中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.34)
+中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.35)
 
-[![Version](https://img.shields.io/badge/preview-0.1.34-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.35-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **写作、拍照、唱歌、讲话，都是为了讲述。活着，就是为了讲述。**
 
-[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.34) · [官方手册](docs/user-guide.zh-CN.md) · [GIF 教程](docs/tutorials.zh-CN.md) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
+[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.35) · [官方手册](docs/user-guide.zh-CN.md) · [GIF 教程](docs/tutorials.zh-CN.md) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
 
 </div>
 
@@ -26,12 +26,12 @@
 
 | | |
 | --- | --- |
-| **文章工作台** | 写长文，自动保存，管理标签、搜索、题记、专注模式、文章便签、历史版本、意象调用和导出。 |
+| **文章工作台** | 写长文，自动保存，管理标签、搜索、题记、专注模式、文章便签、历史版本、意象锚点和导出。 |
 | **作品集** | 把多篇文章编排成合集，也能在作品集层面规划长篇项目大纲、看板、进度、筛选并导出大纲。 |
 | **文脉标本库** | 保存摘录、书名、作者、用途、笔记和可复制引用。 |
 | **文章 AI** | 使用 AI 工具、文章对话和多模型结果对比，所有写回都需要明确确认。 |
 | **AI Cards** | 保存可复用的风格、人物、场景卡片，支持固定模板和 AI 草稿生成。 |
-| **意象星图** | 把选中文字标记为意象，回到原文锚点，查看共现关系，用写作调用视图检索素材，并用 AI 丰富抽象概念。 |
+| **意象星图** | 把选中文字标记为意象，双向回到原文锚点，查看真实共现关系，并用 AI 丰富抽象概念。 |
 | **导出与备份** | 查看恢复点、本地数据路径、备份/检查点、存储目录、备份提醒，并导出最近文章或作品集。 |
 | **本地优先** | 写作数据保存在本地，只有主动运行 AI 时才发送文本。 |
 
@@ -75,7 +75,7 @@
 
 - 文章编辑、自动保存、标签、全文搜索、查找替换和可收起右侧上下文栏。
 - 文章便签用于记录提醒、片段和下一步想法，不进入正文。
-- 右侧上下文栏可直接调用已有意象档案和相关句子，支持复制、插入正文、存为本文便签或跳到意象星图。
+- 右侧上下文栏显示本文已链接的意象锚点，可定位回正文或跳到意象星图。
 - 文章历史版本支持手动保存、AI 写回前快照、恢复前快照、段落对比、恢复、克隆、复制和删除。
 - 开头题记可单独编辑，并保持 Markdown、TXT、DOCX 导出干净。
 - 专注模式只保留正文写作区和退出按钮。
@@ -103,10 +103,9 @@
 
 - 在文章或文脉正文中选中文字后右键，保存到一个或多个意象。
 - 再次打开同一句话时会回填已加入意象，不重复创建摘录。
-- 文章右侧意象锚点可跳回原文句子。
+- 文章右侧意象锚点可跳回原文句子；意象详情也会按来源分组回到对应文章或文脉。
 - 星图用节点大小、颜色和连线表达摘录数量与意象共现关系。
-- 可切到“写作调用”视图，按标签、写作功能、来源和可调用句子浏览已有意象，不改变星图连线。
-- 右侧详情支持 **AI 丰富**，可把“神话模式”“奴隶道德”“常人”等概念生成可保存的写作短卡。
+- 右侧详情支持 **AI 丰富**，可把“神话模式”“奴隶道德”“常人”等概念生成可保存的概念档案。
 - 意象详情改为结构化概念档案，可快速阅读定义、核心张力、写作功能、例子、误用提醒和练习，而不是一整段长笔记。
 - AI 可提出带作者和书名 / 篇名的相关句子候选；只有用户勾选后才会录入文脉库并挂到当前意象。
 - 在某个意象下移除摘录时，只解除当前意象链接，不误删其他意象里的同一摘录。
@@ -139,15 +138,15 @@
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.34) 下载最新公开预览版。
+从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.35) 下载最新公开预览版。
 
 推荐 Windows 资产：
 
-- `LivingToTell_0.1.34_x64-setup.exe`
+- `LivingToTell_0.1.35_x64-setup.exe`
 
 可选资产：
 
-- `LivingToTell_0.1.34_x64_zh-CN.msi`
+- `LivingToTell_0.1.35_x64_zh-CN.msi`
 
 预览版暂未签名，Windows SmartScreen 可能会提示风险。请只运行来自本仓库 Release 页的安装包。
 

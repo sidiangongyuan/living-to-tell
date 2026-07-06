@@ -185,7 +185,7 @@ export function buildTaskRequestOptions(
       max_output_chars: 2600,
       extra_instructions: joinLines([
         `摘要重点：${controls.summarizeFocus}`,
-        '输出要便于后续写作调用，不要只做泛泛概括。',
+        '输出要便于后续写作参考，不要只做泛泛概括。',
         controls.extraInstructions,
       ]),
     }

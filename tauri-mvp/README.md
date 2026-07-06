@@ -4,7 +4,7 @@
 
 ### The current Windows desktop preview for 活着为了讲述 / Living to Tell
 
-[![Version](https://img.shields.io/badge/version-0.1.34-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.35-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-preview-orange.svg)](#download)
@@ -72,10 +72,9 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 - Save selected article or reference text into one or more motifs from a right-click menu.
 - Reopen existing selections without creating duplicate excerpts, even when the saved range has drifted after editing.
-- Use source anchors to return from the article context pane to the marked sentence.
+- Use bidirectional source anchors to return from the article or motif archive to the marked source location.
 - Explore motif co-occurrence through a visual star map with weighted nodes and links.
-- Switch to the Writing Lens to browse existing motifs by tag, writing function, source, and callable sentence snippets without changing graph links.
-- Enrich a selected or newly typed concept with AI into a compact writing card, then append or overwrite the motif note after review.
+- Enrich a selected or newly typed concept with AI into a compact concept archive, then append or overwrite the motif note after review.
 - Unlink an excerpt from the current motif without deleting the same excerpt from other motifs.
 
 ### AI
@@ -110,15 +109,15 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.34).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.35).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.34_x64-setup.exe`
+- `LivingToTell_0.1.35_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.34_x64_zh-CN.msi`
+- `LivingToTell_0.1.35_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 

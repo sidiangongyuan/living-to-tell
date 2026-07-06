@@ -20,11 +20,6 @@ from writer.domain.models.motif import (
     MotifExcerpt,
     MotifGraphEdge,
     MotifGraphNode,
-    MotifWritingExcerptSnippet,
-    MotifWritingGroup,
-    MotifWritingIndex,
-    MotifWritingMotif,
-    MotifWritingSource,
     MotifNode,
 )
 from writer.domain.models.reference_passage import (
@@ -230,54 +225,6 @@ class MotifGraphOut(BaseModel):
     edges: list[MotifGraphEdgeOut]
 
 
-class MotifWritingExcerptSnippetOut(BaseModel):
-    id: str
-    source_kind: SourceKind
-    source_id: str
-    source_title: str
-    source_author: str = ""
-    excerpt_text: str = ""
-    note: str = ""
-
-
-class MotifWritingMotifOut(BaseModel):
-    id: str
-    name: str
-    tags: list[str]
-    excerpt_count: int
-    pinned: bool = False
-    definition: str = ""
-    core_tension: str = ""
-    writing_functions: list[str] = Field(default_factory=list)
-    scene_triggers: list[str] = Field(default_factory=list)
-    character_signals: list[str] = Field(default_factory=list)
-    excerpts: list[MotifWritingExcerptSnippetOut] = Field(default_factory=list)
-
-
-class MotifWritingGroupOut(BaseModel):
-    label: str
-    motif_count: int
-    excerpt_count: int
-    motif_ids: list[str] = Field(default_factory=list)
-
-
-class MotifWritingSourceOut(BaseModel):
-    source_kind: SourceKind
-    source_id: str
-    source_title: str
-    source_author: str = ""
-    motif_count: int
-    excerpt_count: int
-    motif_ids: list[str] = Field(default_factory=list)
-
-
-class MotifWritingIndexOut(BaseModel):
-    tags: list[MotifWritingGroupOut]
-    functions: list[MotifWritingGroupOut]
-    sources: list[MotifWritingSourceOut]
-    motifs: list[MotifWritingMotifOut]
-
-
 def _node_to_dto(node: MotifNode) -> MotifNodeOut:
     return MotifNodeOut(
         id=node.id,
@@ -343,76 +290,6 @@ def _graph_to_dto(
             )
             for edge in edges
         ],
-    )
-
-
-def _writing_group_to_dto(group: MotifWritingGroup) -> MotifWritingGroupOut:
-    return MotifWritingGroupOut(
-        label=group.label,
-        motif_count=group.motif_count,
-        excerpt_count=group.excerpt_count,
-        motif_ids=group.motif_ids,
-    )
-
-
-def _writing_source_to_dto(source: MotifWritingSource) -> MotifWritingSourceOut:
-    source_kind = (
-        MOTIF_SOURCE_REFERENCE
-        if source.source_kind == MOTIF_SOURCE_REFERENCE
-        else MOTIF_SOURCE_ARTICLE
-    )
-    return MotifWritingSourceOut(
-        source_kind=source_kind,
-        source_id=source.source_id,
-        source_title=source.source_title,
-        source_author=source.source_author,
-        motif_count=source.motif_count,
-        excerpt_count=source.excerpt_count,
-        motif_ids=source.motif_ids,
-    )
-
-
-def _writing_excerpt_to_dto(
-    excerpt: MotifWritingExcerptSnippet,
-) -> MotifWritingExcerptSnippetOut:
-    source_kind = (
-        MOTIF_SOURCE_REFERENCE
-        if excerpt.source_kind == MOTIF_SOURCE_REFERENCE
-        else MOTIF_SOURCE_ARTICLE
-    )
-    return MotifWritingExcerptSnippetOut(
-        id=excerpt.id,
-        source_kind=source_kind,
-        source_id=excerpt.source_id,
-        source_title=excerpt.source_title,
-        source_author=excerpt.source_author,
-        excerpt_text=excerpt.excerpt_text,
-        note=excerpt.note,
-    )
-
-
-def _writing_motif_to_dto(motif: MotifWritingMotif) -> MotifWritingMotifOut:
-    return MotifWritingMotifOut(
-        id=motif.id,
-        name=motif.name,
-        tags=motif.tags,
-        excerpt_count=motif.excerpt_count,
-        pinned=motif.pinned,
-        definition=motif.definition,
-        core_tension=motif.core_tension,
-        writing_functions=motif.writing_functions,
-        scene_triggers=motif.scene_triggers,
-        character_signals=motif.character_signals,
-        excerpts=[_writing_excerpt_to_dto(excerpt) for excerpt in motif.excerpts],
-    )
-
-
-def _writing_index_to_dto(index: MotifWritingIndex) -> MotifWritingIndexOut:
-    return MotifWritingIndexOut(
-        tags=[_writing_group_to_dto(group) for group in index.tags],
-        functions=[_writing_group_to_dto(group) for group in index.functions],
-        sources=[_writing_source_to_dto(source) for source in index.sources],
-        motifs=[_writing_motif_to_dto(motif) for motif in index.motifs],
     )
 
 
@@ -970,7 +847,7 @@ def _profile_config(profile_id: str, container: AppContainer) -> tuple[str, Opti
 def _enrichment_system_prompt() -> str:
     return (
         "你是写作工具里的意象/概念短卡生成器，不是百科问答助手。"
-        "你的目标是把概念转成可记忆、可迁移、可写作调用的短卡。"
+        "你的目标是把概念转成可记忆、可迁移、可供作者参考的意象档案。"
         "输出必须凝练、具体、克制，避免长篇思想史和空泛赞美。"
         "不要编造引文、页码、版本、作者原话或看似精确的出处。"
         "如果给出相关句子候选，必须优先给作者和书名/篇名；不确定就留空或写需核对。"
@@ -1208,21 +1085,6 @@ def create_motif(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return _node_to_dto(node)
-
-
-@router.get("/writing-index", response_model=MotifWritingIndexOut)
-def motif_writing_index(
-    q: str = "",
-    limit: int = Query(120, ge=1, le=1000),
-    excerpt_limit: int = Query(3, ge=0, le=12),
-    container: AppContainer = Depends(get_container),
-) -> MotifWritingIndexOut:
-    index = container.motif_repository.writing_index(
-        query=q,
-        limit=limit,
-        excerpt_limit=excerpt_limit,
-    )
-    return _writing_index_to_dto(index)
 
 
 @router.get("/graph", response_model=MotifGraphOut)

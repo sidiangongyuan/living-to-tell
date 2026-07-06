@@ -1144,9 +1144,9 @@ test('article writing notes can be added, pinned, edited, completed, restored, a
   await expect.poll(() => requests.deleted).toBe(1)
 })
 
-test('article motif invocation can copy, insert, save as note, and open motif detail', async ({ page }) => {
+test('article motif anchors show linked motifs without exposing source sentences and can jump to the motif', async ({ page }) => {
   const motif = {
-    id: 'motif-invocation',
+    id: 'motif-anchor',
     name: '海德格尔的常人',
     aliases: ['das Man'],
     note: '',
@@ -1168,50 +1168,29 @@ test('article motif invocation can copy, insert, save as note, and open motif de
     created_at: null,
     updated_at: null,
   }
-  const writingIndex = {
-    tags: [{ label: '哲学', motif_count: 1, excerpt_count: 1, motif_ids: [motif.id] }],
-    functions: [{ label: '制造日常压迫感', motif_count: 1, excerpt_count: 1, motif_ids: [motif.id] }],
-    sources: [{
-      source_kind: 'reference',
-      source_id: 'ref-being-time',
-      source_title: '存在与时间',
-      source_author: '海德格尔',
-      motif_count: 1,
-      excerpt_count: 1,
-      motif_ids: [motif.id],
-    }],
-    motifs: [{
-      id: motif.id,
-      name: motif.name,
-      tags: motif.tags,
-      excerpt_count: 1,
-      pinned: false,
-      definition: motif.profile.definition,
-      core_tension: motif.profile.core_tension,
-      writing_functions: motif.profile.writing_functions,
-      scene_triggers: motif.profile.scene_triggers,
-      character_signals: motif.profile.character_signals,
-      excerpts: [{
-        id: 'excerpt-callable',
-        source_kind: 'reference',
-        source_id: 'ref-being-time',
-        source_title: '存在与时间',
-        source_author: '海德格尔',
-        excerpt_text: '人首先和通常沉没在常人之中。',
-        note: 'AI 候选，来源需核对。',
-      }],
-    }],
+  const anchorStart = article.body.indexOf('第二段正文')
+  const excerpt = {
+    id: 'excerpt-anchor',
+    source_kind: 'article',
+    source_id: article.id,
+    source_title_snapshot: article.title,
+    excerpt_text: '第二段正文。',
+    note: '',
+    selection_start: anchorStart,
+    selection_end: anchorStart + '第二段正文。'.length,
+    before_context: '第一段正文。',
+    after_context: '',
+    motif_ids: [motif.id],
+    motif_names: [motif.name],
+    source_exists: true,
+    source_current_title: article.title,
+    created_at: null,
+    updated_at: null,
   }
-  const updates: Array<{ title?: string; body?: string; tags?: string[] }> = []
-  const noteBodies: string[] = []
 
   await page.route(/\/api\/motifs(?:\/|\?|$)/, async (route) => {
     const request = route.request()
     const url = new URL(request.url())
-    if (url.pathname === '/api/motifs/writing-index') {
-      await route.fulfill({ json: writingIndex })
-      return
-    }
     if (url.pathname === '/api/motifs') {
       await route.fulfill({ json: [motif] })
       return
@@ -1226,65 +1205,34 @@ test('article motif invocation can copy, insert, save as note, and open motif de
       return
     }
     if (url.pathname === `/api/motifs/${motif.id}/excerpts`) {
-      await route.fulfill({ json: [] })
+      await route.fulfill({ json: [excerpt] })
       return
     }
     if (url.pathname === '/api/motifs/excerpts/source/article/article-a') {
-      await route.fulfill({ json: [] })
+      await route.fulfill({ json: [excerpt] })
       return
     }
     await route.fulfill({ json: [] })
   })
   await page.route('**/api/articles/article-a', async (route) => {
-    const request = route.request()
-    if (request.method() === 'PUT') {
-      const body = request.postDataJSON() as { title?: string; body?: string; tags?: string[] }
-      updates.push(body)
-      await route.fulfill({ json: { ...article, ...body } })
-      return
-    }
     await route.fulfill({ json: article })
-  })
-  await page.route('**/api/articles/article-a/notes**', async (route) => {
-    const request = route.request()
-    if (request.method() === 'POST') {
-      const body = request.postDataJSON() as { body?: string }
-      noteBodies.push(body.body ?? '')
-      await route.fulfill({ status: 201, json: { ...openNote, id: 'note-from-motif', body: body.body ?? '' } })
-      return
-    }
-    await route.fulfill({ json: [openNote] })
   })
 
   await page.goto('/articles?id=article-a')
   const editor = page.getByTestId('article-body-editor')
   await expect(editor).toHaveValue(article.body, { timeout: 20000 })
-  await editor.focus()
-  await page.keyboard.press('Control+End')
 
-  const invocation = page.getByTestId('article-motif-invocation')
-  await invocation.getByRole('button', { name: /意象调用/ }).click()
-  await expect(invocation.getByText('海德格尔的常人')).toBeVisible()
+  const anchors = page.getByTestId('article-motif-anchors')
+  await expect(anchors.getByText('海德格尔的常人')).toBeVisible()
+  await expect(anchors.getByText('1 处')).toBeVisible()
+  await expect(anchors.getByText('第二段正文。')).toHaveCount(0)
 
-  await invocation.getByRole('button', { name: '哲学 · 1' }).click()
-  await expect(invocation.getByText(/标签：哲学/)).toBeVisible()
-  await invocation.getByRole('button', { name: '清除' }).click()
-  await invocation.getByTestId('article-motif-invocation-card').getByRole('button').first().click()
+  await anchors.getByRole('button', { name: '定位' }).click()
+  await expect(page).toHaveURL(/motif_excerpt=excerpt-anchor/)
+  await expect.poll(async () => editor.evaluate((node) => (node as HTMLTextAreaElement).selectionStart)).toBe(anchorStart)
 
-  await invocation.getByRole('button', { name: '复制' }).click()
-  await expect.poll(() => page.evaluate(() => window.__copiedText)).toContain('核心张力：自我判断和公共意见之间的拉扯。')
-
-  await invocation.getByRole('button', { name: '插入正文' }).click()
-  await expect(editor).toHaveValue(/核心张力：自我判断和公共意见之间的拉扯。/)
-  await expect.poll(() => updates.some((body) => body.body?.includes('制造日常压迫感'))).toBe(true)
-
-  await invocation.getByRole('button', { name: /人首先和通常沉没在常人之中/ }).click()
-  await invocation.getByRole('button', { name: '存为便签' }).click()
-  await expect.poll(() => noteBodies).toEqual([expect.stringContaining('人首先和通常沉没在常人之中。')])
-  await expect(invocation.getByText('已保存为文章便签。')).toBeVisible()
-
-  await invocation.getByRole('button', { name: '查看意象' }).click()
-  await expect(page).toHaveURL(/\/motifs\?.*id=motif-invocation/)
+  await anchors.getByRole('button', { name: '打开意象' }).click()
+  await expect(page).toHaveURL(/\/motifs\?.*id=motif-anchor/)
 })
 
 test('article list filters, context pane, save, AI navigation, archive, and collection picker actions work', async ({ page }) => {

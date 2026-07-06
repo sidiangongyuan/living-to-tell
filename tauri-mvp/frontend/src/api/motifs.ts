@@ -164,54 +164,6 @@ export interface MotifGraph {
   edges: MotifGraphEdge[]
 }
 
-export interface MotifWritingGroup {
-  label: string
-  motif_count: number
-  excerpt_count: number
-  motif_ids: string[]
-}
-
-export interface MotifWritingSource {
-  source_kind: MotifSourceKind
-  source_id: string
-  source_title: string
-  source_author: string
-  motif_count: number
-  excerpt_count: number
-  motif_ids: string[]
-}
-
-export interface MotifWritingExcerptSnippet {
-  id: string
-  source_kind: MotifSourceKind
-  source_id: string
-  source_title: string
-  source_author: string
-  excerpt_text: string
-  note: string
-}
-
-export interface MotifWritingMotif {
-  id: string
-  name: string
-  tags: string[]
-  excerpt_count: number
-  pinned: boolean
-  definition: string
-  core_tension: string
-  writing_functions: string[]
-  scene_triggers: string[]
-  character_signals: string[]
-  excerpts: MotifWritingExcerptSnippet[]
-}
-
-export interface MotifWritingIndex {
-  tags: MotifWritingGroup[]
-  functions: MotifWritingGroup[]
-  sources: MotifWritingSource[]
-  motifs: MotifWritingMotif[]
-}
-
 function paramsFrom(input: Record<string, string | number | undefined>) {
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(input)) {
@@ -320,11 +272,6 @@ export const motifsApi = {
 
   async graph(query = '', limit = 80): Promise<MotifGraph> {
     const res = await apiFetch(`/api/motifs/graph${paramsFrom({ q: query, limit })}`)
-    return handleResponse(res)
-  },
-
-  async writingIndex(query = '', limit = 120, excerptLimit = 3): Promise<MotifWritingIndex> {
-    const res = await apiFetch(`/api/motifs/writing-index${paramsFrom({ q: query, limit, excerpt_limit: excerptLimit })}`)
     return handleResponse(res)
   },
 
