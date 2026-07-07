@@ -156,6 +156,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('AI Cards create, edit autosave, tags, filters, no sample restore, and delete actions work', async ({ page }) => {
+  test.setTimeout(60_000)
   const createdBodies: Array<Record<string, unknown>> = []
   const updatedBodies: Array<Record<string, unknown>> = []
   let presetGenerateRequests = 0

@@ -49,8 +49,9 @@ import { useCollectionsStore } from './store'
 
 const LAST_SELECTED_COLLECTION_KEY = 'living_to_tell_last_selected_collection_id'
 const AGENT_LONG_ANSWER_THRESHOLD = 700
+const ROUTE_HIGHLIGHT_MS = 2600
 
-type AgentQuickTaskKind = 'health' | 'continuity' | 'next' | 'memory'
+type AgentQuickTaskKind = 'init' | 'health' | 'continuity' | 'next' | 'memory'
 
 const store = useCollectionsStore()
 const { t, locale } = useI18n()
@@ -79,7 +80,6 @@ const agentState = ref<CollectionAgentState | null>(null)
 const agentLoading = ref(false)
 const agentError = ref<string | null>(null)
 const agentPrompt = ref('')
-const agentTaskType = ref('free_chat')
 const agentReferenceQuery = ref('')
 const agentReferenceResults = ref<CollectionAgentReference[]>([])
 const selectedAgentRefs = ref<CollectionAgentReference[]>([])
@@ -99,9 +99,11 @@ const agentPromptIndexQuery = ref('')
 const agentClearDialogOpen = ref(false)
 const agentClearing = ref(false)
 const highlightedCollectionArticleId = ref<string | null>(null)
+const windowWidth = ref(typeof window === 'undefined' ? 1440 : window.innerWidth)
 let agentLoadToken = 0
 let agentPollTimer: number | null = null
 let agentReferenceSearchToken = 0
+let collectionArticleHighlightTimer: number | null = null
 const outlineDraftTitle = ref('')
 const outlineDraftType = ref<OutlineItemType>('scene')
 const outlineDraftStatus = ref<OutlineItemStatus>('idea')
@@ -132,6 +134,17 @@ const structurePane = useResizablePane({
   minSize: 320,
   maxSize: 560,
 })
+
+const collectionListPaneStyle = computed(() => ({
+  width: windowWidth.value < 920
+    ? `${Math.max(190, Math.min(collectionListPane.size.value, Math.floor(windowWidth.value * 0.34)))}px`
+    : `${collectionListPane.size.value}px`,
+}))
+const structurePaneStyle = computed(() => ({
+  width: windowWidth.value < 1180
+    ? `${Math.max(260, Math.min(structurePane.size.value, Math.floor(windowWidth.value * 0.38)))}px`
+    : `${structurePane.size.value}px`,
+}))
 
 const deleteContextMenuOpen = ref(false)
 const deleteContextMenuX = ref(0)
@@ -186,6 +199,12 @@ const activeAgentRun = computed(() =>
 )
 const agentProfileOptions = computed(() => agentState.value?.profiles ?? [{ id: 'default', name: '默认配置' }])
 const agentQuickTasks = computed(() => [
+  {
+    kind: 'init' as const,
+    title: '初始化 Agent',
+    subtitle: '绑定本书、建立基线',
+    prompt: '请初始化你作为当前作品集 Agent 的工作基线：阅读作品集结构、未编排文章和项目圣经，说明你已经掌握了什么、还缺什么、建议作者先补哪些记忆或结构信息。只生成可确认提案，不要改正文。',
+  },
   {
     kind: 'health' as const,
     title: '体检作品集',
@@ -245,6 +264,30 @@ const outlineStatusOptions = computed(() => ([
   { value: 'done' as const, label: t('collectionOutline.statusDone') },
   { value: 'parked' as const, label: t('collectionOutline.statusParked') },
 ]))
+const outlineTypeGuide = computed(() => {
+  if (locale.value === 'en') {
+    if (projectType.value === 'novel') {
+      return 'Novel structure usually reads Part -> Chapter -> Scene. A part is a large act or volume, a chapter is what readers see in the table of contents, a scene is one concrete beat or draft slot, and a note is planning-only.'
+    }
+    if (projectType.value === 'essay') {
+      return 'Essay collections usually read Section -> Group -> Essay. A section is a large theme, a group gathers related essays, an essay is a real piece, and a note is planning-only.'
+    }
+    if (projectType.value === 'nonfiction') {
+      return 'Nonfiction usually reads Part -> Chapter -> Section. A part is the large argument block, a chapter develops one claim, a section is a smaller unit, and a note is planning-only.'
+    }
+    return 'Use Group for a large bucket, Chapter for a middle layer, Article for a real draft slot, and Note for planning-only reminders.'
+  }
+  if (projectType.value === 'novel') {
+    return '小说通常是“分部 -> 章节 -> 场景”。分部是一卷、一幕或一大段；章节是读者看到的一章；场景是章节里的具体事件或一个正文位置；笔记只放规划提醒，不代表正文。'
+  }
+  if (projectType.value === 'essay') {
+    return '散文集通常是“辑 -> 篇组 -> 篇章”。辑是一组主题，篇组收纳相近文章，篇章才是一篇真实作品；笔记只放规划提醒。'
+  }
+  if (projectType.value === 'nonfiction') {
+    return '非虚构通常是“部分 -> 章节 -> 小节”。部分是一大块论述，章节推进一个主要问题，小节承载更小的论证或材料；笔记只放规划提醒。'
+  }
+  return '通用作品集可用“分组 -> 章节 -> 文章”。分组是大容器，章节是中层，文章才是正文位置；笔记只放规划提醒。'
+})
 
 interface CollectionTourStep {
   id: string
@@ -278,22 +321,40 @@ const collectionTourSteps = computed<CollectionTourStep[]>(() => {
       target: '[data-tour="collections-header"]',
     },
     {
-      id: 'structure',
-      title: t('collectionsTour.structureTitle'),
-      body: t('collectionsTour.structureBody'),
-      target: '[data-tour="collections-structure"]',
-    },
-    {
       id: 'project-type',
       title: t('collectionsTour.projectTypeTitle'),
       body: t('collectionsTour.projectTypeBody'),
       target: '[data-tour="collections-project-type"]',
     },
     {
+      id: 'add-articles',
+      title: t('collectionsTour.addArticlesTitle'),
+      body: t('collectionsTour.addArticlesBody'),
+      target: '[data-tour="collections-add-articles"]',
+    },
+    {
+      id: 'structure',
+      title: t('collectionsTour.structureTitle'),
+      body: t('collectionsTour.structureBody'),
+      target: '[data-tour="collections-structure"]',
+    },
+    {
+      id: 'create-node',
+      title: t('collectionsTour.createNodeTitle'),
+      body: t('collectionsTour.createNodeBody'),
+      target: '[data-tour="outline-create-buttons"]',
+    },
+    {
       id: 'tree',
       title: t('collectionsTour.treeTitle'),
       body: t('collectionsTour.treeBody'),
       target: '[data-tour="manuscript-tree"]',
+    },
+    {
+      id: 'child-node',
+      title: t('collectionsTour.childNodeTitle'),
+      body: t('collectionsTour.childNodeBody'),
+      target: '[data-tour="outline-new-child"]',
     },
     {
       id: 'unplanned',
@@ -314,6 +375,12 @@ const collectionTourSteps = computed<CollectionTourStep[]>(() => {
       target: '[data-tour="outline-linked-article"]',
     },
     {
+      id: 'fields',
+      title: t('collectionsTour.fieldsTitle'),
+      body: t('collectionsTour.fieldsBody'),
+      target: '[data-tour="outline-detail-fields"]',
+    },
+    {
       id: 'board',
       title: t('collectionsTour.boardTitle'),
       body: t('collectionsTour.boardBody'),
@@ -324,6 +391,12 @@ const collectionTourSteps = computed<CollectionTourStep[]>(() => {
       title: t('collectionsTour.exportTitle'),
       body: t('collectionsTour.exportBody'),
       target: '[data-tour="collections-export-panel"]',
+    },
+    {
+      id: 'agent',
+      title: t('collectionsTour.agentTitle'),
+      body: t('collectionsTour.agentBody'),
+      target: '[data-tour="collection-agent-panel"]',
     },
     {
       id: 'done',
@@ -342,6 +415,7 @@ const currentTourProgressLabel = computed(() =>
 )
 
 onMounted(async () => {
+  window.addEventListener('resize', handleWindowResize)
   await store.loadCollections()
   const routeCollectionId = typeof route.query.id === 'string' ? route.query.id : ''
   const lastCollectionId = localStorage.getItem(LAST_SELECTED_COLLECTION_KEY)
@@ -423,7 +497,13 @@ watch(
 
 onBeforeUnmount(() => {
   stopAgentPolling()
+  window.removeEventListener('resize', handleWindowResize)
+  clearCollectionArticleHighlightTimer()
 })
+
+function handleWindowResize() {
+  windowWidth.value = window.innerWidth
+}
 
 function prepareCollectionTourStep(index = tourStepIndex.value) {
   const step = collectionTourSteps.value[index]
@@ -432,6 +512,8 @@ function prepareCollectionTourStep(index = tourStepIndex.value) {
     viewMode.value = 'board'
   } else if (step.id === 'export') {
     viewMode.value = 'export'
+  } else if (step.id === 'agent') {
+    viewMode.value = 'agent'
   } else {
     viewMode.value = 'structure'
   }
@@ -478,7 +560,7 @@ async function applyCollectionRouteContext() {
 
   const articleId = typeof route.query.article === 'string' ? route.query.article : ''
   if (!articleId || !store.selectedCollectionId) return
-  highlightedCollectionArticleId.value = articleId
+  setCollectionArticleHighlight(articleId)
   if (!tab) viewMode.value = 'structure'
   const linkedItem = store.outline.find((item) => item.entry_id === articleId)
   const inCollection = store.articles.some((article) => article.id === articleId)
@@ -493,12 +575,37 @@ async function applyCollectionRouteContext() {
   scrollToCollectionArticle(articleId)
 }
 
+function clearCollectionArticleHighlightTimer() {
+  if (collectionArticleHighlightTimer !== null) {
+    window.clearTimeout(collectionArticleHighlightTimer)
+    collectionArticleHighlightTimer = null
+  }
+}
+
+function setCollectionArticleHighlight(articleId: string | null) {
+  clearCollectionArticleHighlightTimer()
+  highlightedCollectionArticleId.value = articleId
+  if (articleId) {
+    collectionArticleHighlightTimer = window.setTimeout(() => {
+      if (highlightedCollectionArticleId.value === articleId) highlightedCollectionArticleId.value = null
+      collectionArticleHighlightTimer = null
+    }, ROUTE_HIGHLIGHT_MS)
+  }
+}
+
 function scrollToCollectionArticle(articleId: string) {
   const target = Array
     .from(document.querySelectorAll<HTMLElement>('[data-collection-article-id]'))
     .find((element) => element.dataset.collectionArticleId === articleId)
   if (target instanceof HTMLElement) {
     target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+}
+
+function scrollToOutlineItem(itemId: string) {
+  const target = document.querySelector<HTMLElement>(`[data-outline-item-id="${itemId}"]`)
+  if (target instanceof HTMLElement) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }
 }
 
@@ -693,6 +800,10 @@ function removeAgentReference(ref: CollectionAgentReference) {
 }
 
 function handleAgentPromptKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && agentReferencePickerOpen.value) {
+    agentReferencePickerOpen.value = false
+    return
+  }
   if (event.key === '@') {
     agentReferencePickerOpen.value = true
     agentReferenceQuery.value = ''
@@ -708,11 +819,16 @@ function handleAgentPromptInput() {
   void searchAgentReferences()
 }
 
-async function runAgentPrompt(taskType = agentTaskType.value, prompt = agentPrompt.value) {
+async function runAgentPrompt(taskType = 'free_chat', prompt = agentPrompt.value) {
   if (!store.selectedCollectionId) return
   const message = prompt.trim()
   if (message === '/clear') {
     requestAgentClear()
+    return
+  }
+  if (message === '/init') {
+    runQuickAgentTask('init')
+    agentPrompt.value = ''
     return
   }
   if (!message) {
@@ -1189,7 +1305,10 @@ async function saveOutlineItemIfDirty(): Promise<boolean> {
 async function selectOutlineItem(id: string) {
   const saved = await saveOutlineItemIfDirty()
   if (!saved) return
+  setCollectionArticleHighlight(null)
   store.selectOutlineItem(id)
+  await nextTick()
+  scrollToOutlineItem(id)
 }
 
 async function deleteSelectedOutlineItem() {
@@ -1414,7 +1533,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
   <div class="flex h-full overflow-hidden bg-[#f5f1e8] text-stone-900">
     <aside
       class="flex shrink-0 flex-col border-r border-stone-200 bg-[#2d2a25] text-stone-100"
-      :style="collectionListPane.paneStyle.value"
+      :style="collectionListPaneStyle"
       data-testid="collections-list-pane"
       data-tour="collections-list"
     >
@@ -1471,11 +1590,11 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
     <main class="flex min-w-0 flex-1 flex-col">
       <header class="border-b border-stone-200 bg-[#fbf7ef]/95 px-6 py-5">
         <template v-if="store.selectedCollection">
-          <div class="flex items-start justify-between gap-4">
+          <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div class="min-w-0 flex-1 space-y-3" data-tour="collections-header">
               <input
                 v-model="draftTitle"
-                class="w-full bg-transparent text-3xl font-semibold tracking-tight outline-none"
+                class="w-full bg-transparent text-2xl font-semibold tracking-tight outline-none md:text-3xl"
                 :placeholder="t('collections.titlePlaceholder')"
                 @blur="saveCollectionMeta"
               />
@@ -1512,7 +1631,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                   {{ t('common.saving') }}
                 </span>
               </div>
-              <div class="grid gap-2 text-xs text-stone-600 md:grid-cols-4">
+              <div class="grid gap-2 text-xs text-stone-600 sm:grid-cols-2 xl:grid-cols-4">
                 <div class="rounded-2xl bg-white/70 px-3 py-2 shadow-sm">
                   <div class="text-[11px] text-stone-400">{{ t('collectionOutline.linkedStructure') }}</div>
                   <div class="mt-1 text-base font-semibold text-stone-900">{{ outlineProgress.linkedItems }} / {{ outlineProgress.totalItems }}</div>
@@ -1534,6 +1653,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                 <div class="inline-flex rounded-xl bg-stone-100 p-1 text-sm font-semibold text-stone-600">
                   <button
                     type="button"
+                    data-tour="collection-agent-tab"
                     :class="[
                       'rounded-lg px-3 py-1.5 transition',
                       viewMode === 'structure' ? 'bg-white text-stone-950 shadow-sm' : 'hover:text-stone-900'
@@ -1589,6 +1709,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
             <div class="flex flex-wrap justify-end gap-2">
               <button
                 class="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700"
+                data-tour="collections-add-articles"
                 @click="openArticlePicker"
               >
                 {{ t('collections.addArticles') }}
@@ -1626,7 +1747,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
         <template v-if="viewMode === 'structure'">
           <section
             class="shrink-0 overflow-y-auto border-r border-stone-200 bg-[#fbf7ef] p-5"
-            :style="structurePane.paneStyle.value"
+            :style="structurePaneStyle"
             data-testid="collection-outline-pane"
             data-tour="collections-structure"
           >
@@ -1642,7 +1763,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                 {{ t('collectionOutline.newTopLevel') }}
               </button>
             </div>
-            <div class="mb-4 grid grid-cols-2 gap-2">
+            <div class="mb-4 grid grid-cols-2 gap-2" data-tour="outline-create-buttons">
               <button
                 v-for="option in outlineTypeOptions"
                 :key="option.value"
@@ -1673,13 +1794,14 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                 :key="node.item.id"
                 draggable="true"
                 :style="{ paddingLeft: `${12 + node.depth * 18}px` }"
+                :data-outline-item-id="node.item.id"
                 :data-collection-article-id="node.item.entry_id || undefined"
                 :class="[
                   'group cursor-pointer rounded-2xl border bg-white py-3 pr-3 shadow-sm transition-all',
-                  highlightedCollectionArticleId === node.item.entry_id
-                    ? 'border-amber-400 ring-2 ring-amber-200'
-                    : store.selectedOutlineItemId === node.item.id
-                    ? 'border-indigo-300 shadow-md'
+                  store.selectedOutlineItemId === node.item.id
+                    ? 'border-amber-400 ring-2 ring-amber-200 shadow-md'
+                    : highlightedCollectionArticleId === node.item.entry_id
+                    ? 'border-amber-300 ring-1 ring-amber-100'
                     : 'border-stone-200 hover:border-stone-300 hover:shadow-md'
                 ]"
                 @click="selectOutlineItem(node.item.id)"
@@ -1794,7 +1916,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                     <button class="rounded-xl bg-stone-100 px-3 py-2 text-sm text-stone-700" @click="createSiblingOutlineItem">
                       {{ t('collectionOutline.newSibling') }}
                     </button>
-                    <button class="rounded-xl bg-stone-100 px-3 py-2 text-sm text-stone-700" @click="createChildOutlineItem">
+                    <button class="rounded-xl bg-stone-100 px-3 py-2 text-sm text-stone-700" data-tour="outline-new-child" @click="createChildOutlineItem">
                       {{ t('collectionOutline.newChild') }}
                     </button>
                     <button class="rounded-xl bg-stone-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40" :disabled="outlineSaving" @click="saveOutlineItem">
@@ -1815,6 +1937,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                       <option v-for="option in outlineTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
                     </select>
                     <span class="mt-1 block text-xs leading-5 text-stone-400">{{ t('collectionOutline.fieldTypeHelp') }}</span>
+                    <span class="mt-2 block rounded-xl bg-indigo-50 px-3 py-2 text-xs leading-5 text-indigo-800">{{ outlineTypeGuide }}</span>
                   </label>
                   <label>
                     <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldParent') }}</span>
@@ -1854,7 +1977,8 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                   </label>
                   <label>
                     <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldPov') }}</span>
-                    <input v-model="outlineDraftPov" class="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" />
+                    <input v-model="outlineDraftPov" class="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" :placeholder="t('collectionOutline.fieldPovPlaceholder')" />
+                    <span class="mt-1 block text-xs leading-5 text-stone-400">{{ t('collectionOutline.fieldPovHelp') }}</span>
                   </label>
                   <label>
                     <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldTimeline') }}</span>
@@ -1883,6 +2007,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                       {{ outlineLinkedArticle?.title || t('collectionOutline.noLinkedArticle') }}
                     </p>
                     <p class="mt-1 text-xs leading-5 text-stone-400">{{ t('collectionOutline.linkedArticleHelp') }}</p>
+                    <p class="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">{{ t('collectionOutline.multiArticleHelp') }}</p>
                   </div>
                   <div class="flex flex-wrap justify-end gap-2">
                     <button class="rounded-xl bg-stone-100 px-3 py-2 text-sm text-stone-700" @click="createArticleFromOutline">
@@ -1955,7 +2080,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                 {{ t('collectionOutline.newChapter') }}
               </button>
             </div>
-            <div v-else class="grid min-w-[920px] grid-cols-5 gap-3">
+            <div v-else class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
               <section
                 v-for="column in outlineBoardColumns"
                 :key="column.value"
@@ -2005,9 +2130,9 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
         </template>
 
         <template v-else-if="viewMode === 'agent'">
-          <section class="flex-1 overflow-y-auto p-6" data-testid="collection-agent-panel">
-            <div class="mx-auto grid max-w-7xl gap-5 2xl:grid-cols-[260px_minmax(0,1.1fr)_minmax(340px,0.65fr)]">
-              <aside class="space-y-4 2xl:sticky 2xl:top-0 2xl:self-start">
+          <section class="flex-1 overflow-y-auto p-4 sm:p-6" data-testid="collection-agent-panel" data-tour="collection-agent-panel">
+            <div class="mx-auto grid max-w-7xl gap-5 xl:grid-cols-[220px_minmax(0,1fr)] 2xl:grid-cols-[240px_minmax(0,1.05fr)_minmax(300px,0.7fr)]">
+              <aside class="space-y-4 xl:sticky xl:top-0 xl:self-start">
                 <div class="rounded-3xl border border-stone-200 bg-white p-4 shadow-sm">
                   <div class="flex items-start justify-between gap-3">
                     <div>
@@ -2081,12 +2206,13 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                     </div>
                   </div>
 
-                  <div class="mt-5 grid gap-2 md:grid-cols-4">
+                  <div class="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
                     <button
                       v-for="task in agentQuickTasks"
                       :key="task.kind"
+                      type="button"
                       :class="[
-                        'rounded-2xl px-4 py-3 text-left text-sm font-semibold ring-1 transition',
+                        'rounded-2xl px-4 py-3 text-left text-sm font-semibold ring-1 transition focus:outline-none focus:ring-2 focus:ring-amber-300',
                         agentPendingQuickTask === task.kind
                           ? 'bg-amber-50 text-stone-900 ring-amber-200'
                           : 'bg-white text-stone-800 ring-stone-200 hover:bg-stone-50'
@@ -2221,18 +2347,14 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                     v-model="agentPrompt"
                     rows="5"
                     class="w-full resize-none rounded-2xl border border-stone-200 px-4 py-3 text-sm leading-6 outline-none focus:ring-2 focus:ring-indigo-200"
-                    placeholder="例如：帮我检查第一部的结构断点；输入 @旧信 可搜索并加入引用；输入 /clear 可清空当前 Agent 会话。"
+                    placeholder="例如：帮我检查第一部的结构断点；输入 @旧信 可搜索并加入引用；输入 /init 初始化 Agent；输入 /clear 清空当前会话。"
                     @keydown="handleAgentPromptKeydown"
                     @input="handleAgentPromptInput"
                   />
                   <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
-                    <select v-model="agentTaskType" class="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs outline-none">
-                      <option value="free_chat">普通对话</option>
-                      <option value="health">体检作品集</option>
-                      <option value="continuity">连续性检查</option>
-                      <option value="next">下一步建议</option>
-                      <option value="memory">整理记忆</option>
-                    </select>
+                    <p class="max-w-xl text-xs leading-5 text-stone-500">
+                      这里默认按普通对话发送。专项任务请用上方按钮；输入 /init 会打开初始化确认，输入 /clear 会打开清空确认。
+                    </p>
                     <button
                       class="rounded-xl bg-stone-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
                       :disabled="agentRunning || Boolean(activeAgentRun) || !agentPrompt.trim()"
@@ -2458,9 +2580,12 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
       @select="handleDeleteContextMenuSelect"
     />
 
-    <div v-if="createDialogOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div class="w-[480px] rounded-3xl bg-white p-6 shadow-2xl">
-        <h3 class="text-xl font-semibold">{{ t('collections.createTitle') }}</h3>
+    <div v-if="createDialogOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div class="w-full max-w-[480px] rounded-3xl bg-white p-6 shadow-2xl">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="text-xl font-semibold">{{ t('collections.createTitle') }}</h3>
+          <button class="rounded-lg px-2 py-1 text-sm font-semibold text-stone-400 hover:bg-stone-100 hover:text-stone-700" @click="createDialogOpen = false">×</button>
+        </div>
         <input
           v-model="newTitle"
           class="mt-5 w-full rounded-xl border border-stone-200 px-4 py-3 outline-none focus:ring-2 focus:ring-amber-300"
@@ -2493,11 +2618,16 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
       </div>
     </div>
 
-    <div v-if="articlePickerOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div class="flex max-h-[82vh] w-[720px] flex-col rounded-3xl bg-white shadow-2xl">
+    <div v-if="articlePickerOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div class="flex max-h-[82vh] w-full max-w-[720px] flex-col rounded-3xl bg-white shadow-2xl">
         <div class="border-b border-stone-200 p-6">
-          <h3 class="text-xl font-semibold">{{ t('collections.pickArticles') }}</h3>
-          <p class="mt-1 text-sm text-stone-500">{{ t('collections.pickHint') }}</p>
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <h3 class="text-xl font-semibold">{{ t('collections.pickArticles') }}</h3>
+              <p class="mt-1 text-sm text-stone-500">{{ t('collections.pickHint') }}</p>
+            </div>
+            <button class="rounded-lg px-2 py-1 text-sm font-semibold text-stone-400 hover:bg-stone-100 hover:text-stone-700" @click="articlePickerOpen = false">×</button>
+          </div>
         </div>
         <div class="flex-1 overflow-y-auto p-4">
           <div v-if="actionError || store.error" class="mb-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">

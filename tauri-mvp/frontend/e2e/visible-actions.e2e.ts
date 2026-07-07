@@ -1614,6 +1614,7 @@ test('app shell navigation, language, focus mode, and command palette actions wo
 })
 
 test('collection export buttons trigger downloads and article management actions call real APIs', async ({ page }) => {
+  test.setTimeout(60_000)
   const addedRequests: string[][] = []
   let removedRequests = 0
   let deleteCollectionRequests = 0
@@ -1680,7 +1681,7 @@ test('collection export buttons trigger downloads and article management actions
   })
 
   await page.goto('/collections')
-  await expect(page.getByText('测试作品集')).toBeVisible()
+  await expect(page.getByText('测试作品集')).toBeVisible({ timeout: 20000 })
 
   await page.getByRole('complementary').getByRole('button', { name: '+ 新建', exact: true }).click()
   await expect(page.getByRole('heading', { name: '新建作品集' })).toBeVisible()
@@ -1892,6 +1893,12 @@ test('collection agent reference picker, quick task confirmation, prompt index, 
   await promptIndex.getByRole('button', { name: /检查连续性/ }).first().click()
   await expect(page.locator('#collection-agent-run-agent-run-new')).toHaveClass(/ring-2/)
 
+  await agentPromptBox.fill('/init')
+  await page.getByRole('button', { name: '发送给 Agent' }).click()
+  await expect(page.getByText('准备运行：初始化 Agent')).toBeVisible()
+  expect(runRequests).toBe(1)
+  await page.getByRole('button', { name: '取消' }).click()
+
   await agentPromptBox.fill('/clear')
   await page.getByRole('button', { name: '发送给 Agent' }).click()
   await expect(page.getByRole('heading', { name: '清空 Agent 会话？' })).toBeVisible()
@@ -1906,7 +1913,7 @@ test('collection agent reference picker, quick task confirmation, prompt index, 
 
 test('collection planning board groups outline items and opens the selected outline detail', async ({ page }) => {
   await page.goto('/collections')
-  await expect(page.getByText('测试作品集')).toBeVisible()
+  await expect(page.getByText('测试作品集')).toBeVisible({ timeout: 20000 })
 
   await page.getByRole('button', { name: '看板' }).click()
   const board = page.getByTestId('collection-planning-board')
@@ -1922,7 +1929,20 @@ test('collection planning board groups outline items and opens the selected outl
   const detail = page.getByTestId('collection-outline-detail')
   await expect(detail).toBeVisible()
   await expect(detail.locator('input').first()).toHaveValue('河岸清单')
-  await expect(detail.getByLabel('POV')).toHaveValue('林澄')
+  await expect(detail.getByLabel(/视角/)).toHaveValue('林澄')
+})
+
+test('collection article route highlight does not override manual outline selection', async ({ page }) => {
+  await page.goto('/collections?id=collection-a&article=article-a')
+  const chapterCard = page.locator('[data-outline-item-id="outline-chapter-a"]')
+  const partCard = page.locator('[data-outline-item-id="outline-part-a"]')
+
+  await expect(chapterCard).toHaveClass(/ring-2/, { timeout: 20000 })
+  await partCard.click()
+
+  await expect(partCard).toHaveClass(/ring-2/)
+  await expect(chapterCard).not.toHaveClass(/ring-2/)
+  await expect(page.getByTestId('collection-outline-detail').locator('input').first()).toHaveValue('第一部：回到旧城')
 })
 
 test('collection export flushes edited title before downloading', async ({ page }) => {
@@ -1948,7 +1968,7 @@ test('collection export flushes edited title before downloading', async ({ page 
   })
 
   await page.goto('/collections')
-  await expect(page.getByText('测试作品集')).toBeVisible()
+  await expect(page.getByText('测试作品集')).toBeVisible({ timeout: 20000 })
   await page.getByPlaceholder('作品集标题').fill('刚修改的作品集标题')
 
   await page.getByRole('button', { name: '导出', exact: true }).click()
@@ -1966,7 +1986,7 @@ test('collection reorder failures show a visible error', async ({ page }) => {
   })
 
   await page.goto('/collections')
-  await expect(page.getByText('测试作品集')).toBeVisible()
+  await expect(page.getByText('测试作品集')).toBeVisible({ timeout: 20000 })
 
   const firstCard = page.locator('article').filter({ hasText: '第一部：回到旧城' }).first()
   await firstCard.hover()

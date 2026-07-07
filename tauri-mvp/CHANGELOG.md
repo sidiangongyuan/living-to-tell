@@ -1,5 +1,30 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.40 - Collection Structure and Agent Polish (2026-07-07)
+
+### Changed
+
+- Expanded the Collections guided tutorial into a more concrete step-by-step walkthrough: adding articles, creating structure nodes, adding child nodes under chapters, understanding fields, opening the board, exporting, and discovering the Agent tab.
+- Clarified collection structure language for different project types, including novel `Part -> Chapter -> Scene`, essay collection `Section -> Group -> Essay`, nonfiction `Part -> Chapter -> Section`, and the planning-only role of notes.
+- Renamed the `POV` field label to `Point of View / Narrator (POV)` / `视角 / 叙述者 (POV)` and added inline help so users know it records who sees or narrates that unit.
+- Collection Agent quick tasks now include `Initialize Agent`, and typing `/init` opens the same confirmation flow before any provider request is sent.
+- Removed the confusing Agent task-mode dropdown from the prompt footer; ordinary prompts send as normal chat, while dedicated jobs live in the quick-task area.
+- Improved Collections layout behavior in narrower windows, including more adaptive panes, boards, Agent grids, and closeable dialogs.
+
+### Fixed
+
+- Fixed article route highlighting in Collections so a route-opened article no longer keeps the old structure node highlighted after the user selects another node.
+- Fixed the route highlight so it expires after a short locate pulse instead of acting like a persistent selection state.
+- Added regression coverage for manual structure selection after opening a collection from an article link.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py tests\storage\test_motif_repository.py tests\storage\test_collection_outline_repository.py -q`
+- `npm test -- --run`
+- `npm run test:e2e -- --project=msedge --workers=1`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+
 ## 0.1.39 - Collection Agent Usability (2026-07-07)
 
 ### Changed
