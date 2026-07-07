@@ -466,6 +466,31 @@ def _profile_options(container: AppContainer) -> list[dict[str, str]]:
     return options
 
 
+def _collection_agent_state(collection_id: str, container: AppContainer) -> CollectionAgentStateOut:
+    collection = _collection_or_404(collection_id, container)
+    settings = container.collection_agent_repository.get_settings(collection_id)
+    memory = container.collection_agent_repository.get_memory(collection_id)
+    thread = container.ai_thread_repository.get_or_create_for_scope(
+        COLLECTION_AGENT_SCOPE,
+        collection_id,
+        title=f"{collection.name or '作品集'} Agent",
+    )
+    runs = container.collection_agent_repository.list_runs(collection_id, limit=20)
+    actions = container.collection_agent_repository.list_actions(collection_id, limit=80)
+    return CollectionAgentStateOut(
+        settings=_settings_to_dto(settings),
+        memory=_memory_to_dto(memory),
+        thread_id=thread.id,
+        messages=[
+            _message_to_dto(message)
+            for message in container.ai_thread_repository.list_messages(thread.id, limit=120)
+        ],
+        runs=[_run_to_dto(run, container) for run in runs],
+        actions=[_action_to_dto(action) for action in actions],
+        profiles=_profile_options(container),
+    )
+
+
 def _profile_config(profile_id: str, container: AppContainer) -> tuple[str, Optional[AiConfig], str]:
     normalized_id = (profile_id or "default").strip() or "default"
     if normalized_id == "default":
@@ -1155,28 +1180,7 @@ def get_collection_agent_state(
     collection_id: str,
     container: AppContainer = Depends(get_container),
 ) -> CollectionAgentStateOut:
-    collection = _collection_or_404(collection_id, container)
-    settings = container.collection_agent_repository.get_settings(collection_id)
-    memory = container.collection_agent_repository.get_memory(collection_id)
-    thread = container.ai_thread_repository.get_or_create_for_scope(
-        COLLECTION_AGENT_SCOPE,
-        collection_id,
-        title=f"{collection.name or '作品集'} Agent",
-    )
-    runs = container.collection_agent_repository.list_runs(collection_id, limit=20)
-    actions = container.collection_agent_repository.list_actions(collection_id, limit=80)
-    return CollectionAgentStateOut(
-        settings=_settings_to_dto(settings),
-        memory=_memory_to_dto(memory),
-        thread_id=thread.id,
-        messages=[
-            _message_to_dto(message)
-            for message in container.ai_thread_repository.list_messages(thread.id, limit=120)
-        ],
-        runs=[_run_to_dto(run, container) for run in runs],
-        actions=[_action_to_dto(action) for action in actions],
-        profiles=_profile_options(container),
-    )
+    return _collection_agent_state(collection_id, container)
 
 
 @router.put("/{collection_id}/agent/settings", response_model=CollectionAgentSettingsOut)
@@ -1216,6 +1220,21 @@ def save_collection_agent_memory(
     return _memory_to_dto(
         container.collection_agent_repository.save_memory(collection_id, data.sections)
     )
+
+
+@router.post("/{collection_id}/agent/clear", response_model=CollectionAgentStateOut)
+def clear_collection_agent_conversation(
+    collection_id: str,
+    container: AppContainer = Depends(get_container),
+) -> CollectionAgentStateOut:
+    _collection_or_404(collection_id, container)
+    if container.collection_agent_repository.has_active_run(collection_id):
+        raise HTTPException(400, "Agent 正在工作，请等待完成或先中断本地等待。")
+    thread = container.ai_thread_repository.latest_for_scope(COLLECTION_AGENT_SCOPE, collection_id)
+    container.collection_agent_repository.clear_finished_runs_and_processed_actions(collection_id)
+    if thread is not None:
+        container.ai_thread_repository.delete(thread.id)
+    return _collection_agent_state(collection_id, container)
 
 
 @router.get("/{collection_id}/agent/references", response_model=list[CollectionAgentReferenceOut])
@@ -1327,6 +1346,8 @@ def _start_collection_agent_run(
     message = (data.message or "").strip()
     if not message:
         raise HTTPException(400, "请输入要交给作品集 Agent 的问题或任务。")
+    if container.collection_agent_repository.has_active_run(collection_id):
+        raise HTTPException(400, "Agent 正在工作，请等待完成或先中断本地等待。")
     settings = container.collection_agent_repository.get_settings(collection_id)
     if not settings.enabled:
         raise HTTPException(400, "这个作品集的 Agent 已停用。")

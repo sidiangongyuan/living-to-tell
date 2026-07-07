@@ -48,6 +48,9 @@ import {
 import { useCollectionsStore } from './store'
 
 const LAST_SELECTED_COLLECTION_KEY = 'living_to_tell_last_selected_collection_id'
+const AGENT_LONG_ANSWER_THRESHOLD = 700
+
+type AgentQuickTaskKind = 'health' | 'continuity' | 'next' | 'memory'
 
 const store = useCollectionsStore()
 const { t, locale } = useI18n()
@@ -80,6 +83,7 @@ const agentTaskType = ref('free_chat')
 const agentReferenceQuery = ref('')
 const agentReferenceResults = ref<CollectionAgentReference[]>([])
 const selectedAgentRefs = ref<CollectionAgentReference[]>([])
+const agentReferencePickerOpen = ref(false)
 const agentSearchLoading = ref(false)
 const agentRunning = ref(false)
 const agentRequestWebContext = ref(false)
@@ -87,8 +91,17 @@ const agentProfileId = ref('default')
 const agentMemoryDraft = ref<Record<string, string>>({})
 const agentMemorySaving = ref(false)
 const agentApplyingActionId = ref<string | null>(null)
+const agentPendingQuickTask = ref<AgentQuickTaskKind | null>(null)
+const agentCollapsedRunIds = ref<string[]>([])
+const agentExpandedRunIds = ref<string[]>([])
+const agentHighlightedRunId = ref<string | null>(null)
+const agentPromptIndexQuery = ref('')
+const agentClearDialogOpen = ref(false)
+const agentClearing = ref(false)
+const highlightedCollectionArticleId = ref<string | null>(null)
 let agentLoadToken = 0
 let agentPollTimer: number | null = null
+let agentReferenceSearchToken = 0
 const outlineDraftTitle = ref('')
 const outlineDraftType = ref<OutlineItemType>('scene')
 const outlineDraftStatus = ref<OutlineItemStatus>('idea')
@@ -165,7 +178,6 @@ const outlineBoardColumns = computed(() =>
     items: filteredOutline.value.filter((item) => item.status === status.value),
   }))
 )
-const agentMessages = computed(() => agentState.value?.messages ?? [])
 const agentRuns = computed(() => agentState.value?.runs ?? [])
 const agentActions = computed(() => agentState.value?.actions ?? [])
 const pendingAgentActions = computed(() => agentActions.value.filter((action) => action.status === 'pending'))
@@ -173,6 +185,46 @@ const activeAgentRun = computed(() =>
   agentRuns.value.find((run) => !['succeeded', 'failed', 'cancelled'].includes(run.status)) ?? null
 )
 const agentProfileOptions = computed(() => agentState.value?.profiles ?? [{ id: 'default', name: '默认配置' }])
+const agentQuickTasks = computed(() => [
+  {
+    kind: 'health' as const,
+    title: '体检作品集',
+    subtitle: '结构、缺口、下一步',
+    prompt: '请体检这个作品集：结构是否清楚、章节/场景是否缺口明显、下一步最该补什么。请给出证据和可确认提案。',
+  },
+  {
+    kind: 'continuity' as const,
+    title: '检查连续性',
+    subtitle: '人物、时间线、伏笔',
+    prompt: '请检查这个作品集的连续性风险：人物动机、时间线、伏笔、设定是否有断裂或未解决问题。请给出具体位置和下一步。',
+  },
+  {
+    kind: 'next' as const,
+    title: '建议下一步',
+    subtitle: '今天最该推进什么',
+    prompt: '请根据当前作品集结构和项目记忆，建议今天最该推进的一步。请说明理由、风险和可执行动作。',
+  },
+  {
+    kind: 'memory' as const,
+    title: '整理项目记忆',
+    subtitle: '稳定事实先提案',
+    prompt: '请整理当前作品集的项目圣经。只把稳定事实做成记忆更新提案，不确定内容放到未解决问题。',
+  },
+])
+const pendingQuickTask = computed(() =>
+  agentQuickTasks.value.find((task) => task.kind === agentPendingQuickTask.value) ?? null
+)
+const selectedAgentProfileName = computed(() =>
+  agentProfileOptions.value.find((profile) => profile.id === agentProfileId.value)?.name || '当前配置'
+)
+const filteredAgentPromptIndex = computed(() => {
+  const query = agentPromptIndexQuery.value.trim().toLowerCase()
+  return agentRuns.value.filter((run) => {
+    const text = agentRunMessage(run)
+    if (!query) return true
+    return text.toLowerCase().includes(query) || agentRunTaskLabel(run).toLowerCase().includes(query)
+  })
+})
 
 const projectTypeOptions = computed(() => ([
   { value: 'general' as const, label: projectTypeLabel('general', locale.value) },
@@ -291,11 +343,15 @@ const currentTourProgressLabel = computed(() =>
 
 onMounted(async () => {
   await store.loadCollections()
+  const routeCollectionId = typeof route.query.id === 'string' ? route.query.id : ''
   const lastCollectionId = localStorage.getItem(LAST_SELECTED_COLLECTION_KEY)
-  if (lastCollectionId && store.collections.some((collection) => collection.id === lastCollectionId)) {
+  if (routeCollectionId && store.collections.some((collection) => collection.id === routeCollectionId)) {
+    await store.selectCollection(routeCollectionId)
+  } else if (lastCollectionId && store.collections.some((collection) => collection.id === lastCollectionId)) {
     await store.selectCollection(lastCollectionId)
   }
   allArticles.value = await articlesApi.listArticles(500)
+  await applyCollectionRouteContext()
   if (route.query.tour === 'collection' || !settings.collectionsTourDismissed) {
     startCollectionTour()
     if (route.query.tour === 'collection') {
@@ -337,6 +393,13 @@ watch(
       startCollectionTour()
       void clearCollectionTourQuery()
     }
+  }
+)
+
+watch(
+  () => [route.query.id, route.query.article, route.query.tab] as const,
+  () => {
+    void applyCollectionRouteContext()
   }
 )
 
@@ -397,6 +460,48 @@ async function clearCollectionTourQuery() {
   await router.replace({ name: 'collections', query })
 }
 
+async function applyCollectionRouteContext() {
+  const collectionId = typeof route.query.id === 'string' ? route.query.id : ''
+  if (collectionId && store.collections.some((collection) => collection.id === collectionId)) {
+    if (store.selectedCollectionId !== collectionId) {
+      await store.selectCollection(collectionId)
+    }
+  } else if (collectionId && store.collections.length) {
+    actionError.value = '要打开的作品集已不存在。'
+    return
+  }
+
+  const tab = typeof route.query.tab === 'string' ? route.query.tab : ''
+  if (tab === 'agent') viewMode.value = 'agent'
+  else if (tab === 'board') viewMode.value = 'board'
+  else if (tab === 'export') viewMode.value = 'export'
+
+  const articleId = typeof route.query.article === 'string' ? route.query.article : ''
+  if (!articleId || !store.selectedCollectionId) return
+  highlightedCollectionArticleId.value = articleId
+  if (!tab) viewMode.value = 'structure'
+  const linkedItem = store.outline.find((item) => item.entry_id === articleId)
+  const inCollection = store.articles.some((article) => article.id === articleId)
+  if (!inCollection) {
+    actionError.value = '这篇文章已不在当前作品集中。'
+    return
+  }
+  if (linkedItem) {
+    store.selectOutlineItem(linkedItem.id)
+  }
+  await nextTick()
+  scrollToCollectionArticle(articleId)
+}
+
+function scrollToCollectionArticle(articleId: string) {
+  const target = Array
+    .from(document.querySelectorAll<HTMLElement>('[data-collection-article-id]'))
+    .find((element) => element.dataset.collectionArticleId === articleId)
+  if (target instanceof HTMLElement) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+}
+
 async function nextCollectionTourStep() {
   tourStepIndex.value = Math.min(tourStepIndex.value + 1, collectionTourSteps.value.length - 1)
   prepareCollectionTourStep()
@@ -429,6 +534,21 @@ function syncAgentDrafts(state: CollectionAgentState) {
   agentMemoryDraft.value = next
 }
 
+function syncAgentRunCollapse(state: CollectionAgentState) {
+  const validIds = new Set(state.runs.map((run) => run.id))
+  const collapsed = new Set(agentCollapsedRunIds.value.filter((id) => validIds.has(id)))
+  for (const run of state.runs) {
+    if (
+      agentRunAnswer(run).length > AGENT_LONG_ANSWER_THRESHOLD
+      && !agentExpandedRunIds.value.includes(run.id)
+    ) {
+      collapsed.add(run.id)
+    }
+  }
+  agentCollapsedRunIds.value = [...collapsed]
+  agentExpandedRunIds.value = agentExpandedRunIds.value.filter((id) => validIds.has(id))
+}
+
 async function loadAgentState() {
   if (!store.selectedCollectionId) return
   const token = ++agentLoadToken
@@ -440,6 +560,7 @@ async function loadAgentState() {
     if (token !== agentLoadToken || store.selectedCollectionId !== collectionId) return
     agentState.value = state
     syncAgentDrafts(state)
+    syncAgentRunCollapse(state)
     const running = activeAgentRun.value
     if (running && !isTerminalAgentRun(running)) scheduleAgentPoll(running.id)
   } catch (e) {
@@ -469,6 +590,7 @@ async function pollAgentRun(runId: string) {
       if (index === -1) runs.unshift(run)
       else runs[index] = run
       agentState.value = { ...agentState.value, runs }
+      syncAgentRunCollapse(agentState.value)
     }
     if (isTerminalAgentRun(run)) {
       await loadAgentState()
@@ -515,24 +637,53 @@ async function saveAgentMemory() {
 
 async function searchAgentReferences() {
   if (!store.selectedCollectionId) return
+  const token = ++agentReferenceSearchToken
+  const collectionId = store.selectedCollectionId
+  agentReferencePickerOpen.value = true
   agentSearchLoading.value = true
   agentError.value = null
   try {
-    agentReferenceResults.value = await collectionsApi.searchAgentReferences(
-      store.selectedCollectionId,
+    const results = await collectionsApi.searchAgentReferences(
+      collectionId,
       agentReferenceQuery.value.trim(),
       30,
     )
+    if (token !== agentReferenceSearchToken || store.selectedCollectionId !== collectionId) return
+    agentReferenceResults.value = results
   } catch (e) {
+    if (token !== agentReferenceSearchToken || store.selectedCollectionId !== collectionId) return
     agentError.value = e instanceof Error ? e.message : String(e)
   } finally {
-    agentSearchLoading.value = false
+    if (token === agentReferenceSearchToken && store.selectedCollectionId === collectionId) {
+      agentSearchLoading.value = false
+    }
   }
 }
 
+function openAgentReferencePicker(query = agentReferenceQuery.value) {
+  agentReferenceQuery.value = query
+  agentReferencePickerOpen.value = true
+  void searchAgentReferences()
+}
+
+function closeAgentReferencePicker() {
+  agentReferencePickerOpen.value = false
+}
+
+function clearAgentReferenceSearch() {
+  agentReferenceQuery.value = ''
+  agentReferenceResults.value = []
+}
+
 function addAgentReference(ref: CollectionAgentReference) {
-  if (selectedAgentRefs.value.some((item) => item.kind === ref.kind && item.ref_id === ref.ref_id)) return
-  selectedAgentRefs.value = [...selectedAgentRefs.value, ref]
+  const mention = agentPrompt.value.match(/(^|\s)@[^\s@]{0,40}$/)
+  if (mention && typeof mention.index === 'number') {
+    agentPrompt.value = `${agentPrompt.value.slice(0, mention.index)}${mention[1] ?? ''}`
+  }
+  if (!selectedAgentRefs.value.some((item) => item.kind === ref.kind && item.ref_id === ref.ref_id)) {
+    selectedAgentRefs.value = [...selectedAgentRefs.value, ref]
+  }
+  agentReferencePickerOpen.value = false
 }
 
 function removeAgentReference(ref: CollectionAgentReference) {
@@ -541,11 +692,35 @@ function removeAgentReference(ref: CollectionAgentReference) {
   )
 }
 
+function handleAgentPromptKeydown(event: KeyboardEvent) {
+  if (event.key === '@') {
+    agentReferencePickerOpen.value = true
+    agentReferenceQuery.value = ''
+    void searchAgentReferences()
+  }
+}
+
+function handleAgentPromptInput() {
+  const match = agentPrompt.value.match(/(?:^|\s)@([^\s@]{0,40})$/)
+  if (!match) return
+  agentReferenceQuery.value = match[1] || ''
+  agentReferencePickerOpen.value = true
+  void searchAgentReferences()
+}
+
 async function runAgentPrompt(taskType = agentTaskType.value, prompt = agentPrompt.value) {
   if (!store.selectedCollectionId) return
   const message = prompt.trim()
+  if (message === '/clear') {
+    requestAgentClear()
+    return
+  }
   if (!message) {
     agentError.value = '请先输入要交给作品集 Agent 的问题或任务。'
+    return
+  }
+  if (activeAgentRun.value) {
+    agentError.value = 'Agent 正在工作，请等待完成或先中断本地等待。'
     return
   }
   agentRunning.value = true
@@ -562,6 +737,7 @@ async function runAgentPrompt(taskType = agentTaskType.value, prompt = agentProm
       agentState.value = { ...agentState.value, runs: [run, ...agentState.value.runs] }
     }
     agentPrompt.value = ''
+    agentPendingQuickTask.value = null
     scheduleAgentPoll(run.id)
   } catch (e) {
     agentError.value = e instanceof Error ? e.message : String(e)
@@ -570,14 +746,17 @@ async function runAgentPrompt(taskType = agentTaskType.value, prompt = agentProm
   }
 }
 
-async function runQuickAgentTask(kind: 'health' | 'continuity' | 'next' | 'memory') {
-  const prompts = {
-    health: '请体检这个作品集：结构是否清楚、章节/场景是否缺口明显、下一步最该补什么。请给出证据和可确认提案。',
-    continuity: '请检查这个作品集的连续性风险：人物动机、时间线、伏笔、设定是否有断裂或未解决问题。请给出具体位置和下一步。',
-    next: '请根据当前作品集结构和项目记忆，建议我下一步最应该写什么，并说明理由。',
-    memory: '请整理当前作品集的项目圣经。只把稳定事实做成记忆更新提案，不确定内容放到未解决问题。',
-  }
-  await runAgentPrompt(kind, prompts[kind])
+function runQuickAgentTask(kind: AgentQuickTaskKind) {
+  agentPendingQuickTask.value = kind
+}
+
+async function confirmQuickAgentTask() {
+  if (!pendingQuickTask.value) return
+  await runAgentPrompt(pendingQuickTask.value.kind, pendingQuickTask.value.prompt)
+}
+
+function cancelQuickAgentTask() {
+  agentPendingQuickTask.value = null
 }
 
 async function cancelActiveAgentRun() {
@@ -593,6 +772,37 @@ async function cancelActiveAgentRun() {
     stopAgentPolling()
   } catch (e) {
     agentError.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+function requestAgentClear() {
+  if (activeAgentRun.value) {
+    agentError.value = 'Agent 正在工作，请等待完成或先中断本地等待。'
+    return
+  }
+  agentClearDialogOpen.value = true
+}
+
+async function clearAgentConversation() {
+  if (!store.selectedCollectionId || activeAgentRun.value) return
+  agentClearing.value = true
+  agentError.value = null
+  try {
+    const state = await collectionsApi.clearAgentConversation(store.selectedCollectionId)
+    agentState.value = state
+    agentPrompt.value = ''
+    agentReferenceResults.value = []
+    selectedAgentRefs.value = []
+    agentPendingQuickTask.value = null
+    agentCollapsedRunIds.value = []
+    agentExpandedRunIds.value = []
+    syncAgentDrafts(state)
+    syncAgentRunCollapse(state)
+    agentClearDialogOpen.value = false
+  } catch (e) {
+    agentError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    agentClearing.value = false
   }
 }
 
@@ -682,6 +892,56 @@ function agentRunAnswer(run: CollectionAgentRun): string {
 function agentRunMessage(run: CollectionAgentRun): string {
   const message = run.request?.message
   return typeof message === 'string' ? message : ''
+}
+
+function agentRunTaskLabel(run: CollectionAgentRun): string {
+  const taskType = typeof run.request?.task_type === 'string' ? run.request.task_type : 'free_chat'
+  const quickTask = agentQuickTasks.value.find((task) => task.kind === taskType)
+  if (quickTask) return quickTask.title
+  return '普通对话'
+}
+
+function agentRunTimeLabel(run: CollectionAgentRun): string {
+  const raw = run.completed_at || run.updated_at || run.created_at
+  if (!raw) return ''
+  const date = new Date(raw)
+  if (Number.isNaN(date.getTime())) return raw
+  return date.toLocaleString()
+}
+
+function agentRunVisibleAnswer(run: CollectionAgentRun): string {
+  const answer = agentRunAnswer(run)
+  if (!agentCollapsedRunIds.value.includes(run.id)) return answer
+  return `${answer.slice(0, AGENT_LONG_ANSWER_THRESHOLD).trim()}...`
+}
+
+function agentRunCanCollapse(run: CollectionAgentRun): boolean {
+  return agentRunAnswer(run).length > AGENT_LONG_ANSWER_THRESHOLD
+}
+
+function toggleAgentRunCollapsed(run: CollectionAgentRun) {
+  if (!agentRunCanCollapse(run)) return
+  if (agentCollapsedRunIds.value.includes(run.id)) {
+    agentCollapsedRunIds.value = agentCollapsedRunIds.value.filter((id) => id !== run.id)
+    if (!agentExpandedRunIds.value.includes(run.id)) {
+      agentExpandedRunIds.value = [...agentExpandedRunIds.value, run.id]
+    }
+  } else {
+    agentCollapsedRunIds.value = [...agentCollapsedRunIds.value, run.id]
+    agentExpandedRunIds.value = agentExpandedRunIds.value.filter((id) => id !== run.id)
+  }
+}
+
+async function scrollToAgentRun(runId: string) {
+  await nextTick()
+  const target = document.getElementById(`collection-agent-run-${runId}`)
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    agentHighlightedRunId.value = runId
+    window.setTimeout(() => {
+      if (agentHighlightedRunId.value === runId) agentHighlightedRunId.value = null
+    }, 1800)
+  }
 }
 
 function articlePreview(body: string): string {
@@ -1413,9 +1673,12 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                 :key="node.item.id"
                 draggable="true"
                 :style="{ paddingLeft: `${12 + node.depth * 18}px` }"
+                :data-collection-article-id="node.item.entry_id || undefined"
                 :class="[
                   'group cursor-pointer rounded-2xl border bg-white py-3 pr-3 shadow-sm transition-all',
-                  store.selectedOutlineItemId === node.item.id
+                  highlightedCollectionArticleId === node.item.entry_id
+                    ? 'border-amber-400 ring-2 ring-amber-200'
+                    : store.selectedOutlineItemId === node.item.id
                     ? 'border-indigo-300 shadow-md'
                     : 'border-stone-200 hover:border-stone-300 hover:shadow-md'
                 ]"
@@ -1488,7 +1751,15 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                 {{ t('collectionOutline.noUnplanned') }}
               </div>
               <div v-else class="mt-4 space-y-2">
-                <article v-for="article in unplanned" :key="article.id" class="rounded-xl border border-stone-200 bg-white p-3">
+                <article
+                  v-for="article in unplanned"
+                  :key="article.id"
+                  :data-collection-article-id="article.id"
+                  :class="[
+                    'rounded-xl border bg-white p-3',
+                    highlightedCollectionArticleId === article.id ? 'border-amber-400 ring-2 ring-amber-200' : 'border-stone-200'
+                  ]"
+                >
                   <div class="font-semibold text-sm text-stone-900">{{ article.title || t('articles.untitled') }}</div>
                   <p class="mt-1 line-clamp-2 text-xs leading-5 text-stone-500">{{ articlePreview(article.body) }}</p>
                   <div class="mt-3 flex flex-wrap gap-2">
@@ -1735,7 +2006,52 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
 
         <template v-else-if="viewMode === 'agent'">
           <section class="flex-1 overflow-y-auto p-6" data-testid="collection-agent-panel">
-            <div class="mx-auto grid max-w-7xl gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(360px,0.7fr)]">
+            <div class="mx-auto grid max-w-7xl gap-5 2xl:grid-cols-[260px_minmax(0,1.1fr)_minmax(340px,0.65fr)]">
+              <aside class="space-y-4 2xl:sticky 2xl:top-0 2xl:self-start">
+                <div class="rounded-3xl border border-stone-200 bg-white p-4 shadow-sm">
+                  <div class="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 class="font-semibold text-stone-900">会话索引</h4>
+                      <p class="mt-1 text-xs leading-5 text-stone-500">只列你的 prompt，点击定位到回答。</p>
+                    </div>
+                    <button
+                      class="rounded-xl bg-stone-100 px-2.5 py-1.5 text-xs text-stone-600 hover:bg-stone-200 disabled:opacity-40"
+                      :disabled="Boolean(activeAgentRun)"
+                      @click="requestAgentClear"
+                    >
+                      清空
+                    </button>
+                  </div>
+                  <input
+                    v-model="agentPromptIndexQuery"
+                    class="mt-3 w-full rounded-xl border border-stone-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-indigo-200"
+                    placeholder="搜索 prompt"
+                  />
+                  <p class="mt-3 rounded-xl bg-stone-50 px-3 py-2 text-[11px] leading-5 text-stone-500">
+                    记忆只来自“保存记忆”或应用“更新记忆”提案；拒绝的提案不会进入长期记忆。
+                  </p>
+                  <div v-if="!filteredAgentPromptIndex.length" class="mt-4 rounded-2xl border border-dashed border-stone-200 p-4 text-center text-xs text-stone-400">
+                    暂无可定位的 prompt。
+                  </div>
+                  <div v-else class="mt-4 max-h-[58vh] space-y-2 overflow-y-auto pr-1">
+                    <button
+                      v-for="run in filteredAgentPromptIndex"
+                      :key="run.id"
+                      class="w-full rounded-2xl border border-stone-200 bg-stone-50 p-3 text-left hover:border-indigo-200 hover:bg-white"
+                      @click="scrollToAgentRun(run.id)"
+                    >
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="rounded-full bg-white px-2 py-0.5 text-[11px] text-stone-500 ring-1 ring-stone-200">{{ agentRunTaskLabel(run) }}</span>
+                        <span :class="['rounded-full px-2 py-0.5 text-[11px] ring-1', run.status === 'succeeded' ? 'bg-emerald-50 text-emerald-700 ring-emerald-100' : run.status === 'failed' ? 'bg-red-50 text-red-700 ring-red-100' : 'bg-amber-50 text-amber-700 ring-amber-100']">
+                          {{ run.status }}
+                        </span>
+                      </div>
+                      <p class="mt-2 line-clamp-2 text-xs font-semibold leading-5 text-stone-800">{{ agentRunMessage(run) || '空任务' }}</p>
+                      <p class="mt-1 truncate text-[11px] text-stone-400">{{ run.model || run.profile_id }} · {{ agentRunTimeLabel(run) }}</p>
+                    </button>
+                  </div>
+                </div>
+              </aside>
               <div class="space-y-5">
                 <div class="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
                   <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -1766,22 +2082,45 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                   </div>
 
                   <div class="mt-5 grid gap-2 md:grid-cols-4">
-                    <button class="rounded-2xl bg-stone-900 px-4 py-3 text-left text-sm font-semibold text-white hover:bg-stone-700" @click="runQuickAgentTask('health')">
-                      体检作品集
-                      <span class="mt-1 block text-xs font-normal text-stone-300">结构、缺口、下一步</span>
+                    <button
+                      v-for="task in agentQuickTasks"
+                      :key="task.kind"
+                      :class="[
+                        'rounded-2xl px-4 py-3 text-left text-sm font-semibold ring-1 transition',
+                        agentPendingQuickTask === task.kind
+                          ? 'bg-amber-50 text-stone-900 ring-amber-200'
+                          : 'bg-white text-stone-800 ring-stone-200 hover:bg-stone-50'
+                      ]"
+                      @click="runQuickAgentTask(task.kind)"
+                    >
+                      {{ task.title }}
+                      <span class="mt-1 block text-xs font-normal text-stone-500">{{ task.subtitle }}</span>
                     </button>
-                    <button class="rounded-2xl bg-white px-4 py-3 text-left text-sm font-semibold text-stone-800 ring-1 ring-stone-200 hover:bg-stone-50" @click="runQuickAgentTask('continuity')">
-                      检查连续性
-                      <span class="mt-1 block text-xs font-normal text-stone-500">人物、时间线、伏笔</span>
-                    </button>
-                    <button class="rounded-2xl bg-white px-4 py-3 text-left text-sm font-semibold text-stone-800 ring-1 ring-stone-200 hover:bg-stone-50" @click="runQuickAgentTask('next')">
-                      建议下一步
-                      <span class="mt-1 block text-xs font-normal text-stone-500">今天最该推进什么</span>
-                    </button>
-                    <button class="rounded-2xl bg-white px-4 py-3 text-left text-sm font-semibold text-stone-800 ring-1 ring-stone-200 hover:bg-stone-50" @click="runQuickAgentTask('memory')">
-                      整理项目记忆
-                      <span class="mt-1 block text-xs font-normal text-stone-500">稳定事实先提案</span>
-                    </button>
+                  </div>
+
+                  <div v-if="pendingQuickTask" class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                      <div class="min-w-0 flex-1">
+                        <div class="font-semibold">准备运行：{{ pendingQuickTask.title }}</div>
+                        <p class="mt-1 text-xs leading-5 text-amber-800">
+                          将使用 {{ selectedAgentProfileName }}，读取作品集结构、项目圣经和你已选择的引用芯片。确认后才会发送请求。
+                        </p>
+                        <p class="mt-2 line-clamp-2 text-xs leading-5 text-amber-700">{{ pendingQuickTask.prompt }}</p>
+                      </div>
+                      <div class="flex shrink-0 gap-2">
+                        <button
+                          class="rounded-xl bg-stone-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+                          :disabled="agentRunning || Boolean(activeAgentRun)"
+                          @click="confirmQuickAgentTask"
+                        >
+                          确认运行
+                        </button>
+                        <button class="rounded-xl bg-white px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200" @click="cancelQuickAgentTask">
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                    <p v-if="activeAgentRun" class="mt-2 text-xs text-amber-700">Agent 正在工作，不能同时启动新的快捷任务。</p>
                   </div>
                 </div>
 
@@ -1817,16 +2156,14 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                   </div>
 
                   <div class="mb-4 rounded-2xl border border-stone-200 bg-stone-50 p-3">
-                    <div class="flex flex-col gap-2 md:flex-row">
-                      <input
-                        v-model="agentReferenceQuery"
-                        class="min-w-0 flex-1 rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm outline-none"
-                        placeholder="@引用：搜索结构节点、文章、AI卡片、意象、文脉"
-                        @keyup.enter="searchAgentReferences"
-                      />
-                      <button class="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white" @click="searchAgentReferences">
-                        {{ agentSearchLoading ? '搜索中...' : '搜索引用' }}
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <button
+                        class="rounded-xl bg-white px-3 py-2 text-sm font-semibold text-stone-700 ring-1 ring-stone-200 hover:bg-stone-100"
+                        @click="openAgentReferencePicker()"
+                      >
+                        + 添加引用
                       </button>
+                      <p class="text-xs text-stone-500">输入框里键入 @ 也会打开引用选择器。</p>
                     </div>
                     <div v-if="selectedAgentRefs.length" class="mt-3 flex flex-wrap gap-2">
                       <button
@@ -1838,19 +2175,45 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                         {{ agentReferenceKindLabel(ref.kind) }} · {{ ref.name }} ×
                       </button>
                     </div>
-                    <div v-if="agentReferenceResults.length" class="mt-3 grid gap-2 md:grid-cols-2">
-                      <button
-                        v-for="ref in agentReferenceResults"
-                        :key="`${ref.kind}:${ref.ref_id}`"
-                        class="rounded-2xl border border-stone-200 bg-white p-3 text-left hover:border-indigo-200"
-                        @click="addAgentReference(ref)"
-                      >
-                        <div class="flex items-center gap-2">
-                          <span class="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] text-stone-500">{{ agentReferenceKindLabel(ref.kind) }}</span>
-                          <span class="truncate text-sm font-semibold text-stone-900">{{ ref.name }}</span>
+                    <div v-if="agentReferencePickerOpen" class="mt-3 rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
+                      <div class="flex flex-col gap-2 md:flex-row">
+                        <input
+                          v-model="agentReferenceQuery"
+                          class="min-w-0 flex-1 rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm outline-none"
+                          placeholder="搜索结构节点、文章、AI卡片、意象、文脉"
+                          @keyup.enter="searchAgentReferences"
+                          @input="searchAgentReferences"
+                        />
+                        <button class="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white" @click="searchAgentReferences">
+                          {{ agentSearchLoading ? '搜索中...' : '搜索引用' }}
+                        </button>
+                        <button class="rounded-xl bg-stone-100 px-3 py-2 text-sm text-stone-600" @click="clearAgentReferenceSearch">
+                          清空
+                        </button>
+                        <button class="rounded-xl bg-white px-3 py-2 text-sm text-stone-600 ring-1 ring-stone-200" @click="closeAgentReferencePicker">
+                          收起
+                        </button>
+                      </div>
+                      <div class="mt-3 max-h-72 overflow-y-auto pr-1">
+                        <div v-if="agentSearchLoading" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-400">搜索中...</div>
+                        <div v-else-if="!agentReferenceResults.length" class="rounded-xl border border-dashed border-stone-200 p-4 text-center text-xs text-stone-400">
+                          没有匹配引用。换一个关键词，或先创建结构节点/文章/文脉。
                         </div>
-                        <p class="mt-1 line-clamp-2 text-xs leading-5 text-stone-500">{{ ref.body_preview || '无预览' }}</p>
-                      </button>
+                        <div v-else class="grid gap-2 md:grid-cols-2">
+                          <button
+                            v-for="ref in agentReferenceResults"
+                            :key="`${ref.kind}:${ref.ref_id}`"
+                            class="rounded-2xl border border-stone-200 bg-white p-3 text-left hover:border-indigo-200"
+                            @click="addAgentReference(ref)"
+                          >
+                            <div class="flex items-center gap-2">
+                              <span class="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] text-stone-500">{{ agentReferenceKindLabel(ref.kind) }}</span>
+                              <span class="truncate text-sm font-semibold text-stone-900">{{ ref.name }}</span>
+                            </div>
+                            <p class="mt-1 line-clamp-2 text-xs leading-5 text-stone-500">{{ ref.body_preview || '无预览' }}</p>
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -1858,7 +2221,9 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                     v-model="agentPrompt"
                     rows="5"
                     class="w-full resize-none rounded-2xl border border-stone-200 px-4 py-3 text-sm leading-6 outline-none focus:ring-2 focus:ring-indigo-200"
-                    placeholder="例如：帮我检查第一部的结构断点；这个人物线是否需要提前铺垫？下一场应该写什么？"
+                    placeholder="例如：帮我检查第一部的结构断点；输入 @旧信 可搜索并加入引用；输入 /clear 可清空当前 Agent 会话。"
+                    @keydown="handleAgentPromptKeydown"
+                    @input="handleAgentPromptInput"
                   />
                   <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
                     <select v-model="agentTaskType" class="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs outline-none">
@@ -1882,11 +2247,21 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                   <article
                     v-for="run in agentRuns"
                     :key="run.id"
-                    class="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm"
+                    :id="`collection-agent-run-${run.id}`"
+                    :class="[
+                      'rounded-3xl border bg-white p-5 shadow-sm transition-all',
+                      agentHighlightedRunId === run.id ? 'border-amber-400 ring-2 ring-amber-200' : 'border-stone-200'
+                    ]"
                   >
                     <div class="flex flex-wrap items-start justify-between gap-3">
                       <div class="min-w-0">
-                        <div class="text-xs font-semibold text-stone-400">{{ run.stage_label }} · {{ run.model || run.profile_id }}</div>
+                        <div class="flex flex-wrap items-center gap-2 text-xs font-semibold text-stone-400">
+                          <span>{{ agentRunTaskLabel(run) }}</span>
+                          <span>·</span>
+                          <span>{{ run.stage_label }}</span>
+                          <span>·</span>
+                          <span>{{ run.model || run.profile_id }}</span>
+                        </div>
                         <h4 class="mt-1 line-clamp-2 text-base font-semibold text-stone-900">{{ agentRunMessage(run) }}</h4>
                       </div>
                       <span :class="['rounded-full px-2 py-1 text-xs ring-1', run.status === 'succeeded' ? 'bg-emerald-50 text-emerald-700 ring-emerald-100' : run.status === 'failed' ? 'bg-red-50 text-red-700 ring-red-100' : 'bg-amber-50 text-amber-700 ring-amber-100']">
@@ -1894,8 +2269,15 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                       </span>
                     </div>
                     <div v-if="agentRunAnswer(run)" class="mt-4 whitespace-pre-wrap text-sm leading-7 text-stone-700">
-                      {{ agentRunAnswer(run) }}
+                      {{ agentRunVisibleAnswer(run) }}
                     </div>
+                    <button
+                      v-if="agentRunCanCollapse(run)"
+                      class="mt-3 rounded-xl bg-stone-100 px-3 py-1.5 text-xs font-semibold text-stone-600 hover:bg-stone-200"
+                      @click="toggleAgentRunCollapsed(run)"
+                    >
+                      {{ agentCollapsedRunIds.includes(run.id) ? '展开完整回答' : '收起长回答' }}
+                    </button>
                     <div v-if="run.error" class="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
                       {{ run.error }}
                     </div>
@@ -1986,13 +2368,11 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                 </div>
 
                 <div class="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
-                  <h4 class="font-semibold text-stone-900">对话记录</h4>
-                  <div v-if="!agentMessages.length" class="mt-4 text-xs text-stone-400">还没有对话。</div>
-                  <div v-else class="mt-4 max-h-[420px] space-y-3 overflow-y-auto pr-1">
-                    <article v-for="message in agentMessages" :key="message.id || `${message.timestamp}:${message.content.slice(0, 12)}`" class="rounded-2xl bg-stone-50 p-3">
-                      <div class="text-[11px] font-semibold uppercase text-stone-400">{{ message.role }}</div>
-                      <div class="mt-1 whitespace-pre-wrap text-xs leading-5 text-stone-700">{{ message.content }}</div>
-                    </article>
+                  <h4 class="font-semibold text-stone-900">记忆规则</h4>
+                  <div class="mt-4 space-y-2 text-xs leading-5 text-stone-500">
+                    <p>普通对话只留在当前会话里，不会自动写入长期记忆。</p>
+                    <p>“整理项目记忆”只生成更新提案；你应用提案后才会写入项目圣经。</p>
+                    <p>被拒绝的提案不会进入记忆；清空会话也不会删除作品集、文章、大纲或项目圣经。</p>
                   </div>
                 </div>
               </aside>
@@ -2177,6 +2557,33 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
               {{ t('collections.addSelected') }}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="agentClearDialogOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div class="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+        <h3 class="text-xl font-semibold text-stone-900">清空 Agent 会话？</h3>
+        <p class="mt-3 text-sm leading-6 text-stone-600">
+          这会清掉当前作品集 Agent 的对话消息、已结束任务和已处理提案记录；项目圣经、文章、大纲、已应用写入的数据，以及仍待确认的提案都会保留。
+        </p>
+        <p class="mt-3 rounded-2xl bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
+          普通对话不会自动进入长期记忆。只有手动保存项目圣经，或应用“更新记忆”提案，才会写入长期记忆。
+        </p>
+        <div v-if="agentError" class="mt-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+          {{ agentError }}
+        </div>
+        <div class="mt-6 flex justify-end gap-3">
+          <button class="rounded-xl bg-stone-100 px-4 py-2 text-sm text-stone-700" :disabled="agentClearing" @click="agentClearDialogOpen = false">
+            取消
+          </button>
+          <button
+            class="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+            :disabled="agentClearing || Boolean(activeAgentRun)"
+            @click="clearAgentConversation"
+          >
+            {{ agentClearing ? '清空中...' : '确认清空' }}
+          </button>
         </div>
       </div>
     </div>

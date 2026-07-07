@@ -362,6 +362,13 @@ export const collectionsApi = {
     return handleResponse(res)
   },
 
+  async clearAgentConversation(collectionId: string): Promise<CollectionAgentState> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/clear`, {
+      method: 'POST',
+    })
+    return handleResponse(res)
+  },
+
   async applyAgentAction(collectionId: string, actionId: string): Promise<CollectionAgentAction> {
     const res = await apiFetch(`/api/collections/${collectionId}/agent/actions/${actionId}/apply`, {
       method: 'POST',

@@ -259,6 +259,46 @@ class CollectionAgentRepository:
         ).fetchall()
         return [_row_to_run(row) for row in rows]
 
+    def has_active_run(self, collection_id: str) -> bool:
+        row = self._conn.execute(
+            """
+            SELECT 1 FROM collection_agent_runs
+             WHERE collection_id = ?
+               AND status NOT IN ('succeeded', 'failed', 'cancelled')
+             LIMIT 1
+            """,
+            (collection_id,),
+        ).fetchone()
+        return row is not None
+
+    def clear_finished_runs_and_processed_actions(self, collection_id: str) -> None:
+        self._conn.execute(
+            """
+            UPDATE collection_agent_actions
+               SET run_id = NULL,
+                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE collection_id = ?
+               AND status = 'pending'
+            """,
+            (collection_id,),
+        )
+        self._conn.execute(
+            """
+            DELETE FROM collection_agent_actions
+             WHERE collection_id = ?
+               AND status != 'pending'
+            """,
+            (collection_id,),
+        )
+        self._conn.execute(
+            """
+            DELETE FROM collection_agent_runs
+             WHERE collection_id = ?
+               AND status IN ('succeeded', 'failed', 'cancelled')
+            """,
+            (collection_id,),
+        )
+
     def mark_run_started(self, run_id: str) -> Optional[CollectionAgentRun]:
         self._conn.execute(
             """

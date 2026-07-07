@@ -547,6 +547,69 @@ def test_tauri_collection_agent_run_memory_and_actions(monkeypatch):
     notes = get_container().entry_writing_note_repository.list_for_entry(article["id"], include_done=True)
     assert [note.body for note in notes].count("让主角在收到旧信前已经表现出对空白记忆的焦虑。") == 1
 
+    pending_action = get_container().collection_agent_repository.create_action(
+        collection_id,
+        run_id=run_id,
+        action_type="update_outline_item",
+        title="待确认结构提醒",
+        summary="这条提案还没处理，清空会话时应该保留。",
+        payload={"item_id": outline.json()["id"], "summary": "待确认的结构摘要。"},
+        preview={"摘要": "待确认的结构摘要。"},
+        reason="用户还没决定。",
+    )
+
+    cleared = client.post(f"/api/collections/{collection_id}/agent/clear")
+    assert cleared.status_code == 200, cleared.text
+    cleared_payload = cleared.json()
+    assert cleared_payload["messages"] == []
+    assert cleared_payload["runs"] == []
+    remaining_actions = {action["id"]: action for action in cleared_payload["actions"]}
+    assert pending_action.id in remaining_actions
+    assert remaining_actions[pending_action.id]["status"] == "pending"
+    assert remaining_actions[pending_action.id]["run_id"] is None
+    assert memory_action["id"] not in remaining_actions
+    assert note_action["id"] not in remaining_actions
+
+    memory_after_clear = client.get(f"/api/collections/{collection_id}/agent/memory").json()
+    project_core_after_clear = next(
+        section for section in memory_after_clear["sections"] if section["id"] == "project_core"
+    )
+    assert "旧信触发主角追索" in project_core_after_clear["content"]
+    notes_after_clear = get_container().entry_writing_note_repository.list_for_entry(article["id"], include_done=True)
+    assert [note.body for note in notes_after_clear].count("让主角在收到旧信前已经表现出对空白记忆的焦虑。") == 1
+
+
+def test_tauri_collection_agent_clear_rejects_active_run(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from deps import get_container
+    from writer.domain.models.collection_agent import COLLECTION_AGENT_SCOPE
+
+    collection = client.post(
+        "/api/collections",
+        json={"title": "正在运行的 Agent 项目", "description": "", "project_type": "novel"},
+    )
+    assert collection.status_code == 201, collection.text
+    collection_id = collection.json()["id"]
+    container = get_container()
+    thread = container.ai_thread_repository.get_or_create_for_scope(
+        COLLECTION_AGENT_SCOPE,
+        collection_id,
+        title="测试 Agent",
+    )
+    run = container.collection_agent_repository.create_run(
+        collection_id,
+        thread_id=thread.id,
+        profile_id="default",
+        request={"message": "请等待。", "task_type": "health"},
+    )
+
+    response = client.post(f"/api/collections/{collection_id}/agent/clear")
+
+    assert response.status_code == 400, response.text
+    assert "Agent 正在工作" in response.json()["detail"]
+    assert container.collection_agent_repository.get_run(run.id) is not None
+    container.collection_agent_repository.cancel_run(run.id)
+
 
 def test_tauri_ai_cards_do_not_seed_samples_and_crud_tags(monkeypatch):
     client = _tauri_client(monkeypatch)

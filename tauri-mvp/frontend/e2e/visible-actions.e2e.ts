@@ -1292,8 +1292,12 @@ test('article list filters, context pane, save, AI navigation, archive, and coll
   await page.getByRole('button', { name: '显示上下文' }).click()
   await expect(page.getByRole('button', { name: '收起上下文' })).toBeVisible()
 
+  const saveRequestPromise = page.waitForRequest((request) =>
+    request.method() === 'PUT' && new URL(request.url()).pathname === '/api/articles/article-a'
+  )
   await page.getByTestId('article-body-editor').fill('自动保存正文')
-  await expect.poll(() => updates.at(-1)?.body).toBe('自动保存正文')
+  const saveRequest = await saveRequestPromise
+  expect((saveRequest.postDataJSON() as Record<string, unknown>).body).toBe('自动保存正文')
 
   await page.getByRole('button', { name: 'AI 对话' }).click()
   await expect(page).toHaveURL(/\/ai\?.*tab=chat/)
@@ -1313,6 +1317,9 @@ test('article list filters, context pane, save, AI navigation, archive, and coll
   await page.getByRole('button', { name: /测试作品集/ }).click()
   await page.getByRole('button', { name: '确认' }).click()
   await expect.poll(() => addedToCollections).toEqual([[collection.id]])
+  await page.getByRole('button', { name: '打开' }).click()
+  await expect(page).toHaveURL(/\/collections\?.*id=collection-a/)
+  await expect(page).toHaveURL(/article=article-a/)
 })
 
 test('dates calendar buttons, daily quote, welcome close, and start writing actions work', async ({ page }) => {
@@ -1730,6 +1737,171 @@ test('collection export buttons trigger downloads and article management actions
   page.once('dialog', async (dialog) => dialog.accept())
   await page.getByRole('button', { name: '删除' }).first().click()
   await expect.poll(() => deleteCollectionRequests).toBe(1)
+})
+
+test('collection agent reference picker, quick task confirmation, prompt index, and clear are usable', async ({ page }) => {
+  const longAnswer = Array.from({ length: 24 }, (_, index) =>
+    `第 ${index + 1} 点：结构诊断应该保留证据、风险和下一步，不自动改正文。`
+  ).join('\n')
+  const baseMemory = {
+    collection_id: collection.id,
+    updated_at: null,
+    sections: [
+      { id: 'project_core', title: '项目核心', help: '题材、核心命题、主要冲突、叙事承诺。', content: '' },
+      { id: 'characters', title: '人物与关系', help: '主要人物、欲望、矛盾、关系变化。', content: '' },
+      { id: 'open_questions', title: '未解决问题', help: '还没定下来的设定、人物、结构问题。', content: '' },
+    ],
+  }
+  const makeRun = (id: string, message: string, taskType: string, answer = longAnswer) => ({
+    id,
+    collection_id: collection.id,
+    thread_id: 'thread-agent',
+    status: 'succeeded',
+    stage: 'succeeded',
+    stage_label: '已完成',
+    request: {
+      message,
+      task_type: taskType,
+      context_refs: [],
+      request_web_context: false,
+      profile_id: 'default',
+    },
+    result: { answer, evidence: [], next_steps: [] },
+    error: '',
+    profile_id: 'default',
+    provider: 'fake',
+    model: 'fake-agent-model',
+    transport: 'fake',
+    created_at: '2026-07-07T08:00:00Z',
+    started_at: '2026-07-07T08:00:01Z',
+    updated_at: '2026-07-07T08:00:02Z',
+    completed_at: '2026-07-07T08:00:03Z',
+    actions: [],
+  })
+  let agentRuns = [
+    makeRun('agent-run-a', '请体检这个作品集。', 'health'),
+  ]
+  let runRequests = 0
+  let clearRequests = 0
+  const agentState = () => ({
+    settings: {
+      collection_id: collection.id,
+      profile_id: 'default',
+      enabled: true,
+      updated_at: null,
+    },
+    memory: baseMemory,
+    thread_id: 'thread-agent',
+    messages: [],
+    runs: agentRuns,
+    actions: [],
+    profiles: [{ id: 'default', name: '默认配置' }],
+  })
+
+  await page.route(/\/api\/collections\/collection-a\/agent(?:\/.*)?(?:\?.*)?$/, async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (url.pathname === '/api/collections/collection-a/agent/references') {
+      await route.fulfill({
+        json: [
+          {
+            kind: 'outline',
+            ref_id: 'outline-chapter-a',
+            name: '旧信',
+            body_preview: '主角收到旧信。',
+            meta: { type: 'chapter', status: 'drafting' },
+          },
+          {
+            kind: 'article',
+            ref_id: article.id,
+            name: article.title,
+            body_preview: article.body,
+            meta: {},
+          },
+        ],
+      })
+      return
+    }
+    if (url.pathname === '/api/collections/collection-a/agent/runs' && request.method() === 'POST') {
+      runRequests += 1
+      const body = request.postDataJSON() as { message?: string; task_type?: string }
+      const run = makeRun(
+        'agent-run-new',
+        body.message ?? '',
+        body.task_type ?? 'free_chat',
+        '连续性检查已完成：没有发现会自动改正文的动作。',
+      )
+      agentRuns = [run, ...agentRuns.filter((item) => item.id !== run.id)]
+      await route.fulfill({ status: 202, json: run })
+      return
+    }
+    if (url.pathname === '/api/collections/collection-a/agent/runs/agent-run-new') {
+      await route.fulfill({ json: agentRuns[0] })
+      return
+    }
+    if (url.pathname === '/api/collections/collection-a/agent/clear' && request.method() === 'POST') {
+      clearRequests += 1
+      agentRuns = []
+      await route.fulfill({ json: agentState() })
+      return
+    }
+    if (url.pathname === '/api/collections/collection-a/agent/settings' && request.method() === 'PUT') {
+      await route.fulfill({
+        json: {
+          collection_id: collection.id,
+          profile_id: 'default',
+          enabled: true,
+          updated_at: null,
+        },
+      })
+      return
+    }
+    if (url.pathname === '/api/collections/collection-a/agent') {
+      await route.fulfill({ json: agentState() })
+      return
+    }
+    await route.fallback()
+  })
+
+  await page.goto('/collections?id=collection-a&tab=agent')
+  await expect(page.getByTestId('collection-agent-panel')).toBeVisible({ timeout: 20000 })
+  await expect(page.getByText('会话索引')).toBeVisible()
+  await expect(page.getByText('展开完整回答')).toBeVisible()
+
+  await page.getByRole('button', { name: '+ 添加引用' }).click()
+  await expect(page.getByPlaceholder('搜索结构节点、文章、AI卡片、意象、文脉')).toBeVisible()
+  await page.getByRole('button', { name: /^结构 旧信/ }).click()
+  await expect(page.getByText(/结构 · 旧信 ×/)).toBeVisible()
+  await expect(page.getByPlaceholder('搜索结构节点、文章、AI卡片、意象、文脉')).toHaveCount(0)
+
+  const agentPromptBox = page.getByPlaceholder(/输入 @旧信/)
+  await agentPromptBox.fill('@旧信')
+  await expect(page.getByPlaceholder('搜索结构节点、文章、AI卡片、意象、文脉')).toBeVisible()
+  await page.getByRole('button', { name: /^结构 旧信/ }).click()
+  await expect(agentPromptBox).toHaveValue('')
+
+  await page.getByRole('button', { name: /检查连续性/ }).click()
+  expect(runRequests).toBe(0)
+  await expect(page.getByText('准备运行：检查连续性')).toBeVisible()
+  await page.getByRole('button', { name: '确认运行' }).click()
+  await expect.poll(() => runRequests).toBe(1)
+  await expect(page.getByText('连续性检查已完成')).toBeVisible()
+
+  const promptIndex = page.locator('aside').filter({ hasText: '会话索引' })
+  await promptIndex.getByPlaceholder('搜索 prompt').fill('连续性')
+  await promptIndex.getByRole('button', { name: /检查连续性/ }).first().click()
+  await expect(page.locator('#collection-agent-run-agent-run-new')).toHaveClass(/ring-2/)
+
+  await agentPromptBox.fill('/clear')
+  await page.getByRole('button', { name: '发送给 Agent' }).click()
+  await expect(page.getByRole('heading', { name: '清空 Agent 会话？' })).toBeVisible()
+  await page.getByRole('button', { name: '取消' }).click()
+
+  await promptIndex.getByRole('button', { name: '清空' }).click()
+  await expect(page.getByRole('heading', { name: '清空 Agent 会话？' })).toBeVisible()
+  await page.getByRole('button', { name: '确认清空' }).click()
+  await expect.poll(() => clearRequests).toBe(1)
+  await expect(page.getByText('还没有 Agent 记录')).toBeVisible()
 })
 
 test('collection planning board groups outline items and opens the selected outline detail', async ({ page }) => {

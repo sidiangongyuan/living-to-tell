@@ -1,5 +1,33 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.39 - Collection Agent Usability (2026-07-07)
+
+### Changed
+
+- Collection Agent reference search now opens as a compact, collapsible picker. Typing `@` in the Agent input also opens the picker, and selected references become context chips instead of long inline text.
+- Quick tasks such as continuity checks and memory organizing now require confirmation before any provider request is sent, showing the selected model, context scope, and prompt preview first.
+- The Agent tab now includes a prompt index for the current collection, so long sessions can be searched by user prompt and jumped back to without scrolling through every answer.
+- Long Agent answers collapse by default and can be expanded on demand, keeping the workspace closer to a usable desk than an endless transcript.
+- Article collection cards now include an `Open` action that jumps directly from an article to its owning collection and highlights the current article in the manuscript structure.
+
+### Added
+
+- Added `/clear` and a `Clear conversation` action for Collection Agent sessions. Clearing removes current conversation messages, terminal runs, and processed proposal history while preserving the project bible, writing data, and pending proposals.
+
+### Fixed
+
+- Fixed the reference picker staying expanded and stretching the Agent page.
+- Fixed quick-task buttons looking like a persistent selected state when they were actually one-click run actions.
+- Fixed Agent sessions becoming hard to inspect after several long results.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py tests\storage\test_motif_repository.py tests\storage\test_collection_outline_repository.py -q`
+- `npm test -- --run`
+- `npm run test:e2e -- --project=msedge --workers=1`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+
 ## 0.1.38 - Collection Agent (2026-07-06)
 
 ### Added
