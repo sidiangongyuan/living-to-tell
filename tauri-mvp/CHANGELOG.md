@@ -1,5 +1,24 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.41 - Agent Slash Menu and Layout Polish (2026-07-08)
+
+### Added
+
+- Added a Collection Agent slash command menu. Typing `/` in the Agent prompt now opens selectable commands such as `/init`, `/health`, `/continuity`, `/next`, `/memory`, and `/clear`, so users do not need to memorize command names.
+- Slash commands can be selected with the mouse or keyboard. `ArrowUp` / `ArrowDown` changes the highlighted command, `Enter` or `Tab` chooses it, and `Escape` closes the menu.
+
+### Changed
+
+- Reworked the Collection Agent quick tasks into a compact horizontal command strip instead of tall cards that wrapped labels awkwardly.
+- Simplified the Agent prompt help copy: normal text sends a regular Agent chat, `/` opens task commands, and `@` adds explicit context references.
+- Tightened Collection Agent button layout so short actions such as `Save Memory` / `保存记忆` do not break into vertical-looking labels.
+
+### Verification
+
+- `npm test -- --run`
+- `npm run build`
+- `npm run test:e2e -- --project=msedge --workers=1 --grep "collection agent reference picker"`
+
 ## 0.1.40 - Collection Structure and Agent Polish (2026-07-07)
 
 ### Changed

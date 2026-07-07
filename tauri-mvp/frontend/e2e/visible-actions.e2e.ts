@@ -1875,11 +1875,19 @@ test('collection agent reference picker, quick task confirmation, prompt index, 
   await expect(page.getByText(/结构 · 旧信 ×/)).toBeVisible()
   await expect(page.getByPlaceholder('搜索结构节点、文章、AI卡片、意象、文脉')).toHaveCount(0)
 
-  const agentPromptBox = page.getByPlaceholder(/输入 @旧信/)
+  const agentPromptBox = page.getByPlaceholder(/输入 @ 加引用/)
   await agentPromptBox.fill('@旧信')
   await expect(page.getByPlaceholder('搜索结构节点、文章、AI卡片、意象、文脉')).toBeVisible()
   await page.getByRole('button', { name: /^结构 旧信/ }).click()
   await expect(agentPromptBox).toHaveValue('')
+
+  await agentPromptBox.fill('/')
+  await expect(page.getByTestId('agent-slash-menu')).toBeVisible()
+  await expect(page.getByRole('button', { name: /\/init/ })).toBeVisible()
+  await page.getByRole('button', { name: /\/init/ }).click()
+  await expect(page.getByText('准备运行：初始化 Agent')).toBeVisible()
+  expect(runRequests).toBe(0)
+  await page.getByRole('button', { name: '取消' }).click()
 
   await page.getByRole('button', { name: /检查连续性/ }).click()
   expect(runRequests).toBe(0)

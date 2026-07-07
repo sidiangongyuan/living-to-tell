@@ -52,6 +52,13 @@ const AGENT_LONG_ANSWER_THRESHOLD = 700
 const ROUTE_HIGHLIGHT_MS = 2600
 
 type AgentQuickTaskKind = 'init' | 'health' | 'continuity' | 'next' | 'memory'
+type AgentSlashCommand = {
+  command: string
+  title: string
+  subtitle: string
+  action: 'task' | 'clear'
+  taskKind?: AgentQuickTaskKind
+}
 
 const store = useCollectionsStore()
 const { t, locale } = useI18n()
@@ -96,6 +103,9 @@ const agentCollapsedRunIds = ref<string[]>([])
 const agentExpandedRunIds = ref<string[]>([])
 const agentHighlightedRunId = ref<string | null>(null)
 const agentPromptIndexQuery = ref('')
+const agentSlashMenuOpen = ref(false)
+const agentSlashQuery = ref('')
+const agentSlashSelectedIndex = ref(0)
 const agentClearDialogOpen = ref(false)
 const agentClearing = ref(false)
 const highlightedCollectionArticleId = ref<string | null>(null)
@@ -233,6 +243,30 @@ const agentQuickTasks = computed(() => [
 const pendingQuickTask = computed(() =>
   agentQuickTasks.value.find((task) => task.kind === agentPendingQuickTask.value) ?? null
 )
+const agentSlashCommands = computed<AgentSlashCommand[]>(() => [
+  ...agentQuickTasks.value.map((task) => ({
+    command: task.kind,
+    title: task.title,
+    subtitle: task.subtitle,
+    action: 'task' as const,
+    taskKind: task.kind,
+  })),
+  {
+    command: 'clear',
+    title: '清空会话',
+    subtitle: '保留项目圣经和待确认提案',
+    action: 'clear',
+  },
+])
+const filteredAgentSlashCommands = computed(() => {
+  const query = agentSlashQuery.value.trim().toLowerCase()
+  if (!query) return agentSlashCommands.value
+  return agentSlashCommands.value.filter((command) =>
+    command.command.includes(query)
+    || command.title.toLowerCase().includes(query)
+    || command.subtitle.toLowerCase().includes(query)
+  )
+})
 const selectedAgentProfileName = computed(() =>
   agentProfileOptions.value.find((profile) => profile.id === agentProfileId.value)?.name || '当前配置'
 )
@@ -799,7 +833,83 @@ function removeAgentReference(ref: CollectionAgentReference) {
   )
 }
 
+function closeAgentSlashMenu() {
+  agentSlashMenuOpen.value = false
+  agentSlashQuery.value = ''
+  agentSlashSelectedIndex.value = 0
+}
+
+function syncAgentSlashMenuFromPrompt() {
+  const match = agentPrompt.value.match(/^\/([A-Za-z0-9_-]*)$/)
+  if (!match) {
+    if (agentSlashMenuOpen.value) closeAgentSlashMenu()
+    return
+  }
+  agentSlashQuery.value = match[1] || ''
+  agentSlashMenuOpen.value = true
+  agentReferencePickerOpen.value = false
+  if (agentSlashSelectedIndex.value >= filteredAgentSlashCommands.value.length) {
+    agentSlashSelectedIndex.value = Math.max(0, filteredAgentSlashCommands.value.length - 1)
+  }
+}
+
+function moveAgentSlashSelection(direction: 1 | -1) {
+  const total = filteredAgentSlashCommands.value.length
+  if (!total) return
+  agentSlashSelectedIndex.value = (agentSlashSelectedIndex.value + direction + total) % total
+}
+
+function selectAgentSlashCommand(command = filteredAgentSlashCommands.value[agentSlashSelectedIndex.value]) {
+  if (!command) return
+  closeAgentSlashMenu()
+  agentPrompt.value = ''
+  if (command.action === 'clear') {
+    requestAgentClear()
+    return
+  }
+  if (command.taskKind) {
+    runQuickAgentTask(command.taskKind)
+  }
+}
+
+function runAgentSlashCommandText(message: string): boolean {
+  if (!message.startsWith('/')) return false
+  const commandName = message.slice(1).trim().toLowerCase()
+  const command = agentSlashCommands.value.find((item) => item.command === commandName)
+  if (command) {
+    selectAgentSlashCommand(command)
+    return true
+  }
+  agentError.value = '未知斜杠命令。输入 / 后从菜单选择可用功能。'
+  agentSlashQuery.value = commandName
+  agentSlashSelectedIndex.value = 0
+  agentSlashMenuOpen.value = true
+  return true
+}
+
 function handleAgentPromptKeydown(event: KeyboardEvent) {
+  if (agentSlashMenuOpen.value) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeAgentSlashMenu()
+      return
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      moveAgentSlashSelection(1)
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      moveAgentSlashSelection(-1)
+      return
+    }
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      event.preventDefault()
+      selectAgentSlashCommand()
+      return
+    }
+  }
   if (event.key === 'Escape' && agentReferencePickerOpen.value) {
     agentReferencePickerOpen.value = false
     return
@@ -812,6 +922,8 @@ function handleAgentPromptKeydown(event: KeyboardEvent) {
 }
 
 function handleAgentPromptInput() {
+  syncAgentSlashMenuFromPrompt()
+  if (agentSlashMenuOpen.value) return
   const match = agentPrompt.value.match(/(?:^|\s)@([^\s@]{0,40})$/)
   if (!match) return
   agentReferenceQuery.value = match[1] || ''
@@ -822,13 +934,7 @@ function handleAgentPromptInput() {
 async function runAgentPrompt(taskType = 'free_chat', prompt = agentPrompt.value) {
   if (!store.selectedCollectionId) return
   const message = prompt.trim()
-  if (message === '/clear') {
-    requestAgentClear()
-    return
-  }
-  if (message === '/init') {
-    runQuickAgentTask('init')
-    agentPrompt.value = ''
+  if (runAgentSlashCommandText(message)) {
     return
   }
   if (!message) {
@@ -853,6 +959,7 @@ async function runAgentPrompt(taskType = 'free_chat', prompt = agentPrompt.value
       agentState.value = { ...agentState.value, runs: [run, ...agentState.value.runs] }
     }
     agentPrompt.value = ''
+    closeAgentSlashMenu()
     agentPendingQuickTask.value = null
     scheduleAgentPoll(run.id)
   } catch (e) {
@@ -2206,22 +2313,27 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                     </div>
                   </div>
 
-                  <div class="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-                    <button
-                      v-for="task in agentQuickTasks"
-                      :key="task.kind"
-                      type="button"
-                      :class="[
-                        'rounded-2xl px-4 py-3 text-left text-sm font-semibold ring-1 transition focus:outline-none focus:ring-2 focus:ring-amber-300',
-                        agentPendingQuickTask === task.kind
-                          ? 'bg-amber-50 text-stone-900 ring-amber-200'
-                          : 'bg-white text-stone-800 ring-stone-200 hover:bg-stone-50'
-                      ]"
-                      @click="runQuickAgentTask(task.kind)"
-                    >
-                      {{ task.title }}
-                      <span class="mt-1 block text-xs font-normal text-stone-500">{{ task.subtitle }}</span>
-                    </button>
+                  <div class="mt-5 rounded-2xl border border-stone-200 bg-stone-50/80 p-2" data-testid="agent-quick-task-strip">
+                    <div class="flex items-center gap-2 overflow-x-auto pb-1">
+                      <button
+                        v-for="task in agentQuickTasks"
+                        :key="task.kind"
+                        type="button"
+                        :class="[
+                          'min-w-[11.25rem] rounded-xl px-3 py-2 text-left ring-1 transition focus:outline-none focus:ring-2 focus:ring-amber-300',
+                          agentPendingQuickTask === task.kind
+                            ? 'bg-amber-50 text-stone-900 ring-amber-200'
+                            : 'bg-white text-stone-800 ring-stone-200 hover:bg-stone-100'
+                        ]"
+                        @click="runQuickAgentTask(task.kind)"
+                      >
+                        <span class="block whitespace-nowrap text-sm font-semibold leading-5">{{ task.title }}</span>
+                        <span class="mt-0.5 block truncate text-[11px] font-normal leading-4 text-stone-500">{{ task.subtitle }}</span>
+                      </button>
+                    </div>
+                    <p class="mt-1 px-1 text-[11px] leading-5 text-stone-500">
+                      快捷任务会先进入确认区；输入 <span class="font-semibold text-stone-700">/</span> 也能打开同一组功能。
+                    </p>
                   </div>
 
                   <div v-if="pendingQuickTask" class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -2343,17 +2455,53 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                     </div>
                   </div>
 
-                  <textarea
-                    v-model="agentPrompt"
-                    rows="5"
-                    class="w-full resize-none rounded-2xl border border-stone-200 px-4 py-3 text-sm leading-6 outline-none focus:ring-2 focus:ring-indigo-200"
-                    placeholder="例如：帮我检查第一部的结构断点；输入 @旧信 可搜索并加入引用；输入 /init 初始化 Agent；输入 /clear 清空当前会话。"
-                    @keydown="handleAgentPromptKeydown"
-                    @input="handleAgentPromptInput"
-                  />
+                  <div class="relative">
+                    <div
+                      v-if="agentSlashMenuOpen"
+                      class="absolute bottom-full left-0 z-30 mb-2 w-full max-w-xl rounded-2xl border border-stone-200 bg-white p-2 shadow-2xl"
+                      data-testid="agent-slash-menu"
+                    >
+                      <div class="flex items-center justify-between px-3 py-2">
+                        <span class="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">斜杠菜单</span>
+                        <span class="text-[11px] text-stone-400">↑↓ 选择 · Enter 确认</span>
+                      </div>
+                      <div v-if="!filteredAgentSlashCommands.length" class="rounded-xl border border-dashed border-stone-200 p-3 text-center text-xs text-stone-400">
+                        没有匹配功能。
+                      </div>
+                      <button
+                        v-for="(command, index) in filteredAgentSlashCommands"
+                        :key="command.command"
+                        type="button"
+                        :class="[
+                          'flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition',
+                          index === agentSlashSelectedIndex ? 'bg-stone-900 text-white' : 'text-stone-700 hover:bg-stone-50'
+                        ]"
+                        @mousedown.prevent="selectAgentSlashCommand(command)"
+                      >
+                        <span
+                          :class="[
+                            'shrink-0 rounded-lg px-2 py-1 font-mono text-[11px]',
+                            index === agentSlashSelectedIndex ? 'bg-white/15 text-white' : 'bg-stone-100 text-stone-500'
+                          ]"
+                        >/{{ command.command }}</span>
+                        <span class="min-w-0 flex-1">
+                          <span class="block truncate text-sm font-semibold">{{ command.title }}</span>
+                          <span :class="['block truncate text-xs', index === agentSlashSelectedIndex ? 'text-stone-200' : 'text-stone-500']">{{ command.subtitle }}</span>
+                        </span>
+                      </button>
+                    </div>
+                    <textarea
+                      v-model="agentPrompt"
+                      rows="5"
+                      class="w-full resize-none rounded-2xl border border-stone-200 px-4 py-3 text-sm leading-6 outline-none focus:ring-2 focus:ring-indigo-200"
+                      placeholder="例如：帮我检查第一部的结构断点；输入 @ 加引用；输入 / 打开功能菜单。"
+                      @keydown="handleAgentPromptKeydown"
+                      @input="handleAgentPromptInput"
+                    />
+                  </div>
                   <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
                     <p class="max-w-xl text-xs leading-5 text-stone-500">
-                      这里默认按普通对话发送。专项任务请用上方按钮；输入 /init 会打开初始化确认，输入 /clear 会打开清空确认。
+                      普通文字会作为对话发送；<span class="font-semibold text-stone-700">/</span> 打开功能菜单，<span class="font-semibold text-stone-700">@</span> 添加上下文引用。
                     </p>
                     <button
                       class="rounded-xl bg-stone-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
@@ -2447,7 +2595,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                       <h4 class="font-semibold text-stone-900">项目圣经</h4>
                       <p class="mt-1 text-xs leading-5 text-stone-500">这是 Agent 的长期记忆。你可以手动维护，也可以应用 Agent 的记忆更新提案。</p>
                     </div>
-                    <button class="rounded-xl bg-stone-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40" :disabled="agentMemorySaving" @click="saveAgentMemory">
+                    <button class="shrink-0 whitespace-nowrap rounded-xl bg-stone-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40" :disabled="agentMemorySaving" @click="saveAgentMemory">
                       {{ agentMemorySaving ? '保存中...' : '保存记忆' }}
                     </button>
                   </div>
