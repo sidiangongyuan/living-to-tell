@@ -86,7 +86,7 @@ Steps:
 2. Open **AI Workspace** and paste text.
 3. Select one or more provider profiles and run one task.
 4. Compare output length, paragraph changes, latency, tokens, and cost when available. More selected models can mean longer waits and higher provider cost.
-5. Open **AI Cards** to maintain style, character, and scene modules.
+5. Open **AI Cards** to maintain style, character, and scene modules. Use **Copy as Prompt** when a card should become explicit AI context.
 
 Expected result: AI output stays in preview until you choose a winning result and explicitly copy, replace, or insert.
 

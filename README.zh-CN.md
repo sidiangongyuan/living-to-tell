@@ -4,9 +4,9 @@
 
 ### 本地优先的写作工作室：文章、作品集、文脉标本与边界清晰的 AI
 
-中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.41)
+中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.42)
 
-[![Version](https://img.shields.io/badge/preview-0.1.41-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.42-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **写作、拍照、唱歌、讲话，都是为了讲述。活着，就是为了讲述。**
 
-[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.41) · [官方手册](docs/user-guide.zh-CN.md) · [GIF 教程](docs/tutorials.zh-CN.md) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
+[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.42) · [官方手册](docs/user-guide.zh-CN.md) · [GIF 教程](docs/tutorials.zh-CN.md) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
 
 </div>
 
@@ -30,7 +30,7 @@
 | **作品集** | 把多篇文章组织成一本书稿项目，用统一的书稿结构树管理层级、顺序、看板状态、关联文章、导出和作品集 Agent。 |
 | **文脉标本库** | 保存摘录、书名、作者、用途、笔记和可复制引用。 |
 | **文章 AI** | 使用 AI 工具、文章对话和多模型结果对比，所有写回都需要明确确认。 |
-| **AI Cards** | 保存可复用的风格、人物、场景卡片，支持固定模板和 AI 草稿生成。 |
+| **AI Cards** | 保存可复用的风格、人物、场景卡片，支持阅读分区、复制为提示词、固定模板和 AI 草稿生成。 |
 | **意象星图** | 把选中文字标记为意象，双向回到原文锚点，查看真实共现关系，并用 AI 丰富抽象概念。 |
 | **导出与备份** | 查看恢复点、本地数据路径、备份/检查点、存储目录、备份提醒，并导出最近文章或作品集。 |
 | **本地优先** | 写作数据保存在本地，只有主动运行 AI 时才发送文本。 |
@@ -122,7 +122,7 @@
 - 长文本请求会显示字数、段落、估算 token 和模型数量，并在模型运行时显示真实等待状态。
 - AI 工具可用一个或多个已保存配置档案并行运行同一任务，对比字数、段落、耗时、token 和成本信息，再手动选择胜出结果。选择模型越多，等待时间、token 使用和供应商成本可能越高。
 - 支持为每个写作工具保存个人 prompt 预设。
-- AI Card 支持风格、人物、场景卡片，提供固定模板、AI 草稿生成、类型筛选和关键词搜索。
+- AI Card 支持风格、人物、场景卡片，提供阅读优先分区、固定模板、AI 草稿生成、复制为提示词、类型筛选和关键词搜索。
 - 场景模块可在 AI 工具中手动搜索并勾选调用，只有确认选择后才会进入本轮上下文。
 - 支持 OpenAI 兼容接口、Codex 本地登录、Gemini API / 本地配置、Gemini CLI / OAuth 和 OpenCode 本地登录。
 
@@ -140,15 +140,15 @@
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.41) 下载最新公开预览版。
+从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.42) 下载最新公开预览版。
 
 推荐 Windows 资产：
 
-- `LivingToTell_0.1.41_x64-setup.exe`
+- `LivingToTell_0.1.42_x64-setup.exe`
 
 可选资产：
 
-- `LivingToTell_0.1.41_x64_zh-CN.msi`
+- `LivingToTell_0.1.42_x64_zh-CN.msi`
 
 预览版暂未签名，Windows SmartScreen 可能会提示风险。请只运行来自本仓库 Release 页的安装包。
 

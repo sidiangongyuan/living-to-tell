@@ -4,7 +4,7 @@
 
 ### The current Windows desktop preview for 活着为了讲述 / Living to Tell
 
-[![Version](https://img.shields.io/badge/version-0.1.41-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.42-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-preview-orange.svg)](#download)
@@ -86,8 +86,8 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 - AI Tools can run one task across one or more saved provider profiles and compare result size, paragraph changes, latency, tokens, and cost when available. Selecting more models may increase wait time, token use, and provider cost.
 - Article-scoped chat with one ongoing conversation per article.
 - Standing chat instructions, copy actions, save-reply-as-article-note actions, and reviewed capture to reference material or new articles.
-- AI Cards for style, character, and scene context, with type/source filters and keyword search.
-- AI card generation creates template-based style, character, and scene drafts for review before saving.
+- AI Cards for style, character, and scene context, with readable sections, prompt-copy actions, type/source filters, and keyword search.
+- AI card generation creates template-based style, character, and scene drafts with suggested tags for review before saving.
 - Supports OpenAI-compatible APIs, Codex local auth, Gemini API/local config, Gemini CLI / OAuth, and OpenCode local auth.
 - Raw API keys are not stored in app settings; only the selected credential source is saved.
 
@@ -109,15 +109,15 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.41).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.42).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.41_x64-setup.exe`
+- `LivingToTell_0.1.42_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.41_x64_zh-CN.msi`
+- `LivingToTell_0.1.42_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 

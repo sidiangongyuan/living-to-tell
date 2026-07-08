@@ -1,5 +1,25 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.42 - AI Cards Reading and Prompt Upgrade (2026-07-08)
+
+### Added
+
+- Upgraded AI Cards into a reading-first workspace: each card now opens with a readable header, tags, structured sections, and explicit copy actions before editing.
+- Added `Copy as Prompt` / `复制为提示词` so style, character, and scene cards can be used directly as AI context, collection Agent references, or external prompt material.
+- AI-generated card drafts now preview as structured sections and can include suggested tags. Drafts still require explicit confirmation before saving or overwriting a card.
+
+### Changed
+
+- Reworked the AI card generator into a clearer create / upgrade flow with card-type chips, material-focused input, review-first draft preview, and clearer empty/error states.
+- Existing cards remain compatible. Old plain-text cards can still be read, copied, edited, or upgraded into the fixed card templates.
+- AI card generation prompts now ask for cards that are readable, referenceable, and useful as AI context instead of merely long notes.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py -q -k "ai_card"`
+- `npm run test:e2e -- --project=msedge --workers=1 --grep "AI Cards"`
+- `npm run build`
+
 ## 0.1.41 - Agent Slash Menu and Layout Polish (2026-07-08)
 
 ### Added

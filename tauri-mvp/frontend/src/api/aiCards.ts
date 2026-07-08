@@ -40,6 +40,7 @@ export interface AiCardDraft {
   title: string
   card_type: AiCardType
   content: string
+  tags?: string[]
 }
 
 export const aiCardApi = {

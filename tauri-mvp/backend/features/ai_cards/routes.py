@@ -116,6 +116,7 @@ class AiCardDraftOut(BaseModel):
     title: str
     card_type: str
     content: str
+    tags: list[str] = Field(default_factory=list)
 
 
 def _card_to_dto(card: DomainCard) -> AiCardOut:
@@ -157,10 +158,10 @@ def _draft_template_for(card_type: str) -> str:
 def _draft_system_prompt() -> str:
     return (
         "你是一个写作工具里的 AI 卡片生成器，不是聊天助手。"
-        "你的任务是把输入材料提炼成可复用的写作卡片。"
+        "你的任务是把输入材料提炼成可引用、可作为 AI 提示词上下文、也方便作者阅读的写作卡片。"
         "输出必须具体、克制、可迁移，避免空泛评价。"
         "只输出一个 JSON 对象，不要 Markdown，不要代码块，不要解释。"
-        "JSON schema: {\"title\": string, \"card_type\": string, \"content\": string}。"
+        "JSON schema: {\"title\": string, \"card_type\": string, \"content\": string, \"tags\": string[]}。"
     )
 
 
@@ -177,7 +178,9 @@ def _draft_user_prompt(card_type: str, source_text: str, keep_source_quotes: boo
 - title 控制在 40 个中文字符以内。
 - card_type 必须严格等于 "{card_type}"。
 - content 必须使用下方模板标题，标题不可改名、不可遗漏。
-- 内容要帮助 AI 后续创作，而不是保存读书笔记。
+- 内容要像“可引用的写作工作卡”：既方便作者扫读，也能直接作为 AI 上下文使用。
+- 每个栏目写短句或要点，优先给可执行约束、观察、禁忌和可迁移写法，不写百科长文。
+- tags 返回 2-6 个短标签，便于检索和引用。
 - {quote_policy}
 - 如果材料不足，也要给出谨慎、可编辑的草稿，不要编造具体事实。
 
@@ -220,11 +223,18 @@ def _coerce_draft(payload: dict[str, Any], expected_type: str) -> AiCardDraftOut
     title = str(payload.get("title", "")).strip()
     content = str(payload.get("content", "")).strip()
     returned_type = _clean_card_type(str(payload.get("card_type", "")).strip())
+    raw_tags = payload.get("tags", [])
+    if isinstance(raw_tags, str):
+        tags = parse_tags(raw_tags)
+    elif isinstance(raw_tags, list):
+        tags = _clean_tags([str(tag) for tag in raw_tags])
+    else:
+        tags = []
     if returned_type != expected_type:
         raise HTTPException(502, "AI 返回的卡片类型与请求不一致。")
     if not title or not content:
         raise HTTPException(502, "AI 返回的卡片草稿缺少标题或内容。")
-    return AiCardDraftOut(title=title[:80], card_type=returned_type, content=content)
+    return AiCardDraftOut(title=title[:80], card_type=returned_type, content=content, tags=tags[:8])
 
 
 def _cost_tier(value: str) -> AiCostTier:

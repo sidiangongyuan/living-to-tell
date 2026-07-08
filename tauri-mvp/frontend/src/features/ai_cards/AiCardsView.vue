@@ -13,6 +13,15 @@ const { t } = useI18n()
 const route = useRoute()
 const CARD_TYPES: AiCardType[] = ['style', 'character', 'scene']
 
+type DetailMode = 'read' | 'edit'
+type GeneratorMode = 'new' | 'upgrade'
+
+interface CardSection {
+  title: string
+  body: string
+  isReference: boolean
+}
+
 const CARD_TEMPLATES: Record<AiCardType, string> = {
   style: `【语言质感】
 
@@ -108,8 +117,15 @@ const generatorLoading = ref(false)
 const generatorError = ref('')
 const draftPreview = ref<AiCardDraft | null>(null)
 const draftMode = ref<'new' | 'upgrade'>('new')
+const generatorMode = ref<GeneratorMode>('new')
+const detailMode = ref<DetailMode>('read')
+const copyNotice = ref('')
 
 const selectedCard = computed(() => cards.value.find(c => c.id === selectedCardId.value) || null)
+
+const selectedCardSections = computed(() => selectedCard.value ? parseCardSections(selectedCard.value.content) : [])
+const draftPreviewSections = computed(() => draftPreview.value ? parseCardSections(draftPreview.value.content) : [])
+const selectedCardPrompt = computed(() => selectedCard.value ? formatCardPrompt(selectedCard.value) : '')
 
 const allCardTags = computed(() =>
   Array.from(new Set(cards.value.flatMap((card) => card.tags))).sort((a, b) => a.localeCompare(b, 'zh-CN'))
@@ -149,6 +165,19 @@ const selectedCardNeedsUpgrade = computed(() => {
   return Boolean(card && !isTemplateCard(card))
 })
 
+const generatorModeHelp = computed(() => (
+  generatorMode.value === 'upgrade'
+    ? t('aiCards.generatorUpgradeModeHelp')
+    : t('aiCards.generatorCreateModeHelp')
+))
+
+const generatorButtonLabel = computed(() => {
+  if (generatorLoading.value) return t('aiCards.generating')
+  return generatorMode.value === 'upgrade' ? t('aiCards.generateUpgradeDraft') : t('aiCards.generateDraft')
+})
+
+const canRunGenerator = computed(() => !generatorLoading.value && (generatorMode.value !== 'upgrade' || Boolean(selectedCard.value)))
+
 onMounted(async () => {
   await loadCards()
   applyRouteCard()
@@ -160,6 +189,7 @@ watch(
 )
 
 onUnmounted(() => {
+  if (copyTimer) clearTimeout(copyTimer)
   void flushPendingCardSave()
 })
 
@@ -191,9 +221,75 @@ function templateFor(cardType: AiCardType): string {
   return CARD_TEMPLATES[cardType]
 }
 
+function parseCardSections(content: string): CardSection[] {
+  const lines = (content || '').split(/\r?\n/)
+  const sections: CardSection[] = []
+  let currentTitle = ''
+  let currentBody: string[] = []
+  let foundHeading = false
+
+  const pushCurrent = () => {
+    if (!currentTitle && !currentBody.join('').trim()) return
+    sections.push({
+      title: currentTitle || t('aiCards.rawContent'),
+      body: currentBody.join('\n').trim(),
+      isReference: currentTitle.includes('参考原文') || currentTitle.toLowerCase().includes('reference'),
+    })
+  }
+
+  for (const line of lines) {
+    const match = line.match(/^【([^】]+)】\s*(.*)$/)
+    if (match) {
+      foundHeading = true
+      pushCurrent()
+      currentTitle = match[1].trim()
+      currentBody = match[2] ? [match[2]] : []
+    } else {
+      currentBody.push(line)
+    }
+  }
+  pushCurrent()
+
+  if (!foundHeading) return []
+  return sections
+}
+
 function isTemplateCard(card: AiCard): boolean {
   const headings = TEMPLATE_HEADINGS[card.card_type]
   return Boolean(headings && headings.every((heading) => card.content.includes(heading)))
+}
+
+function compactCardPreview(card: AiCard): string {
+  const firstSection = parseCardSections(card.content).find((section) => section.body && !section.isReference)
+  return (firstSection?.body || card.content || t('library.empty')).replace(/\s+/g, ' ').trim()
+}
+
+function formatTags(tags: string[]): string {
+  return tags.length ? tags.join(' / ') : t('aiCards.noTags')
+}
+
+function formatCardPrompt(card: AiCard): string {
+  const title = card.title || t('aiCards.untitled')
+  const content = (card.content || '').trim() || t('library.empty')
+  return [
+    `【AI Card：${title}】`,
+    `${t('aiCards.promptTypeLabel')}: ${cardTypeLabels.value[card.card_type]}`,
+    `${t('aiCards.promptTagsLabel')}: ${formatTags(card.tags)}`,
+    `${t('aiCards.promptUsageLabel')}: ${t('aiCards.promptUsage')}`,
+    '',
+    content,
+  ].join('\n')
+}
+
+function formatDraftPrompt(draft: AiCardDraft): string {
+  return [
+    `【AI Card：${draft.title || t('aiCards.untitled')}】`,
+    `${t('aiCards.promptTypeLabel')}: ${cardTypeLabels.value[draft.card_type]}`,
+    `${t('aiCards.promptTagsLabel')}: ${formatTags(draft.tags || [])}`,
+    `${t('aiCards.promptUsageLabel')}: ${t('aiCards.promptUsage')}`,
+    '',
+    draft.content,
+  ].join('\n')
 }
 
 async function createCard(cardType = newCardType.value) {
@@ -211,6 +307,7 @@ async function createCard(cardType = newCardType.value) {
     })
     cards.value.unshift(card)
     selectedCardId.value = card.id
+    detailMode.value = 'edit'
   } catch (e) {
     console.error('Create card failed:', e)
     error.value = errorMessage(e)
@@ -330,6 +427,7 @@ async function selectCard(id: string) {
   const saved = await flushPendingCardSave()
   if (!saved) return
   selectedCardId.value = id
+  detailMode.value = 'read'
   draftPreview.value = null
   generatorError.value = ''
 }
@@ -341,10 +439,28 @@ function insertTemplateIntoSelected() {
   scheduleAutoSave()
 }
 
+function selectGeneratorMode(mode: GeneratorMode) {
+  generatorMode.value = mode
+  draftPreview.value = null
+  generatorError.value = ''
+}
+
+async function runGenerator() {
+  await generateDraft(generatorMode.value)
+}
+
 async function generateDraft(mode: 'new' | 'upgrade') {
   const saved = await flushPendingCardSave()
   if (!saved) return
   const card = selectedCard.value
+  if (mode === 'upgrade' && !card) {
+    generatorError.value = t('aiCards.selectCardBeforeUpgrade')
+    return
+  }
+  if (mode === 'new' && !generatorSource.value.trim()) {
+    generatorError.value = t('aiCards.materialRequired')
+    return
+  }
   const cardType = mode === 'upgrade' && card ? card.card_type : generatorType.value
   const source = mode === 'upgrade' && card && !generatorSource.value.trim()
     ? `${card.title}\n\n${card.content}`
@@ -382,10 +498,11 @@ async function saveDraftAsNew() {
       title: draft.title,
       content: draft.content,
       card_type: draft.card_type,
-      tags: [],
+      tags: draft.tags || [],
     })
     cards.value.unshift(card)
     selectedCardId.value = card.id
+    detailMode.value = 'read'
     draftPreview.value = null
     notice.value = t('aiCards.draftSavedAsNew')
   } catch (e) {
@@ -400,8 +517,12 @@ async function applyDraftToCurrent() {
   card.title = draft.title
   card.card_type = draft.card_type
   card.content = draft.content
+  card.tags = Array.from(new Set([...(card.tags || []), ...(draft.tags || [])]))
   const saved = await persistCard(card, t('aiCards.draftApplied'))
-  if (saved) draftPreview.value = null
+  if (saved) {
+    detailMode.value = 'read'
+    draftPreview.value = null
+  }
 }
 
 function updateSelectedTags(tags: string[]) {
@@ -409,6 +530,43 @@ function updateSelectedTags(tags: string[]) {
   if (!card) return
   card.tags = [...tags]
   scheduleAutoSave()
+}
+
+let copyTimer: number | null = null
+async function copyText(text: string, message = t('aiCards.copyDone')) {
+  try {
+    await navigator.clipboard.writeText(text)
+    copyNotice.value = message
+    if (copyTimer) clearTimeout(copyTimer)
+    copyTimer = window.setTimeout(() => {
+      copyNotice.value = ''
+      copyTimer = null
+    }, 2200)
+  } catch (e) {
+    copyNotice.value = t('aiCards.copyFailed', { message: e instanceof Error ? e.message : String(e) })
+  }
+}
+
+async function copySelectedCardContent() {
+  const card = selectedCard.value
+  if (!card) return
+  await copyText(card.content || '', t('aiCards.copyContentDone'))
+}
+
+async function copySelectedCardPrompt() {
+  if (!selectedCardPrompt.value) return
+  await copyText(selectedCardPrompt.value, t('aiCards.copyPromptDone'))
+}
+
+async function copyDraftPrompt() {
+  const draft = draftPreview.value
+  if (!draft) return
+  await copyText(formatDraftPrompt(draft), t('aiCards.copyPromptDone'))
+}
+
+async function copySection(section: CardSection) {
+  const title = section.title ? `【${section.title}】\n` : ''
+  await copyText(`${title}${section.body}`.trim(), t('aiCards.copySectionDone'))
 }
 
 function closeContextMenu() {
@@ -512,7 +670,7 @@ function handleContextMenuSelect(item: { key: string }) {
         >
           <div class="mb-1 text-sm font-semibold">{{ card.title || t('aiCards.untitled') }}</div>
           <div class="line-clamp-2 text-xs text-gray-500">
-            {{ card.content || t('library.empty') }}
+            {{ compactCardPreview(card) }}
           </div>
           <div class="mt-2 flex flex-wrap gap-2">
             <span class="rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700">
@@ -529,72 +687,135 @@ function handleContextMenuSelect(item: { key: string }) {
 
     <div class="flex-1 min-w-0 overflow-y-auto bg-white">
       <div class="mx-auto w-full max-w-5xl p-8">
-        <section class="mb-6 rounded-xl border border-emerald-100 bg-emerald-50/60 p-5">
-          <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 class="text-sm font-semibold text-emerald-950">{{ t('aiCards.generatorTitle') }}</h3>
-              <p class="mt-1 text-xs text-emerald-800">{{ t('aiCards.generatorHelp') }}</p>
-            </div>
-            <label class="flex items-center gap-2 text-xs text-emerald-900">
-              <input v-model="keepSourceQuotes" type="checkbox" class="rounded border-emerald-300" />
-              {{ t('aiCards.keepSourceQuotes') }}
-            </label>
-          </div>
-          <div class="grid gap-3 md:grid-cols-[180px_1fr]">
-            <select
-              v-model="generatorType"
-              class="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-            >
-              <option v-for="type in CARD_TYPES" :key="type" :value="type">{{ cardTypeLabels[type] }}</option>
-            </select>
-            <textarea
-              v-model="generatorSource"
-              class="min-h-[96px] rounded-lg border border-emerald-200 bg-white p-3 text-sm leading-relaxed outline-none focus:ring-2 focus:ring-emerald-500"
-              :placeholder="t('aiCards.generatorPlaceholder')"
-            />
-          </div>
-          <div class="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              @click="generateDraft('new')"
-              :disabled="generatorLoading"
-              class="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
-            >
-              {{ generatorLoading && draftMode === 'new' ? t('aiCards.generating') : t('aiCards.generateDraft') }}
-            </button>
-            <button
-              v-if="selectedCardNeedsUpgrade"
-              @click="generateDraft('upgrade')"
-              :disabled="generatorLoading"
-              class="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
-            >
-              {{ generatorLoading && draftMode === 'upgrade' ? t('aiCards.generating') : t('aiCards.upgradeDraft') }}
-            </button>
-            <span v-if="selectedCardNeedsUpgrade" class="text-xs text-amber-800">{{ t('aiCards.upgradeHint') }}</span>
-          </div>
-          <div v-if="generatorError" class="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ generatorError }}</div>
-          <div v-if="draftPreview" class="mt-4 rounded-xl border border-emerald-200 bg-white p-4">
-            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <section class="mb-6 overflow-hidden rounded-2xl border border-emerald-100 bg-emerald-50/60" data-testid="ai-card-generator">
+          <div class="border-b border-emerald-100 bg-white/70 px-5 py-4">
+            <div class="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div class="text-sm font-semibold text-gray-900">{{ draftPreview.title }}</div>
-                <div class="text-xs text-gray-500">{{ cardTypeLabels[draftPreview.card_type] }}</div>
+                <h3 class="text-sm font-semibold text-emerald-950">{{ t('aiCards.generatorTitle') }}</h3>
+                <p class="mt-1 max-w-2xl text-xs leading-5 text-emerald-800">{{ t('aiCards.generatorHelp') }}</p>
               </div>
-              <div class="flex gap-2">
-                <button @click="saveDraftAsNew" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">
-                  {{ t('aiCards.saveDraftAsNew') }}
+              <div class="inline-flex rounded-xl bg-emerald-100 p-1 text-xs font-semibold text-emerald-900">
+                <button
+                  type="button"
+                  @click="selectGeneratorMode('new')"
+                  :class="[
+                    'rounded-lg px-3 py-1.5 transition-colors',
+                    generatorMode === 'new' ? 'bg-white shadow-sm' : 'hover:bg-white/60'
+                  ]"
+                >
+                  {{ t('aiCards.generatorCreateMode') }}
                 </button>
                 <button
-                  v-if="selectedCard"
-                  @click="applyDraftToCurrent"
-                  class="rounded-lg bg-stone-900 px-3 py-2 text-xs font-semibold text-white hover:bg-stone-700"
+                  type="button"
+                  @click="selectGeneratorMode('upgrade')"
+                  :disabled="!selectedCard"
+                  :class="[
+                    'rounded-lg px-3 py-1.5 transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                    generatorMode === 'upgrade' ? 'bg-white shadow-sm' : 'hover:bg-white/60'
+                  ]"
                 >
-                  {{ t('aiCards.applyDraft') }}
-                </button>
-                <button @click="draftPreview = null" class="rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-200">
-                  {{ t('common.cancel') }}
+                  {{ t('aiCards.generatorUpgradeMode') }}
                 </button>
               </div>
             </div>
-            <pre class="max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-xs leading-6 text-gray-700">{{ draftPreview.content }}</pre>
+          </div>
+
+          <div class="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
+            <div class="space-y-4">
+              <div>
+                <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-900">{{ t('aiCards.fields.type') }}</div>
+                <div class="flex flex-wrap gap-2">
+                  <button
+                    v-for="type in CARD_TYPES"
+                    :key="type"
+                    type="button"
+                    @click="generatorType = type"
+                    :aria-label="t('aiCards.generatorTypeAria', { type: cardTypeLabels[type] })"
+                    :class="[
+                      'rounded-lg border px-3 py-2 text-xs font-semibold transition-colors',
+                      generatorType === type
+                        ? 'border-emerald-700 bg-emerald-700 text-white'
+                        : 'border-emerald-200 bg-white text-emerald-900 hover:bg-emerald-50'
+                    ]"
+                  >
+                    {{ cardTypeLabels[type] }}
+                  </button>
+                </div>
+              </div>
+              <label class="block">
+                <span class="mb-2 block text-xs font-semibold uppercase tracking-wide text-emerald-900">{{ t('aiCards.materialLabel') }}</span>
+                <textarea
+                  v-model="generatorSource"
+                  class="min-h-[150px] w-full resize-y rounded-xl border border-emerald-200 bg-white p-3 text-sm leading-relaxed outline-none focus:ring-2 focus:ring-emerald-500"
+                  :placeholder="t('aiCards.generatorPlaceholder')"
+                />
+              </label>
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <label class="flex items-center gap-2 text-xs text-emerald-900">
+                  <input v-model="keepSourceQuotes" type="checkbox" class="rounded border-emerald-300" />
+                  {{ t('aiCards.keepSourceQuotes') }}
+                </label>
+                <button
+                  @click="runGenerator"
+                  :disabled="!canRunGenerator"
+                  class="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {{ generatorButtonLabel }}
+                </button>
+              </div>
+              <p class="text-xs leading-5 text-emerald-800">{{ generatorModeHelp }}</p>
+              <div v-if="generatorError" class="rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ generatorError }}</div>
+            </div>
+
+            <div class="rounded-xl border border-emerald-100 bg-white p-4" data-testid="ai-card-draft-preview">
+              <div v-if="draftPreview" class="space-y-4">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div class="text-sm font-semibold text-gray-900">{{ draftPreview.title }}</div>
+                    <div class="mt-1 text-xs text-gray-500">{{ cardTypeLabels[draftPreview.card_type] }}</div>
+                  </div>
+                  <div class="flex flex-wrap gap-2">
+                    <button @click="copyDraftPrompt" class="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100">
+                      {{ t('aiCards.copyPrompt') }}
+                    </button>
+                    <button @click="draftPreview = null" class="rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-200">
+                      {{ t('aiCards.discardDraft') }}
+                    </button>
+                  </div>
+                </div>
+                <div v-if="draftPreview.tags?.length" class="flex flex-wrap gap-2">
+                  <span class="text-xs font-semibold text-gray-500">{{ t('aiCards.recommendedTags') }}</span>
+                  <span v-for="tag in draftPreview.tags" :key="tag" class="rounded-full bg-purple-50 px-2 py-0.5 text-xs text-purple-700">{{ tag }}</span>
+                </div>
+                <div class="max-h-80 space-y-3 overflow-auto pr-1">
+                  <div
+                    v-for="section in draftPreviewSections"
+                    :key="section.title"
+                    class="rounded-lg border border-gray-100 bg-gray-50 p-3"
+                  >
+                    <div class="mb-1 text-xs font-semibold text-gray-700">【{{ section.title }}】</div>
+                    <p class="whitespace-pre-wrap text-xs leading-5 text-gray-700">{{ section.body || t('aiCards.sectionEmpty') }}</p>
+                  </div>
+                  <pre v-if="!draftPreviewSections.length" class="whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-xs leading-6 text-gray-700">{{ draftPreview.content }}</pre>
+                </div>
+                <div class="flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-3">
+                  <button @click="saveDraftAsNew" class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">
+                    {{ t('aiCards.saveDraftAsNew') }}
+                  </button>
+                  <button
+                    v-if="selectedCard"
+                    @click="applyDraftToCurrent"
+                    class="rounded-lg bg-stone-900 px-3 py-2 text-xs font-semibold text-white hover:bg-stone-700"
+                  >
+                    {{ t('aiCards.applyDraft') }}
+                  </button>
+                </div>
+              </div>
+              <div v-else class="flex min-h-[240px] flex-col justify-center rounded-lg border border-dashed border-emerald-200 bg-emerald-50/40 p-5 text-sm text-emerald-900">
+                <div class="font-semibold">{{ t('aiCards.draftEmptyTitle') }}</div>
+                <p class="mt-2 text-xs leading-5">{{ t('aiCards.draftEmptyBody') }}</p>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -608,74 +829,166 @@ function handleContextMenuSelect(item: { key: string }) {
           >
             {{ saveNotice }}
           </div>
+          <div v-if="copyNotice" class="mb-5 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+            {{ copyNotice }}
+          </div>
           <div v-if="selectedCardNeedsUpgrade" class="mb-5 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
             {{ t('aiCards.oldFormatHint') }}
           </div>
 
-          <div class="mb-6">
-            <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('aiCards.fields.title') }}</label>
-            <input
-              v-model="selectedCard.title"
-              @input="scheduleAutoSave"
-              class="w-full rounded-lg border border-gray-200 px-4 py-3 text-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :placeholder="t('aiCards.placeholders.title')"
-            />
-          </div>
-
-          <div class="mb-6 grid gap-3 md:grid-cols-[1fr_auto]">
-            <div>
-              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('aiCards.fields.type') }}</label>
-              <select
-                v-model="selectedCard.card_type"
-                @change="scheduleAutoSave"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option v-for="type in CARD_TYPES" :key="type" :value="type">{{ cardTypeLabels[type] }}</option>
-              </select>
+          <article class="mb-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+              <div class="min-w-0">
+                <div class="mb-2 flex flex-wrap items-center gap-2">
+                  <span class="rounded-full bg-purple-100 px-2.5 py-1 text-xs font-semibold text-purple-700">
+                    {{ cardTypeLabels[selectedCard.card_type] }}
+                  </span>
+                  <span v-if="selectedCardNeedsUpgrade" class="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                    {{ t('aiCards.needsUpgrade') }}
+                  </span>
+                </div>
+                <h1 class="break-words text-2xl font-bold text-gray-950">{{ selectedCard.title || t('aiCards.untitled') }}</h1>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <span v-if="!selectedCard.tags.length" class="text-xs text-gray-400">{{ t('aiCards.noTags') }}</span>
+                  <span v-for="tag in selectedCard.tags" :key="tag" class="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600">
+                    {{ tag }}
+                  </span>
+                </div>
+              </div>
+              <div class="flex flex-wrap justify-end gap-2">
+                <button @click="copySelectedCardPrompt" class="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100">
+                  {{ t('aiCards.copyPrompt') }}
+                </button>
+                <button @click="copySelectedCardContent" class="rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-200">
+                  {{ t('aiCards.copyCard') }}
+                </button>
+                <button
+                  @click="detailMode = detailMode === 'read' ? 'edit' : 'read'"
+                  class="rounded-lg bg-stone-900 px-3 py-2 text-xs font-semibold text-white hover:bg-stone-700"
+                >
+                  {{ detailMode === 'read' ? t('aiCards.editMode') : t('aiCards.readMode') }}
+                </button>
+              </div>
             </div>
-            <div class="flex items-end">
-              <button
-                @click="insertTemplateIntoSelected"
-                class="rounded-lg bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-200"
-              >
-                {{ t('aiCards.insertTemplate') }}
-              </button>
-            </div>
-          </div>
-
-          <div class="mb-6">
-            <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('aiCards.fields.tags') }}</label>
-            <TagSelector
-              v-model="selectedCard.tags"
-              :suggestions="allCardTags"
-              :placeholder="t('aiCards.placeholders.tags')"
-              @change="updateSelectedTags"
-            />
-          </div>
-
-          <div class="mb-6">
-            <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('aiCards.fields.content') }}</label>
-            <textarea
-              v-model="selectedCard.content"
-              @input="scheduleAutoSave"
-              class="min-h-[420px] w-full resize-y rounded-lg border border-gray-200 p-4 font-mono text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500"
-              :placeholder="t('aiCards.placeholders.content')"
-            />
-            <p class="mt-2 text-xs text-gray-500">
-              {{ t('aiCards.contentHint') }}
-            </p>
-          </div>
-
-          <div class="flex items-center justify-between border-t border-gray-200 pt-4">
-            <div class="text-xs text-gray-400">
+            <div class="mt-4 text-xs text-gray-400">
               {{ t('articles.createdAt') }} {{ selectedCard.created_at?.slice(0, 10) || '—' }}
             </div>
-            <button
-              @click="deleteCard(selectedCard.id)"
-              class="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 transition-colors hover:bg-red-100"
-            >
-              {{ t('aiCards.deleteCard') }}
-            </button>
+          </article>
+
+          <div v-if="detailMode === 'read'" class="space-y-6" data-testid="ai-card-read-view">
+            <section class="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-5">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 class="text-sm font-semibold text-emerald-950">{{ t('aiCards.asPromptTitle') }}</h3>
+                  <p class="mt-1 text-xs leading-5 text-emerald-800">{{ t('aiCards.asPromptHelp') }}</p>
+                </div>
+                <button @click="copySelectedCardPrompt" class="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800">
+                  {{ t('aiCards.copyPrompt') }}
+                </button>
+              </div>
+            </section>
+
+            <section class="rounded-2xl border border-gray-200 bg-white p-5">
+              <div class="mb-4 flex items-center justify-between gap-3">
+                <h3 class="text-sm font-semibold text-gray-900">{{ t('aiCards.contentSections') }}</h3>
+                <button @click="detailMode = 'edit'" class="rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-200">
+                  {{ t('aiCards.editMode') }}
+                </button>
+              </div>
+              <div v-if="selectedCardSections.length" class="grid gap-3 md:grid-cols-2">
+                <div
+                  v-for="section in selectedCardSections"
+                  :key="section.title"
+                  :class="[
+                    'rounded-xl border p-4',
+                    section.isReference ? 'border-amber-100 bg-amber-50/50' : 'border-gray-100 bg-gray-50'
+                  ]"
+                >
+                  <div class="mb-2 flex items-center justify-between gap-2">
+                    <div class="text-sm font-semibold text-gray-900">【{{ section.title }}】</div>
+                    <button
+                      v-if="section.body"
+                      @click="copySection(section)"
+                      class="shrink-0 rounded-lg bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 shadow-sm hover:text-gray-900"
+                    >
+                      {{ t('aiCards.copySection') }}
+                    </button>
+                  </div>
+                  <p class="whitespace-pre-wrap text-sm leading-6 text-gray-700">{{ section.body || t('aiCards.sectionEmpty') }}</p>
+                </div>
+              </div>
+              <div v-else class="rounded-xl bg-gray-50 p-4">
+                <pre class="whitespace-pre-wrap text-sm leading-7 text-gray-700">{{ selectedCard.content || t('aiCards.noReadableContent') }}</pre>
+              </div>
+            </section>
+          </div>
+
+          <div v-else class="space-y-6">
+            <div>
+              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('aiCards.fields.title') }}</label>
+              <input
+                v-model="selectedCard.title"
+                @input="scheduleAutoSave"
+                class="w-full rounded-lg border border-gray-200 px-4 py-3 text-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                :placeholder="t('aiCards.placeholders.title')"
+              />
+            </div>
+
+            <div class="grid gap-3 md:grid-cols-[1fr_auto]">
+              <div>
+                <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('aiCards.fields.type') }}</label>
+                <select
+                  v-model="selectedCard.card_type"
+                  @change="scheduleAutoSave"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option v-for="type in CARD_TYPES" :key="type" :value="type">{{ cardTypeLabels[type] }}</option>
+                </select>
+              </div>
+              <div class="flex items-end">
+                <button
+                  @click="insertTemplateIntoSelected"
+                  class="rounded-lg bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-200"
+                >
+                  {{ t('aiCards.insertTemplate') }}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('aiCards.fields.tags') }}</label>
+              <TagSelector
+                v-model="selectedCard.tags"
+                :suggestions="allCardTags"
+                :placeholder="t('aiCards.placeholders.tags')"
+                @change="updateSelectedTags"
+              />
+            </div>
+
+            <div>
+              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('aiCards.fields.content') }}</label>
+              <textarea
+                v-model="selectedCard.content"
+                @input="scheduleAutoSave"
+                class="min-h-[420px] w-full resize-y rounded-lg border border-gray-200 p-4 font-mono text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500"
+                :placeholder="t('aiCards.placeholders.content')"
+              />
+              <p class="mt-2 text-xs text-gray-500">
+                {{ t('aiCards.contentHint') }}
+              </p>
+            </div>
+
+            <div class="flex items-center justify-between border-t border-gray-200 pt-4">
+              <div class="text-xs text-gray-400">
+                {{ t('articles.createdAt') }} {{ selectedCard.created_at?.slice(0, 10) || '—' }}
+              </div>
+              <button
+                @click="deleteCard(selectedCard.id)"
+                class="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 transition-colors hover:bg-red-100"
+              >
+                {{ t('aiCards.deleteCard') }}
+              </button>
+            </div>
           </div>
         </div>
         <div v-else class="flex h-80 items-center justify-center text-gray-400">

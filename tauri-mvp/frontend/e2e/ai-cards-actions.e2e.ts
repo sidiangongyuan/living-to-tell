@@ -1,5 +1,11 @@
 import { expect, test, type Page } from '@playwright/test'
 
+declare global {
+  interface Window {
+    __copiedText?: string
+  }
+}
+
 const userCard = {
   id: 'card-user',
   title: '克制风格',
@@ -23,9 +29,9 @@ const characterCard = {
 const sceneCard = {
   id: 'card-scene',
   title: '等待回应',
-  content: '【场景原型】\n一方表达后等待回应。\n\n【参考原文（可选）】\n无',
+  content: '【场景原型】\n一方表达后等待回应。\n\n【核心冲突】\n主动表达和不确定回应之间的停顿。\n\n【参考原文（可选）】\n无',
   card_type: 'scene',
-  tags: [],
+  tags: ['关系'],
   created_at: '2026-01-03T00:00:00Z',
   updated_at: '2026-01-03T00:00:00Z',
 }
@@ -37,6 +43,14 @@ async function mockAiCardsApi(page: Page) {
     window.localStorage.clear()
     ;(window as Window & { __WRITER_API_BASE__?: string }).__WRITER_API_BASE__ = 'http://backend.test'
     ;(window as Window & { __WRITER_DISABLE_AUTO_UPDATE__?: boolean }).__WRITER_DISABLE_AUTO_UPDATE__ = true
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          window.__copiedText = text
+        },
+      },
+    })
   })
 
   await page.route('**/api/app/version', async (route) => {
@@ -80,6 +94,7 @@ async function mockAiCardsApi(page: Page) {
           title: '赌注式情书',
           card_type: 'scene',
           content: '【场景原型】\n用带赌注的表达推动关系。\n\n【参考原文（可选）】\n无',
+          tags: ['关系推进', '赌注'],
         },
       })
       return
@@ -91,6 +106,7 @@ async function mockAiCardsApi(page: Page) {
           title: '升级后的风格',
           card_type: 'style',
           content: '【语言质感】\n具体、克制。\n\n【参考原文（可选）】\n无',
+          tags: ['克制'],
         },
       })
       return
@@ -242,7 +258,7 @@ test('AI Cards create, edit autosave, tags, filters, no sample restore, and dele
   const tagInput = page.getByPlaceholder('搜索或输入标签，回车添加')
   await tagInput.fill('节奏')
   await tagInput.press('Enter')
-  await expect(page.getByText('节奏')).toBeVisible()
+  await expect(page.getByText('节奏').first()).toBeVisible()
   await expect.poll(() => updatedBodies.some((body) =>
     Array.isArray(body.tags) && body.tags.includes('节奏')
   )).toBe(true)
@@ -271,11 +287,12 @@ test('AI Cards generate scene drafts and preview before saving', async ({ page }
   })
 
   await page.goto('/ai-cards')
-  await page.getByPlaceholder('粘贴一段人物描写、风格样本或场景材料...').fill('主角写下一封带赌注的信，等待回应。')
-  await page.getByRole('button', { name: '生成新卡草稿' }).click()
+  await page.getByPlaceholder('粘贴人物描写、风格样本、场景材料，或写下你希望这张卡记录的要点...').fill('主角写下一封带赌注的信，等待回应。')
+  await page.getByRole('button', { name: '生成草稿' }).click()
 
   await expect(page.getByText('赌注式情书')).toBeVisible()
   await expect(page.getByText('用带赌注的表达推动关系。')).toBeVisible()
+  await expect(page.getByText('关系推进')).toBeVisible()
   expect(createdBodies).toHaveLength(0)
 
   await page.getByRole('button', { name: '保存为新卡' }).click()
@@ -284,7 +301,25 @@ test('AI Cards generate scene drafts and preview before saving', async ({ page }
     title: '赌注式情书',
     card_type: 'scene',
     content: expect.stringContaining('【场景原型】'),
+    tags: expect.arrayContaining(['关系推进', '赌注']),
   }))
+})
+
+test('AI Cards readable view exposes structured sections and prompt copy', async ({ page }) => {
+  await page.goto('/ai-cards')
+  await expectInitialCardsVisible(page)
+  await expect(page.getByTestId('ai-card-read-view')).toBeVisible()
+  await expect(page.getByText('作为 AI 提示词 / 上下文使用')).toBeVisible()
+  await expect(page.getByTestId('ai-card-read-view').getByText('少用夸张表达。')).toBeVisible()
+
+  await page.getByRole('button', { name: '复制为提示词' }).first().click()
+  await expect.poll(() => page.evaluate(() => window.__copiedText || '')).toContain('【AI Card：克制风格】')
+  await expect.poll(() => page.evaluate(() => window.__copiedText || '')).toContain('少用夸张表达。')
+
+  await page.getByTestId('ai-card-list-item-card-scene').click()
+  await expect(page.getByText('【场景原型】')).toBeVisible()
+  await expect(page.getByTestId('ai-card-read-view').getByText('一方表达后等待回应。')).toBeVisible()
+  await expect(page.getByText('【核心冲突】')).toBeVisible()
 })
 
 test('AI Cards autosave failures show a visible unsaved-state error', async ({ page }) => {
@@ -298,6 +333,7 @@ test('AI Cards autosave failures show a visible unsaved-state error', async ({ p
 
   await page.goto('/ai-cards')
   await expectInitialCardsVisible(page)
+  await page.getByRole('button', { name: '编辑卡片' }).first().click()
   await page.getByPlaceholder('例如：海明威式简洁').fill('保存失败的卡片')
   await expect(page.getByText('保存失败：卡片目录不可写')).toBeVisible()
 })
@@ -320,6 +356,7 @@ test('AI Cards recover visibly after an autosave failure', async ({ page }) => {
   })
 
   await page.goto('/ai-cards')
+  await page.getByRole('button', { name: '编辑卡片' }).first().click()
   await page.getByPlaceholder('例如：海明威式简洁').fill('第一次失败')
   await expect(page.getByText('保存失败：卡片目录不可写')).toBeVisible()
 

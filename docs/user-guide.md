@@ -150,14 +150,15 @@ Steps:
 6. Select one or more profiles and run the same task.
 7. Compare output length, paragraph changes, latency, tokens, and cost when available. More selected models can mean longer waits and higher provider cost.
 8. Pick a winning result before copying, replacing, or inserting.
-9. Open **AI Cards** to create style, character, or scene cards. Use Card Generator AI for drafts, then review before saving.
+9. Open **AI Cards** to create style, character, or scene cards. Use AI Card Builder for drafts, review the structured preview, then save only when ready.
+10. Use **Copy as Prompt** on a card when you want to paste its type, tags, and structured guidance into an AI task or another writing tool.
 
 Safety notes:
 
 - AI providers receive only the text you explicitly send.
 - Local config checks are not remote availability proof. Only a successful real test request proves the model works.
 - Scene modules are searched and selected manually; unselected cards are not sent to AI.
-- AI Cards should store structure and guidance, not long source excerpts.
+- AI Cards should store structure and guidance, not long source excerpts. Keep cards readable enough that you can reuse them as prompt context later.
 
 Common mistakes:
 

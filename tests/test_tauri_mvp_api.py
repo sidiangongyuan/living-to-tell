@@ -736,6 +736,7 @@ def test_tauri_ai_card_generate_draft_uses_strict_json(monkeypatch):
                         "title": "赌注式情书",
                         "card_type": "scene",
                         "content": "【场景原型】\n用带赌注的表达推动关系。\n\n【参考原文（可选）】\n无",
+                        "tags": ["关系推进", "赌注"],
                     },
                     ensure_ascii=False,
                 )
@@ -758,9 +759,11 @@ def test_tauri_ai_card_generate_draft_uses_strict_json(monkeypatch):
     payload = response.json()
     assert payload["title"] == "赌注式情书"
     assert payload["card_type"] == "scene"
+    assert payload["tags"] == ["关系推进", "赌注"]
     assert "【场景原型】" in payload["content"]
     assert fake.calls[-1]["cost_tier"].value == "strong"
     assert "不要保留原文摘录" in fake.calls[-1]["messages"][1]["content"]
+    assert "可作为 AI 提示词上下文" in fake.calls[-1]["messages"][0]["content"]
 
 
 def test_tauri_ai_card_generate_draft_rejects_bad_json(monkeypatch):

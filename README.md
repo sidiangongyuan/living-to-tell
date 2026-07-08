@@ -4,9 +4,9 @@
 
 ### A local-first writing studio for articles, collections, references, and scoped AI
 
-[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.41)
+[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.42)
 
-[![Version](https://img.shields.io/badge/preview-0.1.41-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.42-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **Writing, photography, singing, and speaking are all ways to tell. To live is to tell.**
 
-[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.41) · [User Guide](docs/user-guide.md) · [GIF Tutorials](docs/tutorials.md) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
+[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.42) · [User Guide](docs/user-guide.md) · [GIF Tutorials](docs/tutorials.md) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
 
 </div>
 
@@ -30,7 +30,7 @@ Living to Tell is a desktop writing app for long text, fragments, quotes, revisi
 | **Collections** | Organize articles into a book project with one manuscript structure tree for hierarchy, order, board status, linked drafts, export, and a collection-bound Agent. |
 | **Reference Library** | Keep quotes, source titles, authors, usage notes, and citation-ready snippets in one place. |
 | **Article AI** | Use focused AI tools, compare multiple configured models, and keep every write-back explicit. |
-| **AI Cards** | Save reusable style, character, and scene cards with templates and AI-assisted draft generation. |
+| **AI Cards** | Save reusable style, character, and scene cards with readable sections, prompt-copy actions, templates, and AI-assisted draft generation. |
 | **Motif Star Map** | Mark selected text as motifs, revisit bidirectional source anchors, explore real co-occurrence, and enrich concepts with AI. |
 | **Export & Backup** | Review restore points, local data paths, backups/checkpoints, storage folders, backup reminders, and recent article/collection exports. |
 | **Local First** | Store writing data locally and send text to AI only when you explicitly run an AI action. |
@@ -122,7 +122,7 @@ For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They
 - Long AI requests show size, paragraph, estimated-token, and selected-model diagnostics before running, then show honest pending cards while models are still working.
 - AI Tools can run the same task across one or more saved AI profiles and compare output length, paragraph changes, latency, tokens, and cost when available. Selecting more models may increase wait time, token use, and provider cost.
 - Personal presets for each writing tool.
-- AI Cards for reusable style, character, and scene modules, with fixed templates, AI-assisted draft generation, type/source filters, and keyword search.
+- AI Cards for reusable style, character, and scene modules, with reading-first sections, fixed templates, AI-assisted draft generation, prompt-copy actions, type/source filters, and keyword search.
 - Scene modules can be searched and manually attached to AI tasks, so narrative structure is sent only when you choose it.
 - Supports OpenAI-compatible APIs, Codex local auth, Gemini API/local config, Gemini CLI / OAuth, and OpenCode local auth.
 
@@ -140,15 +140,15 @@ For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.41).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.42).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.41_x64-setup.exe`
+- `LivingToTell_0.1.42_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.41_x64_zh-CN.msi`
+- `LivingToTell_0.1.42_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 
