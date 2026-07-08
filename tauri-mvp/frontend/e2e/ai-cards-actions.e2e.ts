@@ -38,6 +38,34 @@ const sceneCard = {
 
 async function mockAiCardsApi(page: Page) {
   let cards = [userCard, characterCard, sceneCard]
+  let lastAiCardJobProfile = 'default'
+  let aiCardJob = {
+    job_id: 'job-ai-card',
+    kind: 'ai_card_draft',
+    status: 'succeeded',
+    stage: 'succeeded',
+    stage_label: '已完成',
+    concept: '场景卡草稿',
+    motif_id: null as string | null,
+    profile_id: 'default',
+    started_at: '2026-01-05T00:00:00Z',
+    updated_at: '2026-01-05T00:00:01Z',
+    elapsed_ms: 800,
+    error: '',
+    provider: 'openai',
+    model: 'gpt-test',
+    transport: 'responses',
+    result: {
+      title: '赌注式情书',
+      card_type: 'scene',
+      content: '【场景原型】\n用带赌注的表达推动关系。\n\n【参考原文（可选）】\n无',
+      tags: ['关系推进', '赌注'],
+      provider: 'openai',
+      model: 'gpt-test',
+      transport: 'responses',
+      elapsed_ms: 800,
+    },
+  }
 
   await page.addInitScript(() => {
     window.localStorage.clear()
@@ -59,7 +87,7 @@ async function mockAiCardsApi(page: Page) {
         app_name: 'Living to Tell',
         version: '0.1.13',
         api_version: '2.0.0',
-        capabilities: ['data_location', 'ai_chat_settings', 'ai_task_presets', 'update_check'],
+        capabilities: ['data_location', 'ai_chat_settings', 'ai_task_presets', 'ai_profiles', 'ai_jobs', 'ai_card_jobs', 'update_check'],
       },
     })
   })
@@ -82,6 +110,68 @@ async function mockAiCardsApi(page: Page) {
         download_name: 'LivingToTell_0.1.13_x64-setup.exe',
       },
     })
+  })
+
+  await page.route('**/api/settings/ai/profiles', async (route) => {
+    await route.fulfill({
+      json: {
+        profiles: [
+          {
+            id: 'profile-deepseek',
+            name: 'DeepSeek Relay',
+            provider_name: 'openai',
+            base_url: 'https://elysiver.h-e.top/v1',
+            wire_api: 'chat_completions',
+            model: 'deepseek-v4-pro',
+            api_key_source: 'env:LTT_AI_DEEPSEEK',
+            gemini_cli_proxy: null,
+            enabled: true,
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+          },
+        ],
+      },
+    })
+  })
+
+  await page.route('**/api/ai/jobs**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+
+    if (url.pathname === '/api/ai/jobs/ai-card-draft' && request.method() === 'POST') {
+      const body = request.postDataJSON() as { profile_id?: string; card_id?: string | null }
+      aiCardJob = {
+        ...aiCardJob,
+        job_id: `job-ai-card-${Date.now()}`,
+        status: 'succeeded',
+        stage: 'succeeded',
+        stage_label: '已完成',
+        motif_id: body.card_id ?? null,
+        profile_id: body.profile_id || 'default',
+      }
+      lastAiCardJobProfile = body.profile_id || 'default'
+      await route.fulfill({ json: aiCardJob })
+      return
+    }
+
+    if (url.pathname.includes('/cancel') && request.method() === 'POST') {
+      aiCardJob = {
+        ...aiCardJob,
+        status: 'cancelled',
+        stage: 'cancelled',
+        stage_label: '已中断',
+        error: '已停止本地等待。若请求已经发给服务商，远端仍可能完成并计费。',
+      }
+      await route.fulfill({ json: aiCardJob })
+      return
+    }
+
+    if (request.method() === 'GET') {
+      await route.fulfill({ json: aiCardJob })
+      return
+    }
+
+    await route.fallback()
   })
 
   await page.route('**/api/ai-cards**', async (route) => {
@@ -158,6 +248,14 @@ async function mockAiCardsApi(page: Page) {
     }
     await route.fulfill({ json: existing })
   })
+
+  return {
+    lastAiCardJobProfile: () => lastAiCardJobProfile,
+    setAiCardJob: (next: typeof aiCardJob) => {
+      aiCardJob = next
+    },
+    getAiCardJob: () => aiCardJob,
+  }
 }
 
 async function expectInitialCardsVisible(page: Page) {
@@ -287,6 +385,7 @@ test('AI Cards generate scene drafts and preview before saving', async ({ page }
   })
 
   await page.goto('/ai-cards')
+  await page.getByRole('button', { name: 'AI 创建' }).click()
   await page.getByPlaceholder('粘贴人物描写、风格样本、场景材料，或写下你希望这张卡记录的要点...').fill('主角写下一封带赌注的信，等待回应。')
   await page.getByRole('button', { name: '生成草稿' }).click()
 
@@ -305,11 +404,35 @@ test('AI Cards generate scene drafts and preview before saving', async ({ page }
   }))
 })
 
+test('AI Cards generator uses the selected AI profile and keeps job status visible', async ({ page }) => {
+  const jobRequests: Array<Record<string, unknown>> = []
+
+  await page.route('**/api/ai/jobs/ai-card-draft', async (route) => {
+    jobRequests.push(route.request().postDataJSON() as Record<string, unknown>)
+    await route.fallback()
+  })
+
+  await page.goto('/ai-cards')
+  await page.getByRole('button', { name: 'AI 创建' }).click()
+  await page.getByLabel('AI 配置').selectOption('profile-deepseek')
+  await page.getByPlaceholder('粘贴人物描写、风格样本、场景材料，或写下你希望这张卡记录的要点...').fill('主角写下一封带赌注的信，等待回应。')
+  await page.getByRole('button', { name: '生成草稿' }).click()
+
+  await expect.poll(() => jobRequests.length).toBe(1)
+  expect(jobRequests[0]).toEqual(expect.objectContaining({
+    profile_id: 'profile-deepseek',
+    card_type: 'scene',
+  }))
+  await expect(page.getByTestId('ai-card-job-bar')).toBeVisible()
+  await expect(page.getByText('AI 草稿已完成：场景卡草稿')).toBeVisible()
+  await expect(page.getByText('赌注式情书')).toBeVisible()
+})
+
 test('AI Cards readable view exposes structured sections and prompt copy', async ({ page }) => {
   await page.goto('/ai-cards')
   await expectInitialCardsVisible(page)
   await expect(page.getByTestId('ai-card-read-view')).toBeVisible()
-  await expect(page.getByText('作为 AI 提示词 / 上下文使用')).toBeVisible()
+  await expect(page.getByRole('button', { name: '复制为提示词' }).first()).toBeVisible()
   await expect(page.getByTestId('ai-card-read-view').getByText('少用夸张表达。')).toBeVisible()
 
   await page.getByRole('button', { name: '复制为提示词' }).first().click()

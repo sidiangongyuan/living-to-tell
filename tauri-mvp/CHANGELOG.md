@@ -1,5 +1,25 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.43 - Simpler AI Cards and Recoverable Card Generation (2026-07-08)
+
+### Added
+
+- Added recoverable AI Card draft jobs. Card generation now continues in the backend while the builder panel is closed or the user navigates away, and the page reconnects to the task when reopened.
+- Added an AI profile selector to AI Cards generation, so drafts can use the default config or any enabled saved provider profile.
+- Added visible AI Card job status with stage labels, elapsed time, provider/model details, `View`, `Interrupt`, and `Clear` actions.
+
+### Changed
+
+- Simplified the AI Cards page: the large AI builder is hidden by default, leaving a compact card library workspace with explicit `AI Create` / `Tidy Current Card` entry points.
+- Reduced the default card reading surface to the essentials: card metadata, `Copy as Prompt`, `Edit Card`, and readable content sections.
+- AI Card generation now follows the same long-task discipline as Motif AI enrichment: no fake progress percentages, no automatic resend on reconnect, and cancellation explains that remote generation or billing may still continue.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py -q -k "ai_card or app_version"`
+- `npm run test:e2e -- --project=msedge --workers=1 --grep "AI Cards"`
+- `npm run build`
+
 ## 0.1.42 - AI Cards Reading and Prompt Upgrade (2026-07-08)
 
 ### Added

@@ -1,19 +1,25 @@
 """AI Card API for reusable style / character / scene context cards."""
 from __future__ import annotations
 
+import time
 import json
 import re
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from deps import get_container
+from writer.app.settings import SUPPORTED_AI_PROVIDERS, SUPPORTED_WIRE_APIS
 from writer.app.container import AppContainer
 from writer.domain.enums import AiCostTier
+from writer.domain.models.ai_config import AiConfig
 from writer.domain.models.ai_card import AiCard as DomainCard
 from writer.storage.repositories.entry_repository import parse_tags
+from writer.services.ai.provider_factory import provider_for_config
+from writer.services.ai.prompt_builder import PromptBuilder
+from writer.services.ai.task_service import AiTaskService
 
 router = APIRouter(prefix="/api/ai-cards", tags=["ai-cards"])
 SETTING_CLEANUP_KEY = "tauri.ai_cards.deleted_setting_cards_v1"
@@ -110,6 +116,7 @@ class AiCardDraftRequest(BaseModel):
     source_text: str
     keep_source_quotes: bool = False
     cost_tier: str = "strong"
+    profile_id: str = "default"
 
 
 class AiCardDraftOut(BaseModel):
@@ -117,6 +124,10 @@ class AiCardDraftOut(BaseModel):
     card_type: str
     content: str
     tags: list[str] = Field(default_factory=list)
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    transport: Optional[str] = None
+    elapsed_ms: Optional[int] = None
 
 
 def _card_to_dto(card: DomainCard) -> AiCardOut:
@@ -219,7 +230,15 @@ def _parse_json_object(text: str) -> dict[str, Any] | None:
     return None
 
 
-def _coerce_draft(payload: dict[str, Any], expected_type: str) -> AiCardDraftOut:
+def _coerce_draft(
+    payload: dict[str, Any],
+    expected_type: str,
+    *,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    transport: Optional[str] = None,
+    elapsed_ms: Optional[int] = None,
+) -> AiCardDraftOut:
     title = str(payload.get("title", "")).strip()
     content = str(payload.get("content", "")).strip()
     returned_type = _clean_card_type(str(payload.get("card_type", "")).strip())
@@ -234,7 +253,16 @@ def _coerce_draft(payload: dict[str, Any], expected_type: str) -> AiCardDraftOut
         raise HTTPException(502, "AI 返回的卡片类型与请求不一致。")
     if not title or not content:
         raise HTTPException(502, "AI 返回的卡片草稿缺少标题或内容。")
-    return AiCardDraftOut(title=title[:80], card_type=returned_type, content=content, tags=tags[:8])
+    return AiCardDraftOut(
+        title=title[:80],
+        card_type=returned_type,
+        content=content,
+        tags=tags[:8],
+        provider=provider,
+        model=model,
+        transport=transport,
+        elapsed_ms=elapsed_ms,
+    )
 
 
 def _cost_tier(value: str) -> AiCostTier:
@@ -242,6 +270,62 @@ def _cost_tier(value: str) -> AiCostTier:
         return AiCostTier((value or AiCostTier.STRONG.value).strip().lower())
     except ValueError as exc:
         raise HTTPException(400, f"Unknown cost_tier: {value}") from exc
+
+
+def _profile_config(profile_id: str, container: AppContainer) -> tuple[str, Optional[AiConfig], str]:
+    normalized_id = (profile_id or "default").strip() or "default"
+    if normalized_id == "default":
+        return "默认配置", container.settings.load_ai_config(), ""
+    for raw in container.settings.load_ai_provider_profiles():
+        raw_id = str(raw.get("id") or "").strip()
+        if raw_id != normalized_id:
+            continue
+        name = str(raw.get("name") or "").strip() or "AI 配置档案"
+        if not bool(raw.get("enabled", True)):
+            return name, None, "这个 AI 配置档案已停用，请到设置页启用后再试。"
+        provider = str(raw.get("provider_name") or "").strip().lower()
+        wire_api = str(raw.get("wire_api") or "responses").strip().lower()
+        if provider not in SUPPORTED_AI_PROVIDERS or wire_api not in SUPPORTED_WIRE_APIS:
+            return name, None, "这个 AI 配置档案已失效，请到设置页重新保存。"
+        model = str(raw.get("model") or "").strip()
+        if not model:
+            return name, None, "这个 AI 配置档案没有填写模型。"
+        return name, AiConfig(
+            provider_name=provider,
+            base_url=str(raw.get("base_url") or "").strip() or None,
+            wire_api=wire_api,
+            model=model,
+            api_key_source=str(raw.get("api_key_source") or "env:OPENAI_API_KEY").strip(),
+            gemini_cli_proxy=str(raw.get("gemini_cli_proxy") or "").strip() or None,
+        ), ""
+    return "已删除的配置档案", None, "这个 AI 配置档案已不存在，请在设置页刷新配置。"
+
+
+def _generate_with_profile(
+    messages: list[dict[str, str]],
+    *,
+    request: AiCardDraftRequest,
+    container: AppContainer,
+) -> tuple[Any, Optional[AiConfig]]:
+    profile_id = (request.profile_id or "default").strip() or "default"
+    _profile_name, config, error = _profile_config(profile_id, container)
+    if config is None:
+        raise HTTPException(400, error or "这个 AI 配置档案不可用。")
+    if profile_id == "default":
+        return container.ai_task_service.generate_from_messages(
+            messages,
+            cost_tier=_cost_tier(request.cost_tier),
+        ), config
+    prompt_builder = PromptBuilder()
+    task_service = AiTaskService(
+        provider_factory=lambda: provider_for_config(config, prompt_builder),
+        settings=container.settings,
+    )
+    return task_service.generate_from_messages(
+        messages,
+        cost_tier=_cost_tier(request.cost_tier),
+        model_override=config.model,
+    ), config
 
 
 def _friendly_ai_card_error(exc: Exception) -> str:
@@ -256,39 +340,55 @@ def _friendly_ai_card_error(exc: Exception) -> str:
     return raw or exc.__class__.__name__
 
 
-def _generate_draft(
+def generate_ai_card_draft_core(
     *,
     request: AiCardDraftRequest,
     container: AppContainer,
     fallback_source: str = "",
+    update_stage: Optional[Callable[[str], None]] = None,
 ) -> AiCardDraftOut:
+    def stage(value: str) -> None:
+        if update_stage is not None:
+            update_stage(value)
+
+    stage("preparing_context")
     card_type = _clean_card_type(request.card_type)
     source = (request.source_text or fallback_source or "").strip()
     if not source:
         raise HTTPException(400, "请先提供用于生成卡片的材料。")
+    messages = [
+        {"role": "system", "content": _draft_system_prompt()},
+        {
+            "role": "user",
+            "content": _draft_user_prompt(
+                card_type,
+                source,
+                request.keep_source_quotes,
+            ),
+        },
+    ]
+    started = time.perf_counter()
     try:
-        response = container.ai_task_service.generate_from_messages(
-            [
-                {"role": "system", "content": _draft_system_prompt()},
-                {
-                    "role": "user",
-                    "content": _draft_user_prompt(
-                        card_type,
-                        source,
-                        request.keep_source_quotes,
-                    ),
-                },
-            ],
-            cost_tier=_cost_tier(request.cost_tier),
-        )
+        stage("sending_request")
+        stage("waiting_model")
+        response, config = _generate_with_profile(messages, request=request, container=container)
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(500, f"AI 卡片生成失败：{_friendly_ai_card_error(exc)}") from exc
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    stage("parsing_response")
     parsed = _parse_json_object(response.content)
     if parsed is None:
         raise HTTPException(502, "AI 没有返回可解析的卡片 JSON。")
-    return _coerce_draft(parsed, card_type)
+    return _coerce_draft(
+        parsed,
+        card_type,
+        provider=config.provider_key() if config is not None else None,
+        model=config.model if config is not None else None,
+        transport=getattr(response, "transport", None) or (config.wire_api if config is not None else None),
+        elapsed_ms=elapsed_ms,
+    )
 
 
 @router.get("", response_model=list[AiCardOut])
@@ -350,7 +450,7 @@ def generate_card_draft(
     request: AiCardDraftRequest,
     container: AppContainer = Depends(get_container),
 ) -> AiCardDraftOut:
-    return _generate_draft(request=request, container=container)
+    return generate_ai_card_draft_core(request=request, container=container)
 
 
 @router.post("/{card_id}/upgrade-draft", response_model=AiCardDraftOut)
@@ -363,7 +463,7 @@ def upgrade_card_draft(
     card = container.ai_card_repository.get(card_id)
     if not card:
         raise HTTPException(404, "AI Card not found")
-    return _generate_draft(
+    return generate_ai_card_draft_core(
         request=request,
         container=container,
         fallback_source=f"{card.name}\n\n{card.body}",

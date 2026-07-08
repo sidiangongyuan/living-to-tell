@@ -19,6 +19,11 @@ from pydantic import BaseModel, Field
 
 from deps import get_container
 from features.ai.job_manager import AiJobRecord, ai_job_manager
+from features.ai_cards.routes import (
+    AiCardDraftOut,
+    AiCardDraftRequest,
+    generate_ai_card_draft_core,
+)
 from features.motifs.routes import (
     MotifEnrichmentDraftOut,
     MotifEnrichmentRequest,
@@ -153,7 +158,7 @@ class AiJobSnapshot(BaseModel):
     started_at: str
     updated_at: str
     elapsed_ms: int
-    result: Optional[MotifEnrichmentDraftOut] = None
+    result: Optional[Any] = None
     error: str = ""
     provider: Optional[str] = None
     model: Optional[str] = None
@@ -181,6 +186,10 @@ class AiTaskCompareResultEvent(BaseModel):
 class AiTaskCompareDoneEvent(BaseModel):
     event: str = "done"
     run_id: str
+
+
+class AiCardDraftJobRequest(AiCardDraftRequest):
+    card_id: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -715,6 +724,37 @@ def create_motif_enrichment_job(
         worker=lambda update_stage: generate_motif_enrichment_draft_core(
             request,
             container,
+            update_stage=update_stage,
+        ),
+    )
+    return _job_snapshot(record)
+
+
+@router.post("/jobs/ai-card-draft", response_model=AiJobSnapshot)
+def create_ai_card_draft_job(
+    request: AiCardDraftJobRequest,
+    container: AppContainer = Depends(get_container),
+) -> AiJobSnapshot:
+    card_type = (request.card_type or "scene").strip()
+    card_id = (request.card_id or "").strip() or None
+    fallback_source = ""
+    concept = {"style": "风格卡草稿", "character": "人物卡草稿", "scene": "场景卡草稿"}.get(card_type, "AI 卡片草稿")
+    if card_id:
+        card = container.ai_card_repository.get(card_id)
+        if not card:
+            raise HTTPException(404, "AI Card not found")
+        fallback_source = f"{card.name}\n\n{card.body}"
+        concept = (card.name or "").strip() or concept
+
+    record = ai_job_manager.create(
+        kind="ai_card_draft",
+        concept=concept,
+        motif_id=card_id,
+        profile_id=(request.profile_id or "default").strip() or "default",
+        worker=lambda update_stage: generate_ai_card_draft_core(
+            request=request,
+            container=container,
+            fallback_source=fallback_source,
             update_stage=update_stage,
         ),
     )

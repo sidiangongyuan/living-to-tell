@@ -34,6 +34,7 @@ export interface AiCardDraftRequest {
   source_text: string
   keep_source_quotes?: boolean
   cost_tier?: 'thrifty' | 'balanced' | 'strong'
+  profile_id?: string
 }
 
 export interface AiCardDraft {
@@ -41,6 +42,10 @@ export interface AiCardDraft {
   card_type: AiCardType
   content: string
   tags?: string[]
+  provider?: string | null
+  model?: string | null
+  transport?: string | null
+  elapsed_ms?: number | null
 }
 
 export const aiCardApi = {

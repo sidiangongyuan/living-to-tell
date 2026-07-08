@@ -46,6 +46,7 @@ def test_tauri_app_version_capabilities(monkeypatch):
         "ai_profiles",
         "ai_task_compare",
         "ai_jobs",
+        "ai_card_jobs",
         "motif_star_map",
         "motif_ai_enrichment",
         "motif_ai_enrichment_jobs",
@@ -764,6 +765,70 @@ def test_tauri_ai_card_generate_draft_uses_strict_json(monkeypatch):
     assert fake.calls[-1]["cost_tier"].value == "strong"
     assert "不要保留原文摘录" in fake.calls[-1]["messages"][1]["content"]
     assert "可作为 AI 提示词上下文" in fake.calls[-1]["messages"][0]["content"]
+
+
+def test_tauri_ai_card_draft_job_uses_profile_and_can_be_cancelled(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from deps import get_container
+
+    class FakeTaskService:
+        def generate_from_messages(self, messages, *, cost_tier):
+            return SimpleNamespace(
+                content=json.dumps(
+                    {
+                        "title": "赌注式情书",
+                        "card_type": "scene",
+                        "content": "【场景原型】\n用带赌注的表达推动关系。\n\n【参考原文（可选）】\n无",
+                        "tags": ["关系推进"],
+                    },
+                    ensure_ascii=False,
+                ),
+                transport="responses",
+            )
+
+    get_container().ai_task_service = FakeTaskService()
+
+    started = client.post(
+        "/api/ai/jobs/ai-card-draft",
+        json={
+            "card_type": "scene",
+            "source_text": "主角写下一封带赌注的信。",
+            "keep_source_quotes": False,
+            "cost_tier": "strong",
+            "profile_id": "default",
+        },
+    )
+
+    assert started.status_code == 200, started.text
+    job_id = started.json()["job_id"]
+    assert started.json()["kind"] == "ai_card_draft"
+    assert started.json()["profile_id"] == "default"
+
+    payload = None
+    for _ in range(20):
+        current = client.get(f"/api/ai/jobs/{job_id}")
+        assert current.status_code == 200, current.text
+        payload = current.json()
+        if payload["status"] == "succeeded":
+            break
+        time.sleep(0.05)
+
+    assert payload is not None
+    assert payload["status"] == "succeeded", payload
+    assert payload["result"]["title"] == "赌注式情书"
+    assert payload["result"]["tags"] == ["关系推进"]
+    assert payload["result"]["provider"]
+    assert payload["result"]["model"]
+    assert payload["result"]["transport"]
+
+    second = client.post(
+        "/api/ai/jobs/ai-card-draft",
+        json={"card_type": "scene", "source_text": "另一段材料"},
+    )
+    assert second.status_code == 200
+    cancelled = client.post(f"/api/ai/jobs/{second.json()['job_id']}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] in {"cancelled", "succeeded"}
 
 
 def test_tauri_ai_card_generate_draft_rejects_bad_json(monkeypatch):

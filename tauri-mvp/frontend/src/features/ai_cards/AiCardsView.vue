@@ -2,7 +2,9 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { aiCardApi, type AiCard, type AiCardDraft, type AiCardType } from '../../api/aiCards'
-import { errorMessage } from '../../api/base'
+import { errorMessage, isHttpStatus } from '../../api/base'
+import { aiJobsApi, type AiJobSnapshot } from '../../api/aiJobs'
+import { settingsApi, type AiProfile } from '../../api/settings'
 import { useI18n } from '../../i18n'
 import TagSelector from '../../components/TagSelector.vue'
 import PaneResizeHandle from '../../components/PaneResizeHandle.vue'
@@ -21,6 +23,15 @@ interface CardSection {
   body: string
   isReference: boolean
 }
+
+interface AiProfileOption {
+  id: string
+  name: string
+  detail: string
+}
+
+const AI_CARD_DRAFT_JOB_ID_KEY = 'living-to-tell:ai-card-draft-job-id'
+const AI_CARD_JOB_TERMINAL = new Set(['succeeded', 'failed', 'cancelled'])
 
 const CARD_TEMPLATES: Record<AiCardType, string> = {
   style: `【语言质感】
@@ -118,8 +129,19 @@ const generatorError = ref('')
 const draftPreview = ref<AiCardDraft | null>(null)
 const draftMode = ref<'new' | 'upgrade'>('new')
 const generatorMode = ref<GeneratorMode>('new')
+const generatorOpen = ref(false)
 const detailMode = ref<DetailMode>('read')
 const copyNotice = ref('')
+const generatorProfileId = ref('default')
+const aiProfiles = ref<AiProfile[]>([])
+const aiProfilesLoading = ref(false)
+const aiProfilesSupported = ref(true)
+const activeCardJobId = ref<string | null>(null)
+const activeCardJob = ref<AiJobSnapshot | null>(null)
+const cardJobReconnectCount = ref(0)
+const cardJobReconnectMessage = ref('')
+let cardJobPollingTimer: number | null = null
+const draftTargetCardId = ref<string | null>(null)
 
 const selectedCard = computed(() => cards.value.find(c => c.id === selectedCardId.value) || null)
 
@@ -165,6 +187,21 @@ const selectedCardNeedsUpgrade = computed(() => {
   return Boolean(card && !isTemplateCard(card))
 })
 
+const aiProfileOptions = computed<AiProfileOption[]>(() => [
+  { id: 'default', name: t('aiCards.defaultAiProfile'), detail: t('aiCards.defaultAiProfileDetail') },
+  ...aiProfiles.value
+    .filter((profile) => profile.enabled)
+    .map((profile) => ({
+      id: profile.id,
+      name: profile.name,
+      detail: [profile.provider_name, profile.model].filter(Boolean).join(' / '),
+    })),
+])
+
+const selectedAiProfileLabel = computed(() =>
+  aiProfileOptions.value.find((profile) => profile.id === generatorProfileId.value)?.name || t('aiCards.defaultAiProfile')
+)
+
 const generatorModeHelp = computed(() => (
   generatorMode.value === 'upgrade'
     ? t('aiCards.generatorUpgradeModeHelp')
@@ -176,11 +213,44 @@ const generatorButtonLabel = computed(() => {
   return generatorMode.value === 'upgrade' ? t('aiCards.generateUpgradeDraft') : t('aiCards.generateDraft')
 })
 
-const canRunGenerator = computed(() => !generatorLoading.value && (generatorMode.value !== 'upgrade' || Boolean(selectedCard.value)))
+const activeCardJobIsRunning = computed(() =>
+  Boolean(activeCardJob.value && !AI_CARD_JOB_TERMINAL.has(activeCardJob.value.status))
+)
+
+const canRunGenerator = computed(() =>
+  !generatorLoading.value
+  && !activeCardJobIsRunning.value
+  && (generatorMode.value !== 'upgrade' || Boolean(selectedCard.value))
+)
+
+const activeCardJobCanClear = computed(() =>
+  Boolean(activeCardJob.value && AI_CARD_JOB_TERMINAL.has(activeCardJob.value.status))
+)
+
+const activeCardJobTitle = computed(() => {
+  const job = activeCardJob.value
+  if (!job) return ''
+  if (job.status === 'succeeded') return t('aiCards.jobDoneTitle', { concept: job.concept })
+  if (job.status === 'failed') return t('aiCards.jobFailedTitle', { concept: job.concept })
+  if (job.status === 'cancelled') return t('aiCards.jobCancelledTitle', { concept: job.concept })
+  return t('aiCards.jobRunningTitle', { concept: job.concept })
+})
+
+const activeCardJobDetail = computed(() => {
+  const job = activeCardJob.value
+  if (!job) return ''
+  const elapsed = formatElapsed(job.elapsed_ms)
+  if (cardJobReconnectMessage.value) return cardJobReconnectMessage.value
+  if (job.status === 'failed' || job.status === 'cancelled') return job.error
+  const model = [job.provider, job.model].filter(Boolean).join(' / ')
+  return [job.stage_label, elapsed, model].filter(Boolean).join(' · ')
+})
 
 onMounted(async () => {
   await loadCards()
   applyRouteCard()
+  void loadAiProfiles()
+  restoreActiveCardJob()
 })
 
 watch(
@@ -190,6 +260,7 @@ watch(
 
 onUnmounted(() => {
   if (copyTimer) clearTimeout(copyTimer)
+  stopCardJobPolling()
   void flushPendingCardSave()
 })
 
@@ -207,6 +278,31 @@ async function loadCards() {
     error.value = errorMessage(e)
   } finally {
     loading.value = false
+  }
+}
+
+async function loadAiProfiles() {
+  aiProfilesLoading.value = true
+  try {
+    const result = await settingsApi.listAiProfiles()
+    aiProfiles.value = result.profiles
+    aiProfilesSupported.value = true
+    if (
+      generatorProfileId.value !== 'default'
+      && !result.profiles.some((profile) => profile.id === generatorProfileId.value && profile.enabled)
+    ) {
+      generatorProfileId.value = 'default'
+    }
+  } catch (e) {
+    if (isHttpStatus(e, 404)) {
+      aiProfilesSupported.value = false
+      aiProfiles.value = []
+      generatorProfileId.value = 'default'
+    } else {
+      generatorError.value = errorMessage(e)
+    }
+  } finally {
+    aiProfilesLoading.value = false
   }
 }
 
@@ -428,7 +524,6 @@ async function selectCard(id: string) {
   if (!saved) return
   selectedCardId.value = id
   detailMode.value = 'read'
-  draftPreview.value = null
   generatorError.value = ''
 }
 
@@ -437,6 +532,159 @@ function insertTemplateIntoSelected() {
   if (!card) return
   card.content = templateFor(card.card_type)
   scheduleAutoSave()
+}
+
+function formatElapsed(ms: number | null | undefined): string {
+  if (!ms) return '0s'
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (minutes <= 0) return `${seconds}s`
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
+function persistActiveCardJobId(jobId: string | null) {
+  if (!jobId) {
+    window.localStorage.removeItem(AI_CARD_DRAFT_JOB_ID_KEY)
+    return
+  }
+  window.localStorage.setItem(AI_CARD_DRAFT_JOB_ID_KEY, jobId)
+}
+
+function restoreActiveCardJob() {
+  const jobId = window.localStorage.getItem(AI_CARD_DRAFT_JOB_ID_KEY)
+  if (!jobId) return
+  activeCardJobId.value = jobId
+  scheduleCardJobPolling(0)
+}
+
+function stopCardJobPolling() {
+  if (cardJobPollingTimer) {
+    window.clearTimeout(cardJobPollingTimer)
+    cardJobPollingTimer = null
+  }
+}
+
+function scheduleCardJobPolling(delayMs = 1500) {
+  stopCardJobPolling()
+  cardJobPollingTimer = window.setTimeout(() => {
+    void pollActiveCardJob()
+  }, delayMs)
+}
+
+function isAiCardDraft(value: unknown): value is AiCardDraft {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && 'title' in value
+    && 'card_type' in value
+    && 'content' in value
+  )
+}
+
+function handleCardJobSnapshot(job: AiJobSnapshot) {
+  activeCardJobId.value = job.job_id
+  activeCardJob.value = job
+  persistActiveCardJobId(job.job_id)
+  generatorLoading.value = activeCardJobIsRunning.value
+  if (job.motif_id) draftTargetCardId.value = job.motif_id
+  if (activeCardJobIsRunning.value) return
+  stopCardJobPolling()
+  if (job.status === 'succeeded' && isAiCardDraft(job.result)) {
+    draftPreview.value = job.result
+    generatorError.value = ''
+    generatorOpen.value = true
+  } else if (job.status === 'failed' || job.status === 'cancelled') {
+    generatorError.value = job.error
+  }
+}
+
+async function pollActiveCardJob() {
+  const jobId = activeCardJobId.value
+  if (!jobId) return
+  try {
+    const job = await aiJobsApi.getJob(jobId)
+    if (activeCardJobId.value !== jobId) return
+    cardJobReconnectCount.value = 0
+    cardJobReconnectMessage.value = ''
+    handleCardJobSnapshot(job)
+    if (!AI_CARD_JOB_TERMINAL.has(job.status)) {
+      scheduleCardJobPolling(1500)
+    }
+  } catch (e) {
+    if (activeCardJobId.value !== jobId) return
+    if (isHttpStatus(e, 404)) {
+      const message = t('aiCards.jobMissing')
+      cardJobReconnectMessage.value = message
+      generatorLoading.value = false
+      if (activeCardJob.value) {
+        activeCardJob.value = {
+          ...activeCardJob.value,
+          status: 'failed',
+          stage: 'failed',
+          stage_label: t('aiCards.jobLocalMissing'),
+          error: message,
+        }
+      }
+      persistActiveCardJobId(null)
+      stopCardJobPolling()
+      return
+    }
+    cardJobReconnectCount.value += 1
+    cardJobReconnectMessage.value = t('aiCards.jobReconnecting', { count: cardJobReconnectCount.value })
+    scheduleCardJobPolling(Math.min(5000, 1500 + cardJobReconnectCount.value * 700))
+  }
+}
+
+function viewActiveCardJob() {
+  const job = activeCardJob.value
+  if (!job) return
+  generatorProfileId.value = job.profile_id || 'default'
+  if (job.motif_id) draftTargetCardId.value = job.motif_id
+  if (job.status === 'succeeded' && isAiCardDraft(job.result)) {
+    draftPreview.value = job.result
+    generatorError.value = ''
+  } else if (job.status === 'failed' || job.status === 'cancelled') {
+    generatorError.value = job.error
+  }
+  generatorOpen.value = true
+  if (!AI_CARD_JOB_TERMINAL.has(job.status)) {
+    scheduleCardJobPolling(1500)
+  }
+  void loadAiProfiles()
+}
+
+async function cancelActiveCardJob() {
+  const jobId = activeCardJobId.value
+  if (!jobId) return
+  try {
+    const job = await aiJobsApi.cancelJob(jobId)
+    cardJobReconnectCount.value = 0
+    cardJobReconnectMessage.value = ''
+    handleCardJobSnapshot(job)
+  } catch (e) {
+    generatorError.value = errorMessage(e)
+  }
+}
+
+function clearActiveCardJob() {
+  if (activeCardJobIsRunning.value) return
+  stopCardJobPolling()
+  activeCardJobId.value = null
+  activeCardJob.value = null
+  cardJobReconnectCount.value = 0
+  cardJobReconnectMessage.value = ''
+  persistActiveCardJobId(null)
+}
+
+function openGenerator(mode: GeneratorMode = 'new') {
+  selectGeneratorMode(mode)
+  generatorOpen.value = true
+  void loadAiProfiles()
+}
+
+function closeGenerator() {
+  generatorOpen.value = false
 }
 
 function selectGeneratorMode(mode: GeneratorMode) {
@@ -453,6 +701,10 @@ async function generateDraft(mode: 'new' | 'upgrade') {
   const saved = await flushPendingCardSave()
   if (!saved) return
   const card = selectedCard.value
+  if (activeCardJobIsRunning.value) {
+    generatorError.value = t('aiCards.jobAlreadyRunning')
+    return
+  }
   if (mode === 'upgrade' && !card) {
     generatorError.value = t('aiCards.selectCardBeforeUpgrade')
     return
@@ -469,23 +721,24 @@ async function generateDraft(mode: 'new' | 'upgrade') {
   generatorError.value = ''
   draftPreview.value = null
   draftMode.value = mode
+  draftTargetCardId.value = mode === 'upgrade' && card ? card.id : null
+  cardJobReconnectCount.value = 0
+  cardJobReconnectMessage.value = ''
   try {
-    draftPreview.value = mode === 'upgrade' && card
-      ? await aiCardApi.upgradeDraft(card.id, {
-        card_type: cardType,
-        source_text: source,
-        keep_source_quotes: keepSourceQuotes.value,
-        cost_tier: 'strong',
-      })
-      : await aiCardApi.generateDraft({
-        card_type: cardType,
-        source_text: source,
-        keep_source_quotes: keepSourceQuotes.value,
-        cost_tier: 'strong',
-      })
+    const job = await aiJobsApi.createAiCardDraftJob({
+      card_id: mode === 'upgrade' && card ? card.id : null,
+      card_type: cardType,
+      source_text: source,
+      keep_source_quotes: keepSourceQuotes.value,
+      cost_tier: 'strong',
+      profile_id: generatorProfileId.value,
+    })
+    handleCardJobSnapshot(job)
+    if (!AI_CARD_JOB_TERMINAL.has(job.status)) {
+      scheduleCardJobPolling(1500)
+    }
   } catch (e) {
-    generatorError.value = errorMessage(e)
-  } finally {
+    generatorError.value = isHttpStatus(e, 404) ? t('aiCards.jobsUnsupported') : errorMessage(e)
     generatorLoading.value = false
   }
 }
@@ -504,6 +757,7 @@ async function saveDraftAsNew() {
     selectedCardId.value = card.id
     detailMode.value = 'read'
     draftPreview.value = null
+    clearActiveCardJob()
     notice.value = t('aiCards.draftSavedAsNew')
   } catch (e) {
     generatorError.value = errorMessage(e)
@@ -512,7 +766,7 @@ async function saveDraftAsNew() {
 
 async function applyDraftToCurrent() {
   const draft = draftPreview.value
-  const card = selectedCard.value
+  const card = (draftTargetCardId.value ? cards.value.find((item) => item.id === draftTargetCardId.value) : null) ?? selectedCard.value
   if (!draft || !card) return
   card.title = draft.title
   card.card_type = draft.card_type
@@ -522,6 +776,7 @@ async function applyDraftToCurrent() {
   if (saved) {
     detailMode.value = 'read'
     draftPreview.value = null
+    clearActiveCardJob()
   }
 }
 
@@ -547,12 +802,6 @@ async function copyText(text: string, message = t('aiCards.copyDone')) {
   }
 }
 
-async function copySelectedCardContent() {
-  const card = selectedCard.value
-  if (!card) return
-  await copyText(card.content || '', t('aiCards.copyContentDone'))
-}
-
 async function copySelectedCardPrompt() {
   if (!selectedCardPrompt.value) return
   await copyText(selectedCardPrompt.value, t('aiCards.copyPromptDone'))
@@ -562,11 +811,6 @@ async function copyDraftPrompt() {
   const draft = draftPreview.value
   if (!draft) return
   await copyText(formatDraftPrompt(draft), t('aiCards.copyPromptDone'))
-}
-
-async function copySection(section: CardSection) {
-  const title = section.title ? `【${section.title}】\n` : ''
-  await copyText(`${title}${section.body}`.trim(), t('aiCards.copySectionDone'))
 }
 
 function closeContextMenu() {
@@ -687,34 +931,112 @@ function handleContextMenuSelect(item: { key: string }) {
 
     <div class="flex-1 min-w-0 overflow-y-auto bg-white">
       <div class="mx-auto w-full max-w-5xl p-8">
-        <section class="mb-6 overflow-hidden rounded-2xl border border-emerald-100 bg-emerald-50/60" data-testid="ai-card-generator">
+        <div class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div>
+            <div class="text-sm font-semibold text-gray-950">{{ t('aiCards.workspaceTitle') }}</div>
+            <p class="mt-1 text-xs text-gray-500">{{ t('aiCards.workspaceHelp') }}</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              @click="openGenerator('new')"
+              class="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
+            >
+              {{ t('aiCards.openGenerator') }}
+            </button>
+            <button
+              v-if="selectedCard"
+              type="button"
+              @click="openGenerator('upgrade')"
+              class="rounded-lg bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-200"
+            >
+              {{ t('aiCards.openUpgrade') }}
+            </button>
+          </div>
+        </div>
+
+        <div
+          v-if="activeCardJob"
+          class="mb-5 rounded-2xl border p-3 shadow-sm"
+          :class="activeCardJob.status === 'failed'
+            ? 'border-rose-200 bg-rose-50'
+            : activeCardJob.status === 'succeeded'
+              ? 'border-emerald-200 bg-emerald-50'
+              : activeCardJob.status === 'cancelled'
+                ? 'border-gray-200 bg-gray-50'
+                : 'border-amber-200 bg-amber-50'"
+          data-testid="ai-card-job-bar"
+        >
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="truncate text-sm font-semibold text-gray-900">{{ activeCardJobTitle }}</div>
+              <div class="mt-1 text-xs leading-5 text-gray-600">{{ activeCardJobDetail }}</div>
+              <div v-if="activeCardJobIsRunning" class="mt-2 h-1.5 overflow-hidden rounded-full bg-white/80">
+                <div class="ai-pending-bar h-full w-1/3 rounded-full bg-emerald-600"></div>
+              </div>
+            </div>
+            <div class="flex shrink-0 flex-wrap justify-end gap-2">
+              <button
+                @click="viewActiveCardJob"
+                class="rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50"
+              >
+                {{ activeCardJob.status === 'succeeded' ? t('aiCards.viewDraft') : t('aiCards.viewJob') }}
+              </button>
+              <button
+                v-if="activeCardJobIsRunning"
+                @click="cancelActiveCardJob"
+                class="rounded-lg bg-rose-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-rose-700"
+              >
+                {{ t('aiCards.cancelJob') }}
+              </button>
+              <button
+                v-if="activeCardJobCanClear"
+                @click="clearActiveCardJob"
+                class="rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-500 ring-1 ring-gray-200 hover:bg-gray-50"
+              >
+                {{ t('aiCards.clearJob') }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <section v-if="generatorOpen" class="mb-6 overflow-hidden rounded-2xl border border-emerald-100 bg-emerald-50/60" data-testid="ai-card-generator">
           <div class="border-b border-emerald-100 bg-white/70 px-5 py-4">
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 class="text-sm font-semibold text-emerald-950">{{ t('aiCards.generatorTitle') }}</h3>
                 <p class="mt-1 max-w-2xl text-xs leading-5 text-emerald-800">{{ t('aiCards.generatorHelp') }}</p>
               </div>
-              <div class="inline-flex rounded-xl bg-emerald-100 p-1 text-xs font-semibold text-emerald-900">
+              <div class="flex flex-wrap items-center gap-2">
+                <div class="inline-flex rounded-xl bg-emerald-100 p-1 text-xs font-semibold text-emerald-900">
+                  <button
+                    type="button"
+                    @click="selectGeneratorMode('new')"
+                    :class="[
+                      'rounded-lg px-3 py-1.5 transition-colors',
+                      generatorMode === 'new' ? 'bg-white shadow-sm' : 'hover:bg-white/60'
+                    ]"
+                  >
+                    {{ t('aiCards.generatorCreateMode') }}
+                  </button>
+                  <button
+                    type="button"
+                    @click="selectGeneratorMode('upgrade')"
+                    :disabled="!selectedCard"
+                    :class="[
+                      'rounded-lg px-3 py-1.5 transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                      generatorMode === 'upgrade' ? 'bg-white shadow-sm' : 'hover:bg-white/60'
+                    ]"
+                  >
+                    {{ t('aiCards.generatorUpgradeMode') }}
+                  </button>
+                </div>
                 <button
                   type="button"
-                  @click="selectGeneratorMode('new')"
-                  :class="[
-                    'rounded-lg px-3 py-1.5 transition-colors',
-                    generatorMode === 'new' ? 'bg-white shadow-sm' : 'hover:bg-white/60'
-                  ]"
+                  @click="closeGenerator"
+                  class="rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-200"
                 >
-                  {{ t('aiCards.generatorCreateMode') }}
-                </button>
-                <button
-                  type="button"
-                  @click="selectGeneratorMode('upgrade')"
-                  :disabled="!selectedCard"
-                  :class="[
-                    'rounded-lg px-3 py-1.5 transition-colors disabled:cursor-not-allowed disabled:opacity-50',
-                    generatorMode === 'upgrade' ? 'bg-white shadow-sm' : 'hover:bg-white/60'
-                  ]"
-                >
-                  {{ t('aiCards.generatorUpgradeMode') }}
+                  {{ t('common.close') }}
                 </button>
               </div>
             </div>
@@ -750,6 +1072,21 @@ function handleContextMenuSelect(item: { key: string }) {
                   :placeholder="t('aiCards.generatorPlaceholder')"
                 />
               </label>
+              <label class="block">
+                <span class="mb-2 block text-xs font-semibold uppercase tracking-wide text-emerald-900">{{ t('aiCards.aiProfileLabel') }}</span>
+                <select
+                  v-model="generatorProfileId"
+                  :disabled="aiProfilesLoading || !aiProfilesSupported"
+                  class="w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-gray-50 disabled:text-gray-400"
+                >
+                  <option v-for="profile in aiProfileOptions" :key="profile.id" :value="profile.id">
+                    {{ profile.name }}{{ profile.detail ? ` · ${profile.detail}` : '' }}
+                  </option>
+                </select>
+                <p class="mt-1 text-xs text-emerald-700">
+                  {{ aiProfilesSupported ? t('aiCards.aiProfileHelp', { profile: selectedAiProfileLabel }) : t('aiCards.aiProfilesUnsupported') }}
+                </p>
+              </label>
               <div class="flex flex-wrap items-center justify-between gap-3">
                 <label class="flex items-center gap-2 text-xs text-emerald-900">
                   <input v-model="keepSourceQuotes" type="checkbox" class="rounded border-emerald-300" />
@@ -768,11 +1105,28 @@ function handleContextMenuSelect(item: { key: string }) {
             </div>
 
             <div class="rounded-xl border border-emerald-100 bg-white p-4" data-testid="ai-card-draft-preview">
+              <div v-if="activeCardJobIsRunning" class="mb-4 rounded-lg border border-amber-100 bg-amber-50 p-3">
+                <div class="text-sm font-semibold text-amber-950">{{ activeCardJobTitle }}</div>
+                <div class="mt-1 text-xs leading-5 text-amber-800">{{ activeCardJobDetail }}</div>
+                <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-white">
+                  <div class="ai-pending-bar h-full w-1/3 rounded-full bg-emerald-600"></div>
+                </div>
+                <button
+                  type="button"
+                  @click="cancelActiveCardJob"
+                  class="mt-3 rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700"
+                >
+                  {{ t('aiCards.cancelJob') }}
+                </button>
+              </div>
               <div v-if="draftPreview" class="space-y-4">
                 <div class="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div class="text-sm font-semibold text-gray-900">{{ draftPreview.title }}</div>
                     <div class="mt-1 text-xs text-gray-500">{{ cardTypeLabels[draftPreview.card_type] }}</div>
+                    <div v-if="draftPreview.provider || draftPreview.model" class="mt-1 text-[11px] text-gray-400">
+                      {{ [draftPreview.provider, draftPreview.model, draftPreview.elapsed_ms ? formatElapsed(draftPreview.elapsed_ms) : ''].filter(Boolean).join(' · ') }}
+                    </div>
                   </div>
                   <div class="flex flex-wrap gap-2">
                     <button @click="copyDraftPrompt" class="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100">
@@ -859,9 +1213,6 @@ function handleContextMenuSelect(item: { key: string }) {
                 <button @click="copySelectedCardPrompt" class="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100">
                   {{ t('aiCards.copyPrompt') }}
                 </button>
-                <button @click="copySelectedCardContent" class="rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-200">
-                  {{ t('aiCards.copyCard') }}
-                </button>
                 <button
                   @click="detailMode = detailMode === 'read' ? 'edit' : 'read'"
                   class="rounded-lg bg-stone-900 px-3 py-2 text-xs font-semibold text-white hover:bg-stone-700"
@@ -876,18 +1227,6 @@ function handleContextMenuSelect(item: { key: string }) {
           </article>
 
           <div v-if="detailMode === 'read'" class="space-y-6" data-testid="ai-card-read-view">
-            <section class="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-5">
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 class="text-sm font-semibold text-emerald-950">{{ t('aiCards.asPromptTitle') }}</h3>
-                  <p class="mt-1 text-xs leading-5 text-emerald-800">{{ t('aiCards.asPromptHelp') }}</p>
-                </div>
-                <button @click="copySelectedCardPrompt" class="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800">
-                  {{ t('aiCards.copyPrompt') }}
-                </button>
-              </div>
-            </section>
-
             <section class="rounded-2xl border border-gray-200 bg-white p-5">
               <div class="mb-4 flex items-center justify-between gap-3">
                 <h3 class="text-sm font-semibold text-gray-900">{{ t('aiCards.contentSections') }}</h3>
@@ -904,16 +1243,7 @@ function handleContextMenuSelect(item: { key: string }) {
                     section.isReference ? 'border-amber-100 bg-amber-50/50' : 'border-gray-100 bg-gray-50'
                   ]"
                 >
-                  <div class="mb-2 flex items-center justify-between gap-2">
-                    <div class="text-sm font-semibold text-gray-900">【{{ section.title }}】</div>
-                    <button
-                      v-if="section.body"
-                      @click="copySection(section)"
-                      class="shrink-0 rounded-lg bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 shadow-sm hover:text-gray-900"
-                    >
-                      {{ t('aiCards.copySection') }}
-                    </button>
-                  </div>
+                  <div class="mb-2 text-sm font-semibold text-gray-900">【{{ section.title }}】</div>
                   <p class="whitespace-pre-wrap text-sm leading-6 text-gray-700">{{ section.body || t('aiCards.sectionEmpty') }}</p>
                 </div>
               </div>
@@ -1013,5 +1343,21 @@ function handleContextMenuSelect(item: { key: string }) {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.ai-pending-bar {
+  animation: ai-pending-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes ai-pending-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  50% {
+    transform: translateX(90%);
+  }
+  100% {
+    transform: translateX(240%);
+  }
 }
 </style>

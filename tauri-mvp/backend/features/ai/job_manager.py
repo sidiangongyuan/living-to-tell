@@ -20,13 +20,23 @@ from fastapi import HTTPException
 
 AI_JOB_STAGES = {
     "queued": "排队中",
-    "preparing_context": "整理当前意象资料",
+    "preparing_context": "整理上下文",
     "sending_request": "发送请求",
     "waiting_model": "已发送请求，等待模型返回",
-    "parsing_response": "正在解析结构化草稿",
+    "parsing_response": "正在解析结构化结果",
     "succeeded": "已完成",
     "failed": "失败",
     "cancelled": "已中断",
+}
+AI_JOB_KIND_STAGE_LABELS = {
+    "motif_enrichment": {
+        "preparing_context": "整理当前意象资料",
+        "parsing_response": "正在解析结构化草稿",
+    },
+    "ai_card_draft": {
+        "preparing_context": "整理卡片材料",
+        "parsing_response": "正在解析卡片草稿",
+    },
 }
 AI_JOB_TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
 AI_JOB_RETENTION_SECONDS = 30 * 60
@@ -37,6 +47,10 @@ JobWorker = Callable[[StageUpdater], Any]
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _stage_label(kind: str, stage: str) -> str:
+    return AI_JOB_KIND_STAGE_LABELS.get(kind, {}).get(stage) or AI_JOB_STAGES.get(stage, stage)
 
 
 def _safe_job_error(value: Any) -> str:
@@ -131,7 +145,7 @@ class AiJobManager:
                 record.cancel_requested = True
                 record.status = "cancelled"
                 record.stage = "cancelled"
-                record.stage_label = AI_JOB_STAGES["cancelled"]
+                record.stage_label = _stage_label(record.kind, "cancelled")
                 record.error = "已停止本地等待。若请求已经发给服务商，远端仍可能完成并计费。"
                 record.updated_at = _now_iso()
                 record.completed_at = record.updated_at
@@ -139,14 +153,13 @@ class AiJobManager:
             return self._copy(record)
 
     def update_stage(self, job_id: str, stage: str) -> None:
-        label = AI_JOB_STAGES.get(stage, stage)
         with self._lock:
             record = self._jobs.get(job_id)
             if record is None or record.status in AI_JOB_TERMINAL_STATUSES:
                 return
             record.status = stage
             record.stage = stage
-            record.stage_label = label
+            record.stage_label = _stage_label(record.kind, stage)
             record.updated_at = _now_iso()
 
     def complete(self, job_id: str, result: Any) -> None:
@@ -156,7 +169,7 @@ class AiJobManager:
                 return
             record.status = "succeeded"
             record.stage = "succeeded"
-            record.stage_label = AI_JOB_STAGES["succeeded"]
+            record.stage_label = _stage_label(record.kind, "succeeded")
             record.result = result
             record.error = ""
             record.provider = getattr(result, "provider", None)
@@ -173,7 +186,7 @@ class AiJobManager:
                 return
             record.status = "failed"
             record.stage = "failed"
-            record.stage_label = AI_JOB_STAGES["failed"]
+            record.stage_label = _stage_label(record.kind, "failed")
             record.error = error
             record.updated_at = _now_iso()
             record.completed_at = record.updated_at

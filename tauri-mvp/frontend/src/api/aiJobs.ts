@@ -1,5 +1,6 @@
 import { apiFetch, handleResponse } from './base'
-import type { MotifEnrichmentDraft, MotifEnrichmentRequest } from './motifs'
+import type { AiCardDraftRequest } from './aiCards'
+import type { MotifEnrichmentRequest } from './motifs'
 
 export type AiJobStatus =
   | 'queued'
@@ -15,7 +16,7 @@ export type AiJobStage = AiJobStatus
 
 export interface AiJobSnapshot {
   job_id: string
-  kind: 'motif_enrichment'
+  kind: 'motif_enrichment' | 'ai_card_draft'
   status: AiJobStatus
   stage: AiJobStage
   stage_label: string
@@ -25,7 +26,7 @@ export interface AiJobSnapshot {
   started_at: string
   updated_at: string
   elapsed_ms: number
-  result?: MotifEnrichmentDraft | null
+  result?: any | null
   error: string
   provider?: string | null
   model?: string | null
@@ -34,10 +35,20 @@ export interface AiJobSnapshot {
 
 export type MotifEnrichmentJobRequest = MotifEnrichmentRequest
 export type MotifEnrichmentJobResult = AiJobSnapshot
+export type AiCardDraftJobRequest = AiCardDraftRequest & { card_id?: string | null }
 
 export const aiJobsApi = {
   async createMotifEnrichmentJob(data: MotifEnrichmentJobRequest): Promise<AiJobSnapshot> {
     const res = await apiFetch('/api/ai/jobs/motif-enrichment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async createAiCardDraftJob(data: AiCardDraftJobRequest): Promise<AiJobSnapshot> {
+    const res = await apiFetch('/api/ai/jobs/ai-card-draft', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
