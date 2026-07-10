@@ -82,7 +82,8 @@ const editingNoteBody = ref('')
 const notesError = ref('')
 const notesLoading = ref(false)
 const showDoneNotes = ref(false)
-const motifAnchorsExpanded = ref(true)
+const motifAnchorsExpanded = ref(false)
+const collectionsExpanded = ref(true)
 const writingNotesExpanded = ref(true)
 const articleListPane = useResizablePane({
   key: 'articles:list',
@@ -293,6 +294,14 @@ const articleMotifAnchorGroups = computed<ArticleMotifAnchorGroup[]>(() => {
 })
 const articleMotifAnchorCount = computed(() =>
   articleMotifAnchorGroups.value.reduce((total, group) => total + group.anchors.length, 0)
+)
+
+watch(
+  articleMotifAnchorCount,
+  (count) => {
+    motifAnchorsExpanded.value = count > 0
+  },
+  { immediate: true },
 )
 
 function isStaleArticleRequest(articleId: string, token: number): boolean {
@@ -2373,33 +2382,28 @@ watch(
       <div class="p-4 border-b border-stone-200">
         <h2 class="text-lg font-bold">{{ t('articles.context') }}</h2>
       </div>
-      <div class="flex-1 overflow-y-auto p-4 space-y-6">
+      <div class="flex flex-1 flex-col gap-5 overflow-y-auto p-4">
         <template v-if="store.selectedEntry">
-          <div v-if="articleSideNotice" class="rounded-lg bg-amber-50 p-2 text-xs text-amber-700">
+          <div v-if="articleSideNotice" class="order-first rounded-lg bg-amber-50 p-2 text-xs text-amber-700">
             {{ articleSideNotice }}
           </div>
-          <section>
+          <section class="order-1">
             <h3 class="text-sm font-semibold text-stone-700 mb-2">{{ t('articles.statistics') }}</h3>
-            <div class="space-y-2 text-sm text-stone-600">
-              <div class="flex justify-between">
-                <span>{{ t('articles.wordCount') }}</span><span class="font-medium">{{ wordCount }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span>{{ t('articles.charCount') }}</span><span class="font-medium">{{ charCount }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span>{{ t('articles.paragraphCount') }}</span><span class="font-medium">{{ paragraphCount }}</span>
-              </div>
+            <div class="grid grid-cols-3 gap-2 text-center text-xs text-stone-500">
+              <div class="rounded-lg bg-stone-50 px-2 py-2"><strong class="block text-sm text-stone-800">{{ wordCount }}</strong>{{ t('articles.wordCount') }}</div>
+              <div class="rounded-lg bg-stone-50 px-2 py-2"><strong class="block text-sm text-stone-800">{{ charCount }}</strong>{{ t('articles.charCount') }}</div>
+              <div class="rounded-lg bg-stone-50 px-2 py-2"><strong class="block text-sm text-stone-800">{{ paragraphCount }}</strong>{{ t('articles.paragraphCount') }}</div>
             </div>
           </section>
 
           <ArticleVersionsPanel
+            class="order-6"
             :entry="store.selectedEntry"
             @restored="handleVersionRestored"
             @cloned="handleVersionCloned"
           />
 
-          <section data-testid="article-motif-anchors">
+          <section class="order-5" data-testid="article-motif-anchors">
             <button
               type="button"
               class="mb-2 flex w-full items-center justify-between gap-2 rounded-xl px-2 py-1 text-left hover:bg-stone-50"
@@ -2462,7 +2466,7 @@ watch(
             </div>
           </section>
 
-          <section>
+          <section class="order-4">
             <h3 class="text-sm font-semibold text-stone-700 mb-2">{{ t('articles.tags') }}</h3>
             <TagSelector
               v-model="store.selectedEntry.tags"
@@ -2473,9 +2477,12 @@ watch(
             />
           </section>
 
-          <section>
-            <div class="flex items-center justify-between mb-2">
-              <h3 class="text-sm font-semibold text-stone-700">{{ t('articles.collections') }}</h3>
+          <section class="order-2" data-testid="article-collections">
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <button type="button" class="flex min-w-0 flex-1 items-center justify-between rounded-lg px-2 py-1 text-left hover:bg-stone-50" @click="collectionsExpanded = !collectionsExpanded">
+                <span class="text-sm font-semibold text-stone-700">{{ collectionsExpanded ? '⌄' : '›' }} {{ t('articles.collections') }}</span>
+                <span class="rounded-full bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700">{{ collectionsForEntry.length }}</span>
+              </button>
               <button
                 @click="openCollectionPicker"
                 :disabled="collectionLoading"
@@ -2484,6 +2491,7 @@ watch(
                 {{ t('articles.addToCollection') }}
               </button>
             </div>
+            <div v-show="collectionsExpanded">
             <div v-if="collectionError" class="mb-2 rounded-lg bg-red-50 p-2 text-xs text-red-700">
               {{ collectionError }}
             </div>
@@ -2511,9 +2519,10 @@ watch(
               </div>
             </div>
             <p v-else class="text-sm text-stone-400">{{ t('articles.noCollections') }}</p>
+            </div>
           </section>
 
-          <section>
+          <section class="order-3">
             <button
               type="button"
               class="mb-2 flex w-full items-center justify-between gap-2 rounded-xl px-2 py-1 text-left hover:bg-stone-50"

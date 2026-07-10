@@ -4,9 +4,9 @@
 
 ### 本地优先的写作工作室：文章、作品集、文脉标本与边界清晰的 AI
 
-中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.43)
+中文 · [English](README.md) · [下载](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.44)
 
-[![Version](https://img.shields.io/badge/preview-0.1.43-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.44-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **写作、拍照、唱歌、讲话，都是为了讲述。活着，就是为了讲述。**
 
-[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.43) · [官方手册](docs/user-guide.zh-CN.md) · [GIF 教程](docs/tutorials.zh-CN.md) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
+[下载 Windows 预览版](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.44) · [官方手册](docs/user-guide.zh-CN.md) · [GIF 教程](docs/tutorials.zh-CN.md) · [截图](#截图) · [功能](#功能) · [AI 设置](#ai-设置) · [路线图](#路线图--todo)
 
 </div>
 
@@ -84,6 +84,7 @@
 ### 作品集
 
 - 从多篇文章创建作品集。
+- 作品集顶部保持紧凑，左侧书架可搜索；选中结构节点后默认先阅读，需要修改时再打开详情编辑。
 - 选择作品类型：通用、小说、散文集 / 文集、非虚构；类型只影响术语，不限制结构。
 - 用 **书稿结构** 树统一管理层级和顺序：小说可用分部 / 章节 / 场景，散文集可用辑 / 篇组 / 篇章，非虚构可用部分 / 章节 / 小节。
 - 一个结构节点直接关联一篇文章；如果一个章节下要放多篇文章，就在章节下创建多个子项。
@@ -97,6 +98,7 @@
 ### 文脉标本库
 
 - 保存摘录正文、书名、作者、用途和个人笔记。
+- 标本默认先阅读正文、出处与用途；需要修改时再进入编辑态，减少表单堆叠。
 - 支持按书籍或按用途浏览。
 - 日期页每日精句可跳到对应标本。
 - 可复制正文，也可复制“正文 + 《书名》 + 作者”的完整引用。
@@ -140,15 +142,15 @@
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.43) 下载最新公开预览版。
+从 [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.44) 下载最新公开预览版。
 
 推荐 Windows 资产：
 
-- `LivingToTell_0.1.43_x64-setup.exe`
+- `LivingToTell_0.1.44_x64-setup.exe`
 
 可选资产：
 
-- `LivingToTell_0.1.43_x64_zh-CN.msi`
+- `LivingToTell_0.1.44_x64_zh-CN.msi`
 
 预览版暂未签名，Windows SmartScreen 可能会提示风险。请只运行来自本仓库 Release 页的安装包。
 

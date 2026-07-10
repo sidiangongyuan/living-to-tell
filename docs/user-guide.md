@@ -87,11 +87,11 @@ Steps:
 
 1. Open **Collections**.
 2. Follow the interactive tutorial the first time it appears; if it was dismissed, restart it from **Settings > Interface Settings > Collection tutorial**.
-3. Create a collection with a title, description, and project type: General, Novel, Essay Collection, or Nonfiction.
+3. Create a collection with a title, description, and project type: General, Novel, Essay Collection, or Nonfiction. Use **Edit Info** when you later need to change the title or description.
 4. In **Manuscript**, add top-level nodes such as parts, chapters, sections, essays, or scenes. Labels change by project type.
 5. To put several articles under one chapter, select that chapter and click **New Child**, or place **Unplanned Articles** under the selected node.
 6. One structure node directly links one article; use multiple child nodes for multiple articles.
-7. Track status, summary, point of view, timeline, setting, tags, and target word count.
+7. Selecting a node opens its reading view first. Use **Edit Details** only when you need to change status, summary, point of view, timeline, setting, tags, or target word count.
 8. Switch to **Board** to scan idea, draft, revision, done, and parked items across the same tree.
 9. Create an article from a structure node, or link an existing article.
 10. Export the collection as Markdown, TXT, or DOCX. Export prefers the manuscript tree.
@@ -100,6 +100,7 @@ Safety notes:
 
 - A collection stores relationships, structure, and export order; it does not copy the article body.
 - Removing an article from a collection does not delete the article.
+- In an article's right context pane, use **Collections > Open** to return to its collection and locate that draft.
 - Unplanned Articles belong to the collection but are not in the manuscript tree. Once the collection has linked structure nodes, unplanned articles are not included in manuscript export automatically.
 - Title names the structure node; Type describes its role; Parent places it in the tree; Linked Article creates a relationship only and does not copy or move article text.
 - Project type changes terminology only: novels use part / chapter / scene, essay collections use section / group / essay, and nonfiction uses part / chapter / section.
@@ -116,7 +117,7 @@ Use References for reusable passages, source details, usage notes, and personal 
 Steps:
 
 1. Open **Reference Library**.
-2. Create a reference with content, source title, author, usage kind, and personal note.
+2. Create a reference with content, source title, author, usage kind, and personal note. Existing references open in reading mode; click **Edit** to reveal editable fields.
 3. Jump from the daily reference card back to the matching reference.
 4. Select text in an article or reference, right-click, and choose **加入意象星图**.
 5. Search existing motifs or create new ones, then save the excerpt.

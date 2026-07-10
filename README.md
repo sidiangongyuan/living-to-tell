@@ -4,9 +4,9 @@
 
 ### A local-first writing studio for articles, collections, references, and scoped AI
 
-[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.43)
+[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.44)
 
-[![Version](https://img.shields.io/badge/preview-0.1.43-blue.svg)](tauri-mvp/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/preview-0.1.44-blue.svg)](tauri-mvp/CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
@@ -14,7 +14,7 @@
 
 **Writing, photography, singing, and speaking are all ways to tell. To live is to tell.**
 
-[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.43) · [User Guide](docs/user-guide.md) · [GIF Tutorials](docs/tutorials.md) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
+[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.44) · [User Guide](docs/user-guide.md) · [GIF Tutorials](docs/tutorials.md) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
 
 </div>
 
@@ -84,6 +84,7 @@ For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They
 ### Collections
 
 - Build article collections from multiple articles.
+- Keep the collection header compact, search the shelf, and read a selected structure node before opening its focused editor.
 - Choose a project type: General, Novel, Essay Collection, or Nonfiction. It changes labels without restricting structure.
 - Use one **Manuscript** tree for hierarchy and order: novels can use part / chapter / scene; essay collections can use section / group / essay; nonfiction can use part / chapter / section.
 - One structure node directly links one article; to put several articles under a chapter, create several child nodes.
@@ -97,6 +98,7 @@ For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They
 ### Reference Library
 
 - Save reference passages with source title, author, usage type, and personal notes.
+- Read passages and citation metadata first; enter editing mode only when changing the source, usage, note, or text.
 - Browse references by source book or usage.
 - Jump from the daily quote card to the matching reference passage.
 - Copy the passage body, or copy a complete citation with title and author.
@@ -140,15 +142,15 @@ For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.43).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.44).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.43_x64-setup.exe`
+- `LivingToTell_0.1.44_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.43_x64_zh-CN.msi`
+- `LivingToTell_0.1.44_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 

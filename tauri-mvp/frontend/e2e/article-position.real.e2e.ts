@@ -54,6 +54,7 @@ test.describe('article position restore against real backend', () => {
       await page.goto(`/articles?id=${articleA.id}`)
       const editor = page.getByTestId('article-body-editor')
       const scrollArea = page.getByTestId('article-editor-scroll')
+      await expect(editor).toBeVisible({ timeout: 20_000 })
       await expect(editor).toHaveValue(bodyA)
 
       const readScrollTop = await scrollArea.evaluate((container: HTMLDivElement) => {
@@ -97,6 +98,14 @@ test.describe('article position restore against real backend', () => {
         container.dispatchEvent(new Event('scroll', { bubbles: true }))
       })
       await page.waitForTimeout(250)
+      await editor.dispatchEvent('select')
+      await expect.poll(async () => page.evaluate((articleId) => {
+        const raw = window.localStorage.getItem('article_editor_positions')
+        const parsed = raw ? JSON.parse(raw) : {}
+        const editUpdatedAt = parsed[articleId]?.edit?.updatedAt ?? 0
+        const readUpdatedAt = parsed[articleId]?.read?.updatedAt ?? 0
+        return editUpdatedAt >= readUpdatedAt
+      }, articleA.id)).toBe(true)
 
       await page.getByTestId(`article-entry-${articleB.id}`).click()
       await expect(editor).toHaveValue(bodyB)
@@ -110,6 +119,10 @@ test.describe('article position restore against real backend', () => {
       expect(debugLog.some((item: { event: string }) => item.event === 'save-edit')).toBeTruthy()
       expect(debugLog.some((item: { event: string }) => item.event === 'restore-edit')).toBeTruthy()
     } finally {
+      if (!page.isClosed()) {
+        await page.close()
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500))
       await deleteRealArticle(request, articleA.id)
       await deleteRealArticle(request, articleB.id)
     }

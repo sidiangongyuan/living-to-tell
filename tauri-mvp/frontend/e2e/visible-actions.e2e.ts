@@ -1681,7 +1681,7 @@ test('collection export buttons trigger downloads and article management actions
   })
 
   await page.goto('/collections')
-  await expect(page.getByText('测试作品集')).toBeVisible({ timeout: 20000 })
+  await expect(page.getByRole('heading', { name: '测试作品集', exact: true })).toBeVisible({ timeout: 20000 })
 
   await page.getByRole('complementary').getByRole('button', { name: '+ 新建', exact: true }).click()
   await expect(page.getByRole('heading', { name: '新建作品集' })).toBeVisible()
@@ -1732,11 +1732,13 @@ test('collection export buttons trigger downloads and article management actions
   expect(outlineCreateRequests.at(-1)?.parent_id).toBe('outline-part-a')
 
   page.once('dialog', async (dialog) => dialog.dismiss())
-  await page.getByRole('button', { name: '删除' }).first().click()
+  await page.getByRole('button', { name: '更多操作' }).click()
+  await page.getByRole('button', { name: '删除作品集' }).click()
   expect(deleteCollectionRequests).toBe(0)
 
   page.once('dialog', async (dialog) => dialog.accept())
-  await page.getByRole('button', { name: '删除' }).first().click()
+  await page.getByRole('button', { name: '更多操作' }).click()
+  await page.getByRole('button', { name: '删除作品集' }).click()
   await expect.poll(() => deleteCollectionRequests).toBe(1)
 })
 
@@ -1921,7 +1923,7 @@ test('collection agent reference picker, quick task confirmation, prompt index, 
 
 test('collection planning board groups outline items and opens the selected outline detail', async ({ page }) => {
   await page.goto('/collections')
-  await expect(page.getByText('测试作品集')).toBeVisible({ timeout: 20000 })
+  await expect(page.getByRole('heading', { name: '测试作品集', exact: true })).toBeVisible({ timeout: 20000 })
 
   await page.getByRole('button', { name: '看板' }).click()
   const board = page.getByTestId('collection-planning-board')
@@ -1936,6 +1938,8 @@ test('collection planning board groups outline items and opens the selected outl
   await board.locator('article').filter({ hasText: '河岸清单' }).click()
   const detail = page.getByTestId('collection-outline-detail')
   await expect(detail).toBeVisible()
+  await expect(detail.getByTestId('collection-outline-reader')).toContainText('河岸清单')
+  await detail.getByTestId('outline-edit-details').click()
   await expect(detail.locator('input').first()).toHaveValue('河岸清单')
   await expect(detail.getByLabel(/视角/)).toHaveValue('林澄')
 })
@@ -1950,10 +1954,10 @@ test('collection article route highlight does not override manual outline select
 
   await expect(partCard).toHaveClass(/ring-2/)
   await expect(chapterCard).not.toHaveClass(/ring-2/)
-  await expect(page.getByTestId('collection-outline-detail').locator('input').first()).toHaveValue('第一部：回到旧城')
+  await expect(page.getByTestId('collection-outline-reader')).toContainText('第一部：回到旧城')
 })
 
-test('collection export flushes edited title before downloading', async ({ page }) => {
+test('collection metadata saves before exporting with the updated title', async ({ page }) => {
   const updates: Array<Record<string, unknown>> = []
   let currentCollection = { ...collection }
 
@@ -1976,8 +1980,11 @@ test('collection export flushes edited title before downloading', async ({ page 
   })
 
   await page.goto('/collections')
-  await expect(page.getByText('测试作品集')).toBeVisible({ timeout: 20000 })
+  await expect(page.getByRole('heading', { name: '测试作品集', exact: true })).toBeVisible({ timeout: 20000 })
+  await page.getByTestId('collection-edit-meta').click()
   await page.getByPlaceholder('作品集标题').fill('刚修改的作品集标题')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '刚修改的作品集标题', exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: '导出', exact: true }).click()
   const downloadPromise = page.waitForEvent('download')
@@ -1994,7 +2001,7 @@ test('collection reorder failures show a visible error', async ({ page }) => {
   })
 
   await page.goto('/collections')
-  await expect(page.getByText('测试作品集')).toBeVisible({ timeout: 20000 })
+  await expect(page.getByRole('heading', { name: '测试作品集', exact: true })).toBeVisible({ timeout: 20000 })
 
   const firstCard = page.locator('article').filter({ hasText: '第一部：回到旧城' }).first()
   await firstCard.hover()
@@ -2021,7 +2028,7 @@ test('collection create failures show a visible dialog error', async ({ page }) 
   await expect(page.getByPlaceholder('作品集标题').last()).toHaveValue('无法创建的作品集')
 })
 
-test('collection actions show validation instead of acting like no-ops when the title is empty', async ({ page }) => {
+test('collection metadata edit keeps invalid changes local and shows validation', async ({ page }) => {
   let exportRequests = 0
 
   await page.route('**/api/collections/collection-a/export?**', async (route) => {
@@ -2030,18 +2037,15 @@ test('collection actions show validation instead of acting like no-ops when the 
   })
 
   await page.goto('/collections')
+  await page.getByTestId('collection-edit-meta').click()
   const titleInput = page.getByPlaceholder('作品集标题')
   await expect(titleInput).toHaveValue('测试作品集')
   await titleInput.fill('')
 
-  await page.getByRole('button', { name: '导出', exact: true }).click()
-  await page.getByRole('button', { name: 'Markdown', exact: true }).click()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByText('作品集标题不能为空。')).toBeVisible()
   expect(exportRequests).toBe(0)
-
-  await page.getByRole('button', { name: '添加文章' }).first().click()
-  await expect(page.getByText('作品集标题不能为空。')).toBeVisible()
-  await expect(page.getByText('可一次选择多篇文章；已加入的文章会自动标记。')).toHaveCount(0)
+  await expect(titleInput).toHaveValue('')
 })
 
 test('library copy, create-in-book, and delete actions have visible effects and confirmations', async ({ page }) => {
@@ -2087,6 +2091,7 @@ test('library copy, create-in-book, and delete actions have visible effects and 
   ])
 
   await page.getByText('已有标本正文').click()
+  await page.getByTestId('library-edit-reference').click()
   page.once('dialog', async (dialog) => dialog.dismiss())
   await page.getByRole('button', { name: '删除标本' }).click()
   expect(deleteRequests).toBe(0)
@@ -2136,6 +2141,7 @@ test('library create, grouping, search, and autosave actions are real and visibl
   await expect(overview.getByText('来源')).toBeVisible()
   await expect(overview.getByText('疑似重复')).toBeVisible()
   await expect(page.getByTestId('library-active-group-summary').getByText('当前分组字数')).toBeVisible()
+  await updatePublicScreenshot(page, 'reference-library.png')
 
   await page.getByRole('button', { name: '按用途' }).click()
   await page.getByRole('button', { name: /意象\s+共 1 条/ }).click()
@@ -2161,6 +2167,7 @@ test('library create, grouping, search, and autosave actions are real and visibl
   await page.getByRole('button', { name: '按书籍' }).click()
   await page.getByRole('button', { name: /测试书/ }).click()
   await expect(page.getByText('已有标本正文')).toBeVisible()
+  await page.getByTestId('library-edit-reference').click()
   await page.locator('textarea').first().fill('改过的标本正文')
   await expect.poll(() => updateBodies.length).toBe(1)
   expect(updateBodies[0]).toEqual(expect.objectContaining({ content: '改过的标本正文' }))
@@ -2196,6 +2203,7 @@ test('library pending edits are flushed before selecting another reference', asy
 
   await page.goto('/library')
   await expect(page.getByText('已有标本正文')).toBeVisible()
+  await page.getByTestId('library-edit-reference').click()
   await page.locator('textarea').first().fill('切换前未保存标本正文')
   await page.getByRole('button', { name: '按用途' }).click()
   await page.getByRole('button', { name: /意象\s+共 1 条/ }).click()
@@ -2216,6 +2224,7 @@ test('library autosave failures show a visible unsaved-state error', async ({ pa
 
   await page.goto('/library')
   await expect(page.getByText('已有标本正文')).toBeVisible()
+  await page.getByTestId('library-edit-reference').click()
   await page.locator('textarea').first().fill('无法保存的内容')
   await expect(page.getByText('保存失败：磁盘不可写')).toBeVisible()
 })

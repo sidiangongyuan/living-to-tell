@@ -28,6 +28,8 @@ const stats = ref<LibraryStats | null>(null)
 const initialized = ref(false)
 const applyingRouteState = ref(false)
 const copyNotice = ref('')
+const referenceEditing = ref(false)
+const motifAnchorsExpanded = ref(false)
 const pendingReferenceSave = ref<Reference | null>(null)
 const saveNotice = ref('')
 const saveFailed = ref(false)
@@ -226,6 +228,22 @@ watch(
   }
 )
 
+watch(
+  () => store.selectedRefId,
+  () => {
+    referenceEditing.value = false
+    motifAnchorsExpanded.value = false
+  }
+)
+
+watch(
+  () => sortedMotifSourceExcerpts.value.length,
+  (count) => {
+    if (count > 0) motifAnchorsExpanded.value = true
+  },
+  { immediate: true }
+)
+
 function scheduleSave() {
   const snapshot = snapshotSelectedReference()
   if (!snapshot) return
@@ -347,6 +365,7 @@ async function applyRouteState() {
   try {
     if (action === 'create_reference') {
       const created = await store.createReference()
+      referenceEditing.value = true
       await loadStats()
       const nextQuery: Record<string, string | string[]> = {
         ...route.query,
@@ -410,6 +429,7 @@ async function createReference() {
   const saved = await flushPendingReferenceSave()
   if (!saved) return
   await store.createReference()
+  referenceEditing.value = true
   await loadStats()
 }
 
@@ -421,6 +441,7 @@ async function createReferenceInActiveSource() {
     source_title: sourceReference?.source_title ?? '',
     source_author: sourceReference?.source_author ?? '',
   })
+  referenceEditing.value = true
   store.setGroupMode('source')
   await loadStats()
 }
@@ -869,22 +890,10 @@ function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string 
           class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
 
-        <section class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3" data-testid="library-overview">
-          <div class="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{{ t('library.overview') }}</div>
-          <div class="grid grid-cols-3 gap-2 text-center">
-            <div class="rounded-xl bg-white p-2">
-              <div class="text-sm font-bold text-slate-900">{{ store.references.length }}</div>
-              <div class="mt-0.5 whitespace-nowrap text-[10px] text-slate-400">{{ t('library.overviewReferences') }}</div>
-            </div>
-            <div class="rounded-xl bg-white p-2">
-              <div class="text-sm font-bold text-slate-900">{{ uniqueSourceCount }}</div>
-              <div class="mt-0.5 whitespace-nowrap text-[10px] text-slate-400">{{ t('library.overviewSources') }}</div>
-            </div>
-            <div class="rounded-xl bg-white p-2">
-              <div :class="['text-sm font-bold', duplicateReferenceGroups.length ? 'text-amber-700' : 'text-slate-900']">{{ duplicateReferenceGroups.length }}</div>
-              <div class="mt-0.5 whitespace-nowrap text-[10px] text-slate-400">{{ t('library.overviewDuplicates') }}</div>
-            </div>
-          </div>
+        <section class="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500" data-testid="library-overview">
+          <span><strong class="text-slate-900">{{ store.references.length }}</strong> {{ t('library.overviewReferences') }}</span>
+          <span><strong class="text-slate-900">{{ uniqueSourceCount }}</strong> {{ t('library.overviewSources') }}</span>
+          <span :class="duplicateReferenceGroups.length ? 'text-amber-700' : ''"><strong>{{ duplicateReferenceGroups.length }}</strong> {{ t('library.overviewDuplicates') }}</span>
         </section>
       </div>
 
@@ -943,18 +952,12 @@ function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string 
             {{ t('library.newInCurrentBook') }}
           </button>
         </div>
-        <section v-if="activeGroup" class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3" data-testid="library-active-group-summary">
-          <div class="grid gap-2 text-xs text-slate-600">
-            <div class="flex items-center justify-between gap-3">
-              <span>{{ t('library.groupChars') }}</span>
-              <span class="font-semibold text-slate-900">{{ activeGroupCharCount }}</span>
-            </div>
-            <div v-if="store.groupMode === 'source' && activeSourceAuthors.length" class="flex items-start justify-between gap-3">
-              <span>{{ t('library.groupAuthors') }}</span>
-              <span class="text-right font-semibold text-slate-900">{{ activeSourceAuthors.join(' / ') }}</span>
-            </div>
+        <section v-if="activeGroup" class="mt-3 text-xs text-slate-500" data-testid="library-active-group-summary">
+          <div class="flex flex-wrap gap-x-4 gap-y-1">
+            <span>{{ t('library.groupChars') }} <strong class="text-slate-900">{{ activeGroupCharCount }}</strong></span>
+            <span v-if="store.groupMode === 'source' && activeSourceAuthors.length">{{ t('library.groupAuthors') }} <strong class="text-slate-900">{{ activeSourceAuthors.join(' / ') }}</strong></span>
           </div>
-          <div v-if="activeGroupUsageSummary.length" class="mt-3 flex flex-wrap gap-1.5">
+          <div v-if="activeGroupUsageSummary.length" class="mt-2 flex flex-wrap gap-1.5">
             <span
               v-for="[usage, count] in activeGroupUsageSummary"
               :key="usage"
@@ -963,7 +966,7 @@ function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string 
               {{ usageLabel(usage) }} · {{ count }}
             </span>
           </div>
-          <div v-if="duplicateReferenceGroups.length" class="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+          <div v-if="duplicateReferenceGroups.length" class="mt-2 text-[11px] leading-5 text-amber-700">
             {{ t('library.duplicateHint', { count: duplicateReferenceGroups.length }) }}
           </div>
         </section>
@@ -1004,16 +1007,24 @@ function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string 
 
     <section ref="detailScrollRef" class="flex min-w-0 flex-1 flex-col overflow-y-auto bg-white">
       <div v-if="store.selectedReference" class="mx-auto w-full max-w-3xl p-8">
-        <div class="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-3">
-          <div
-            :class="[
-              'text-sm',
-              saveFailed ? 'text-red-600' : (saveNotice || motifJumpMessage || motifAttachNotice) ? 'text-blue-700' : 'text-gray-500',
-            ]"
-          >
-            {{ copyNotice || motifJumpMessage || motifAttachNotice || saveNotice || t('library.copyHint') }}
-          </div>
-          <div class="flex gap-2">
+        <div class="mb-5 border-b border-gray-200 pb-4">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">{{ usageLabel(store.selectedReference.usage_kind) }}</span>
+                <span class="truncate text-sm font-semibold text-gray-900">{{ store.selectedReference.source_title || t('library.empty') }}</span>
+                <span v-if="store.selectedReference.source_author" class="text-sm text-gray-500">— {{ store.selectedReference.source_author }}</span>
+              </div>
+              <div
+                :class="[
+                  'mt-2 text-xs',
+                  saveFailed ? 'text-red-600' : (copyNotice || saveNotice || motifJumpMessage || motifAttachNotice) ? 'text-blue-700' : 'text-gray-400',
+                ]"
+              >
+                {{ copyNotice || motifJumpMessage || motifAttachNotice || saveNotice || t('library.copyHint') }}
+              </div>
+            </div>
+            <div class="flex flex-wrap gap-2">
             <button
               @click="copyReferenceContent"
               class="rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 transition-colors hover:bg-gray-100"
@@ -1026,6 +1037,14 @@ function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string 
             >
               {{ t('library.copyFull') }}
             </button>
+              <button
+                data-testid="library-edit-reference"
+                class="rounded-lg bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 ring-1 ring-blue-100 hover:bg-blue-100"
+                @click="referenceEditing = !referenceEditing"
+              >
+                {{ referenceEditing ? t('common.done') : t('common.edit') }}
+              </button>
+            </div>
           </div>
         </div>
         <div class="mb-6">
@@ -1034,25 +1053,30 @@ function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string 
             ref="contentRef"
             data-testid="library-reference-content"
             v-model="store.selectedReference.content"
+            :readonly="!referenceEditing"
             @input="scheduleSave"
             @pointerup="handleContentPointerSettled"
             @mouseup="handleContentPointerSettled"
             @contextmenu="handleContentContextMenu"
             :class="[
-              'min-h-[220px] w-full resize-none rounded-lg border border-gray-200 p-4 text-lg leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500',
+              'min-h-[220px] w-full resize-none p-4 text-lg leading-relaxed outline-none',
+              referenceEditing
+                ? 'rounded-lg border border-gray-200 bg-white focus:ring-2 focus:ring-blue-500'
+                : 'rounded-xl border border-transparent bg-slate-50 text-gray-900',
               motifHighlightActive ? 'motif-source-highlight' : '',
             ]"
             :placeholder="t('library.placeholders.content')"
           />
         </div>
 
-        <section class="mb-6 rounded-2xl border border-teal-100 bg-white p-4 shadow-sm" data-testid="library-motif-anchors">
-          <div class="mb-2 flex items-center justify-between gap-2">
-            <h3 class="text-sm font-semibold text-gray-700">{{ t('motifs.sourceAnchors') }}</h3>
+        <section class="mb-6 border-y border-gray-100 py-3" data-testid="library-motif-anchors">
+          <button type="button" class="flex w-full items-center justify-between gap-2 text-left" @click="motifAnchorsExpanded = !motifAnchorsExpanded">
+            <h3 class="text-sm font-semibold text-gray-700">{{ motifAnchorsExpanded ? '⌄' : '›' }} {{ t('motifs.sourceAnchors') }}</h3>
             <span class="rounded-full bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-700">
               {{ sortedMotifSourceExcerpts.length }}
             </span>
-          </div>
+          </button>
+          <div v-show="motifAnchorsExpanded" class="mt-3">
           <p class="mb-3 text-xs leading-5 text-gray-500">{{ t('motifs.sourceAnchorsHint') }}</p>
           <div v-if="motifSourceError" class="mb-2 rounded-lg bg-red-50 p-2 text-xs text-red-700">
             {{ motifSourceError }}
@@ -1096,8 +1120,10 @@ function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string 
               </div>
             </button>
           </div>
+          </div>
         </section>
 
+        <template v-if="referenceEditing">
         <div class="mb-6 grid grid-cols-2 gap-4">
           <div>
             <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('library.sourceTitle') }}</label>
@@ -1147,12 +1173,33 @@ function motifRangeStatusLabel(status: 'matched' | 'moved' | 'missing'): string 
             :placeholder="t('library.placeholders.personalNote')"
           />
         </div>
+        </template>
+
+        <div v-else class="mb-6 grid gap-4 rounded-xl border border-gray-200 bg-white p-4 min-[1280px]:grid-cols-3">
+          <div>
+            <div class="text-xs font-semibold text-gray-400">{{ t('library.sourceTitle') }}</div>
+            <div class="mt-1 text-sm font-medium text-gray-900">{{ store.selectedReference.source_title || '—' }}</div>
+          </div>
+          <div>
+            <div class="text-xs font-semibold text-gray-400">{{ t('library.sourceAuthor') }}</div>
+            <div class="mt-1 text-sm font-medium text-gray-900">{{ store.selectedReference.source_author || '—' }}</div>
+          </div>
+          <div>
+            <div class="text-xs font-semibold text-gray-400">{{ t('library.usageKind') }}</div>
+            <div class="mt-1 text-sm font-medium text-gray-900">{{ usageLabel(store.selectedReference.usage_kind) }}</div>
+          </div>
+          <div v-if="store.selectedReference.personal_note" class="border-t border-gray-100 pt-3 min-[1280px]:col-span-3">
+            <div class="text-xs font-semibold text-gray-400">{{ t('library.personalNote') }}</div>
+            <p class="mt-1 whitespace-pre-wrap text-sm leading-6 text-gray-700">{{ store.selectedReference.personal_note }}</p>
+          </div>
+        </div>
 
         <div class="flex items-center justify-between border-t border-gray-200 pt-4">
           <div class="text-xs text-gray-400">
             {{ t('library.createdAt') }} {{ store.selectedReference.created_at?.slice(0, 10) || '—' }}
           </div>
           <button
+            v-if="referenceEditing"
             @click="deleteSelectedReference"
             @contextmenu="openReferenceDeleteContextMenu($event, store.selectedReference.id)"
             class="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 transition-colors hover:bg-red-100"

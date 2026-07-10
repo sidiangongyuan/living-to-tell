@@ -320,8 +320,9 @@ test('collection outline creates a real outline item and article link', async ({
   await page.getByRole('button', { name: '跳过' }).click()
   await expect(page.getByTestId('guided-tour-overlay')).toHaveCount(0)
 
+  await page.getByRole('button', { name: '选择节点类型' }).click()
   await page.getByRole('button', { name: '+ 场景' }).click()
-  await expect(page.getByTestId('collection-outline-detail')).toContainText('结构节点')
+  await expect(page.getByTestId('collection-outline-detail')).toContainText('编辑详情')
 
   await page.getByLabel('标题').fill('雨夜来信')
   await page.getByLabel('摘要').fill('一封信推动关系升级。')

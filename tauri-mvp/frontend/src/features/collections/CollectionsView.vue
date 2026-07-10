@@ -71,6 +71,13 @@ const articlePickerOpen = ref(false)
 const createDialogOpen = ref(false)
 const selectedArticleIds = ref<string[]>([])
 const viewMode = ref<'structure' | 'board' | 'export' | 'agent'>('structure')
+const collectionSearch = ref('')
+const collectionMetaEditing = ref(false)
+const collectionActionsOpen = ref(false)
+const outlineEditing = ref(false)
+const outlineCreateMenuOpen = ref(false)
+const structureGuideOpen = ref(false)
+const outlineAdvancedOpen = ref(false)
 const newTitle = ref('')
 const newDescription = ref('')
 const newProjectType = ref<CollectionProjectType>('general')
@@ -146,13 +153,13 @@ const structurePane = useResizablePane({
 })
 
 const collectionListPaneStyle = computed(() => ({
-  width: windowWidth.value < 920
-    ? `${Math.max(190, Math.min(collectionListPane.size.value, Math.floor(windowWidth.value * 0.34)))}px`
+  width: windowWidth.value < 1180
+    ? `${Math.max(200, Math.min(collectionListPane.size.value, Math.floor(windowWidth.value * 0.22)))}px`
     : `${collectionListPane.size.value}px`,
 }))
 const structurePaneStyle = computed(() => ({
-  width: windowWidth.value < 1180
-    ? `${Math.max(260, Math.min(structurePane.size.value, Math.floor(windowWidth.value * 0.38)))}px`
+  width: windowWidth.value < 1280
+    ? `${Math.max(280, Math.min(structurePane.size.value, Math.floor(windowWidth.value * 0.3)))}px`
     : `${structurePane.size.value}px`,
 }))
 
@@ -163,6 +170,18 @@ const deleteContextTarget = ref<{ kind: 'collection'; id: string } | null>(null)
 
 const projectType = computed(() => collectionProjectType(store.selectedCollection))
 const projectLabels = computed(() => labelsForProject(projectType.value, locale.value))
+const filteredCollections = computed(() => {
+  const query = collectionSearch.value.trim().toLowerCase()
+  if (!query) return store.collections
+  return store.collections.filter((collection) => {
+    const haystack = [
+      collection.title,
+      collection.description,
+      projectTypeLabel(collection.project_type, locale.value),
+    ].join(' ').toLowerCase()
+    return haystack.includes(query)
+  })
+})
 const currentArticleIds = computed(() => new Set(store.articles.map((article) => article.id)))
 const outlineProgress = computed(() => buildOutlineProgressSummary(store.outline, store.articles))
 const outlineProgressPercent = computed(() => {
@@ -482,6 +501,8 @@ watch(
     draftTitle.value = collection?.title ?? ''
     draftDescription.value = collection?.description ?? ''
     draftProjectType.value = collectionProjectType(collection)
+    collectionMetaEditing.value = false
+    collectionActionsOpen.value = false
   },
   { immediate: true }
 )
@@ -490,6 +511,9 @@ watch(
   () => store.selectedOutlineItem,
   (item) => {
     loadOutlineDraft(item)
+    outlineEditing.value = false
+    outlineAdvancedOpen.value = false
+    outlineCreateMenuOpen.value = false
   },
   { immediate: true }
 )
@@ -542,6 +566,7 @@ function handleWindowResize() {
 function prepareCollectionTourStep(index = tourStepIndex.value) {
   const step = collectionTourSteps.value[index]
   if (!step || !store.selectedCollection) return
+  outlineEditing.value = ['node-types', 'linked-article', 'fields'].includes(step.id)
   if (step.id === 'board') {
     viewMode.value = 'board'
   } else if (step.id === 'export') {
@@ -561,6 +586,7 @@ function startCollectionTour() {
 
 function closeCollectionTour() {
   tourOpen.value = false
+  outlineEditing.value = false
   settings.dismissCollectionsTour()
   void clearCollectionTourQuery()
 }
@@ -1220,7 +1246,22 @@ async function createCollection() {
 }
 
 async function saveCollectionMeta() {
-  await saveCollectionMetaIfNeeded()
+  const saved = await saveCollectionMetaIfNeeded()
+  if (saved) collectionMetaEditing.value = false
+}
+
+function editCollectionMeta() {
+  collectionMetaEditing.value = true
+  collectionActionsOpen.value = false
+}
+
+function cancelCollectionMetaEdit() {
+  const collection = store.selectedCollection
+  draftTitle.value = collection?.title ?? ''
+  draftDescription.value = collection?.description ?? ''
+  draftProjectType.value = collectionProjectType(collection)
+  collectionMetaEditing.value = false
+  actionError.value = null
 }
 
 async function saveCollectionMetaIfNeeded(): Promise<boolean> {
@@ -1328,6 +1369,9 @@ async function createOutlineItem(type: OutlineItemType = articleTypeForProject(p
       store.selectOutlineItem(created.id)
       loadOutlineDraft(created)
       viewMode.value = 'structure'
+      outlineEditing.value = true
+      outlineAdvancedOpen.value = false
+      outlineCreateMenuOpen.value = false
     }
   } catch (e) {
     outlineActionError.value = e instanceof Error ? e.message : String(e)
@@ -1381,11 +1425,25 @@ async function saveOutlineItem() {
       await store.addArticles([payload.entry_id])
       await store.loadOutline()
     }
+    outlineEditing.value = false
   } catch (e) {
     outlineActionError.value = e instanceof Error ? e.message : String(e)
   } finally {
     outlineSaving.value = false
   }
+}
+
+function editOutlineItem() {
+  if (!store.selectedOutlineItem) return
+  loadOutlineDraft(store.selectedOutlineItem)
+  outlineEditing.value = true
+  outlineAdvancedOpen.value = false
+}
+
+function cancelOutlineEdit() {
+  loadOutlineDraft(store.selectedOutlineItem)
+  outlineEditing.value = false
+  outlineAdvancedOpen.value = false
 }
 
 async function saveOutlineItemIfDirty(): Promise<boolean> {
@@ -1414,6 +1472,8 @@ async function selectOutlineItem(id: string) {
   if (!saved) return
   setCollectionArticleHighlight(null)
   store.selectOutlineItem(id)
+  outlineEditing.value = false
+  outlineAdvancedOpen.value = false
   await nextTick()
   scrollToOutlineItem(id)
 }
@@ -1562,6 +1622,7 @@ async function selectCollection(id: string) {
 
 async function deleteSelectedCollection() {
   if (!store.selectedCollection) return
+  collectionActionsOpen.value = false
   if (!confirm(t('collections.confirmDeleteCollection'))) return
   try {
     await store.deleteCollection(store.selectedCollection.id)
@@ -1644,23 +1705,31 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
       data-testid="collections-list-pane"
       data-tour="collections-list"
     >
-      <div class="border-b border-white/10 p-5">
+      <div class="border-b border-white/10 p-4">
         <div class="flex items-center justify-between gap-3">
           <div>
             <p class="text-xs uppercase tracking-[0.28em] text-stone-400">{{ t('collections.shelf') }}</p>
-            <h2 class="mt-1 text-xl font-semibold">{{ t('collections.title') }}</h2>
+            <h2 class="mt-1 text-lg font-semibold">{{ t('collections.title') }}</h2>
           </div>
           <button
-            class="rounded-xl bg-amber-200 px-3 py-2 text-sm font-semibold text-stone-900 hover:bg-amber-100"
+            class="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-200 text-xl font-semibold text-stone-900 hover:bg-amber-100"
             data-tour="collections-create"
+            :title="t('collections.newCollection')"
+            :aria-label="t('collections.newCollection')"
             @click="openCreateDialog"
           >
-            {{ t('collections.newCollection') }}
+            +
           </button>
         </div>
-        <p class="mt-3 text-sm text-stone-400">
+        <p class="mt-2 text-xs text-stone-400">
           {{ t('collections.total', { count: store.collections.length }) }}
         </p>
+        <input
+          v-model="collectionSearch"
+          type="search"
+          class="mt-3 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2 text-sm text-white outline-none placeholder:text-stone-500 focus:border-amber-200/60"
+          :placeholder="t('collections.searchPlaceholder')"
+        />
       </div>
 
       <div class="flex-1 space-y-2 overflow-y-auto p-3">
@@ -1669,23 +1738,26 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
         <div v-else-if="!store.collections.length" class="p-4 text-sm text-stone-400">
           {{ t('collections.emptyCollections') }}
         </div>
+        <div v-else-if="!filteredCollections.length" class="p-4 text-sm text-stone-400">
+          {{ t('collections.noSearchResults') }}
+        </div>
         <button
-          v-for="collection in store.collections"
+          v-for="collection in filteredCollections"
           :key="collection.id"
           :class="[
-            'w-full rounded-2xl p-4 text-left transition-all',
+            'w-full rounded-lg px-3 py-3 text-left transition-all',
             store.selectedCollectionId === collection.id
-              ? 'bg-amber-100 text-stone-950 shadow-lg'
+              ? 'bg-amber-100 text-stone-950 shadow-sm'
               : 'bg-white/5 text-stone-200 hover:bg-white/10'
           ]"
           @click="selectCollection(collection.id)"
           @contextmenu="openDeleteContextMenu($event, { kind: 'collection', id: collection.id })"
         >
-          <div class="font-semibold leading-snug">{{ collection.title || t('collections.untitled') }}</div>
-          <div class="mt-1 line-clamp-2 text-xs opacity-70">
+          <div class="truncate font-semibold leading-snug">{{ collection.title || t('collections.untitled') }}</div>
+          <div v-if="store.selectedCollectionId === collection.id" class="mt-1 line-clamp-1 text-xs opacity-70">
             {{ collection.description || t('collections.noDescription') }}
           </div>
-          <div class="mt-3 flex flex-wrap gap-2 text-xs opacity-75">
+          <div class="mt-2 flex flex-wrap gap-2 text-[11px] opacity-70">
             <span>{{ projectTypeLabel(collection.project_type, locale) }}</span>
             <span>{{ t('collections.articleCount', { count: collection.article_count }) }}</span>
           </div>
@@ -1695,138 +1767,104 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
     <PaneResizeHandle data-testid="collections-list-resizer" @pointerdown="collectionListPane.startResize" />
 
     <main class="flex min-w-0 flex-1 flex-col">
-      <header class="border-b border-stone-200 bg-[#fbf7ef]/95 px-6 py-5">
+      <header class="border-b border-stone-200 bg-[#fbf7ef]/95 px-6 py-3">
         <template v-if="store.selectedCollection">
-          <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div class="min-w-0 flex-1 space-y-3" data-tour="collections-header">
-              <input
-                v-model="draftTitle"
-                class="w-full bg-transparent text-2xl font-semibold tracking-tight outline-none md:text-3xl"
-                :placeholder="t('collections.titlePlaceholder')"
-                @blur="saveCollectionMeta"
-              />
-              <textarea
-                v-model="draftDescription"
-                rows="2"
-                class="w-full resize-none bg-transparent text-sm leading-relaxed text-stone-600 outline-none"
-                :placeholder="t('collections.descriptionPlaceholder')"
-                @blur="saveCollectionMeta"
-              />
-              <div class="flex flex-wrap items-center gap-2 text-xs text-stone-500">
-                <label class="flex items-center gap-2 rounded-full bg-white px-3 py-1.5 shadow-sm" data-tour="collections-project-type">
-                  <span>{{ t('collectionOutline.projectType') }}</span>
-                  <select
-                    v-model="draftProjectType"
-                    class="bg-transparent text-xs font-semibold text-stone-800 outline-none"
-                    @change="saveCollectionMeta"
-                  >
-                    <option v-for="option in projectTypeOptions" :key="option.value" :value="option.value">
-                      {{ option.label }}
-                    </option>
-                  </select>
-                </label>
-                <span class="rounded-full bg-stone-200/70 px-3 py-1">
-                  {{ t('collections.articleCount', { count: store.articles.length }) }}
-                </span>
-                <span class="rounded-full bg-stone-200/70 px-3 py-1">
-                  {{ t('collections.wordCount', { count: store.collectionWordCount }) }}
-                </span>
-                <span class="rounded-full bg-stone-200/70 px-3 py-1">
-                  {{ t('collectionOutline.itemCount', { count: store.outline.length }) }}
-                </span>
-                <span v-if="savingMeta" class="rounded-full bg-blue-100 px-3 py-1 text-blue-700">
-                  {{ t('common.saving') }}
-                </span>
+          <div data-tour="collections-header">
+            <div v-if="collectionMetaEditing" class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_auto] lg:items-start">
+              <div class="space-y-2">
+                <input
+                  v-model="draftTitle"
+                  data-testid="collection-title-input"
+                  class="w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-xl font-semibold outline-none focus:ring-2 focus:ring-amber-200"
+                  :placeholder="t('collections.titlePlaceholder')"
+                />
+                <textarea
+                  v-model="draftDescription"
+                  rows="2"
+                  class="w-full resize-none rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm leading-6 text-stone-600 outline-none focus:ring-2 focus:ring-amber-200"
+                  :placeholder="t('collections.descriptionPlaceholder')"
+                />
               </div>
-              <div class="grid gap-2 text-xs text-stone-600 sm:grid-cols-2 xl:grid-cols-4">
-                <div class="rounded-2xl bg-white/70 px-3 py-2 shadow-sm">
-                  <div class="text-[11px] text-stone-400">{{ t('collectionOutline.linkedStructure') }}</div>
-                  <div class="mt-1 text-base font-semibold text-stone-900">{{ outlineProgress.linkedItems }} / {{ outlineProgress.totalItems }}</div>
-                </div>
-                <div class="rounded-2xl bg-white/70 px-3 py-2 shadow-sm">
-                  <div class="text-[11px] text-stone-400">{{ t('collectionOutline.targetWords') }}</div>
-                  <div class="mt-1 text-base font-semibold text-amber-700">{{ outlineProgress.targetWordTotal || '—' }}</div>
-                </div>
-                <div class="rounded-2xl bg-white/70 px-3 py-2 shadow-sm">
-                  <div class="text-[11px] text-stone-400">{{ t('collectionOutline.currentWords') }}</div>
-                  <div class="mt-1 text-base font-semibold text-emerald-700">{{ outlineProgress.linkedArticleWordCount }}</div>
-                </div>
-                <div class="rounded-2xl bg-white/70 px-3 py-2 shadow-sm">
-                  <div class="text-[11px] text-stone-400">{{ t('collectionOutline.targetProgress') }}</div>
-                  <div class="mt-1 text-base font-semibold text-stone-900">{{ outlineProgressPercent === null ? '—' : `${outlineProgressPercent}%` }}</div>
-                </div>
-              </div>
-              <div class="space-y-2" data-tour="collections-tabs">
-                <div class="inline-flex rounded-xl bg-stone-100 p-1 text-sm font-semibold text-stone-600">
-                  <button
-                    type="button"
-                    data-tour="collection-agent-tab"
-                    :class="[
-                      'rounded-lg px-3 py-1.5 transition',
-                      viewMode === 'structure' ? 'bg-white text-stone-950 shadow-sm' : 'hover:text-stone-900'
-                    ]"
-                    @click="viewMode = 'structure'"
-                  >
-                    {{ structureTabLabel(locale) }}
-                  </button>
-                  <button
-                    type="button"
-                    :class="[
-                      'rounded-lg px-3 py-1.5 transition',
-                      viewMode === 'board' ? 'bg-white text-stone-950 shadow-sm' : 'hover:text-stone-900'
-                    ]"
-                    @click="viewMode = 'board'"
-                  >
-                    {{ boardTabLabel(locale) }}
-                  </button>
-                  <button
-                    type="button"
-                    :class="[
-                      'rounded-lg px-3 py-1.5 transition',
-                      viewMode === 'export' ? 'bg-white text-stone-950 shadow-sm' : 'hover:text-stone-900'
-                    ]"
-                    @click="viewMode = 'export'"
-                  >
-                    {{ exportTabLabel(locale) }}
-                  </button>
-                  <button
-                    type="button"
-                    :class="[
-                      'rounded-lg px-3 py-1.5 transition',
-                      viewMode === 'agent' ? 'bg-white text-stone-950 shadow-sm' : 'hover:text-stone-900'
-                    ]"
-                    @click="viewMode = 'agent'"
-                  >
-                    Agent
-                  </button>
-                </div>
-                <p class="max-w-3xl text-xs leading-5 text-stone-500">
-                  {{
-                    viewMode === 'structure'
-                      ? t('collectionOutline.structureHelp')
-                      : viewMode === 'board'
-                        ? t('collectionOutline.boardHelp')
-                        : viewMode === 'export'
-                          ? t('collectionOutline.exportHelp')
-                          : '作品集 Agent 是绑定这本书的总编助手：读取结构和项目记忆，给出诊断与可确认提案，不会自动改正文。'
-                  }}
-                </p>
+              <label class="block" data-tour="collections-project-type">
+                <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.projectType') }}</span>
+                <select v-model="draftProjectType" class="w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-200">
+                  <option v-for="option in projectTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                </select>
+              </label>
+              <div class="flex gap-2 lg:pt-5">
+                <button class="rounded-lg bg-stone-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40" :disabled="savingMeta" @click="saveCollectionMeta">
+                  {{ savingMeta ? t('common.saving') : t('common.save') }}
+                </button>
+                <button class="rounded-lg bg-white px-3 py-2 text-sm text-stone-600 ring-1 ring-stone-200" @click="cancelCollectionMetaEdit">
+                  {{ t('common.cancel') }}
+                </button>
               </div>
             </div>
-            <div class="flex flex-wrap justify-end gap-2">
-              <button
-                class="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700"
-                data-tour="collections-add-articles"
-                @click="openArticlePicker"
-              >
-                {{ t('collections.addArticles') }}
-              </button>
-              <button
-                class="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 hover:bg-red-100"
-                @click="deleteSelectedCollection"
-              >
-                {{ t('common.delete') }}
-              </button>
+            <div v-else class="flex min-w-0 items-start justify-between gap-4">
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <h1 class="truncate text-2xl font-semibold tracking-tight text-stone-950">{{ store.selectedCollection.title || t('collections.untitled') }}</h1>
+                  <span class="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-stone-600 ring-1 ring-stone-200" data-tour="collections-project-type">
+                    {{ projectTypeLabel(projectType, locale) }}
+                  </span>
+                </div>
+                <p class="mt-1 line-clamp-1 text-sm text-stone-500">{{ store.selectedCollection.description || t('collections.noDescription') }}</p>
+              </div>
+              <div class="flex shrink-0 items-center gap-2">
+                <button
+                  class="rounded-lg bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700"
+                  data-tour="collections-add-articles"
+                  @click="openArticlePicker"
+                >
+                  {{ t('collections.addArticles') }}
+                </button>
+                <button
+                  data-testid="collection-edit-meta"
+                  class="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-stone-700 ring-1 ring-stone-200 hover:bg-stone-50"
+                  @click="editCollectionMeta"
+                >
+                  {{ t('collections.editInfo') }}
+                </button>
+                <div class="relative">
+                  <button
+                    class="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-lg text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50"
+                    :title="t('collections.moreActions')"
+                    :aria-label="t('collections.moreActions')"
+                    @click="collectionActionsOpen = !collectionActionsOpen"
+                  >
+                    ⋯
+                  </button>
+                  <div v-if="collectionActionsOpen" class="absolute right-0 z-30 mt-2 w-40 rounded-lg border border-stone-200 bg-white p-1 shadow-xl">
+                    <button class="w-full rounded-md px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50" @click="deleteSelectedCollection">
+                      {{ t('collections.deleteCollection') }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="!collectionMetaEditing" class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-stone-200/80 pt-3">
+              <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
+                <span>{{ t('collections.articleCount', { count: store.articles.length }) }}</span>
+                <span>{{ t('collectionOutline.itemCount', { count: store.outline.length }) }}</span>
+                <span>{{ t('collectionOutline.linkedCompact', { linked: outlineProgress.linkedItems, total: outlineProgress.totalItems }) }}</span>
+                <span>{{ t('collectionOutline.wordsCompact', { current: outlineProgress.linkedArticleWordCount, target: outlineProgress.targetWordTotal || '—' }) }}</span>
+                <span v-if="outlineProgressPercent !== null">{{ outlineProgressPercent }}%</span>
+              </div>
+              <div class="inline-flex rounded-lg bg-stone-100 p-1 text-sm font-semibold text-stone-600" data-tour="collections-tabs">
+                <button type="button" data-tour="collection-agent-tab" :class="['rounded-md px-3 py-1.5 transition', viewMode === 'structure' ? 'bg-white text-stone-950 shadow-sm' : 'hover:text-stone-900']" @click="viewMode = 'structure'">
+                  {{ structureTabLabel(locale) }}
+                </button>
+                <button type="button" :class="['rounded-md px-3 py-1.5 transition', viewMode === 'board' ? 'bg-white text-stone-950 shadow-sm' : 'hover:text-stone-900']" @click="viewMode = 'board'">
+                  {{ boardTabLabel(locale) }}
+                </button>
+                <button type="button" :class="['rounded-md px-3 py-1.5 transition', viewMode === 'export' ? 'bg-white text-stone-950 shadow-sm' : 'hover:text-stone-900']" @click="viewMode = 'export'">
+                  {{ exportTabLabel(locale) }}
+                </button>
+                <button type="button" :class="['rounded-md px-3 py-1.5 transition', viewMode === 'agent' ? 'bg-white text-stone-950 shadow-sm' : 'hover:text-stone-900']" @click="viewMode = 'agent'">
+                  Agent
+                </button>
+              </div>
             </div>
           </div>
           <p v-if="store.exportMessage" class="mt-3 text-sm text-emerald-700">
@@ -1853,36 +1891,50 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
       <div class="flex min-h-0 flex-1 overflow-hidden">
         <template v-if="viewMode === 'structure'">
           <section
-            class="shrink-0 overflow-y-auto border-r border-stone-200 bg-[#fbf7ef] p-5"
+            class="shrink-0 overflow-y-auto border-r border-stone-200 bg-[#fbf7ef] p-4"
             :style="structurePaneStyle"
             data-testid="collection-outline-pane"
             data-tour="collections-structure"
           >
-            <div class="mb-4 flex items-start justify-between gap-3">
+            <div class="mb-3 flex items-center justify-between gap-3">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('collectionOutline.structureKicker') }}</p>
-                <h3 class="mt-1 text-lg font-semibold text-stone-900">{{ t('collectionOutline.structureTitle') }}</h3>
+                <h3 class="text-base font-semibold text-stone-900">{{ t('collectionOutline.structureTitle') }}</h3>
+                <p class="mt-0.5 text-xs text-stone-400">{{ t('collectionOutline.structureCount', { count: store.outline.length }) }}</p>
               </div>
-              <button
-                class="rounded-xl bg-stone-900 px-3 py-2 text-xs font-semibold text-white hover:bg-stone-700"
-                @click="createOutlineItem(defaultChildType(null, projectType), null)"
-              >
-                {{ t('collectionOutline.newTopLevel') }}
-              </button>
+              <div class="relative flex items-center gap-1" data-tour="outline-create-buttons">
+                <button
+                  class="rounded-lg bg-stone-900 px-3 py-2 text-xs font-semibold text-white hover:bg-stone-700"
+                  @click="createOutlineItem(defaultChildType(null, projectType), null)"
+                >
+                  + {{ t('collectionOutline.newTopLevel') }}
+                </button>
+                <button
+                  class="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-xs text-stone-600 ring-1 ring-stone-200 hover:bg-stone-50"
+                  :title="t('collectionOutline.chooseType')"
+                  :aria-label="t('collectionOutline.chooseType')"
+                  @click="outlineCreateMenuOpen = !outlineCreateMenuOpen"
+                >
+                  ▾
+                </button>
+                <div v-if="outlineCreateMenuOpen" class="absolute right-0 top-10 z-30 w-44 rounded-lg border border-stone-200 bg-white p-1 shadow-xl">
+                  <button
+                    v-for="option in outlineTypeOptions"
+                    :key="option.value"
+                    class="w-full rounded-md px-3 py-2 text-left text-sm text-stone-700 hover:bg-stone-50"
+                    @click="createOutlineItem(option.value, null)"
+                  >
+                    + {{ option.label }}
+                  </button>
+                </div>
+              </div>
             </div>
-            <div class="mb-4 grid grid-cols-2 gap-2" data-tour="outline-create-buttons">
-              <button
-                v-for="option in outlineTypeOptions"
-                :key="option.value"
-                class="rounded-xl bg-white px-3 py-2 text-xs text-stone-700 ring-1 ring-stone-200 hover:bg-stone-50"
-                @click="createOutlineItem(option.value, null)"
-              >
-                + {{ option.label }}
+            <div class="mb-3">
+              <button class="text-xs font-semibold text-stone-500 hover:text-stone-800" @click="structureGuideOpen = !structureGuideOpen">
+                {{ structureGuideOpen ? '⌄' : '›' }} {{ t('collectionOutline.structureGuide') }}
               </button>
-            </div>
-
-            <div class="mb-4 rounded-2xl border border-stone-200 bg-white/80 p-3 text-xs text-stone-600">
-              <p class="leading-5">{{ t('collectionOutline.structureRule') }}</p>
+              <p v-if="structureGuideOpen" class="mt-2 rounded-lg bg-white px-3 py-2 text-xs leading-5 text-stone-600 ring-1 ring-stone-200">
+                {{ t('collectionOutline.structureRule') }}
+              </p>
             </div>
 
             <div v-if="outlineActionError || store.error" class="mb-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -1895,7 +1947,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
               <div class="text-sm font-semibold text-stone-700">{{ t('collectionOutline.emptyTitle') }}</div>
               <p class="mt-2 text-xs leading-5 text-stone-500">{{ t('collectionOutline.emptyStructureHint') }}</p>
             </div>
-            <div v-else class="space-y-2" data-tour="manuscript-tree">
+            <div v-else class="space-y-1.5" data-tour="manuscript-tree">
               <article
                 v-for="node in flatTree"
                 :key="node.item.id"
@@ -1904,7 +1956,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                 :data-outline-item-id="node.item.id"
                 :data-collection-article-id="node.item.entry_id || undefined"
                 :class="[
-                  'group cursor-pointer rounded-2xl border bg-white py-3 pr-3 shadow-sm transition-all',
+                  'group cursor-pointer rounded-lg border bg-white py-2.5 pr-2.5 shadow-sm transition-all',
                   store.selectedOutlineItemId === node.item.id
                     ? 'border-amber-400 ring-2 ring-amber-200 shadow-md'
                     : highlightedCollectionArticleId === node.item.entry_id
@@ -1917,7 +1969,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                 @drop="onOutlineDrop(node.item.id)"
               >
                 <div class="flex items-start gap-3">
-                  <div class="w-8 shrink-0 rounded-full bg-stone-100 py-1 text-center text-[11px] font-semibold text-stone-500">
+                  <div class="w-8 shrink-0 rounded-md bg-stone-100 py-1 text-center text-[11px] font-semibold text-stone-500">
                     {{ node.path.join('.') }}
                   </div>
                   <div class="min-w-0 flex-1">
@@ -1930,10 +1982,10 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                         {{ outlineStatusLabel(node.item.status) }}
                       </span>
                     </div>
-                    <p class="mt-2 line-clamp-2 text-xs leading-5 text-stone-500">
+                    <p class="mt-1 line-clamp-1 text-xs leading-5 text-stone-500">
                       {{ node.item.summary || t('collectionOutline.noSummary') }}
                     </p>
-                    <div class="mt-2 flex flex-wrap gap-1.5">
+                    <div class="mt-1.5 flex flex-wrap gap-1.5">
                       <span v-if="node.item.entry_id" class="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
                         {{ t('collectionOutline.linked') }}
                       </span>
@@ -1943,7 +1995,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                     </div>
                   </div>
                 </div>
-                <div class="mt-3 flex flex-wrap justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                <div class="mt-2 flex flex-wrap justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                   <button
                     class="rounded-lg px-2 py-1 text-xs text-stone-500 hover:bg-stone-100"
                     @click.stop="moveOutlineItem(node.item.id, -1)"
@@ -2008,25 +2060,59 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
           </section>
           <PaneResizeHandle data-testid="collections-outline-resizer" @pointerdown="structurePane.startResize" />
 
-          <section class="flex-1 overflow-y-auto p-8" data-testid="collection-outline-detail">
+          <section class="flex-1 overflow-y-auto p-6" data-testid="collection-outline-detail">
             <div v-if="store.selectedOutlineItem" class="mx-auto max-w-4xl space-y-5">
-              <div class="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
-                <div class="mb-5 flex items-start justify-between gap-4">
-                  <div>
-                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('collectionOutline.detailKicker') }}</p>
-                    <h3 class="mt-1 text-2xl font-semibold text-stone-900">{{ t('collectionOutline.detailTitle') }}</h3>
-                    <p class="mt-2 max-w-2xl text-sm leading-6 text-stone-500">
-                      {{ t('collectionOutline.nodeRuleHelp') }}
+              <div v-if="!outlineEditing" class="rounded-xl border border-stone-200 bg-white p-6 shadow-sm" data-testid="collection-outline-reader">
+                <div class="flex flex-col gap-4 min-[1280px]:flex-row min-[1280px]:items-start min-[1280px]:justify-between">
+                  <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">{{ outlineTypeLabel(store.selectedOutlineItem.item_type) }}</span>
+                      <span :class="['rounded-full px-2 py-0.5 text-xs ring-1', outlineStatusTone(store.selectedOutlineItem.status)]">{{ outlineStatusLabel(store.selectedOutlineItem.status) }}</span>
+                      <span v-if="store.selectedOutlineItem.entry_id" class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">{{ t('collectionOutline.linked') }}</span>
+                    </div>
+                    <h3 class="mt-3 text-2xl font-semibold text-stone-950">{{ store.selectedOutlineItem.title || t('collectionOutline.untitled') }}</h3>
+                    <p class="mt-3 max-w-3xl whitespace-pre-wrap text-sm leading-7 text-stone-600">
+                      {{ store.selectedOutlineItem.summary || t('collectionOutline.noSummary') }}
                     </p>
                   </div>
-                  <div class="flex flex-wrap justify-end gap-2">
-                    <button class="rounded-xl bg-stone-100 px-3 py-2 text-sm text-stone-700" @click="createSiblingOutlineItem">
+                  <div class="flex flex-wrap justify-start gap-2 min-[1280px]:justify-end">
+                    <button class="rounded-lg bg-stone-100 px-3 py-2 text-sm text-stone-700" @click="createSiblingOutlineItem">
                       {{ t('collectionOutline.newSibling') }}
                     </button>
-                    <button class="rounded-xl bg-stone-100 px-3 py-2 text-sm text-stone-700" data-tour="outline-new-child" @click="createChildOutlineItem">
+                    <button class="rounded-lg bg-stone-100 px-3 py-2 text-sm text-stone-700" data-tour="outline-new-child" @click="createChildOutlineItem">
                       {{ t('collectionOutline.newChild') }}
                     </button>
-                    <button class="rounded-xl bg-stone-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40" :disabled="outlineSaving" @click="saveOutlineItem">
+                    <button data-testid="outline-edit-details" class="rounded-lg bg-stone-900 px-3 py-2 text-sm font-semibold text-white" @click="editOutlineItem">
+                      {{ t('collectionOutline.editDetails') }}
+                    </button>
+                  </div>
+                </div>
+                <div class="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t border-stone-100 pt-4 text-sm text-stone-600">
+                  <span v-if="store.selectedOutlineItem.pov"><strong class="text-stone-400">{{ t('collectionOutline.fieldPov') }}：</strong>{{ store.selectedOutlineItem.pov }}</span>
+                  <span v-if="store.selectedOutlineItem.timeline"><strong class="text-stone-400">{{ t('collectionOutline.fieldTimeline') }}：</strong>{{ store.selectedOutlineItem.timeline }}</span>
+                  <span v-if="store.selectedOutlineItem.setting"><strong class="text-stone-400">{{ t('collectionOutline.fieldSetting') }}：</strong>{{ store.selectedOutlineItem.setting }}</span>
+                  <span v-if="store.selectedOutlineItem.target_word_count"><strong class="text-stone-400">{{ t('collectionOutline.fieldTargetWords') }}：</strong>{{ store.selectedOutlineItem.target_word_count }}</span>
+                </div>
+                <div v-if="store.selectedOutlineItem.tags.length" class="mt-4 flex flex-wrap gap-2">
+                  <span v-for="tag in store.selectedOutlineItem.tags" :key="tag" class="rounded-full bg-stone-100 px-2.5 py-1 text-xs text-stone-600">{{ tag }}</span>
+                </div>
+                <div v-if="store.selectedOutlineItem.notes" class="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                  <div class="mb-1 text-xs font-semibold text-amber-700">{{ t('collectionOutline.fieldNotes') }}</div>
+                  <p class="whitespace-pre-wrap">{{ store.selectedOutlineItem.notes }}</p>
+                </div>
+              </div>
+
+              <div v-else class="rounded-xl border border-stone-200 bg-white p-6 shadow-sm">
+                <div class="mb-5 flex items-start justify-between gap-4">
+                  <div>
+                    <h3 class="text-xl font-semibold text-stone-900">{{ t('collectionOutline.editDetails') }}</h3>
+                    <p class="mt-1 text-sm text-stone-500">{{ store.selectedOutlineItem.title || t('collectionOutline.untitled') }}</p>
+                  </div>
+                  <div class="flex flex-wrap justify-end gap-2">
+                    <button class="rounded-lg bg-stone-100 px-3 py-2 text-sm text-stone-700" @click="cancelOutlineEdit">
+                      {{ t('common.cancel') }}
+                    </button>
+                    <button class="rounded-lg bg-stone-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40" :disabled="outlineSaving" @click="saveOutlineItem">
                       {{ outlineSaving ? t('common.saving') : t('common.save') }}
                     </button>
                   </div>
@@ -2106,8 +2192,8 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                 </div>
               </div>
 
-              <div class="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
-                <div class="flex items-start justify-between gap-4">
+              <div class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+                <div class="flex flex-col gap-4 min-[1280px]:flex-row min-[1280px]:items-start min-[1280px]:justify-between">
                   <div>
                     <h4 class="font-semibold text-stone-900">{{ t('collectionOutline.linkedArticle') }}</h4>
                     <p class="mt-1 text-sm text-stone-500">
@@ -2116,7 +2202,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                     <p class="mt-1 text-xs leading-5 text-stone-400">{{ t('collectionOutline.linkedArticleHelp') }}</p>
                     <p class="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">{{ t('collectionOutline.multiArticleHelp') }}</p>
                   </div>
-                  <div class="flex flex-wrap justify-end gap-2">
+                  <div class="flex flex-wrap justify-start gap-2 min-[1280px]:justify-end">
                     <button class="rounded-xl bg-stone-100 px-3 py-2 text-sm text-stone-700" @click="createArticleFromOutline">
                       {{ t('collectionOutline.createArticle') }}
                     </button>
@@ -2132,7 +2218,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                 <pre v-if="outlineLinkedArticle" class="mt-4 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-stone-50 p-4 text-sm leading-7 text-stone-700">{{ outlineLinkedArticle.body || t('collections.emptyArticle') }}</pre>
               </div>
 
-              <div class="flex justify-between">
+              <div v-if="outlineEditing" class="flex justify-between">
                 <button class="rounded-xl bg-red-50 px-4 py-2 text-sm text-red-700 hover:bg-red-100" @click="deleteSelectedOutlineItem">
                   {{ t('collectionOutline.deleteItem') }}
                 </button>
@@ -2147,13 +2233,10 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
 
         <template v-else-if="viewMode === 'board'">
           <section class="flex-1 overflow-y-auto p-6" data-testid="collection-planning-board" data-tour="collections-board">
-            <div class="mb-5 flex flex-col gap-4 rounded-3xl border border-stone-200 bg-white/75 p-5 shadow-sm lg:flex-row lg:items-end lg:justify-between">
+            <div class="mb-4 flex flex-col gap-3 border-b border-stone-200 pb-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">Planning Board</p>
-                <h3 class="mt-1 text-2xl font-semibold text-stone-900">{{ t('collectionOutline.boardTitle') }}</h3>
-                <p class="mt-2 max-w-3xl text-sm leading-6 text-stone-500">
-                  {{ t('collectionOutline.boardDescription') }}
-                </p>
+                <h3 class="text-xl font-semibold text-stone-900">{{ t('collectionOutline.boardTitle') }}</h3>
+                <p class="mt-1 text-sm text-stone-500">{{ t('collectionOutline.boardDescriptionCompact') }}</p>
               </div>
               <div class="flex flex-wrap gap-2">
                 <select v-model="outlineFilterType" class="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs outline-none">

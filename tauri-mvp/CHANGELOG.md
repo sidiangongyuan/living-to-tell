@@ -1,5 +1,30 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.44 - Collection and Reference Workspace Polish (2026-07-10)
+
+### Added
+
+- Added a real-backend author journey test that creates a disposable novel sample, moves from an article into its collection and back, opens the board, verifies reference editing and citation copy, verifies AI Card prompt copy, and checks the minimum desktop window size.
+- Added collection shelf search and explicit reading/editing states for collection metadata and manuscript structure nodes.
+
+### Changed
+
+- Compressed the Collections header into a project title, inline progress summary, tabs, and focused actions so the manuscript or board starts much higher in the window.
+- Structure nodes now open as readable planning cards. The full metadata form appears only after `Edit Details`, while new nodes still open directly in edit mode.
+- Consolidated structure creation into one smart top-level action plus a type menu, and moved collection deletion behind a compact more-actions menu.
+- Reordered the article context pane around the author's workflow: collection navigation and writing notes now appear before tags, motif anchors, and version history; empty motif anchors stay collapsed.
+- Reference Library passages now open in reading mode with source, author, usage, note, and copy actions visible together. Editing fields appear only after an explicit `Edit` action.
+- Tightened the collection shelf, reference overview, group summary, and minimum-window layouts; updated the public Collections and Reference Library screenshots.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py tests\storage\test_motif_repository.py tests\storage\test_collection_outline_repository.py -q`
+- `npm test -- --run`
+- `npm run test:e2e -- --project=msedge --workers=1`
+- `npm run test:e2e:real -- --project=msedge --workers=1`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+
 ## 0.1.43 - Simpler AI Cards and Recoverable Card Generation (2026-07-08)
 
 ### Added
