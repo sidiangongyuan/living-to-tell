@@ -2,305 +2,152 @@
 
 # Living to Tell
 
-### A local-first writing studio for articles, collections, references, and scoped AI
+**Write the work. Shape the book. Keep the author in control.**
 
-[中文](README.zh-CN.md) · English · [Download](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.44)
+A local-first Windows writing studio for long-form projects, traceable references, and reviewable AI.
 
-[![Version](https://img.shields.io/badge/preview-0.1.44-blue.svg)](tauri-mvp/CHANGELOG.md)
-[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
-[![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
-[![Status](https://img.shields.io/badge/status-public%20preview-orange.svg)](tauri-mvp/README.md)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Latest release](https://img.shields.io/badge/preview-0.1.44-2563eb?style=flat-square)](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.44)
+[![Windows](https://img.shields.io/badge/Windows-x64-111827?style=flat-square&logo=windows11)](https://github.com/sidiangongyuan/living-to-tell/releases/latest)
+[![Local first](https://img.shields.io/badge/data-local--first-15803d?style=flat-square)](#data-and-privacy)
+[![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](LICENSE)
 
-**Writing, photography, singing, and speaking are all ways to tell. To live is to tell.**
+[**Download for Windows**](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.44/LivingToTell_0.1.44_x64-setup.exe)
+ · [中文说明](README.zh-CN.md)
+ · [User guide](docs/user-guide.md)
+ · [Visual tutorials](docs/tutorials.md)
 
-[Download for Windows](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.44) · [User Guide](docs/user-guide.md) · [GIF Tutorials](docs/tutorials.md) · [Screenshots](#screenshots) · [Features](#features) · [AI Setup](#ai-setup) · [Roadmap](#roadmap--todo)
+<br>
+
+<img src="tauri-mvp/docs/assets/screenshots/article-writing.png" alt="Living to Tell article studio" width="100%">
+
+<sub>Your drafts stay on your machine. AI runs only when you ask, and every write-back remains explicit.</sub>
 
 </div>
 
----
+## A writing workspace, not another text box
 
-Living to Tell is a desktop writing app for long text, fragments, quotes, revision ideas, and AI-assisted writing that stays under your control. It keeps the writing database local, lets you arrange articles into collections, and treats AI output as something to review before applying.
+Living to Tell connects the parts of a serious writing practice that usually end up scattered across editors, boards, quote files, and AI chats. Draft an article, place it inside a book structure, keep the sources behind your ideas, and ask AI for help without surrendering the manuscript.
 
-## At a Glance
+| Write with calm | Build the whole work | Use AI deliberately |
+| --- | --- | --- |
+| A focused long-form editor with autosave, notes, versions, epigraphs, search, and export. | Collections turn separate articles into an ordered manuscript, outline, planning board, and exportable book project. | Choose the exact model and context, watch long tasks progress, compare results, and confirm every change. |
 
-| | |
+## From a paragraph to a book
+
+| 1. Write | 2. Organize | 3. Ground | 4. Assist | 5. Protect |
+| :---: | :---: | :---: | :---: | :---: |
+| Draft in **Articles** | Shape the manuscript in **Collections** | Keep sources in **References & Motifs** | Use **AI Tools, Cards & Agent** | Export, checkpoint, and back up |
+
+Nothing is silently moved into the manuscript. References, motifs, AI context, model profiles, and proposed changes are all selected or confirmed by the author.
+
+## See the workspace
+
+| Shape a book project | Keep references readable |
+| :---: | :---: |
+| ![Collection planning board](tauri-mvp/docs/assets/screenshots/collections.png) | ![Reference library](tauri-mvp/docs/assets/screenshots/reference-library.png) |
+
+| Compare AI results | Review restore points |
+| :---: | :---: |
+| ![AI workspace](tauri-mvp/docs/assets/screenshots/ai-workspace.png) | ![Export and backup center](tauri-mvp/docs/assets/screenshots/backup-center.png) |
+
+The [visual tutorials](docs/tutorials.md) show six complete workflows with short GIFs: first-run setup, article writing, collection planning, references and motifs, AI Cards, and backup/export.
+
+## Choose where to begin
+
+| Your goal | Open | First action |
+| --- | --- | --- |
+| Start writing now | **Articles** | Select **New**, write, and let autosave handle the draft. |
+| Plan a novel, essay collection, or nonfiction book | **Collections** | Create a project, add articles, then arrange parts, chapters, scenes, or notes in the manuscript tree. |
+| Save a quotation or research passage | **Reference Library** | Create a reference with passage, title, author, purpose, and personal note. |
+| Track a recurring image or idea | **Motif Star Map** | Select text in an article or reference, right-click, and link it to a motif. |
+| Ask AI for writing help | **Settings**, then **AI** | Save or import an AI profile, send a real test request, then run a focused tool. |
+| Check recovery before a long session | **Export & Backup** | Review the latest checkpoint and create a backup when needed. |
+
+### A practical first project
+
+1. Create an article and write one real scene, essay fragment, or argument.
+2. Create a collection and add that article to it.
+3. Add a chapter or scene node, then link the article to the node.
+4. Add one source passage to the Reference Library and link important text to a motif if useful.
+5. Optionally configure AI and run a small task before sending longer text.
+6. Open Export & Backup, create a restore point, and export the article or collection.
+
+Prefer learning by exploring? The first-run checklist can create a disposable sample project. It is opt-in, clearly labeled, and removable without touching your own work.
+
+## The workspace
+
+| Area | What it gives you |
 | --- | --- |
-| **Article Studio** | Draft long-form writing with autosave, tags, search, epigraphs, focus mode, notes, version history, motif anchors, and export. |
-| **Collections** | Organize articles into a book project with one manuscript structure tree for hierarchy, order, board status, linked drafts, export, and a collection-bound Agent. |
-| **Reference Library** | Keep quotes, source titles, authors, usage notes, and citation-ready snippets in one place. |
-| **Article AI** | Use focused AI tools, compare multiple configured models, and keep every write-back explicit. |
-| **AI Cards** | Save reusable style, character, and scene cards with readable sections, prompt-copy actions, templates, and AI-assisted draft generation. |
-| **Motif Star Map** | Mark selected text as motifs, revisit bidirectional source anchors, explore real co-occurrence, and enrich concepts with AI. |
-| **Export & Backup** | Review restore points, local data paths, backups/checkpoints, storage folders, backup reminders, and recent article/collection exports. |
-| **Local First** | Store writing data locally and send text to AI only when you explicitly run an AI action. |
+| **Article Studio** | Autosave, tags, full-text search, find/replace, writing notes, version history, epigraphs, focus mode, motif anchors, and Markdown/TXT/DOCX export. |
+| **Collections** | Searchable project shelf, manuscript hierarchy, unplanned articles, linked drafts, status board, guided tour, ordered export, and project-level Agent. |
+| **Collection Agent** | A book-project editor with structured project memory, explicit `@` references, prompt index, background runs, and reviewable proposals. It does not rewrite the manuscript automatically. |
+| **Reference Library** | Reading-first passages with source, author, purpose, personal notes, grouped browsing, and complete citation copy. |
+| **Motif Star Map** | Bidirectional source anchors, real excerpt co-occurrence, local motif graphs, structured concept archives, and optional AI enrichment. |
+| **AI Workspace** | Focused polish/rewrite/expand/continue tools, article chat, reusable presets, explicit context, multiple model profiles, incremental results, and safe write-back actions. |
+| **AI Cards** | Reusable style, character, and scene modules with reading-first templates, search, prompt copy, selected model profiles, and recoverable background generation. |
+| **Export & Backup** | Article and collection export, restore-point review, backups, checkpoints, reminders, data-path visibility, and copy-based data-directory migration. |
 
-## Current Preview Status
+## AI on your terms
 
-| Area | Status |
-| --- | --- |
-| Windows desktop app | Public preview available |
-| Article writing | Usable |
-| Collections | Usable |
-| Reference library | Usable |
-| Article AI tools and chat | Usable after provider setup |
-| Motif star map | Usable preview |
-| Data directory migration | Usable from Settings |
-| Dark mode | Hidden until the theme pass is complete |
-| macOS / Linux packages | Planned after Windows stabilizes |
+AI is optional. The writing, collection, reference, motif, export, and backup workflows work without it.
 
-## Screenshots
+- Use OpenAI-compatible endpoints, Codex local auth, Gemini API or Gemini CLI/OAuth, and OpenCode local auth.
+- Keep several independent AI profiles, each with its own provider, model, endpoint, and local credential source.
+- Run one or many explicitly selected profiles in AI Tools; a default profile is never silently added to a multi-model request.
+- Long-running jobs remain visible when you leave and return to the feature. Reconnection checks task state and does not resend the provider request.
+- Generated text, card drafts, motif enrichment, project-memory changes, and Agent actions stay in preview or proposal form until you approve them.
 
-For step-by-step walkthroughs, open the [GIF tutorials](docs/tutorials.md). They cover the sample project, article writing, collection planning, references and motifs, AI with AI Cards, and Export & Backup.
+See the [user guide](docs/user-guide.md) for provider-specific AI setup instructions.
 
-| Article Writing | Focus Mode |
-| :---: | :---: |
-| ![Article writing](tauri-mvp/docs/assets/screenshots/article-writing.png) | ![Focus mode](tauri-mvp/docs/assets/screenshots/focus-mode.png) |
+## Download and install
 
-| Collections | Reference Library |
-| :---: | :---: |
-| ![Collections](tauri-mvp/docs/assets/screenshots/collections.png) | ![Reference library](tauri-mvp/docs/assets/screenshots/reference-library.png) |
+The current public preview supports Windows x64.
 
-| AI Workspace | Settings |
-| :---: | :---: |
-| ![AI workspace](tauri-mvp/docs/assets/screenshots/ai-workspace.png) | ![Settings](tauri-mvp/docs/assets/screenshots/settings.png) |
+- Recommended: [`LivingToTell_0.1.44_x64-setup.exe`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.44/LivingToTell_0.1.44_x64-setup.exe)
+- MSI package: [`LivingToTell_0.1.44_x64_zh-CN.msi`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.44/LivingToTell_0.1.44_x64_zh-CN.msi)
+- Release notes and older builds: [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases)
 
-| First-Run Checklist | Export & Backup |
-| :---: | :---: |
-| ![First-run checklist](tauri-mvp/docs/assets/screenshots/dates-onboarding.png) | ![Export and backup center](tauri-mvp/docs/assets/screenshots/backup-center.png) |
+Preview installers are currently unsigned, so Windows SmartScreen may show a warning. Only run installers downloaded from this repository's Release page.
 
-## Features
-
-### Writing
-
-- Article editor with autosave, tags, full-text search, find/replace, and a collapsible context pane.
-- Article notes for reminders, fragments, and next-step ideas that stay out of the manuscript.
-- The article context pane shows motif anchors already linked in the current article, with navigation back to the source text or motif map.
-- Article version history with manual checkpoints, AI-before-apply snapshots, pre-restore snapshots, paragraph comparison, restore, clone, copy, and delete actions.
-- Epigraph editing for opening quotes, with clean Markdown, TXT, and DOCX export.
-- Focus mode that leaves only the writing area and an exit control.
-- Date view for browsing daily writing activity, with a direct start-writing button on empty days.
-
-### Collections
-
-- Build article collections from multiple articles.
-- Keep the collection header compact, search the shelf, and read a selected structure node before opening its focused editor.
-- Choose a project type: General, Novel, Essay Collection, or Nonfiction. It changes labels without restricting structure.
-- Use one **Manuscript** tree for hierarchy and order: novels can use part / chapter / scene; essay collections can use section / group / essay; nonfiction can use part / chapter / section.
-- One structure node directly links one article; to put several articles under a chapter, create several child nodes.
-- Articles not yet placed in the tree appear as **Unplanned Articles** and can be placed under the selected node or at the top level.
-- Use the collection-bound **Agent** tab as a book-project editor: it reads the manuscript structure, project memory, and explicit `@` reference chips, confirms quick tasks before model calls, indexes prompts for long sessions, and returns reviewable proposals instead of silently changing text.
-- Use the board to scan idea, draft, revision, done, and parked items across the same manuscript tree.
-- Create a linked article from a structure node or connect an existing article.
-- Export Markdown, TXT, or DOCX from the manuscript tree; unplanned articles are not silently included.
-- Follow the built-in guided tutorial for Manuscript Structure, Project Type, Unplanned Articles, Linked Article, Board, and Export; restart it from Settings when needed.
-
-### Reference Library
-
-- Save reference passages with source title, author, usage type, and personal notes.
-- Read passages and citation metadata first; enter editing mode only when changing the source, usage, note, or text.
-- Browse references by source book or usage.
-- Jump from the daily quote card to the matching reference passage.
-- Copy the passage body, or copy a complete citation with title and author.
-
-### Motif Star Map
-
-- Select text in an article or reference passage, right-click, and save it to one or more motifs.
-- Reopen an existing source selection without creating duplicate excerpts.
-- Use source anchors to jump between the article, the motif archive, and the original marked location.
-- Explore a literary star map where node size, color, and links reflect excerpt usage and co-occurrence.
-- Use **AI Enrich** in the detail pane to turn concepts such as mythic pattern, slave morality, or das Man into compact concept archives.
-- Read enriched motifs as structured concept archives with definition, tension, writing functions, examples, warnings, and exercises instead of one long note.
-- Review AI-suggested reference sentence candidates before importing them into the Reference Library and linking them to the current motif.
-- Remove an excerpt from the current motif without deleting the same excerpt from other motifs.
-
-### AI Workspace
-
-- Focused task tools for polish, rewrite, expand, and continue, each with its own controls.
-- Article-scoped chat keeps one ongoing conversation per article.
-- AI replies in article chat can be copied, saved as article notes, or reviewed in a capture dialog before saving as reference material or a new article.
-- Standing chat instructions let you keep long-term style preferences without rewriting them in every message.
-- AI results are previewed before writing back, with explicit replace, insert, and copy actions.
-- Long AI requests show size, paragraph, estimated-token, and selected-model diagnostics before running, then show honest pending cards while models are still working.
-- AI Tools can run the same task across one or more saved AI profiles and compare output length, paragraph changes, latency, tokens, and cost when available. Selecting more models may increase wait time, token use, and provider cost.
-- Personal presets for each writing tool.
-- AI Cards for reusable style, character, and scene modules, with reading-first sections, fixed templates, AI-assisted draft generation, prompt-copy actions, type/source filters, and keyword search.
-- Scene modules can be searched and manually attached to AI tasks, so narrative structure is sent only when you choose it.
-- Supports OpenAI-compatible APIs, Codex local auth, Gemini API/local config, Gemini CLI / OAuth, and OpenCode local auth.
-
-### Desktop Experience
-
-- Windows desktop preview with a simple installer.
-- Light startup splash gives immediate feedback while the bundled backend is starting.
-- First-run onboarding can create an explicit disposable sample project with articles, a collection manuscript structure, a reference, a writing note, and a scene AI Card. It is never created automatically and can be removed without touching user content.
-- The app checks GitHub Releases in the background after startup and shows a clear update notice when a newer public build is available.
-- Close behavior can be set to ask every time, minimize to tray, or exit directly.
-- Export & Backup now centers restore points first: it shows the latest backup/checkpoint state, lets you choose a restore point, reminds you when backups are stale, and still auto-backs up before restore.
-- Data and Storage settings show the active SQLite database, backup folder, checkpoint folder, and custom data-directory status.
-- Data-directory migration copies data to the new location and leaves the previous folder untouched.
-- Public preview uses light mode only while the dark theme is being polished.
-
-## Download
-
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.44).
-
-Recommended Windows asset:
-
-- `LivingToTell_0.1.44_x64-setup.exe`
-
-Optional asset:
-
-- `LivingToTell_0.1.44_x64_zh-CN.msi`
-
-Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
-
-## Quick Start
-
-1. Install Living to Tell from the latest Release.
-2. Follow the [official user guide](docs/user-guide.md) for installation, data path, and backup checks.
-3. Use the Date view checklist to create a first article, review backups, or create the optional sample project.
-4. Open the [GIF tutorials](docs/tutorials.md) if you want to see the six core workflows first.
-5. Open Articles and start writing, or open the sample collection to inspect the long-form workflow.
-6. Use Collections to organize multiple articles into a manuscript structure and planning board.
-7. Save quotes and sources in the Reference Library.
-8. Configure AI in Settings if you want AI tools or scoped chat.
-
-## AI Setup
-
-Open Settings and choose one provider:
-
-- OpenAI-compatible: set a base URL/model, choose the right wire API, and use `env:OPENAI_API_KEY` or Codex local auth.
-- Gemini API: use `env:GEMINI_API_KEY` or import local Gemini configuration.
-- Gemini CLI / OAuth: reuse a local Gemini CLI login. No API key field is required.
-- OpenCode: reuse a local `opencode auth login` session. No API key field is required, and Settings can fetch the current OpenCode model list.
-
-For multi-model comparison, use **AI profiles → Scan Local Configs** to discover local OpenCode, Codex/OpenAI, and Gemini configs, then import them as selectable profiles. Discovery only checks local config files and auth sources; use **Send Real Test Request** to verify the remote model actually works.
-
-OpenCode model fetching is live. On the current local OpenCode setup, the available models include:
-
-- `opencode/big-pickle`
-- `opencode/deepseek-v4-flash-free`
-- `opencode/mimo-v2.5-free`
-- `opencode/nemotron-3-ultra-free`
-- `opencode/north-mini-code-free`
-
-Settings separates **Check Local Config** from **Send Real Test Request**. The first only checks local credential sources; the second sends a short sample request to verify the provider, model, base URL, key, and internal transport.
-
-Gemini proxy keys shaped like `sk-...` with a custom base URL automatically use the gateway-compatible `/v1/chat/completions` transport while staying configured as the Gemini provider.
-
-Long Gemini requests default to a 120 second wait. Advanced users can tune this with `WRITER_GEMINI_TIMEOUT_SECONDS` or `WRITER_GEMINI_CLI_TIMEOUT_SECONDS`.
-
-## Data & Privacy
+## Data and privacy
 
 - Writing data is stored locally in SQLite at `%APPDATA%\LivingToTell\LivingToTell\living-to-tell.sqlite3` by default.
-- The Windows installer usually places app files under `%LOCALAPPDATA%\活着为了讲述`; this is separate from your writing database.
 - Uninstalling the app does not delete the writing database, backups, or checkpoints.
-- You can review, open, and safely migrate the data directory from **Settings → Data and Storage**. Migration copies data to the new folder and keeps the old folder intact.
-- First launch copies old Writer data from `%APPDATA%\Writer\Writer\writer.sqlite3` into the new location if it exists. The old database is retained.
-- AI requests are sent only when you run an AI tool or send a chat message.
-- API keys are read from environment variables or local provider configuration at runtime.
-- Settings store the selected provider and credential source, not raw API keys.
-- Use backups/checkpoints before major editing sessions.
+- AI requests are sent only when you explicitly run a tool, start an Agent task, or send a chat message.
+- API keys are read from environment variables or local provider configuration. Saved profiles store credential references, not raw keys.
+- Data-directory migration copies data to the selected folder and leaves the previous folder intact.
+- The sample project is never created automatically and can be removed independently of user content.
 
-## Recently Completed
+Before major edits, review the active data path and create a checkpoint or backup from **Export & Backup**.
 
-- Renamed the public app to Living to Tell / 活着为了讲述.
-- Added article version history with manual checkpoints, AI-before-apply protection, paragraph comparison, restore, clone, copy, and delete actions.
-- Added a collection-level outline tab for long-form projects, with part/chapter/scene/note planning and linked article creation.
-- Added a motif star map with right-click text capture, source anchors, co-occurrence links, deduplication, and safer unlink behavior.
-- Added article-scoped AI chat, standing instructions, copy actions, and save-as-note actions.
-- Added first-run checklist progress, AI settings diagnostics, long-request size feedback, and grouped global command palette search.
-- Added an explicit disposable sample project that demonstrates articles, collection manuscript structure planning, references, notes, and scene AI Cards without modifying user content automatically.
-- Expanded Export & Backup into a recovery-focused center with restore-point selection, data-path visibility, backup reminders, and recent article/collection export shortcuts.
-- Enhanced collection outlines with a planning board for long-form projects, showing outline cards grouped by status.
-- Added reference-library overview cards and current-group summaries for source count, duplicate hints, usage distribution, and character totals.
-- Added AI chat capture previews so assistant replies can be reviewed before saving as reference material or new articles.
-- Upgraded AI Cards into style / character / scene templates, added AI draft generation, and added manual scene-module attachment for AI tasks.
-- Added AI provider profiles and multi-model comparison in AI Tools, with per-result statistics and explicit winner selection before write-back.
-- Added OpenCode local-auth support, live OpenCode model fetching, and real OpenCode test requests through the unified AI provider path.
-- Reworked motif details into structured concept archives and added user-approved AI reference candidate import into the Reference Library.
-- Added a real AI connectivity test and fixed Gemini proxy transport selection for `sk-...` keys behind custom base URLs.
-- Added Data and Storage settings with directory display, open-folder actions, and copy-based migration.
-- Added a Tauri startup splash so cold starts show immediate progress instead of a blank window.
-- Hid the uninstall-time app-data deletion option and clarified that uninstalling does not delete writing data.
-- Added article notes, focused AI writing controls, per-tool presets, and explicit AI apply actions.
-- Added reliable article-position restore, wider writing layout, and typewriter-style end-of-document spacing.
-- Added daily writing view with reference quote links and one-click start writing.
-- Added close-button behavior with native ask / tray / exit choices.
+## Documentation
 
-## Roadmap / TODO
+| Read | Use it for |
+| --- | --- |
+| [User guide](docs/user-guide.md) · [中文](docs/user-guide.zh-CN.md) | Installation, first project, every workspace, AI setup, storage, and recovery. |
+| [Visual tutorials](docs/tutorials.md) · [中文](docs/tutorials.zh-CN.md) | Six short GIF walkthroughs of the core workflow. |
+| [Changelog](tauri-mvp/CHANGELOG.md) | User-visible changes by release. |
+| [Roadmap](docs/roadmap.md) and [TODO](docs/todo.md) | Planned product work and current priorities. |
+| [Contributing](CONTRIBUTING.md) and [Security](SECURITY.md) | Development standards and responsible reporting. |
 
-The public TODO list is kept visible but folded so the README stays readable.
+## Project status
 
-<details>
-<summary>Show detailed TODO checklist</summary>
+Living to Tell is a public Windows preview under active development. Articles, collections, references, motifs, AI workflows, and backup/export are usable today. macOS and Linux packages, signed Windows installers, and optional sync are future work.
 
-### First-Run Experience
-
-- [x] Add a first-run checklist that reads local state without creating sample data.
-- [ ] Improve first-run onboarding for language, data location, backups, and AI provider setup.
-- [x] Add a sample project so new users can understand the workflow quickly.
-- [ ] Re-enable dark mode after a complete visual pass.
-
-### Writing
-
-- [x] Add article notes for keeping fragmentary ideas beside the current article.
-- [x] Restore the last article editing position and make long-form writing more comfortable near the end of a document.
-- [x] Add article version history with restore and clone flows.
-- [ ] Add editor layout presets for compact, balanced, and wide screens.
-- [ ] Improve keyboard-only navigation across Dates, Articles, Collections, and AI Workspace.
-- [x] Add collection-level manuscript structure planning for long-form projects.
-- [x] Add a collection planning board for manuscript status review.
-- [ ] Add richer collection publishing options such as cover notes, section dividers, and saved export presets.
-
-### AI
-
-- [x] Make AI results safer to apply with clearer original-vs-result comparison and explicit replace / insert / copy actions.
-- [x] Give polish, rewrite, expand, and continue their own focused controls.
-- [x] Let users save personal prompt presets for each writing tool.
-- [x] Add article-scoped AI chat with standing instructions and save-reply-as-note.
-- [x] Add style / character / scene AI Cards with structured templates and AI-assisted draft generation.
-- [x] Add manual scene-module search and attachment for AI tasks.
-- [x] Add a real AI connectivity test that reports provider, model, transport, and response preview.
-- [x] Add OpenCode local-auth support with live model fetching for OpenCode models.
-- [x] Add clearer long-text request size, wait-time, and timeout feedback.
-- [x] Make it easier to turn AI chat ideas into articles, notes, or reference material.
-
-### Knowledge & Planning
-
-- [x] Add a motif star map for organizing recurring images, symbols, and source excerpts visually.
-- [x] Add compact reference-library overview and active-group summaries.
-- [ ] Add richer graph views for themes, character links, arguments, references, and AI-generated ideas.
-- [ ] Add richer reference-library views for large reading collections.
-
-### Platform
-
-- [x] Add visible Data and Storage settings with copy-based data-directory migration.
-- [x] Expand Export & Backup with restore-point selection, safety summary, paths, and backup reminders.
-- [x] Keep uninstall from deleting writing data by default.
-- [ ] Add optional cloud sync for writers who want the same local-first workspace across devices.
-- [ ] Add signed Windows builds or published checksums for preview installers.
-- [ ] Evaluate macOS and Linux packaging after the Windows workflow is mature.
-- [ ] Add a troubleshooting page for AI provider setup.
-
-</details>
-
-See the full list in [docs/todo.md](docs/todo.md).
+The public repository avoids private writing samples, credentials, local databases, and generated build artifacts. Demo screenshots use disposable sample content.
 
 ## Development
 
-See [tauri-mvp/README.md](tauri-mvp/README.md) for development commands.
-
-Quick verification:
+The desktop app uses Vue 3 + TypeScript + Tauri 2, with a local FastAPI/Python backend and SQLite storage. See [the developer guide](tauri-mvp/README.md) for environment setup, architecture, tests, and release commands.
 
 ```powershell
-python -m pytest
+python -m pytest tests\test_tauri_mvp_api.py -q
 cd tauri-mvp\frontend
-npm test
+npm test -- --run
 npm run build
 cargo check --manifest-path src-tauri\Cargo.toml
 ```
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
+[MIT License](LICENSE)

@@ -1,49 +1,41 @@
 # Security Policy
 
-Writer is a local-first desktop writing app. It can read user-selected AI
-credentials at request time, but it should never persist raw API keys or OAuth
-access tokens in this repository or in Writer's settings database.
+Living to Tell is a local-first desktop writing app. It can read user-selected AI credentials at request time, but raw API keys and OAuth access tokens must never be committed to this repository or stored in the app's SQLite settings data.
 
 ## Supported versions
 
 | Version | Supported |
-| ------- | --------- |
-| 0.2.x alpha | Best-effort security fixes |
-| Earlier versions | Not supported |
+| --- | --- |
+| Latest `0.1.x` public preview | Best-effort security fixes |
+| Earlier previews | Upgrade recommended |
 
 ## Credential handling
 
-Writer may read the following local credential sources at runtime:
+Living to Tell may read credentials from sources explicitly selected by the user:
 
-- environment variables such as `OPENAI_API_KEY` or `GEMINI_API_KEY`
-- `~/.codex/auth.json` when API key source is `codex`
-- `~/.gemini/.env` when API key source is `gemini`
-- `~/.gemini/oauth_creds.json` when provider is Gemini CLI / OAuth
+- environment variables such as `OPENAI_API_KEY`, `GEMINI_API_KEY`, or profile-specific `LTT_AI_*` variables;
+- local Codex authentication;
+- local Gemini configuration or Gemini CLI/OAuth authentication;
+- local OpenCode authentication.
+
+Saved AI profiles retain the credential source name, provider, endpoint, and model. API responses and logs must never expose the raw credential value.
 
 Rules for contributors:
 
-- Do not commit real API keys, OAuth tokens, account emails, project IDs, local
-  databases, or personal writing data.
-- Keep generated artifacts such as `dist/`, `build/`, `.venv/`, and SQLite
-  databases untracked.
-- Use placeholder values in docs and tests, for example `env:OPENAI_API_KEY`,
-  `http://127.0.0.1:PORT`, and `gm-test`.
-- Do not paste credential files into issues, pull requests, logs, screenshots,
-  or test fixtures.
+- Do not commit real API keys, OAuth tokens, account emails, project IDs, local databases, or personal writing data.
+- Keep generated artifacts such as `dist/`, `build/`, `.venv/`, `node_modules/`, Rust `target/`, and SQLite databases untracked.
+- Use placeholder values in docs and tests, such as `env:OPENAI_API_KEY`, `http://127.0.0.1:PORT`, and `test-key`.
+- Do not paste credential files into issues, pull requests, logs, screenshots, or test fixtures.
+- Clean provider HTML, stack traces, and sensitive path details before presenting AI errors to users.
 
 ## Reporting a vulnerability
 
-If GitHub private vulnerability reporting is enabled for this repository, use
-that channel first.
+Use GitHub private vulnerability reporting when it is available for this repository.
 
-If private reporting is not available, open a GitHub issue with a minimal
-non-secret reproduction and mark it as security-sensitive. Do not include raw
-keys, OAuth tokens, local database files, account emails, or private writing
-content.
+If private reporting is unavailable, open a GitHub issue containing only a minimal, non-secret reproduction and mark it as security-sensitive. Do not include raw keys, OAuth tokens, local database files, account emails, or private writing content.
 
 ## Local data locations
 
-By default, Writer stores app data under the platform user-data directory, for
-example `%APPDATA%\Writer\Writer\` on Windows. Development and test runs may
-also use `WRITER_DATA_DIR`. These directories are user data, not source code,
-and should not be committed.
+On Windows, writing data is stored by default under `%APPDATA%\LivingToTell\LivingToTell\`. The primary database is `living-to-tell.sqlite3`; backups and checkpoints are kept outside the installed application directory.
+
+Development and test runs may use `WRITER_DATA_DIR`. These locations contain user data, not source code, and must remain untracked. Uninstalling the application does not delete the writing database, backups, or checkpoints.

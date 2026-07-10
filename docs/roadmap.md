@@ -1,52 +1,38 @@
 # Roadmap
 
-Writer is currently an alpha-stage local-first writing app. The project is
-usable for daily writing, but the UI, packaging, and AI workflows are still
-moving quickly.
+Living to Tell is an actively developed, local-first Windows writing studio. The current public preview supports daily article writing, book-project organization, references, motifs, scoped AI workflows, and recovery-focused export and backup.
 
-## Current alpha focus
+## Current focus
 
-- Local-first fragment, work, collection, reference, and project data.
-- Autosave and version-history safeguards for destructive edits.
-- AI Workspace with task tools, scoped chat, manual context attachments, and
-  safe write-back.
-- GPT / OpenAI-compatible providers, native Gemini API-key provider, and
-  Gemini CLI / OAuth provider.
-- Windows portable packaging.
+- Make long-form writing more comfortable through layout presets, keyboard navigation, and careful behavior around large documents.
+- Keep Collections readable as projects grow: stronger manuscript navigation, clearer board views, and useful project-level Agent memory without automatic manuscript edits.
+- Improve AI setup diagnostics, provider error handling, long-task recovery, and cost visibility while keeping model selection explicit.
+- Improve Reference Library and Motif Star Map navigation for larger personal archives.
+- Keep backups, restore points, data paths, and installer updates understandable to non-technical writers.
 
 ## Before beta
 
-- Publish signed Windows builds or document a reproducible verification path
-  for unsigned alpha archives.
-- Add screenshots captured from a clean demo profile with no personal writing
-  data, credentials, account emails, or local paths.
-- Improve first-run onboarding for data location, language, AI provider, and
-  Gemini proxy/OAuth setup.
-- Add import/export backup flows for the SQLite data directory.
-- Expand accessibility review for keyboard navigation and screen-reader labels.
-- Add safer failure copy for AI quota, model availability, network, and proxy
-  errors.
-- Stabilize the AI task template and card UI that is currently repository-level
-  only.
-- Improve the AI revision workflow so quick actions open editable settings,
-  rewrite-style results show original text beside AI output, and task parameters
-  remain isolated per task. See [AI Revision Workflow Plan](ai-revision-workflow.md).
+- Publish signed Windows builds or provide a stable, reproducible verification path for unsigned installers.
+- Complete accessibility review for keyboard navigation, focus order, contrast, and screen-reader labels.
+- Test larger real-world libraries, long manuscripts, and extended Agent conversations for performance and recovery.
+- Refine first-run guidance for language, data location, backups, sample content, and optional AI setup.
+- Add installer smoke testing to the release workflow.
+- Finish the visual theme pass before exposing additional themes.
 
-For the public TODO list, see [todo.md](todo.md).
+For the detailed public checklist, see [todo.md](todo.md) or [todo.zh-CN.md](todo.zh-CN.md).
 
 ## Later candidates
 
-- Cross-platform packaging beyond Windows.
-- Richer manuscript front matter and print/PDF-oriented export.
+- Cross-platform packages for macOS and Linux.
+- Richer manuscript front matter, saved export presets, and print/PDF-oriented output.
 - Optional encrypted-at-rest local database support.
-- Optional cloud sync adapter, kept separate from the local-first core.
-- Plugin-style AI provider adapters.
-- Better token counting using provider-native count-token endpoints.
-- Rich tracked-changes review mode for AI edits, with muted deletions and
-  highlighted additions.
+- Optional sync that remains separate from the local-first core.
+- Rich tracked-changes review for AI edits.
+- Extensible provider and writing-tool integrations.
 
-## Non-goals for the current alpha
+## Non-goals for the current preview
 
 - No bundled API keys or shared cloud account.
 - No automatic upload of private writing data.
-- No committed personal databases, OAuth state, or generated release bundles.
+- No automatic AI rewrite of a manuscript, reference archive, motif graph, or project memory.
+- No committed personal databases, OAuth state, private writing samples, or generated release bundles.

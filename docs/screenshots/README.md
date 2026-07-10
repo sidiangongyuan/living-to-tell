@@ -1,19 +1,26 @@
-# Screenshots
+# Public Screenshot Checklist
 
-This folder is reserved for public screenshots captured from a clean demo
-profile.
+GitHub-facing screenshots live in `tauri-mvp/docs/assets/screenshots/`. They are captured from mocked or disposable demo data and are used by the main README and user documentation.
 
-Screenshot rules before committing images:
+## Privacy rules
 
-- Use a throwaway `WRITER_DATA_DIR` with demo fragments only.
-- Do not show real writing, account emails, project IDs, API keys, OAuth state,
-  local usernames, or private file paths.
-- Prefer PNG files under 1 MB.
-- Suggested captures:
-  - `01-fragments.png` — fragment editor and list
-  - `02-works.png` — works and ordered sections
-  - `03-ai-workspace.png` — AI Tools tab with demo text
-  - `04-settings-gemini.png` — Gemini settings with placeholder proxy/account
+- Never show real writing, account emails, API keys, OAuth state, provider project IDs, local usernames, or private file paths.
+- Use the checked-in mock workspace or a disposable `WRITER_DATA_DIR` containing demo text only.
+- Check the entire frame, including navigation, notifications, file pickers, status messages, and system chrome.
+- Prefer PNG files under 1 MB with a consistent desktop viewport.
+- Do not use screenshots from a personal database, even when the visible article appears harmless.
 
-Until screenshots are captured, the main README links to the roadmap and this
-checklist instead of showing images.
+## Current public set
+
+- `article-writing.png`
+- `focus-mode.png`
+- `collections.png`
+- `reference-library.png`
+- `ai-workspace.png`
+- `settings.png`
+- `dates-onboarding.png`
+- `backup-center.png`
+
+The main screenshot flow is maintained in `tauri-mvp/frontend/e2e/visible-actions.e2e.ts`. After regenerating an image, inspect it at full resolution, verify that only demo content is visible, and run the repository secret/path scan before committing it.
+
+Tutorial GIFs have a separate workflow documented in [`tauri-mvp/docs/assets/tutorials/README.md`](../../tauri-mvp/docs/assets/tutorials/README.md).

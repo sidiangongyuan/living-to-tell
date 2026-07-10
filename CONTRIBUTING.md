@@ -1,52 +1,53 @@
 # Contributing
 
-Thank you for your interest in Writer. The project is currently alpha-stage, so contributions should prioritize reliability, privacy, and a clear writing workflow.
+Thank you for your interest in Living to Tell. The project is a public preview, so contributions should prioritize writing comfort, reliability, privacy, and understandable workflows.
 
 ## Development setup
 
-Requirements:
+The current desktop app uses Python 3.12+, Node.js, Rust, Vue 3, and Tauri 2 on Windows. Follow the [desktop developer guide](tauri-mvp/README.md) for the complete setup and run commands.
 
-- Windows
-- Python 3.12+
-
-Install dependencies:
+Install the Python and frontend dependencies:
 
 ```powershell
 pip install -e .[dev]
+cd tauri-mvp\frontend
+npm install
 ```
 
-Run the app:
+Run the main checks before opening a pull request:
 
 ```powershell
-writer
+python -m pytest tests\test_tauri_mvp_api.py tests\storage -q
+cd tauri-mvp\frontend
+npm test -- --run
+npm run test:e2e -- --project=msedge --workers=1
+npm run build
+cargo check --manifest-path src-tauri\Cargo.toml
 ```
 
-Run tests:
-
-```powershell
-python -m pytest
-```
-
-Run Ruff on changed Python files before opening a pull request.
+Run Ruff on changed Python files. Add focused regression coverage when behavior changes.
 
 ## Pull request expectations
 
 - Keep changes focused and product-facing.
-- Add or update tests for behavior changes.
-- Update documentation when user-visible behavior changes.
+- Preserve existing user data and document any migration behavior.
+- Add or update tests in proportion to the affected workflow.
+- Update English and Chinese documentation when user-visible behavior changes.
+- Keep AI writes previewable and explicit; do not silently change articles, references, motifs, or project memory.
 - Do not commit generated artifacts, local databases, virtual environments, logs, screenshots with personal data, or private writing samples.
 - Do not commit API keys, OAuth tokens, account emails, cloud project IDs, or local credential files.
 
 ## Documentation and screenshots
 
-Documentation should be written in a professional tone and avoid internal planning notes. Public screenshots must use clean demo data only. See [docs/screenshots/README.md](docs/screenshots/README.md).
+Write for people encountering the project for the first time. Public screenshots must use disposable demo data only and must not show private text, credentials, local usernames, or private paths. See [the screenshot checklist](docs/screenshots/README.md).
 
 ## Release discipline
 
 Before a public release:
 
-1. Confirm the version in `src/writer/app/version.py` and `pyproject.toml`.
-2. Run the full test suite.
-3. Build the Windows portable zip.
-4. Review tracked files for credentials, local paths, databases, logs, and personal content.
-5. Update release notes and the changelog.
+1. Confirm the version in the frontend package, Tauri/Cargo files, and backend version metadata.
+2. Run backend, frontend, E2E, production-build, and Cargo checks.
+3. Scan tracked changes for credentials, private writing, databases, and machine-specific paths.
+4. Build the Windows installers with `tauri-mvp\build-release.ps1`.
+5. Update release notes, the changelog, and current README download links.
+6. Upload both installer assets and verify their remote sizes and SHA256 digests.
