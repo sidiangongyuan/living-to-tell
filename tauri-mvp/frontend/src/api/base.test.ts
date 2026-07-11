@@ -38,6 +38,8 @@ describe('api base errors', () => {
 
   it('sanitizes raw technical errors for user-facing messages', () => {
     expect(errorMessage(new HttpError(404, 'Not Found', 'Not Found'))).toContain('请求的内容不存在')
+    expect(errorMessage(new HttpError(404, 'Not Found', 'Collection not found'))).toContain('当前作品集已不存在')
+    expect(errorMessage(new Error('Unknown agent memory section'))).toContain('项目圣经栏目')
     expect(errorMessage(new TypeError('Failed to fetch'))).toContain('后台服务正在启动或连接中')
     expect(errorMessage(new Error('<!doctype html><html><title>403</title></html>'))).not.toContain('<html')
     expect(errorMessage(new Error('Traceback (most recent call last): boom'))).not.toContain('Traceback')

@@ -57,6 +57,12 @@ export function errorMessage(error: unknown): string {
   if (lowered === 'not found' || lowered === 'http 404: not found') {
     return '请求的内容不存在或已被刷新，请返回后重试。'
   }
+  if (lowered.startsWith('collection not found')) {
+    return '当前作品集已不存在，请刷新后重新选择。'
+  }
+  if (lowered.includes('unknown agent memory section')) {
+    return '无法识别这条提案要更新的项目圣经栏目，请拒绝后重新生成。'
+  }
   if (lowered === 'failed to fetch') {
     return BACKEND_UNAVAILABLE_MESSAGE
   }

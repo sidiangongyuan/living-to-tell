@@ -25,6 +25,16 @@ export const useCollectionsStore = defineStore('collections', () => {
   const error = ref<string | null>(null)
   const exportMessage = ref<string | null>(null)
   const exportingFormat = ref<CollectionExportFormat | null>(null)
+  let collectionsLoadToken = 0
+  let articlesLoadToken = 0
+  let outlineLoadToken = 0
+
+  function invalidateCollectionScopedLoads() {
+    articlesLoadToken += 1
+    outlineLoadToken += 1
+    articlesLoading.value = false
+    outlineLoading.value = false
+  }
 
   function collectionErrorMessage(error: unknown, fallback: string): string {
     return isHttpStatus(error, 404) ? fallback : error instanceof Error ? error.message : String(error)
@@ -47,12 +57,25 @@ export const useCollectionsStore = defineStore('collections', () => {
   )
 
   async function loadCollections() {
+    const token = ++collectionsLoadToken
     loading.value = true
     error.value = null
     try {
-      collections.value = await collectionsApi.listCollections()
-      if (collections.value.length && !selectedCollectionId.value) {
+      const loadedCollections = await collectionsApi.listCollections()
+      if (token !== collectionsLoadToken) return
+      collections.value = loadedCollections
+      const selectedStillExists = Boolean(
+        selectedCollectionId.value
+        && collections.value.some((collection) => collection.id === selectedCollectionId.value)
+      )
+      if (collections.value.length && !selectedStillExists) {
+        invalidateCollectionScopedLoads()
         selectedCollectionId.value = collections.value[0].id
+        selectedArticleId.value = null
+        selectedOutlineItemId.value = null
+      } else if (!collections.value.length) {
+        invalidateCollectionScopedLoads()
+        selectedCollectionId.value = null
       }
       if (selectedCollectionId.value) {
         await Promise.all([
@@ -60,24 +83,29 @@ export const useCollectionsStore = defineStore('collections', () => {
           loadOutline(selectedCollectionId.value),
         ])
       } else {
+        invalidateCollectionScopedLoads()
         articles.value = []
         outline.value = []
         selectedArticleId.value = null
         selectedOutlineItemId.value = null
       }
     } catch (e) {
+      if (token !== collectionsLoadToken) return
       error.value = collectionErrorMessage(e, '当前后台版本不支持书稿结构。请退出应用后安装最新版本。')
     } finally {
-      loading.value = false
+      if (token === collectionsLoadToken) loading.value = false
     }
   }
 
   async function loadArticles(collectionId = selectedCollectionId.value) {
     if (!collectionId) return
+    const token = ++articlesLoadToken
     articlesLoading.value = true
     error.value = null
     try {
-      articles.value = await collectionsApi.listArticles(collectionId)
+      const loadedArticles = await collectionsApi.listArticles(collectionId)
+      if (token !== articlesLoadToken || selectedCollectionId.value !== collectionId) return
+      articles.value = loadedArticles
       if (!articles.value.some((article) => article.id === selectedArticleId.value)) {
         selectedArticleId.value = articles.value.length ? articles.value[0].id : null
       }
@@ -89,18 +117,24 @@ export const useCollectionsStore = defineStore('collections', () => {
         }
       }
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      if (token !== articlesLoadToken || selectedCollectionId.value !== collectionId) return
+      error.value = collectionErrorMessage(e, '当前作品集已不存在，请重新选择。')
     } finally {
-      articlesLoading.value = false
+      if (token === articlesLoadToken && selectedCollectionId.value === collectionId) {
+        articlesLoading.value = false
+      }
     }
   }
 
   async function loadOutline(collectionId = selectedCollectionId.value) {
     if (!collectionId) return
+    const token = ++outlineLoadToken
     outlineLoading.value = true
     error.value = null
     try {
-      outline.value = await collectionsApi.listOutline(collectionId)
+      const loadedOutline = await collectionsApi.listOutline(collectionId)
+      if (token !== outlineLoadToken || selectedCollectionId.value !== collectionId) return
+      outline.value = loadedOutline
       const selectedStillExists = Boolean(
         selectedOutlineItemId.value
         && outline.value.some((item) => item.id === selectedOutlineItemId.value)
@@ -111,9 +145,12 @@ export const useCollectionsStore = defineStore('collections', () => {
         selectedOutlineItemId.value = null
       }
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      if (token !== outlineLoadToken || selectedCollectionId.value !== collectionId) return
+      error.value = collectionErrorMessage(e, '当前作品集已不存在，请重新选择。')
     } finally {
-      outlineLoading.value = false
+      if (token === outlineLoadToken && selectedCollectionId.value === collectionId) {
+        outlineLoading.value = false
+      }
     }
   }
 
@@ -122,6 +159,7 @@ export const useCollectionsStore = defineStore('collections', () => {
     try {
       const created = await collectionsApi.createCollection({ title, description, project_type: projectType })
       collections.value.unshift(created)
+      invalidateCollectionScopedLoads()
       selectedCollectionId.value = created.id
       articles.value = []
       outline.value = []
@@ -158,6 +196,7 @@ export const useCollectionsStore = defineStore('collections', () => {
       await collectionsApi.deleteCollection(id)
       collections.value = collections.value.filter((c) => c.id !== id)
       if (selectedCollectionId.value === id) {
+        invalidateCollectionScopedLoads()
         selectedCollectionId.value = collections.value.length ? collections.value[0].id : null
         if (selectedCollectionId.value) {
           await Promise.all([
@@ -315,7 +354,13 @@ export const useCollectionsStore = defineStore('collections', () => {
 
   async function selectCollection(id: string) {
     if (selectedCollectionId.value === id) return
+    if (!collections.value.some((collection) => collection.id === id)) {
+      error.value = '要打开的作品集已不存在，请刷新后重新选择。'
+      return
+    }
+    invalidateCollectionScopedLoads()
     selectedCollectionId.value = id
+    error.value = null
     selectedArticleId.value = null
     selectedOutlineItemId.value = null
     await Promise.all([

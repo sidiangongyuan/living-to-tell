@@ -1742,10 +1742,107 @@ test('collection export buttons trigger downloads and article management actions
   await expect.poll(() => deleteCollectionRequests).toBe(1)
 })
 
+test('rapid collection switching ignores a late 404 from the previous collection', async ({ page }) => {
+  const collectionB = {
+    ...collection,
+    id: 'collection-b',
+    title: '第二个作品集',
+    description: '当前应保持选中的作品集',
+  }
+  const articleForB = {
+    ...collectionArticleB,
+    id: 'article-b-current',
+    title: '第二部正文',
+  }
+  const outlineForB = {
+    ...outlineItems[1],
+    id: 'outline-b-current',
+    collection_id: collectionB.id,
+    entry_id: articleForB.id,
+    parent_id: null,
+    title: '第二部章节',
+  }
+  let articleARequests = 0
+  let outlineARequests = 0
+
+  await page.route('**/api/collections', async (route) => {
+    await route.fulfill({ json: [collection, collectionB] })
+  })
+  await page.route('**/api/collections/collection-a/articles', async (route) => {
+    articleARequests += 1
+    if (articleARequests > 1) {
+      await new Promise((resolve) => setTimeout(resolve, 350))
+      await route.fulfill({ status: 404, json: { detail: 'Collection not found' } })
+      return
+    }
+    await route.fulfill({ json: [collectionArticle] })
+  })
+  await page.route('**/api/collections/collection-a/outline', async (route) => {
+    outlineARequests += 1
+    if (outlineARequests > 1) {
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    }
+    await route.fulfill({ json: outlineItems })
+  })
+  await page.route(/\/api\/collections\/collection-b(?:\/.*)?$/, async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname === '/api/collections/collection-b/articles') {
+      await route.fulfill({ json: [articleForB] })
+      return
+    }
+    if (url.pathname === '/api/collections/collection-b/outline') {
+      await route.fulfill({ json: [outlineForB] })
+      return
+    }
+    if (url.pathname === '/api/collections/collection-b') {
+      await route.fulfill({ json: collectionB })
+      return
+    }
+    await route.fallback()
+  })
+
+  await page.goto('/collections')
+  await expect(page.getByRole('heading', { name: collection.title, exact: true })).toBeVisible({ timeout: 20000 })
+
+  await page.getByRole('button', { name: new RegExp(collectionB.title) }).click()
+  await expect(page.getByRole('heading', { name: collectionB.title, exact: true })).toBeVisible()
+  await page.getByRole('button', { name: new RegExp(collection.title) }).click()
+  await expect(page.getByRole('heading', { name: collection.title, exact: true })).toBeVisible()
+  await page.getByRole('button', { name: new RegExp(collectionB.title) }).click()
+
+  await expect(page.getByRole('heading', { name: collectionB.title, exact: true })).toBeVisible()
+  await expect(page.getByTestId('collection-outline-reader').getByRole('heading', { name: outlineForB.title, exact: true })).toBeVisible()
+  await page.waitForTimeout(500)
+  await expect(page.getByText('Collection not found', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('当前作品集已不存在，请重新选择。', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: collectionB.title, exact: true })).toBeVisible()
+  expect(articleARequests).toBeGreaterThan(1)
+  expect(outlineARequests).toBeGreaterThan(1)
+})
+
 test('collection agent reference picker, quick task confirmation, prompt index, and clear are usable', async ({ page }) => {
-  const longAnswer = Array.from({ length: 24 }, (_, index) =>
-    `第 ${index + 1} 点：结构诊断应该保留证据、风险和下一步，不自动改正文。`
-  ).join('\n')
+  await page.setViewportSize({ width: 1600, height: 900 })
+  const longAnswer = `这本书已经有一个有效的开端：旧信不是外部危险，而是迫使林澄重新解释自己记忆的证据。
+
+我建议先保留三种可能，不急着把任何一种写成 canon：
+
+1. 信封上的错别字只有她和失踪的姐姐知道，让“必须拆开”来自私人经验，而不是情节命令。
+2. 邮票下压着一小块旧墙纸，把线索落在能触摸的物件上，也自然带出童年空间。
+3. 寄信人使用林澄从未告诉任何人的旧名，让威胁与亲密同时出现。
+
+如果第一章负责建立悬念，真正要确认的不是“信里写了什么”，而是林澄为什么愿意冒险相信它。她越想证明自己早已离开雾港，拆信这个动作就越有重量。
+
+下一步可以只写一个很小的场景：她把信放在桌上，去做三件无关紧要的事，却每一次都回到桌边。最后促使她拆信的，不是新的外部事件，而是一个只有她能认出的细节。
+
+这里有一个连续性风险：如果后文仍要保留姐姐生死未明，就不要让旧信直接证明寄信人的身份。它更适合确认“有人知道过去”，而不是确认“谁还活着”。
+
+等你决定采用哪一种细节后，我再把它整理成项目圣经提案；在那之前，这些方向都只留在对话里。
+
+从结构上看，这一章可以维持“停顿、靠近、再次停顿、终于拆开”的节奏。每一次停顿都应透露一点人物，而不是重复制造悬念：第一次是她害怕，第二次是她试图维持日常，第三次是她意识到不拆信也是一种选择。这样，动作会逐渐从情节机关变成人物决定。
+
+还可以让环境承担一部分压力。雾港的潮声、走廊里坏掉的感应灯、桌面上慢慢洇开的水痕，都比突然响起的电话更克制。它们不提供答案，只让她无法继续假装这封信与自己无关。
+
+我暂时不会替你确定姐姐、寄信人或旧案真相。现在最值得由作者回答的问题只有一个：林澄拆信以后，最害怕失去的是平静、现在的关系，还是她一直依赖的自我解释？这个答案会决定旧信究竟是线索、诱饵，还是一次迟到的亲密。`
   const baseMemory = {
     collection_id: collection.id,
     updated_at: null,
@@ -1772,9 +1869,9 @@ test('collection agent reference picker, quick task confirmation, prompt index, 
     result: { answer, evidence: [], next_steps: [] },
     error: '',
     profile_id: 'default',
-    provider: 'fake',
-    model: 'fake-agent-model',
-    transport: 'fake',
+    provider: 'demo',
+    model: 'demo-coauthor',
+    transport: 'demo',
     session_id: 'session-agent',
     mode: 'discuss',
     draft_id: null,
@@ -1785,7 +1882,7 @@ test('collection agent reference picker, quick task confirmation, prompt index, 
     actions: [],
   })
   let agentRuns = [
-    makeRun('agent-run-a', '请体检这个作品集。', 'health'),
+    makeRun('agent-run-a', '我不想马上解释旧信的来历。先和我讨论：怎样让读者相信林澄必须拆开它？', 'free_chat'),
   ]
   let runRequests = 0
   let clearRequests = 0
@@ -1901,10 +1998,42 @@ test('collection agent reference picker, quick task confirmation, prompt index, 
     await route.fallback()
   })
 
+  const showcaseCollection = {
+    ...collection,
+    title: '雾港来信',
+    description: '一部关于记忆、失踪与归返的长篇小说',
+  }
+  await page.route('**/api/collections', async (route) => {
+    await route.fulfill({ json: [showcaseCollection] })
+  })
+  await page.route('**/api/collections/collection-a', async (route) => {
+    await route.fulfill({ json: showcaseCollection })
+  })
+
   await page.goto('/collections?id=collection-a&tab=agent')
   await expect(page.getByTestId('collection-agent-panel')).toBeVisible({ timeout: 20000 })
   await expect(page.getByText('共创工作台')).toBeVisible()
   await expect(page.getByText('展开完整回答')).toBeVisible()
+
+  const conversation = page.getByTestId('agent-conversation-scroll')
+  const initialConversationWidth = (await conversation.boundingBox())?.width ?? 0
+  await expect(page.getByTestId('agent-left-panel')).toBeVisible()
+  await expect(page.getByTestId('agent-right-panel')).toBeHidden()
+  await expect(page.getByTestId('agent-right-toggle')).toHaveText('工作栏')
+  await expect(page.getByTestId('agent-right-toggle')).toHaveAttribute('title', '打开上下文、草稿、提案和项目圣经')
+
+  await page.getByTestId('agent-left-toggle').click()
+  await expect(page.getByTestId('agent-left-panel')).toBeHidden()
+  await expect.poll(async () => (await conversation.boundingBox())?.width ?? 0).toBeGreaterThan(initialConversationWidth + 180)
+  await page.getByTestId('agent-left-toggle').click()
+  await expect(page.getByTestId('agent-left-panel')).toBeVisible()
+
+  await page.getByTestId('agent-right-toggle').click()
+  await expect(page.getByTestId('agent-right-panel')).toBeVisible()
+  await expect.poll(async () => (await conversation.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(initialConversationWidth - 2)
+  await page.getByTestId('agent-right-panel').getByRole('button', { name: '关闭' }).click()
+  await expect(page.getByTestId('agent-right-panel')).toBeHidden()
+  await updatePublicScreenshot(page, 'collection-agent.png')
 
   await page.getByRole('button', { name: '@ 引用' }).click()
   await expect(page.getByPlaceholder('搜索结构、文章、卡片、意象或文脉')).toBeVisible()

@@ -1,5 +1,34 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.46 - Collection Agent Reliability and Roomier Conversation (2026-07-11)
+
+### Fixed
+
+- Fixed intermittent `Collection not found` messages while switching quickly between collections. Article, outline, Agent-state, polling, and action responses now verify that they still belong to the current selection before changing visible state.
+- Serialized access to the desktop backend's long-lived SQLite connection, preventing concurrent FastAPI worker requests from producing `bad parameter or other API misuse` while stale reads and cleanup writes overlap.
+- Fixed Project Bible proposals that could be rejected but failed on Apply with `Unknown agent memory section`. Provider-created English or Chinese section labels are normalized to the fixed memory schema, including previously saved malformed proposals.
+- Replaced raw compatibility errors from older backends with readable Chinese diagnostics instead of exposing internal exception strings.
+
+### Changed
+
+- Added independent **Sessions** and **Workspace** controls to the Collection Agent. Both side panels can collapse, and Workspace opens as an overlay drawer at ordinary desktop widths so the conversation is no longer squeezed.
+- Renamed the ambiguous `资料` control to `工作栏`; its tooltip now states that it contains Context, Drafts, proposals, and the Project Bible.
+- Increased the readable conversation and composer width, while keeping both side panels available on demand.
+- Updated the public Collection Agent screenshot and the English and Chinese user guides for the new panel behavior.
+
+### Verification
+
+- Added a deterministic delayed-response regression that proves a late 404 and stale outline cannot overwrite the newly selected collection.
+- Added concurrent connection and explicit-transaction regressions; real-backend browser tests now run against a fresh isolated database instead of accumulating state across runs.
+- Added backend coverage for provider-created and legacy Project Bible section aliases, plus safe rejection of truly unknown sections.
+- Ran an isolated real request with the saved `Deepseek-v4-pro` profile: OpenAI Chat Completions returned successfully, normalized the proposal to `project_core`, and applied it with HTTP 200.
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py tests\storage\test_motif_repository.py tests\storage\test_collection_outline_repository.py tests\storage\test_database_migration.py tests\storage\test_database_concurrency.py -q`
+- `npm test -- --run`
+- `npm run test:e2e -- --project=msedge --workers=1`
+- `npm run test:e2e:real -- --project=msedge --workers=1`
+- `npm run build`
+- `cargo check --locked --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+
 ## 0.1.45 - Collection Coauthor Agent (2026-07-11)
 
 ### Added

@@ -469,7 +469,7 @@ def test_tauri_collection_agent_run_memory_and_actions(monkeypatch):
                                 "title": "记录核心冲突",
                                 "summary": "把旧信作为叙事承诺写入项目核心。",
                                 "payload": {
-                                    "section_id": "project_core",
+                                    "section_id": "project_core_philosophy",
                                     "content": "旧信触发主角追索被删除的记忆。",
                                     "mode": "append",
                                 },
@@ -530,6 +530,7 @@ def test_tauri_collection_agent_run_memory_and_actions(monkeypatch):
 
     actions = {action["action_type"]: action for action in run_payload["actions"]}
     memory_action = actions["update_memory"]
+    assert memory_action["payload"]["section_id"] == "project_core"
     applied_memory = client.post(
         f"/api/collections/{collection_id}/agent/actions/{memory_action['id']}/apply"
     )
@@ -537,6 +538,42 @@ def test_tauri_collection_agent_run_memory_and_actions(monkeypatch):
     memory = client.get(f"/api/collections/{collection_id}/agent/memory").json()
     project_core = next(section for section in memory["sections"] if section["id"] == "project_core")
     assert "旧信触发主角追索" in project_core["content"]
+
+    from deps import get_container
+
+    legacy_memory_action = get_container().collection_agent_repository.create_action(
+        collection_id,
+        run_id=run_id,
+        action_type="update_memory",
+        title="项目核心哲学基调",
+        summary="兼容模型此前自行扩写的栏目名称。",
+        payload={
+            "section_id": "项目核心哲学基调",
+            "content": "完成并不消除未完成，而是让选择承担重量。",
+            "mode": "append",
+        },
+    )
+    applied_legacy_memory = client.post(
+        f"/api/collections/{collection_id}/agent/actions/{legacy_memory_action.id}/apply"
+    )
+    assert applied_legacy_memory.status_code == 200, applied_legacy_memory.text
+    memory = client.get(f"/api/collections/{collection_id}/agent/memory").json()
+    project_core = next(section for section in memory["sections"] if section["id"] == "project_core")
+    assert "让选择承担重量" in project_core["content"]
+
+    invalid_memory_action = get_container().collection_agent_repository.create_action(
+        collection_id,
+        run_id=run_id,
+        action_type="update_memory",
+        title="无法归类的栏目",
+        payload={"section_id": "provider_invented_bucket", "content": "不应静默写入。"},
+    )
+    invalid_memory = client.post(
+        f"/api/collections/{collection_id}/agent/actions/{invalid_memory_action.id}/apply"
+    )
+    assert invalid_memory.status_code == 400
+    assert "项目圣经栏目" in invalid_memory.json()["detail"]
+    assert "Unknown agent memory section" not in invalid_memory.text
 
     note_action = actions["create_article_note"]
     applied_note = client.post(
@@ -547,8 +584,6 @@ def test_tauri_collection_agent_run_memory_and_actions(monkeypatch):
         f"/api/collections/{collection_id}/agent/actions/{note_action['id']}/apply"
     )
     assert applied_note_again.status_code == 200, applied_note_again.text
-    from deps import get_container
-
     notes = get_container().entry_writing_note_repository.list_for_entry(article["id"], include_done=True)
     assert [note.body for note in notes].count("让主角在收到旧信前已经表现出对空白记忆的焦虑。") == 1
 

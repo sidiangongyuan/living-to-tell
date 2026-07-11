@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { articlesApi, type Entry } from '../../api/articles'
+import { errorMessage } from '../../api/base'
 import { collectionsApi } from '../../api/collections'
 import type {
   CollectionAgentAction,
@@ -130,6 +131,7 @@ const agentNewSessionTitle = ref('')
 const agentSessionBusy = ref(false)
 const agentRenamingSession = ref(false)
 const agentSessionTitleDraft = ref('')
+const agentLeftPanelOpen = ref(typeof window === 'undefined' ? true : window.innerWidth >= 1280)
 const agentRightPanelOpen = ref(false)
 const agentRightTab = ref<'context' | 'drafts' | 'memory'>('context')
 const selectedAgentDraftId = ref<string | null>(null)
@@ -166,6 +168,7 @@ let agentLoadToken = 0
 let agentPollTimer: number | null = null
 let agentReferenceSearchToken = 0
 let collectionArticleHighlightTimer: number | null = null
+let collectionSelectionToken = 0
 const outlineDraftTitle = ref('')
 const outlineDraftType = ref<OutlineItemType>('scene')
 const outlineDraftStatus = ref<OutlineItemStatus>('idea')
@@ -389,7 +392,7 @@ const agentCopy = computed(() => locale.value === 'en' ? {
   workspace: 'Coauthor Workspace', newSession: 'New session', sessionName: 'Session name', searchSessions: 'Search sessions',
   sessions: 'Sessions', archived: 'Archived', messages: 'messages', draftsCount: 'drafts', currentPrompts: 'This session', clear: 'Clear',
   searchPrompts: 'Find my prompts', showArchived: 'Show archived', renameSession: 'Rename session', archiveSession: 'Archive session', deleteSession: 'Delete session',
-  defaultSession: 'Coauthoring', nextProfile: 'AI profile for this run', resources: 'Context', running: 'Agent is working', otherSession: 'from another session', interrupt: 'Interrupt',
+  defaultSession: 'Coauthoring', nextProfile: 'AI profile for this run', sessionsToggle: 'Sessions', sessionsHelp: 'Show sessions and your prompt index', resources: 'Workspace', resourcesHelp: 'Open context, drafts, proposals, and Project Bible', running: 'Agent is working', otherSession: 'from another session', interrupt: 'Interrupt',
   zeroTitle: 'Start with an unfinished idea', zeroBody: 'Discuss freely or ask for several directions first. Conversation does not become canon until you accept a proposal.',
   zeroIdea: 'Explore from zero', character: 'Discuss a character', structure: 'Shape the structure', waiting: 'Waiting for a reply...',
   authorDecision: 'Author confirmation', openDraft: 'Open saved draft', canonConflict: 'Canon conflict · author decides', existingCanon: 'Project Bible', proposedCanon: 'This run',
@@ -413,7 +416,7 @@ const agentCopy = computed(() => locale.value === 'en' ? {
   workspace: '共创工作台', newSession: '新建会话', sessionName: '会话名称', searchSessions: '搜索会话',
   sessions: '会话', archived: '归档', messages: '条消息', draftsCount: '份草稿', currentPrompts: '本会话 Prompt', clear: '清空',
   searchPrompts: '查找我问过的问题', showArchived: '显示已归档', renameSession: '重命名当前会话', archiveSession: '归档当前会话', deleteSession: '删除当前会话',
-  defaultSession: '共同构思', nextProfile: '本轮 AI 配置', resources: '资料', running: 'Agent 正在工作', otherSession: '来自另一会话', interrupt: '中断',
+  defaultSession: '共同构思', nextProfile: '本轮 AI 配置', sessionsToggle: '会话', sessionsHelp: '显示会话列表和 Prompt 索引', resources: '工作栏', resourcesHelp: '打开上下文、草稿、提案和项目圣经', running: 'Agent 正在工作', otherSession: '来自另一会话', interrupt: '中断',
   zeroTitle: '从一句还没成形的想法开始', zeroBody: '你可以自由讨论，也可以让 Agent 先给几个方向。对话不会自动变成设定，只有确认的提案才进入项目圣经。',
   zeroIdea: '从零构思', character: '讨论人物', structure: '整理结构', waiting: '等待回答...',
   authorDecision: '待作者确认', openDraft: '查看已保存草稿', canonConflict: 'Canon 冲突 · 由作者决定', existingCanon: '项目圣经现有', proposedCanon: '本轮提出',
@@ -650,8 +653,22 @@ onMounted(async () => {
 
 watch(
   () => store.selectedCollectionId,
-  (id) => {
+  (id, previousId) => {
     if (id) localStorage.setItem(LAST_SELECTED_COLLECTION_KEY, id)
+    if (id === previousId || previousId === undefined) return
+    stopAgentPolling()
+    agentLoadToken += 1
+    agentReferenceSearchToken += 1
+    agentState.value = null
+    agentError.value = null
+    agentApplyingActionId.value = null
+    agentRunning.value = false
+    actionError.value = null
+    outlineActionError.value = null
+    selectedAgentRefs.value = []
+    agentReferenceResults.value = []
+    agentReferencePickerOpen.value = false
+    selectedAgentDraftId.value = null
   },
   { immediate: true }
 )
@@ -721,7 +738,14 @@ onBeforeUnmount(() => {
 })
 
 function handleWindowResize() {
+  const previousWidth = windowWidth.value
   windowWidth.value = window.innerWidth
+  if (previousWidth >= 1280 && windowWidth.value < 1280) {
+    agentLeftPanelOpen.value = false
+  }
+  if (previousWidth >= 1760 && windowWidth.value < 1760) {
+    agentRightPanelOpen.value = false
+  }
 }
 
 function prepareCollectionTourStep(index = tourStepIndex.value) {
@@ -906,10 +930,12 @@ async function loadAgentState(sessionId?: string | null) {
     const running = activeAgentRun.value
     if (running && !isTerminalAgentRun(running)) scheduleAgentPoll(running.id)
   } catch (e) {
-    if (token !== agentLoadToken) return
-    agentError.value = e instanceof Error ? e.message : String(e)
+    if (token !== agentLoadToken || store.selectedCollectionId !== collectionId) return
+    agentError.value = errorMessage(e)
   } finally {
-    if (token === agentLoadToken) agentLoading.value = false
+    if (token === agentLoadToken && store.selectedCollectionId === collectionId) {
+      agentLoading.value = false
+    }
   }
 }
 
@@ -921,8 +947,7 @@ function syncSelectedAgentDraftEditor() {
 
 function selectAgentDraft(draft: CollectionAgentDraft) {
   selectedAgentDraftId.value = draft.id
-  agentRightPanelOpen.value = true
-  agentRightTab.value = 'drafts'
+  openAgentRightPanel('drafts')
   syncSelectedAgentDraftEditor()
 }
 
@@ -934,6 +959,24 @@ function selectAgentDraftById(draftId: string | null) {
 
 function setAgentRightTab(tab: 'context' | 'drafts' | 'memory') {
   agentRightTab.value = tab
+}
+
+function toggleAgentLeftPanel() {
+  const next = !agentLeftPanelOpen.value
+  agentLeftPanelOpen.value = next
+  if (next && windowWidth.value < 1280) agentRightPanelOpen.value = false
+}
+
+function toggleAgentRightPanel() {
+  const next = !agentRightPanelOpen.value
+  agentRightPanelOpen.value = next
+  if (next && windowWidth.value < 1280) agentLeftPanelOpen.value = false
+}
+
+function openAgentRightPanel(tab: 'context' | 'drafts' | 'memory' = agentRightTab.value) {
+  agentRightTab.value = tab
+  agentRightPanelOpen.value = true
+  if (windowWidth.value < 1280) agentLeftPanelOpen.value = false
 }
 
 function setAgentDraftApplyOperation(operation: 'create_article' | 'append' | 'replace_selection') {
@@ -1301,15 +1344,15 @@ async function pollAgentRun(runId: string) {
       const currentSessionId = agentState.value?.active_session_id
       if (run.draft_id && run.session_id === currentSessionId) {
         selectedAgentDraftId.value = run.draft_id
-        agentRightPanelOpen.value = true
-        agentRightTab.value = 'drafts'
+        openAgentRightPanel('drafts')
       }
       await loadAgentState(currentSessionId)
     } else {
       scheduleAgentPoll(run.id)
     }
   } catch (e) {
-    agentError.value = `正在重连 Agent 状态：${e instanceof Error ? e.message : String(e)}`
+    if (store.selectedCollectionId !== collectionId) return
+    agentError.value = `正在重连 Agent 状态：${errorMessage(e)}`
     scheduleAgentPoll(runId)
   }
 }
@@ -1551,8 +1594,7 @@ async function runAgentPrompt(
     closeAgentSlashMenu()
     agentPendingQuickTask.value = null
     if (runMode === 'draft') {
-      agentRightPanelOpen.value = true
-      agentRightTab.value = 'drafts'
+      openAgentRightPanel('drafts')
     }
     scheduleAgentPoll(run.id)
   } catch (e) {
@@ -1636,10 +1678,12 @@ async function clearAgentConversation() {
 
 async function applyAgentAction(action: CollectionAgentAction) {
   if (!store.selectedCollectionId) return
+  const collectionId = store.selectedCollectionId
   agentApplyingActionId.value = action.id
   agentError.value = null
   try {
-    const updated = await collectionsApi.applyAgentAction(store.selectedCollectionId, action.id)
+    const updated = await collectionsApi.applyAgentAction(collectionId, action.id)
+    if (store.selectedCollectionId !== collectionId) return
     if (agentState.value) {
       agentState.value = {
         ...agentState.value,
@@ -1656,18 +1700,21 @@ async function applyAgentAction(action: CollectionAgentAction) {
       loadAgentState(),
     ])
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    if (store.selectedCollectionId !== collectionId) return
+    agentError.value = errorMessage(e)
   } finally {
-    agentApplyingActionId.value = null
+    if (store.selectedCollectionId === collectionId) agentApplyingActionId.value = null
   }
 }
 
 async function rejectAgentAction(action: CollectionAgentAction) {
   if (!store.selectedCollectionId) return
+  const collectionId = store.selectedCollectionId
   agentApplyingActionId.value = action.id
   agentError.value = null
   try {
-    const updated = await collectionsApi.rejectAgentAction(store.selectedCollectionId, action.id)
+    const updated = await collectionsApi.rejectAgentAction(collectionId, action.id)
+    if (store.selectedCollectionId !== collectionId) return
     if (agentState.value) {
       agentState.value = {
         ...agentState.value,
@@ -1679,18 +1726,21 @@ async function rejectAgentAction(action: CollectionAgentAction) {
       }
     }
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    if (store.selectedCollectionId !== collectionId) return
+    agentError.value = errorMessage(e)
   } finally {
-    agentApplyingActionId.value = null
+    if (store.selectedCollectionId === collectionId) agentApplyingActionId.value = null
   }
 }
 
 async function deferAgentAction(action: CollectionAgentAction) {
   if (!store.selectedCollectionId) return
+  const collectionId = store.selectedCollectionId
   agentApplyingActionId.value = action.id
   agentError.value = null
   try {
-    const updated = await collectionsApi.deferAgentAction(store.selectedCollectionId, action.id)
+    const updated = await collectionsApi.deferAgentAction(collectionId, action.id)
+    if (store.selectedCollectionId !== collectionId) return
     if (agentState.value) {
       agentState.value = {
         ...agentState.value,
@@ -1702,9 +1752,10 @@ async function deferAgentAction(action: CollectionAgentAction) {
       }
     }
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    if (store.selectedCollectionId !== collectionId) return
+    agentError.value = errorMessage(e)
   } finally {
-    agentApplyingActionId.value = null
+    if (store.selectedCollectionId === collectionId) agentApplyingActionId.value = null
   }
 }
 
@@ -2286,8 +2337,9 @@ async function removeUnplannedArticle(entryId: string) {
 }
 
 async function selectCollection(id: string) {
+  const token = ++collectionSelectionToken
   const saved = await saveCollectionMetaIfNeeded()
-  if (!saved) return
+  if (!saved || token !== collectionSelectionToken) return
   await store.selectCollection(id)
 }
 
@@ -2992,14 +3044,24 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
 
         <template v-else-if="viewMode === 'agent'">
           <section class="relative flex min-h-0 flex-1 overflow-hidden bg-[#f5f7f6]" data-testid="collection-agent-panel" data-tour="collection-agent-panel">
-            <aside class="hidden h-full w-[236px] shrink-0 flex-col border-r border-stone-200 bg-white xl:flex">
+            <button v-if="agentLeftPanelOpen" class="absolute inset-0 z-20 bg-black/15 xl:hidden" :aria-label="agentCopy.close" @click="agentLeftPanelOpen = false"></button>
+            <aside
+              data-testid="agent-left-panel"
+              :class="[
+                'absolute inset-y-0 left-0 z-30 h-full w-[224px] shrink-0 flex-col border-r border-stone-200 bg-white shadow-2xl xl:static xl:z-auto xl:shadow-none',
+                agentLeftPanelOpen ? 'flex' : 'hidden',
+              ]"
+            >
               <div class="border-b border-stone-200 px-4 py-4">
                 <div class="flex items-center justify-between gap-2">
                   <div>
                     <p class="text-[10px] font-semibold uppercase tracking-[0.18em] text-teal-700">Collection Agent</p>
                     <h3 class="mt-1 text-base font-semibold text-stone-900">{{ agentCopy.workspace }}</h3>
                   </div>
-                  <button class="h-8 w-8 rounded-lg bg-stone-900 text-lg leading-none text-white hover:bg-stone-700" :title="agentCopy.newSession" @click="agentCreatingSession = !agentCreatingSession">+</button>
+                  <div class="flex items-center gap-1">
+                    <button class="h-8 w-8 rounded-lg bg-stone-900 text-lg leading-none text-white hover:bg-stone-700" :title="agentCopy.newSession" @click="agentCreatingSession = !agentCreatingSession">+</button>
+                    <button class="h-8 w-8 rounded-lg text-lg leading-none text-stone-400 hover:bg-stone-100 hover:text-stone-700" :title="agentCopy.close" @click="agentLeftPanelOpen = false">‹</button>
+                  </div>
                 </div>
                 <input v-model="agentSessionQuery" class="mt-3 w-full rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-xs outline-none focus:bg-white focus:border-teal-500" :placeholder="agentCopy.searchSessions" />
               </div>
@@ -3058,6 +3120,12 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
             <main class="flex min-w-0 flex-1 flex-col bg-[#f7f8f7]">
               <header class="shrink-0 border-b border-stone-200 bg-white px-4 py-3 sm:px-5">
                 <div class="flex items-center gap-3">
+                  <button
+                    data-testid="agent-left-toggle"
+                    :class="['rounded-lg border px-2.5 py-1.5 text-xs font-semibold', agentLeftPanelOpen ? 'border-teal-200 bg-teal-50 text-teal-800' : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50']"
+                    :title="agentCopy.sessionsHelp"
+                    @click="toggleAgentLeftPanel"
+                  >{{ agentCopy.sessionsToggle }}</button>
                   <div class="min-w-0 flex-1">
                     <select class="w-full max-w-xs truncate bg-transparent text-sm font-semibold text-stone-900 outline-none xl:hidden" :value="agentState?.active_session_id || ''" @change="switchAgentSessionById">
                       <option v-for="session in (agentState?.sessions ?? []).filter((item) => !item.archived)" :key="session.id" :value="session.id">{{ session.title }}</option>
@@ -3070,7 +3138,12 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                   <select v-model="agentProfileId" class="max-w-[150px] rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[11px] outline-none" :title="agentCopy.nextProfile">
                     <option v-for="profile in agentProfileOptions" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
                   </select>
-                  <button class="rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs text-stone-600 hover:bg-stone-50" @click="agentRightPanelOpen = !agentRightPanelOpen">{{ agentCopy.resources }}</button>
+                  <button
+                    data-testid="agent-right-toggle"
+                    :class="['rounded-lg border px-2.5 py-1.5 text-xs font-semibold', agentRightPanelOpen ? 'border-teal-200 bg-teal-50 text-teal-800' : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50']"
+                    :title="agentCopy.resourcesHelp"
+                    @click="toggleAgentRightPanel"
+                  >{{ agentCopy.resources }}</button>
                 </div>
 
                 <div class="mt-3 flex items-center justify-between gap-3">
@@ -3101,7 +3174,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
               </div>
 
               <div class="min-h-0 flex-1 overflow-y-auto" data-testid="agent-conversation-scroll">
-                <div class="mx-auto w-full max-w-3xl px-4 py-5 sm:px-6">
+                <div class="mx-auto w-full max-w-4xl px-4 py-5 sm:px-6">
                   <div v-if="!agentLoading && !agentRuns.length" class="py-12 text-center">
                     <div class="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-teal-700 font-serif text-xl text-white">L</div>
                     <h4 class="mt-4 text-lg font-semibold text-stone-900">{{ agentCopy.zeroTitle }}</h4>
@@ -3154,7 +3227,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
               </div>
 
               <footer class="shrink-0 border-t border-stone-200 bg-white px-4 py-3 sm:px-5">
-                <div class="mx-auto max-w-3xl">
+                <div class="mx-auto max-w-4xl">
                   <div v-if="pendingQuickTask" class="mb-3 flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
                     <div class="min-w-0"><p class="text-xs font-semibold text-amber-950">{{ agentCopy.prepare }}：{{ pendingQuickTask.title }}</p><p class="mt-1 line-clamp-2 text-[11px] leading-5 text-amber-700">{{ agentCopy.uses }} {{ selectedAgentProfileName }}。</p></div>
                     <div class="flex shrink-0 gap-1.5"><button class="rounded-md bg-amber-900 px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40" :disabled="agentRunning || Boolean(activeAgentRun)" @click="confirmQuickAgentTask">{{ agentCopy.confirm }}</button><button class="rounded-md bg-white px-2.5 py-1.5 text-[11px] text-amber-800 ring-1 ring-amber-200" @click="cancelQuickAgentTask">{{ agentCopy.cancel }}</button></div>
@@ -3194,11 +3267,17 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
               </footer>
             </main>
 
-            <button v-if="agentRightPanelOpen" class="absolute inset-0 z-20 bg-black/15 2xl:hidden" :aria-label="agentCopy.close" @click="agentRightPanelOpen = false"></button>
-            <aside :class="['absolute inset-y-0 right-0 z-30 w-[min(360px,92vw)] shrink-0 flex-col border-l border-stone-200 bg-white shadow-2xl 2xl:static 2xl:z-auto 2xl:w-[330px] 2xl:shadow-none 2xl:flex', agentRightPanelOpen ? 'flex' : 'hidden']">
+            <button v-if="agentRightPanelOpen" class="absolute inset-0 z-20 bg-black/15 min-[1760px]:hidden" :aria-label="agentCopy.close" @click="agentRightPanelOpen = false"></button>
+            <aside
+              data-testid="agent-right-panel"
+              :class="[
+                'absolute inset-y-0 right-0 z-30 w-[min(350px,92vw)] shrink-0 flex-col border-l border-stone-200 bg-white shadow-2xl min-[1760px]:static min-[1760px]:z-auto min-[1760px]:w-[320px] min-[1760px]:shadow-none',
+                agentRightPanelOpen ? 'flex' : 'hidden',
+              ]"
+            >
               <div class="flex shrink-0 items-center gap-1 border-b border-stone-200 p-2">
                 <button v-for="tab in agentRightTabs" :key="tab.id" :class="['flex-1 rounded-md px-2 py-2 text-xs font-semibold', agentRightTab === tab.id ? 'bg-stone-900 text-white' : 'text-stone-500 hover:bg-stone-100']" @click="setAgentRightTab(tab.id)">{{ tab.label }}</button>
-                <button class="ml-1 h-8 w-8 rounded-md text-stone-400 hover:bg-stone-100 2xl:hidden" :aria-label="agentCopy.close" @click="agentRightPanelOpen = false">×</button>
+                <button class="ml-1 h-8 w-8 rounded-md text-stone-400 hover:bg-stone-100" :aria-label="agentCopy.close" @click="agentRightPanelOpen = false">×</button>
               </div>
 
               <div class="min-h-0 flex-1 overflow-y-auto p-4">

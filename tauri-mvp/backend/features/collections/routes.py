@@ -32,6 +32,7 @@ from writer.domain.models.collection_agent import (
     CollectionAgentSession,
     CollectionAgentSettings,
     CollectionAgentStyleSample,
+    normalize_collection_agent_memory_section_id,
 )
 from writer.domain.models.collection_outline import CollectionOutlineItem
 from writer.domain.models.collection import Collection as DomainCollection
@@ -1044,6 +1045,10 @@ def _agent_system_prompt(mode: str, task_type: str) -> str:
         "\"preview\": object, \"reason\": string, \"risk\": string"
         "}]}。"
         "动作限制：update_memory 只能包含 section_id, content, mode(append|replace)；"
+        "其中 section_id 必须严格使用以下一个固定值："
+        "project_core(项目核心)、characters(人物与关系)、timeline(时间线)、world(地点与世界)、"
+        "style(主题与风格)、foreshadowing(伏笔与线索)、decisions(决策记录)、"
+        "open_questions(未解决问题)；不要自行创造新的栏目名；"
         "create_outline_item 只能包含 title,item_type,status,summary,notes,parent_id,entry_id,pov,setting,timeline,tags,target_word_count；"
         "update_outline_item 必须包含 item_id，并只修改结构节点元数据；"
         "create_article_note 必须包含 entry_id, body, pinned；"
@@ -1082,6 +1087,8 @@ def _normalize_agent_actions(raw: Any) -> list[dict[str, Any]]:
         action_type = str(item.get("action_type") or "").strip()
         payload = item.get("payload")
         preview = item.get("preview")
+        title = str(item.get("title") or "Agent 提案").strip()[:120]
+        summary = str(item.get("summary") or "").strip()[:800]
         if action_type not in {
             "update_memory",
             "create_outline_item",
@@ -1092,11 +1099,20 @@ def _normalize_agent_actions(raw: Any) -> list[dict[str, Any]]:
             continue
         if not isinstance(payload, dict):
             continue
+        if action_type == "update_memory":
+            section_id = normalize_collection_agent_memory_section_id(
+                str(payload.get("section_id") or ""),
+                title,
+                summary,
+            )
+            if section_id is None:
+                continue
+            payload = {**payload, "section_id": section_id}
         actions.append(
             {
                 "action_type": action_type,
-                "title": str(item.get("title") or "Agent 提案").strip()[:120],
-                "summary": str(item.get("summary") or "").strip()[:800],
+                "title": title,
+                "summary": summary,
                 "payload": payload,
                 "preview": preview if isinstance(preview, dict) else payload,
                 "reason": str(item.get("reason") or "").strip()[:800],
@@ -2441,7 +2457,13 @@ def _apply_collection_agent_action(
 ) -> str:
     payload = action.payload
     if action.action_type == "update_memory":
-        section_id = str(payload.get("section_id") or "").strip()
+        section_id = normalize_collection_agent_memory_section_id(
+            str(payload.get("section_id") or ""),
+            action.title,
+            action.summary,
+        )
+        if section_id is None:
+            raise ValueError("无法识别这条提案要更新的项目圣经栏目，请拒绝后重新生成。")
         content = str(payload.get("content") or "").strip()
         mode = str(payload.get("mode") or "replace").strip()
         memory = container.collection_agent_repository.update_memory_section(

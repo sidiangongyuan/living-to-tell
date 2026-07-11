@@ -38,6 +38,7 @@ async function deleteRealArticle(
 
 test.describe('article position restore against real backend', () => {
   test('restores real long article edit cursor and read scroll after switching articles', async ({ page, request }) => {
+    test.setTimeout(60_000)
     const bodyA = longBody('真实文章 A', 180)
     const bodyB = longBody('真实文章 B', 120)
     const articleA = await createRealArticle(request, `位置恢复测试 A ${Date.now()}`, bodyA)

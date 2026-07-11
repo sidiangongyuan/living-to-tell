@@ -23,6 +23,7 @@ from writer.domain.models.collection_agent import (
     CollectionAgentSession,
     CollectionAgentSettings,
     CollectionAgentStyleSample,
+    normalize_collection_agent_memory_section_id,
 )
 
 
@@ -454,14 +455,15 @@ class CollectionAgentRepository:
     ) -> CollectionAgentMemory:
         memory = self.get_memory(collection_id)
         sections = memory.sections.copy()
-        if section_id not in sections:
-            raise ValueError("Unknown agent memory section")
+        normalized_section_id = normalize_collection_agent_memory_section_id(section_id)
+        if normalized_section_id is None or normalized_section_id not in sections:
+            raise ValueError("无法识别这条提案要更新的项目圣经栏目。")
         clean_content = (content or "").strip()
-        if mode == "append" and sections[section_id].strip():
-            if clean_content and clean_content not in sections[section_id]:
-                sections[section_id] = f"{sections[section_id].strip()}\n\n{clean_content}"
+        if mode == "append" and sections[normalized_section_id].strip():
+            if clean_content and clean_content not in sections[normalized_section_id]:
+                sections[normalized_section_id] = f"{sections[normalized_section_id].strip()}\n\n{clean_content}"
         else:
-            sections[section_id] = clean_content
+            sections[normalized_section_id] = clean_content
         return self.save_memory(collection_id, sections)
 
     # runs -------------------------------------------------------------

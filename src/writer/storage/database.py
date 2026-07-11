@@ -7,6 +7,7 @@ directly.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from importlib import resources
 from pathlib import Path
 from typing import Optional
@@ -15,6 +16,162 @@ from writer.app.paths import database_path
 
 _SCHEMA_RESOURCE_PACKAGE = "writer.storage"
 _SCHEMA_RESOURCE_NAME = "schema.sql"
+
+
+class _SerializedCursor(sqlite3.Cursor):
+    """Serialize cursor stepping on the process-wide desktop connection."""
+
+    @property
+    def _connection_lock(self):
+        return self.connection._access_lock  # type: ignore[attr-defined]  # noqa: SLF001
+
+    def execute(self, sql, parameters=()):
+        with self._connection_lock:
+            return super().execute(sql, parameters)
+
+    def executemany(self, sql, parameters):
+        with self._connection_lock:
+            return super().executemany(sql, parameters)
+
+    def executescript(self, sql_script):
+        with self._connection_lock:
+            return super().executescript(sql_script)
+
+    def fetchone(self):
+        with self._connection_lock:
+            return super().fetchone()
+
+    def fetchmany(self, size=None):
+        with self._connection_lock:
+            if size is None:
+                return super().fetchmany()
+            return super().fetchmany(size)
+
+    def fetchall(self):
+        with self._connection_lock:
+            return super().fetchall()
+
+    def __next__(self):
+        with self._connection_lock:
+            return super().__next__()
+
+    def close(self):
+        with self._connection_lock:
+            return super().close()
+
+
+class SerializedConnection(sqlite3.Connection):
+    """A SQLite connection safe for FastAPI's concurrent worker threads.
+
+    The desktop backend intentionally owns one long-lived connection. SQLite
+    may be built in serialized mode, but Python cursor operations can still
+    overlap when synchronous routes run in different worker threads. The
+    re-entrant lock keeps each operation atomic and holds explicit transactions
+    until their matching COMMIT or ROLLBACK.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._access_lock = threading.RLock()
+        self._transaction_owner: Optional[int] = None
+
+    def cursor(self, factory=_SerializedCursor):
+        with self._access_lock:
+            return super().cursor(factory)
+
+    @property
+    def in_transaction(self) -> bool:
+        with self._access_lock:
+            return sqlite3.Connection.in_transaction.__get__(self)
+
+    @staticmethod
+    def _statement_verb(sql: object) -> str:
+        clean = str(sql).lstrip()
+        return clean.split(None, 1)[0].upper() if clean else ""
+
+    def execute(self, sql, parameters=()):
+        verb = self._statement_verb(sql)
+        thread_id = threading.get_ident()
+        transaction_lock_acquired = False
+        if verb == "BEGIN":
+            self._access_lock.acquire()
+            transaction_lock_acquired = True
+        try:
+            with self._access_lock:
+                result = self.cursor().execute(sql, parameters)
+            if verb == "BEGIN":
+                self._transaction_owner = thread_id
+            return result
+        except BaseException:
+            if transaction_lock_acquired:
+                self._access_lock.release()
+            raise
+        finally:
+            if verb in {"COMMIT", "END", "ROLLBACK"}:
+                self._release_transaction_lock(thread_id)
+
+    def executemany(self, sql, parameters):
+        with self._access_lock:
+            return self.cursor().executemany(sql, parameters)
+
+    def executescript(self, sql_script):
+        with self._access_lock:
+            return self.cursor().executescript(sql_script)
+
+    def commit(self) -> None:
+        thread_id = threading.get_ident()
+        try:
+            with self._access_lock:
+                super().commit()
+        finally:
+            self._release_transaction_lock(thread_id)
+
+    def rollback(self) -> None:
+        thread_id = threading.get_ident()
+        try:
+            with self._access_lock:
+                super().rollback()
+        finally:
+            self._release_transaction_lock(thread_id)
+
+    def backup(self, target, *, pages=-1, progress=None, name="main", sleep=0.250):
+        with self._access_lock:
+            return super().backup(
+                target,
+                pages=pages,
+                progress=progress,
+                name=name,
+                sleep=sleep,
+            )
+
+    def __enter__(self):
+        self._access_lock.acquire()
+        try:
+            return super().__enter__()
+        except BaseException:
+            self._access_lock.release()
+            raise
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self._release_transaction_lock(threading.get_ident())
+            self._access_lock.release()
+
+    def close(self) -> None:
+        thread_id = threading.get_ident()
+        try:
+            with self._access_lock:
+                super().close()
+        finally:
+            self._release_transaction_lock(thread_id)
+
+    def _release_transaction_lock(self, thread_id: int) -> None:
+        if self._transaction_owner != thread_id:
+            return
+        self._transaction_owner = None
+        self._access_lock.release()
 
 
 def _read_schema_sql() -> str:
@@ -27,7 +184,12 @@ def open_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Open a SQLite connection with project-wide pragmas applied."""
     target = Path(db_path) if db_path is not None else database_path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(target, isolation_level=None, check_same_thread=False)
+    conn = sqlite3.connect(
+        target,
+        isolation_level=None,
+        check_same_thread=False,
+        factory=SerializedConnection,
+    )
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")

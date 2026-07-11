@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
+import path from 'node:path'
 
 const pythonExe = process.env.WRITER_PYTHON_EXE || 'python'
+const realBackendDataDir = path.resolve(process.cwd(), 'test-results', 'real-backend-data')
 
 export default defineConfig({
   testDir: './e2e',
@@ -20,7 +22,7 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 120_000,
       env: {
-        WRITER_USE_DEV_DB: '1',
+        WRITER_DATA_DIR: realBackendDataDir,
         WRITER_PORT: '18080',
       },
     },
