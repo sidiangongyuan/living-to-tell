@@ -23,6 +23,7 @@ COLLECTION_AGENT_ACTION_TYPES = {
     "create_outline_item",
     "update_outline_item",
     "create_article_note",
+    "update_author_portrait",
 }
 COLLECTION_AGENT_ACTION_STATUSES = {"pending", "applied", "rejected", "deferred"}
 COLLECTION_AGENT_RUN_STATUSES = {
@@ -49,12 +50,17 @@ COLLECTION_AGENT_STAGE_LABELS = {
     "cancelled": "已中断",
 }
 
+COLLECTION_AGENT_MODES = {"discuss", "plan", "draft", "review"}
+COLLECTION_AGENT_DRAFT_STATUSES = {"draft", "applied"}
+COLLECTION_AGENT_STYLE_SAMPLE_STATUSES = {"active", "completed"}
+
 
 @dataclass(frozen=True)
 class CollectionAgentSettings:
     collection_id: str
     profile_id: str = "default"
     enabled: bool = True
+    active_session_id: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -84,6 +90,9 @@ class CollectionAgentRun:
     provider: Optional[str]
     model: Optional[str]
     transport: Optional[str]
+    session_id: Optional[str]
+    mode: str
+    draft_id: Optional[str]
     created_at: Optional[str]
     started_at: Optional[str]
     updated_at: Optional[str]
@@ -107,3 +116,70 @@ class CollectionAgentAction:
     created_at: Optional[str]
     updated_at: Optional[str]
     applied_at: Optional[str]
+
+
+@dataclass(frozen=True)
+class CollectionAgentSession:
+    id: str
+    collection_id: str
+    thread_id: str
+    title: str
+    mode: str
+    summary: str
+    archived: bool
+    created_at: Optional[str]
+    updated_at: Optional[str]
+    last_message_at: Optional[str]
+
+
+@dataclass(frozen=True)
+class CollectionAgentDraft:
+    id: str
+    collection_id: str
+    session_id: str
+    run_id: Optional[str]
+    parent_draft_id: Optional[str]
+    title: str
+    content: str
+    brief: dict[str, Any]
+    variant_label: str
+    status: str
+    target_entry_id: Optional[str]
+    applied_ref_id: Optional[str]
+    content_hash: str
+    created_at: Optional[str]
+    updated_at: Optional[str]
+    applied_at: Optional[str]
+
+
+@dataclass(frozen=True)
+class CollectionAgentStyleSample:
+    id: str
+    collection_id: str
+    entry_id: str
+    original_body: str
+    final_body: str
+    status: str
+    created_at: Optional[str]
+    completed_at: Optional[str]
+
+
+@dataclass(frozen=True)
+class AuthorPortrait:
+    id: str
+    tags: list[str]
+    summary: str
+    evidence_count: int
+    created_at: Optional[str]
+    updated_at: Optional[str]
+
+
+@dataclass(frozen=True)
+class AuthorPortraitVersion:
+    id: str
+    portrait_id: str
+    tags: list[str]
+    summary: str
+    evidence_count: int
+    reason: str
+    created_at: Optional[str]

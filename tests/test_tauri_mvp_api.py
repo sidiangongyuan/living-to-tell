@@ -55,6 +55,10 @@ def test_tauri_app_version_capabilities(monkeypatch):
         "collection_outline",
         "collection_manuscript_structure",
         "collection_agent",
+        "collection_agent_sessions",
+        "collection_agent_drafts",
+        "collection_agent_compaction",
+        "author_portrait",
         "sample_project",
     }.issubset(
         set(payload["capabilities"])
@@ -610,6 +614,243 @@ def test_tauri_collection_agent_clear_rejects_active_run(monkeypatch):
     assert "Agent 正在工作" in response.json()["detail"]
     assert container.collection_agent_repository.get_run(run.id) is not None
     container.collection_agent_repository.cancel_run(run.id)
+
+
+def test_tauri_collection_agent_sessions_drafts_writeback_and_style_memory(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    import hashlib
+    import features.collections.routes as collection_routes
+    from deps import get_container
+    from writer.services.ai.interfaces import ChatResponse
+
+    collection = client.post(
+        "/api/collections",
+        json={"title": "共创长篇", "description": "从零开始", "project_type": "novel"},
+    ).json()
+    collection_id = collection["id"]
+    article = client.post(
+        "/api/articles",
+        json={"title": "第一章", "body": "门外一直下雨。旧信尚未拆开。", "tags": []},
+    ).json()
+    client.post(
+        f"/api/collections/{collection_id}/articles",
+        json={"entry_ids": [article["id"]]},
+    )
+
+    initial = client.get(f"/api/collections/{collection_id}/agent").json()
+    assert len(initial["sessions"]) == 1
+    assert initial["active_session_id"] == initial["sessions"][0]["id"]
+    assert initial["author_portrait"]["reminder_due"] is False
+
+    created_session = client.post(
+        f"/api/collections/{collection_id}/agent/sessions",
+        json={"title": "第一幕构思", "mode": "discuss"},
+    )
+    assert created_session.status_code == 201, created_session.text
+    session_id = created_session.json()["id"]
+
+    calls = []
+
+    class FakeProvider:
+        name = "fake-coauthor"
+
+        def chat(self, messages, *, model=None):
+            calls.append(messages)
+            is_draft = "当前是草稿模式" in messages[0]["content"]
+            payload = {
+                "answer": "先保留旧信的未知来源。" if not is_draft else "已生成一份候选场景稿。",
+                "evidence": [],
+                "next_steps": [],
+                "conflicts": [] if is_draft else [
+                    {
+                        "title": "旧信邮戳日期",
+                        "existing": "项目圣经记录为返乡第一夜。",
+                        "proposed": "本轮想法改成返乡前一周。",
+                        "reason": "需要作者确认时间线。",
+                    }
+                ],
+                "actions": [],
+                "draft": {
+                    "title": "雨夜拆信",
+                    "content": "她把信封翻到背面，雨声正好盖住纸张裂开的轻响。",
+                    "variant_label": "",
+                } if is_draft else None,
+            }
+            return ChatResponse(
+                content=json.dumps(payload, ensure_ascii=False),
+                model=model or "fake-model",
+                provider=self.name,
+                transport="fake",
+                input_tokens=30,
+                output_tokens=50,
+            )
+
+    monkeypatch.setattr(collection_routes, "provider_for_config", lambda config, prompt_builder: FakeProvider())
+
+    def run_agent(payload):
+        created = client.post(
+            f"/api/collections/{collection_id}/agent/runs",
+            json={"session_id": session_id, **payload},
+        )
+        assert created.status_code == 202, created.text
+        run_id = created.json()["id"]
+        for _ in range(50):
+            time.sleep(0.05)
+            current = client.get(
+                f"/api/collections/{collection_id}/agent/runs/{run_id}"
+            ).json()
+            if current["status"] in {"succeeded", "failed", "cancelled"}:
+                return current
+        raise AssertionError("Agent run did not finish")
+
+    first = run_agent({"message": "我们先讨论旧信来自谁。", "mode": "discuss"})
+    assert first["status"] == "succeeded"
+    assert first["result"]["conflicts"][0]["title"] == "旧信邮戳日期"
+    second = run_agent({"message": "沿着刚才的选择继续。", "mode": "discuss"})
+    assert second["status"] == "succeeded"
+    assert any(
+        message["role"] == "user" and message["content"] == "我们先讨论旧信来自谁。"
+        for message in calls[-1]
+    )
+
+    draft_run = run_agent(
+        {
+            "message": "写这个场景的主草稿。",
+            "mode": "draft",
+            "draft_brief": {
+                "target_scene": "雨夜拆信",
+                "pov": "第三人称限知",
+                "tense": "过去时",
+                "target_length": 800,
+                "must_happen": ["拆开旧信"],
+                "avoid": ["解释信件来源"],
+            },
+        }
+    )
+    assert draft_run["draft_id"]
+    state = client.get(
+        f"/api/collections/{collection_id}/agent?session_id={session_id}"
+    ).json()
+    draft = next(item for item in state["drafts"] if item["id"] == draft_run["draft_id"])
+    assert draft["status"] == "draft"
+    assert draft["brief"]["target_scene"] == "雨夜拆信"
+
+    stale_apply = client.post(
+        f"/api/collections/{collection_id}/agent/drafts/{draft['id']}/apply",
+        json={
+            "operation": "append",
+            "target_entry_id": article["id"],
+            "expected_body_hash": "stale",
+        },
+    )
+    assert stale_apply.status_code == 409
+    assert get_container().version_history_service.list_history(article["id"]) == []
+
+    body_hash = hashlib.sha256(article["body"].encode("utf-8")).hexdigest()
+    applied = client.post(
+        f"/api/collections/{collection_id}/agent/drafts/{draft['id']}/apply",
+        json={
+            "operation": "append",
+            "target_entry_id": article["id"],
+            "expected_body_hash": body_hash,
+        },
+    )
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["draft"]["status"] == "applied"
+    assert "她把信封翻到背面" in client.get(f"/api/articles/{article['id']}").json()["body"]
+    assert len(get_container().version_history_service.list_history(article["id"])) == 1
+    applied_again = client.post(
+        f"/api/collections/{collection_id}/agent/drafts/{draft['id']}/apply",
+        json={"operation": "append", "target_entry_id": article["id"]},
+    )
+    assert applied_again.status_code == 200
+    assert len(get_container().version_history_service.list_history(article["id"])) == 1
+
+    deferred_action = get_container().collection_agent_repository.create_action(
+        collection_id,
+        run_id=None,
+        action_type="update_memory",
+        title="稍后确认动机",
+        payload={
+            "section_id": "characters",
+            "content": "林遥拆信不是因为好奇，而是认出了妹妹留下的物证。",
+            "mode": "append",
+        },
+    )
+    deferred = client.post(
+        f"/api/collections/{collection_id}/agent/actions/{deferred_action.id}/defer"
+    )
+    assert deferred.status_code == 200
+    assert deferred.json()["status"] == "deferred"
+    applied_deferred = client.post(
+        f"/api/collections/{collection_id}/agent/actions/{deferred_action.id}/apply"
+    )
+    assert applied_deferred.status_code == 200
+    assert applied_deferred.json()["status"] == "applied"
+
+    for _ in range(3):
+        sample = client.post(
+            f"/api/collections/{collection_id}/agent/style-samples",
+            json={"entry_id": article["id"]},
+        )
+        assert sample.status_code == 201, sample.text
+        completed = client.post(
+            f"/api/collections/{collection_id}/agent/style-samples/{sample.json()['id']}/complete"
+        )
+        assert completed.status_code == 200, completed.text
+    portrait = client.get(
+        f"/api/collections/{collection_id}/agent/author-portrait"
+    ).json()
+    assert portrait["completed_style_cycles"] == 3
+    assert portrait["reminder_due"] is True
+
+    saved_portrait = client.put(
+        f"/api/collections/{collection_id}/agent/author-portrait",
+        json={"tags": ["克制", "感官细节"], "summary": "倾向用动作代替解释。"},
+    )
+    assert saved_portrait.status_code == 200
+    assert saved_portrait.json()["evidence_count"] == 3
+    assert saved_portrait.json()["reminder_due"] is False
+
+
+def test_tauri_collection_agent_compaction_and_restart_failure_are_visible(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from deps import get_container
+
+    collection_id = client.post(
+        "/api/collections",
+        json={"title": "会话压缩", "description": "", "project_type": "novel"},
+    ).json()["id"]
+    state = client.get(f"/api/collections/{collection_id}/agent").json()
+    session_id = state["active_session_id"]
+    thread_id = state["thread_id"]
+    container = get_container()
+    for index in range(14):
+        container.ai_thread_repository.add_message(
+            thread_id=thread_id,
+            role="user" if index % 2 == 0 else "assistant",
+            content=f"第 {index + 1} 条对话：" + ("长期内容" * 20),
+        )
+
+    compacted = client.post(
+        f"/api/collections/{collection_id}/agent/sessions/{session_id}/compact"
+    )
+    assert compacted.status_code == 200, compacted.text
+    assert "较早会话的工作摘要" in compacted.json()["summary"]
+    assert len(container.ai_thread_repository.list_messages(thread_id)) == 14
+
+    run = container.collection_agent_repository.create_run(
+        collection_id,
+        thread_id=thread_id,
+        session_id=session_id,
+        mode="discuss",
+        profile_id="default",
+        request={"message": "不会重发", "session_id": session_id},
+    )
+    assert container.collection_agent_repository.mark_stale_runs_failed() == 1
+    failed = container.collection_agent_repository.get_run(run.id)
+    assert failed is not None and failed.status == "failed"
+    assert "不会自动重发" in failed.error
 
 
 def test_tauri_ai_cards_do_not_seed_samples_and_crud_tags(monkeypatch):

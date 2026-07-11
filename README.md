@@ -6,12 +6,12 @@
 
 A local-first Windows writing studio for long-form projects, traceable references, and reviewable AI.
 
-[![Latest release](https://img.shields.io/badge/preview-0.1.44-2563eb?style=flat-square)](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.44)
+[![Latest release](https://img.shields.io/badge/preview-0.1.45-2563eb?style=flat-square)](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.45)
 [![Windows](https://img.shields.io/badge/Windows-x64-111827?style=flat-square&logo=windows11)](https://github.com/sidiangongyuan/living-to-tell/releases/latest)
 [![Local first](https://img.shields.io/badge/data-local--first-15803d?style=flat-square)](#data-and-privacy)
 [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](LICENSE)
 
-[**Download for Windows**](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.44/LivingToTell_0.1.44_x64-setup.exe)
+[**Download for Windows**](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.45/LivingToTell_0.1.45_x64-setup.exe)
  · [中文说明](README.zh-CN.md)
  · [User guide](docs/user-guide.md)
  · [Visual tutorials](docs/tutorials.md)
@@ -41,6 +41,12 @@ Living to Tell connects the parts of a serious writing practice that usually end
 Nothing is silently moved into the manuscript. References, motifs, AI context, model profiles, and proposed changes are all selected or confirmed by the author.
 
 ## See the workspace
+
+### Keep a book-length conversation without giving up the manuscript
+
+![Collection Coauthor Agent](tauri-mvp/docs/assets/screenshots/collection-agent.png)
+
+<sub>Named sessions, explicit modes, visible context, persistent drafts, and author-confirmed canon in one collection workspace.</sub>
 
 | Shape a book project | Keep references readable |
 | :---: | :---: |
@@ -80,7 +86,7 @@ Prefer learning by exploring? The first-run checklist can create a disposable sa
 | --- | --- |
 | **Article Studio** | Autosave, tags, full-text search, find/replace, writing notes, version history, epigraphs, focus mode, motif anchors, and Markdown/TXT/DOCX export. |
 | **Collections** | Searchable project shelf, manuscript hierarchy, unplanned articles, linked drafts, status board, guided tour, ordered export, and project-level Agent. |
-| **Collection Agent** | A book-project editor with structured project memory, explicit `@` references, prompt index, background runs, and reviewable proposals. It does not rewrite the manuscript automatically. |
+| **Collection Agent** | A collection-bound coauthor with named sessions, `Discuss / Plan / Draft / Review` modes, layered memory, explicit context, a persistent draft library, and reviewable proposals. Drafts never enter the manuscript until you apply them. |
 | **Reference Library** | Reading-first passages with source, author, purpose, personal notes, grouped browsing, and complete citation copy. |
 | **Motif Star Map** | Bidirectional source anchors, real excerpt co-occurrence, local motif graphs, structured concept archives, and optional AI enrichment. |
 | **AI Workspace** | Focused polish/rewrite/expand/continue tools, article chat, reusable presets, explicit context, multiple model profiles, incremental results, and safe write-back actions. |
@@ -95,6 +101,8 @@ AI is optional. The writing, collection, reference, motif, export, and backup wo
 - Keep several independent AI profiles, each with its own provider, model, endpoint, and local credential source.
 - Run one or many explicitly selected profiles in AI Tools; a default profile is never silently added to a multi-model request.
 - Long-running jobs remain visible when you leave and return to the feature. Reconnection checks task state and does not resend the provider request.
+- Collection Agent carries a visible session summary plus recent turns, while confirmed canon stays separately in the Project Bible. Conversations and rejected proposals never become memory by accident.
+- Agent scene drafts are stored locally outside the manuscript. Creating an article, appending, or replacing an explicit selection always requires a preview; existing article write-back creates a version snapshot first.
 - Generated text, card drafts, motif enrichment, project-memory changes, and Agent actions stay in preview or proposal form until you approve them.
 
 See the [user guide](docs/user-guide.md) for provider-specific AI setup instructions.
@@ -103,8 +111,8 @@ See the [user guide](docs/user-guide.md) for provider-specific AI setup instruct
 
 The current public preview supports Windows x64.
 
-- Recommended: [`LivingToTell_0.1.44_x64-setup.exe`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.44/LivingToTell_0.1.44_x64-setup.exe)
-- MSI package: [`LivingToTell_0.1.44_x64_zh-CN.msi`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.44/LivingToTell_0.1.44_x64_zh-CN.msi)
+- Recommended: [`LivingToTell_0.1.45_x64-setup.exe`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.45/LivingToTell_0.1.45_x64-setup.exe)
+- MSI package: [`LivingToTell_0.1.45_x64_zh-CN.msi`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.45/LivingToTell_0.1.45_x64_zh-CN.msi)
 - Release notes and older builds: [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases)
 
 Preview installers are currently unsigned, so Windows SmartScreen may show a warning. Only run installers downloaded from this repository's Release page.

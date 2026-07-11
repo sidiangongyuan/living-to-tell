@@ -388,6 +388,85 @@ def test_tags_text_migration_is_idempotent(tmp_path: Path) -> None:
         conn.close()
 
 
+def test_collection_agent_workspace_migration_preserves_legacy_runs(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy-agent.sqlite3"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE collections (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE ai_threads (
+            id TEXT PRIMARY KEY,
+            scope_kind TEXT NOT NULL,
+            scope_id TEXT,
+            title TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE collection_agent_settings (
+            collection_id TEXT PRIMARY KEY,
+            profile_id TEXT NOT NULL DEFAULT 'default',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE collection_agent_runs (
+            id TEXT PRIMARY KEY,
+            collection_id TEXT NOT NULL,
+            thread_id TEXT,
+            user_message_id TEXT,
+            assistant_message_id TEXT,
+            status TEXT NOT NULL DEFAULT 'succeeded',
+            stage TEXT NOT NULL DEFAULT 'succeeded',
+            stage_label TEXT NOT NULL DEFAULT '已完成',
+            request_json TEXT NOT NULL DEFAULT '{}',
+            result_json TEXT NOT NULL DEFAULT '{}',
+            error TEXT NOT NULL DEFAULT '',
+            profile_id TEXT NOT NULL DEFAULT 'default',
+            provider TEXT,
+            model TEXT,
+            transport TEXT,
+            created_at TEXT NOT NULL DEFAULT '',
+            started_at TEXT,
+            updated_at TEXT NOT NULL DEFAULT '',
+            completed_at TEXT
+        );
+        INSERT INTO collections (id, name) VALUES ('collection-old', '旧作品集');
+        INSERT INTO ai_threads (id, scope_kind, scope_id) VALUES ('thread-old', 'collection_agent', 'collection-old');
+        INSERT INTO collection_agent_settings (collection_id) VALUES ('collection-old');
+        INSERT INTO collection_agent_runs (id, collection_id, thread_id) VALUES ('run-old', 'collection-old', 'thread-old');
+        """
+    )
+    conn.close()
+
+    upgraded = open_and_initialize(db_path)
+    try:
+        settings_cols = {row["name"] for row in upgraded.execute("PRAGMA table_info(collection_agent_settings)")}
+        run_cols = {row["name"] for row in upgraded.execute("PRAGMA table_info(collection_agent_runs)")}
+        assert "active_session_id" in settings_cols
+        assert {"session_id", "mode", "draft_id"}.issubset(run_cols)
+        assert upgraded.execute("SELECT id FROM collection_agent_runs WHERE id = 'run-old'").fetchone() is not None
+        for table in (
+            "collection_agent_sessions",
+            "collection_agent_drafts",
+            "collection_agent_style_samples",
+            "author_portraits",
+            "author_portrait_versions",
+        ):
+            assert upgraded.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                (table,),
+            ).fetchone() is not None
+        initialize_schema(upgraded)
+    finally:
+        upgraded.close()
+
+
 def test_ai_cards_get_tags_text_column_on_upgrade(tmp_path: Path) -> None:
     """Older AI-card tables preserve existing cards and gain tag storage."""
     db_path = tmp_path / "writer.db"

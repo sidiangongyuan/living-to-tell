@@ -211,6 +211,29 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "ALTER TABLE motif_nodes ADD COLUMN profile_json TEXT NOT NULL DEFAULT '{}'"
         )
 
+    agent_settings_cols = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(collection_agent_settings)")
+    }
+    if "active_session_id" not in agent_settings_cols:
+        conn.execute(
+            "ALTER TABLE collection_agent_settings ADD COLUMN active_session_id TEXT"
+        )
+
+    agent_run_cols = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(collection_agent_runs)")
+    }
+    if "session_id" not in agent_run_cols:
+        conn.execute("ALTER TABLE collection_agent_runs ADD COLUMN session_id TEXT")
+    if "mode" not in agent_run_cols:
+        conn.execute(
+            "ALTER TABLE collection_agent_runs ADD COLUMN mode TEXT "
+            "NOT NULL DEFAULT 'discuss'"
+        )
+    if "draft_id" not in agent_run_cols:
+        conn.execute("ALTER TABLE collection_agent_runs ADD COLUMN draft_id TEXT")
+
 
 def _ensure_reference_passages_fts_schema(
     conn: sqlite3.Connection, *, force_rebuild: bool = False

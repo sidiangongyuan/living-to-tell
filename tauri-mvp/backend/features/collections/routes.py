@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import tempfile
 import time
@@ -19,12 +20,18 @@ from writer.app.container import AppContainer
 from writer.app.settings import SUPPORTED_AI_PROVIDERS, SUPPORTED_WIRE_APIS
 from writer.domain.models.ai_config import AiConfig
 from writer.domain.models.collection_agent import (
+    COLLECTION_AGENT_MODES,
     COLLECTION_AGENT_MEMORY_SECTIONS,
     COLLECTION_AGENT_SCOPE,
+    AuthorPortrait,
+    AuthorPortraitVersion,
     CollectionAgentAction,
+    CollectionAgentDraft,
     CollectionAgentMemory,
     CollectionAgentRun,
+    CollectionAgentSession,
     CollectionAgentSettings,
+    CollectionAgentStyleSample,
 )
 from writer.domain.models.collection_outline import CollectionOutlineItem
 from writer.domain.models.collection import Collection as DomainCollection
@@ -148,12 +155,138 @@ class CollectionAgentSettingsOut(BaseModel):
     collection_id: str
     profile_id: str = "default"
     enabled: bool = True
+    active_session_id: Optional[str] = None
     updated_at: Optional[str] = None
 
 
 class CollectionAgentSettingsUpdate(BaseModel):
     profile_id: str = "default"
     enabled: bool = True
+
+
+class CollectionAgentSessionOut(BaseModel):
+    id: str
+    collection_id: str
+    thread_id: str
+    title: str
+    mode: str
+    summary: str
+    archived: bool
+    message_count: int = 0
+    run_count: int = 0
+    draft_count: int = 0
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    last_message_at: Optional[str] = None
+
+
+class CollectionAgentSessionCreate(BaseModel):
+    title: str = "新会话"
+    mode: str = "discuss"
+
+
+class CollectionAgentSessionUpdate(BaseModel):
+    title: Optional[str] = None
+    mode: Optional[str] = None
+    archived: Optional[bool] = None
+
+
+class CollectionAgentDraftBrief(BaseModel):
+    target_scene: str = ""
+    pov: str = ""
+    tense: str = ""
+    target_length: Optional[int] = Field(default=None, ge=100, le=20000)
+    must_happen: list[str] = Field(default_factory=list)
+    avoid: list[str] = Field(default_factory=list)
+
+
+class CollectionAgentDraftOut(BaseModel):
+    id: str
+    collection_id: str
+    session_id: str
+    run_id: Optional[str] = None
+    parent_draft_id: Optional[str] = None
+    title: str
+    content: str
+    brief: dict[str, Any]
+    variant_label: str
+    status: str
+    target_entry_id: Optional[str] = None
+    applied_ref_id: Optional[str] = None
+    content_hash: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    applied_at: Optional[str] = None
+
+
+class CollectionAgentDraftUpdate(BaseModel):
+    title: str
+    content: str
+    brief: dict[str, Any] = Field(default_factory=dict)
+
+
+class CollectionAgentDraftApply(BaseModel):
+    operation: str
+    target_entry_id: Optional[str] = None
+    article_title: str = ""
+    expected_body_hash: str = ""
+    selection_start: Optional[int] = Field(default=None, ge=0)
+    selection_end: Optional[int] = Field(default=None, ge=0)
+    expected_selected_text: str = ""
+
+
+class CollectionAgentDraftApplyOut(BaseModel):
+    draft: CollectionAgentDraftOut
+    entry_id: str
+    article_title: str
+    operation: str
+    version_id: Optional[str] = None
+
+
+class CollectionAgentDraftDeleteMany(BaseModel):
+    draft_ids: list[str] = Field(default_factory=list)
+    clear_all: bool = False
+
+
+class CollectionAgentStyleSampleOut(BaseModel):
+    id: str
+    collection_id: str
+    entry_id: str
+    original_body: str
+    final_body: str
+    status: str
+    created_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+class CollectionAgentStyleSampleCreate(BaseModel):
+    entry_id: str
+
+
+class AuthorPortraitOut(BaseModel):
+    id: str
+    tags: list[str]
+    summary: str
+    evidence_count: int
+    completed_style_cycles: int = 0
+    reminder_due: bool = False
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class AuthorPortraitUpdate(BaseModel):
+    tags: list[str] = Field(default_factory=list)
+    summary: str = ""
+
+
+class AuthorPortraitVersionOut(BaseModel):
+    id: str
+    portrait_id: str
+    tags: list[str]
+    summary: str
+    evidence_count: int
+    reason: str
+    created_at: Optional[str] = None
 
 
 class CollectionAgentContextRef(BaseModel):
@@ -210,6 +343,9 @@ class CollectionAgentRunOut(BaseModel):
     provider: Optional[str] = None
     model: Optional[str] = None
     transport: Optional[str] = None
+    session_id: Optional[str] = None
+    mode: str = "discuss"
+    draft_id: Optional[str] = None
     created_at: Optional[str] = None
     started_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -225,6 +361,12 @@ class CollectionAgentStateOut(BaseModel):
     runs: list[CollectionAgentRunOut] = Field(default_factory=list)
     actions: list[CollectionAgentActionOut] = Field(default_factory=list)
     profiles: list[dict[str, str]] = Field(default_factory=list)
+    sessions: list[CollectionAgentSessionOut] = Field(default_factory=list)
+    active_session_id: Optional[str] = None
+    drafts: list[CollectionAgentDraftOut] = Field(default_factory=list)
+    author_portrait: Optional[AuthorPortraitOut] = None
+    style_samples: list[CollectionAgentStyleSampleOut] = Field(default_factory=list)
+    active_run: Optional[CollectionAgentRunOut] = None
 
 
 class CollectionAgentRunCreate(BaseModel):
@@ -233,6 +375,10 @@ class CollectionAgentRunCreate(BaseModel):
     context_refs: list[CollectionAgentContextRef] = Field(default_factory=list)
     request_web_context: bool = False
     profile_id: Optional[str] = None
+    session_id: Optional[str] = None
+    mode: str = "discuss"
+    draft_brief: Optional[CollectionAgentDraftBrief] = None
+    parent_draft_id: Optional[str] = None
 
 
 class CollectionAgentChatCreate(CollectionAgentRunCreate):
@@ -339,7 +485,93 @@ def _settings_to_dto(settings: CollectionAgentSettings) -> CollectionAgentSettin
         collection_id=settings.collection_id,
         profile_id=settings.profile_id,
         enabled=settings.enabled,
+        active_session_id=settings.active_session_id,
         updated_at=settings.updated_at,
+    )
+
+
+def _session_to_dto(
+    session: CollectionAgentSession,
+    container: AppContainer,
+) -> CollectionAgentSessionOut:
+    counts = container.collection_agent_repository.session_counts(session.id)
+    return CollectionAgentSessionOut(
+        id=session.id,
+        collection_id=session.collection_id,
+        thread_id=session.thread_id,
+        title=session.title,
+        mode=session.mode,
+        summary=session.summary,
+        archived=session.archived,
+        message_count=counts["messages"],
+        run_count=counts["runs"],
+        draft_count=counts["drafts"],
+        created_at=session.created_at,
+        updated_at=session.updated_at,
+        last_message_at=session.last_message_at,
+    )
+
+
+def _draft_to_dto(draft: CollectionAgentDraft) -> CollectionAgentDraftOut:
+    return CollectionAgentDraftOut(
+        id=draft.id,
+        collection_id=draft.collection_id,
+        session_id=draft.session_id,
+        run_id=draft.run_id,
+        parent_draft_id=draft.parent_draft_id,
+        title=draft.title,
+        content=draft.content,
+        brief=draft.brief,
+        variant_label=draft.variant_label,
+        status=draft.status,
+        target_entry_id=draft.target_entry_id,
+        applied_ref_id=draft.applied_ref_id,
+        content_hash=draft.content_hash,
+        created_at=draft.created_at,
+        updated_at=draft.updated_at,
+        applied_at=draft.applied_at,
+    )
+
+
+def _style_sample_to_dto(sample: CollectionAgentStyleSample) -> CollectionAgentStyleSampleOut:
+    return CollectionAgentStyleSampleOut(
+        id=sample.id,
+        collection_id=sample.collection_id,
+        entry_id=sample.entry_id,
+        original_body=sample.original_body,
+        final_body=sample.final_body,
+        status=sample.status,
+        created_at=sample.created_at,
+        completed_at=sample.completed_at,
+    )
+
+
+def _portrait_to_dto(
+    portrait: AuthorPortrait,
+    *,
+    completed_style_cycles: int = 0,
+) -> AuthorPortraitOut:
+    return AuthorPortraitOut(
+        id=portrait.id,
+        tags=portrait.tags,
+        summary=portrait.summary,
+        evidence_count=portrait.evidence_count,
+        completed_style_cycles=completed_style_cycles,
+        reminder_due=(completed_style_cycles - portrait.evidence_count) >= 3,
+        created_at=portrait.created_at,
+        updated_at=portrait.updated_at,
+    )
+
+
+def _portrait_version_to_dto(version: AuthorPortraitVersion) -> AuthorPortraitVersionOut:
+    return AuthorPortraitVersionOut(
+        id=version.id,
+        portrait_id=version.portrait_id,
+        tags=version.tags,
+        summary=version.summary,
+        evidence_count=version.evidence_count,
+        reason=version.reason,
+        created_at=version.created_at,
     )
 
 
@@ -398,6 +630,9 @@ def _run_to_dto(run: CollectionAgentRun, container: AppContainer) -> CollectionA
         provider=run.provider,
         model=run.model,
         transport=run.transport,
+        session_id=run.session_id,
+        mode=run.mode,
+        draft_id=run.draft_id,
         created_at=run.created_at,
         started_at=run.started_at,
         updated_at=run.updated_at,
@@ -466,17 +701,84 @@ def _profile_options(container: AppContainer) -> list[dict[str, str]]:
     return options
 
 
-def _collection_agent_state(collection_id: str, container: AppContainer) -> CollectionAgentStateOut:
+def _ensure_agent_session(
+    collection: DomainCollection,
+    container: AppContainer,
+    *,
+    requested_session_id: Optional[str] = None,
+) -> CollectionAgentSession:
+    repo = container.collection_agent_repository
+    sessions = repo.list_sessions(collection.id, include_archived=True)
+    if not sessions:
+        legacy_thread = container.ai_thread_repository.latest_for_scope(
+            COLLECTION_AGENT_SCOPE,
+            collection.id,
+        )
+        had_legacy = legacy_thread is not None
+        thread = legacy_thread or container.ai_thread_repository.create(
+            scope_kind=COLLECTION_AGENT_SCOPE,
+            scope_id=collection.id,
+            title=f"{collection.name or '作品集'} Agent",
+        )
+        session = repo.create_session(
+            collection.id,
+            thread_id=thread.id,
+            title="旧 Agent 会话" if had_legacy else "共同构思",
+            mode="discuss",
+        )
+        repo.backfill_session_for_thread(thread.id, session.id)
+        repo.set_active_session(collection.id, session.id)
+        return session
+
+    by_id = {item.id: item for item in sessions}
+    requested = by_id.get((requested_session_id or "").strip())
+    if requested is not None and not requested.archived:
+        repo.set_active_session(collection.id, requested.id)
+        return requested
+    settings = repo.get_settings(collection.id)
+    active = by_id.get(settings.active_session_id or "")
+    if active is not None and not active.archived:
+        return active
+    visible = [item for item in sessions if not item.archived]
+    session = visible[0] if visible else sessions[0]
+    if session.archived:
+        session = repo.update_session(session.id, archived=False) or session
+    repo.set_active_session(collection.id, session.id)
+    return session
+
+
+def _collection_agent_state(
+    collection_id: str,
+    container: AppContainer,
+    *,
+    session_id: Optional[str] = None,
+) -> CollectionAgentStateOut:
     collection = _collection_or_404(collection_id, container)
+    active_session = _ensure_agent_session(
+        collection,
+        container,
+        requested_session_id=session_id,
+    )
     settings = container.collection_agent_repository.get_settings(collection_id)
     memory = container.collection_agent_repository.get_memory(collection_id)
-    thread = container.ai_thread_repository.get_or_create_for_scope(
-        COLLECTION_AGENT_SCOPE,
+    thread = container.ai_thread_repository.get(active_session.thread_id)
+    if thread is None:
+        raise HTTPException(409, "当前 Agent 会话的数据已损坏，请新建会话。")
+    runs = container.collection_agent_repository.list_runs(
         collection_id,
-        title=f"{collection.name or '作品集'} Agent",
+        session_id=active_session.id,
+        limit=60,
     )
-    runs = container.collection_agent_repository.list_runs(collection_id, limit=20)
     actions = container.collection_agent_repository.list_actions(collection_id, limit=80)
+    sessions = container.collection_agent_repository.list_sessions(
+        collection_id,
+        include_archived=True,
+    )
+    drafts = container.collection_agent_repository.list_drafts(collection_id, limit=120)
+    samples = container.collection_agent_repository.list_style_samples(collection_id)
+    completed_cycles = container.collection_agent_repository.count_completed_style_samples()
+    portrait = container.collection_agent_repository.get_author_portrait()
+    global_active_run = container.collection_agent_repository.get_active_run(collection_id)
     return CollectionAgentStateOut(
         settings=_settings_to_dto(settings),
         memory=_memory_to_dto(memory),
@@ -488,6 +790,15 @@ def _collection_agent_state(collection_id: str, container: AppContainer) -> Coll
         runs=[_run_to_dto(run, container) for run in runs],
         actions=[_action_to_dto(action) for action in actions],
         profiles=_profile_options(container),
+        sessions=[_session_to_dto(item, container) for item in sessions],
+        active_session_id=active_session.id,
+        drafts=[_draft_to_dto(draft) for draft in drafts],
+        author_portrait=_portrait_to_dto(
+            portrait,
+            completed_style_cycles=completed_cycles,
+        ),
+        style_samples=[_style_sample_to_dto(sample) for sample in samples],
+        active_run=_run_to_dto(global_active_run, container) if global_active_run else None,
     )
 
 
@@ -603,6 +914,7 @@ def _build_collection_context_pack(
     *,
     refs: list[CollectionAgentContextRef],
     request_web_context: bool,
+    include_style_evidence: bool = False,
     container: AppContainer,
 ) -> tuple[str, list[dict[str, str]]]:
     collection = _collection_or_404(collection_id, container)
@@ -622,6 +934,11 @@ def _build_collection_context_pack(
     ]
     for section_id, title, _help in COLLECTION_AGENT_MEMORY_SECTIONS:
         blocks.append(f"- {title}：{memory.sections.get(section_id, '').strip() or '未记录'}")
+
+    portrait = container.collection_agent_repository.get_author_portrait()
+    blocks.append("\n作者画像（跨作品、由作者确认）：")
+    blocks.append(f"- 标签：{', '.join(portrait.tags) if portrait.tags else '未建立'}")
+    blocks.append(f"- 描述：{portrait.summary or '未建立'}")
 
     blocks.append("\n书稿结构索引：")
     if outline:
@@ -669,36 +986,84 @@ def _build_collection_context_pack(
             "\n用户本轮请求可能需要联网。若当前模型具备联网/检索能力，可以使用；"
             "必须标注来源需核对，不能假装软件已完成网页核验。"
         )
+    if include_style_evidence:
+        samples = container.collection_agent_repository.list_completed_style_samples(limit=6)
+        blocks.append("\n已完成的写作闭环样本（仅用于作者画像证据）：")
+        if not samples:
+            blocks.append("无。")
+        for index, sample in enumerate(samples, start=1):
+            entry = container.entry_repository.get(sample.entry_id)
+            blocks.append(
+                f"样本 {index}：{entry.title if entry else '已删除文章'}\n"
+                f"作者原稿：{_truncate(sample.original_body, 5000)}\n"
+                f"最终确认稿：{_truncate(sample.final_body, 5000)}"
+            )
     return "\n\n".join(blocks), attachments
 
 
-def _agent_system_prompt() -> str:
+def _agent_system_prompt(mode: str, task_type: str) -> str:
+    mode_guidance = {
+        "discuss": (
+            "当前是讨论模式。和作者共同构思、追问、比较方案，不急着替作者定案。"
+            "作品从零开始时一次只问一个关键问题；作者说‘先给方案’时，先给 2 到 4 个有差异的方向再追问。"
+        ),
+        "plan": (
+            "当前是规划模式。把想法整理成可执行的分部、章节、场景、伏笔或下一步，"
+            "区分已确认事实和待决定问题。"
+        ),
+        "draft": (
+            "当前是草稿模式。根据本轮场景简报写一份可编辑的主要草稿。"
+            "草稿只是候选稿，绝不能声称已写入文章；正文必须放在 draft.content。"
+        ),
+        "review": (
+            "当前是审校模式。检查连续性、人物动机、节奏、叙事承诺和硬逻辑问题。"
+            "不要把个人偏好包装成错误；优先指出可定位、有证据的问题。"
+        ),
+    }.get(mode, "")
+    portrait_guidance = ""
+    if task_type == "author_portrait":
+        portrait_guidance = (
+            "本轮是作者画像整理。只能依据作者原稿与最终确认稿之间反复保留的风格证据，"
+            "生成 update_author_portrait 提案；不能把被拒绝的 Agent 文本或外部引用当成作者风格。"
+        )
     return (
-        "你是写作软件中的作品集 Agent，角色是书稿总编、结构诊断和连续性助手。"
-        "你服务作者，不替作者擅自写正文。你的重点是长期项目记忆、书稿结构、连续性、下一步计划。"
-        "不要自动把建议当成事实；涉及写回时必须生成可确认提案。"
+        "你是写作软件中的作品集共创 Agent，是书稿总编、共同构思者和连续性助手。"
+        "你服务作者的意图与审美，可以讨论、规划、写候选草稿和审校，但不得擅自改正文或把建议当成 canon。"
+        "除非出现明确的连续性、canon 或逻辑冲突，否则以跟随作者为主。"
+        + mode_guidance
+        + portrait_guidance
+        + "所有长期记忆和结构写回都必须生成可确认提案。"
         "只输出一个 JSON 对象，不要 Markdown 代码块。"
         "JSON schema: {"
-        "\"answer\": string, "
-        "\"evidence\": string[], "
-        "\"next_steps\": string[], "
+        "\"answer\": string, \"evidence\": string[], \"next_steps\": string[], "
+        "\"conflicts\": [{\"title\":string,\"existing\":string,\"proposed\":string,\"reason\":string}], "
+        "\"draft\": null|{\"title\":string,\"content\":string,\"variant_label\":string}, "
         "\"actions\": [{"
-        "\"action_type\": \"update_memory\"|\"create_outline_item\"|\"update_outline_item\"|\"create_article_note\", "
+        "\"action_type\": \"update_memory\"|\"create_outline_item\"|\"update_outline_item\"|\"create_article_note\"|\"update_author_portrait\", "
         "\"title\": string, \"summary\": string, \"payload\": object, "
         "\"preview\": object, \"reason\": string, \"risk\": string"
-        "}]"
-        "}。"
+        "}]}。"
         "动作限制：update_memory 只能包含 section_id, content, mode(append|replace)；"
         "create_outline_item 只能包含 title,item_type,status,summary,notes,parent_id,entry_id,pov,setting,timeline,tags,target_word_count；"
         "update_outline_item 必须包含 item_id，并只修改结构节点元数据；"
-        "create_article_note 必须包含 entry_id, body, pinned。"
-        "不要提出修改文章正文的动作。"
+        "create_article_note 必须包含 entry_id, body, pinned；"
+        "update_author_portrait 只能包含 tags, summary, evidence_count。"
+        "禁止提出直接修改文章正文的 action。"
     )
 
 
-def _agent_user_prompt(message: str, context_pack: str) -> str:
+def _agent_user_prompt(
+    message: str,
+    context_pack: str,
+    *,
+    draft_brief: Optional[dict[str, Any]] = None,
+) -> str:
+    brief_text = ""
+    if draft_brief:
+        brief_text = "\n本轮场景简报：\n" + json.dumps(draft_brief, ensure_ascii=False, indent=2)
     return f"""用户请求：
 {message.strip()}
+{brief_text}
 
 作品集上下文包：
 {context_pack}
@@ -717,7 +1082,13 @@ def _normalize_agent_actions(raw: Any) -> list[dict[str, Any]]:
         action_type = str(item.get("action_type") or "").strip()
         payload = item.get("payload")
         preview = item.get("preview")
-        if action_type not in {"update_memory", "create_outline_item", "update_outline_item", "create_article_note"}:
+        if action_type not in {
+            "update_memory",
+            "create_outline_item",
+            "update_outline_item",
+            "create_article_note",
+            "update_author_portrait",
+        }:
             continue
         if not isinstance(payload, dict):
             continue
@@ -735,25 +1106,103 @@ def _normalize_agent_actions(raw: Any) -> list[dict[str, Any]]:
     return actions
 
 
-def _agent_result_from_response(content: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _agent_result_from_response(
+    content: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]], Optional[dict[str, str]]]:
     parsed = _parse_json_lenient(content)
     if parsed is None:
         return {
             "answer": content.strip(),
             "evidence": [],
             "next_steps": [],
+            "conflicts": [],
             "structured": False,
-        }, []
+        }, [], None
     answer = str(parsed.get("answer") or "").strip() or content.strip()
     evidence = parsed.get("evidence")
     next_steps = parsed.get("next_steps")
+    raw_conflicts = parsed.get("conflicts")
+    conflicts: list[dict[str, str]] = []
+    if isinstance(raw_conflicts, list):
+        for item in raw_conflicts[:8]:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "Canon 冲突").strip()
+            existing = str(item.get("existing") or "").strip()
+            proposed = str(item.get("proposed") or "").strip()
+            reason = str(item.get("reason") or "").strip()
+            if existing or proposed:
+                conflicts.append(
+                    {
+                        "title": title[:160],
+                        "existing": existing[:1200],
+                        "proposed": proposed[:1200],
+                        "reason": reason[:800],
+                    }
+                )
     result = {
         "answer": answer,
         "evidence": [str(item).strip() for item in evidence if str(item).strip()][:12] if isinstance(evidence, list) else [],
         "next_steps": [str(item).strip() for item in next_steps if str(item).strip()][:12] if isinstance(next_steps, list) else [],
+        "conflicts": conflicts,
         "structured": True,
     }
-    return result, _normalize_agent_actions(parsed.get("actions"))
+    raw_draft = parsed.get("draft")
+    draft: Optional[dict[str, str]] = None
+    if isinstance(raw_draft, dict):
+        draft_content = str(raw_draft.get("content") or "").strip()
+        if draft_content:
+            draft = {
+                "title": str(raw_draft.get("title") or "未命名场景草稿").strip()[:160],
+                "content": draft_content,
+                "variant_label": str(raw_draft.get("variant_label") or "").strip()[:80],
+            }
+    return result, _normalize_agent_actions(parsed.get("actions")), draft
+
+
+def _estimate_agent_tokens(text: str) -> int:
+    return max(1, len(text or "") // 4)
+
+
+def _compact_session_locally(
+    session: CollectionAgentSession,
+    messages: list[Any],
+    container: AppContainer,
+    *,
+    force: bool = False,
+) -> tuple[str, bool]:
+    total_tokens = sum(_estimate_agent_tokens(message.content) for message in messages)
+    if total_tokens < 12000 and len(messages) <= 12 and not force:
+        return session.summary, False
+    older = messages[:-12]
+    if not older:
+        return session.summary, False
+    lines: list[str] = []
+    if session.summary.strip():
+        lines.append(session.summary.strip())
+    lines.append("较早会话的工作摘要：")
+    for message in older[-30:]:
+        role = "作者" if message.role == "user" else "Agent"
+        clean = " ".join((message.content or "").split())
+        if clean:
+            lines.append(f"- {role}：{_truncate(clean, 240)}")
+    summary = "\n".join(lines)[-6000:]
+    container.collection_agent_repository.save_session_summary(session.id, summary)
+    return summary, True
+
+
+def _session_provider_history(
+    session: CollectionAgentSession,
+    container: AppContainer,
+) -> tuple[str, list[dict[str, str]], bool]:
+    messages = container.ai_thread_repository.list_messages(session.thread_id)
+    summary, compacted = _compact_session_locally(session, messages, container)
+    history = [
+        {"role": message.role, "content": message.content}
+        for message in messages[-12:]
+        if message.role in {"user", "assistant"} and (message.content or "").strip()
+    ]
+    return summary, history, compacted
 
 
 def _run_cancelled(run_id: str, container: AppContainer) -> bool:
@@ -776,6 +1225,13 @@ def _run_collection_agent(run_id: str, container: AppContainer) -> None:
         ]
         profile_id = str(request.get("profile_id") or run.profile_id or "default").strip() or "default"
         request_web_context = bool(request.get("request_web_context", False))
+        mode = str(request.get("mode") or run.mode or "discuss").strip()
+        if mode not in COLLECTION_AGENT_MODES:
+            mode = "discuss"
+        task_type = str(request.get("task_type") or "free_chat").strip()
+        draft_brief = request.get("draft_brief")
+        if not isinstance(draft_brief, dict):
+            draft_brief = None
         _profile_name, config, profile_error = _profile_config(profile_id, container)
         if config is None:
             raise RuntimeError(profile_error or "这个 AI 配置档案不可用。")
@@ -783,15 +1239,43 @@ def _run_collection_agent(run_id: str, container: AppContainer) -> None:
         if _run_cancelled(run_id, container):
             return
         container.collection_agent_repository.update_run_stage(run_id, "preparing_context")
+        collection = _collection_or_404(run.collection_id, container)
+        session = (
+            container.collection_agent_repository.get_session(run.session_id or "")
+            or _ensure_agent_session(collection, container)
+        )
+        session_summary, provider_history, compacted = _session_provider_history(
+            session,
+            container,
+        )
         context_pack, attachments = _build_collection_context_pack(
             run.collection_id,
             refs=context_refs,
             request_web_context=request_web_context,
+            include_style_evidence=task_type == "author_portrait",
             container=container,
         )
+        context_pack = _truncate(context_pack, 42000)
+        context_manifest = {
+            "collection": collection.name or "未命名作品集",
+            "session_id": session.id,
+            "mode": mode,
+            "memory": True,
+            "outline_items": len(container.collection_outline_repository.list_for_collection(run.collection_id)),
+            "explicit_refs": [
+                {"kind": item["kind"], "ref_id": item["ref_id"], "name": item["name"]}
+                for item in attachments
+            ],
+            "recent_turns": len(provider_history) // 2,
+            "summary_used": bool(session_summary.strip()),
+            "compacted_now": compacted,
+            "whole_book_body": False,
+        }
         meta = json.dumps(
             {
                 "agent_run_id": run_id,
+                "session_id": session.id,
+                "mode": mode,
                 "context_refs": request.get("context_refs", []),
                 "attachments": [
                     {"kind": item["kind"], "ref_id": item["ref_id"], "name": item["name"]}
@@ -807,11 +1291,34 @@ def _run_collection_agent(run_id: str, container: AppContainer) -> None:
             meta_json=meta,
         )
         container.collection_agent_repository.attach_user_message(run_id, user_message.id)
+        container.collection_agent_repository.touch_session(session.id)
+        if session.title == "新会话":
+            container.collection_agent_repository.update_session(
+                session.id,
+                title=_truncate(message.replace("\n", " "), 28) or "新会话",
+            )
 
-        messages = [
-            {"role": "system", "content": _agent_system_prompt()},
-            {"role": "user", "content": _agent_user_prompt(message, context_pack)},
+        messages: list[dict[str, str]] = [
+            {"role": "system", "content": _agent_system_prompt(mode, task_type)},
         ]
+        if session_summary.strip():
+            messages.append(
+                {
+                    "role": "system",
+                    "content": "当前会话的可见工作摘要（不是项目 canon）：\n" + session_summary,
+                }
+            )
+        messages.extend(provider_history)
+        messages.append(
+            {
+                "role": "user",
+                "content": _agent_user_prompt(
+                    message,
+                    context_pack,
+                    draft_brief=draft_brief,
+                ),
+            }
+        )
         container.collection_agent_repository.update_run_stage(run_id, "sending_request")
         if _run_cancelled(run_id, container):
             return
@@ -824,13 +1331,35 @@ def _run_collection_agent(run_id: str, container: AppContainer) -> None:
             return
 
         container.collection_agent_repository.update_run_stage(run_id, "parsing_response")
-        result, actions = _agent_result_from_response(response.content)
+        result, actions, draft_payload = _agent_result_from_response(response.content)
+        if mode == "draft" and draft_payload is None and result.get("answer"):
+            draft_payload = {
+                "title": str((draft_brief or {}).get("target_scene") or "未命名场景草稿")[:160],
+                "content": str(result["answer"]).strip(),
+                "variant_label": "",
+            }
+        draft: Optional[CollectionAgentDraft] = None
+        if draft_payload is not None:
+            draft = container.collection_agent_repository.create_draft(
+                run.collection_id,
+                session_id=session.id,
+                run_id=run_id,
+                parent_draft_id=str(request.get("parent_draft_id") or "").strip() or None,
+                title=draft_payload["title"],
+                content=draft_payload["content"],
+                brief=draft_brief or {},
+                variant_label=draft_payload["variant_label"],
+            )
+            container.collection_agent_repository.attach_draft(run_id, draft.id)
         result.update(
             {
                 "elapsed_ms": elapsed_ms,
                 "input_tokens": response.input_tokens,
                 "output_tokens": response.output_tokens,
                 "cost": response.cost,
+                "mode": mode,
+                "draft_id": draft.id if draft else None,
+                "context_manifest": context_manifest,
             }
         )
         assistant_message = container.ai_thread_repository.add_message(
@@ -846,6 +1375,9 @@ def _run_collection_agent(run_id: str, container: AppContainer) -> None:
                     "input_tokens": response.input_tokens,
                     "output_tokens": response.output_tokens,
                     "cost": response.cost,
+                    "session_id": session.id,
+                    "mode": mode,
+                    "draft_id": draft.id if draft else None,
                 },
                 ensure_ascii=False,
             ),
@@ -873,6 +1405,7 @@ def _run_collection_agent(run_id: str, container: AppContainer) -> None:
             model=response.model,
             transport=response.transport,
         )
+        container.collection_agent_repository.touch_session(session.id)
     except Exception as exc:  # noqa: BLE001
         container.collection_agent_repository.fail_run(run_id, _friendly_ai_error(exc))
 
@@ -1178,9 +1711,171 @@ def export_collection(
 @router.get("/{collection_id}/agent", response_model=CollectionAgentStateOut)
 def get_collection_agent_state(
     collection_id: str,
+    session_id: Optional[str] = Query(default=None),
     container: AppContainer = Depends(get_container),
 ) -> CollectionAgentStateOut:
-    return _collection_agent_state(collection_id, container)
+    return _collection_agent_state(collection_id, container, session_id=session_id)
+
+
+@router.get("/{collection_id}/agent/sessions", response_model=list[CollectionAgentSessionOut])
+def list_collection_agent_sessions(
+    collection_id: str,
+    include_archived: bool = Query(False),
+    container: AppContainer = Depends(get_container),
+) -> list[CollectionAgentSessionOut]:
+    collection = _collection_or_404(collection_id, container)
+    _ensure_agent_session(collection, container)
+    return [
+        _session_to_dto(session, container)
+        for session in container.collection_agent_repository.list_sessions(
+            collection_id,
+            include_archived=include_archived,
+        )
+    ]
+
+
+@router.post(
+    "/{collection_id}/agent/sessions",
+    response_model=CollectionAgentSessionOut,
+    status_code=201,
+)
+def create_collection_agent_session(
+    collection_id: str,
+    data: CollectionAgentSessionCreate,
+    container: AppContainer = Depends(get_container),
+) -> CollectionAgentSessionOut:
+    collection = _collection_or_404(collection_id, container)
+    mode = (data.mode or "discuss").strip()
+    if mode not in COLLECTION_AGENT_MODES:
+        raise HTTPException(400, "Agent 模式无效。")
+    thread = container.ai_thread_repository.create(
+        scope_kind=COLLECTION_AGENT_SCOPE,
+        scope_id=collection_id,
+        title=f"{collection.name or '作品集'} · {(data.title or '新会话').strip()[:80]}",
+    )
+    session = container.collection_agent_repository.create_session(
+        collection_id,
+        thread_id=thread.id,
+        title=data.title,
+        mode=mode,
+    )
+    container.collection_agent_repository.set_active_session(collection_id, session.id)
+    return _session_to_dto(session, container)
+
+
+@router.put(
+    "/{collection_id}/agent/sessions/{session_id}",
+    response_model=CollectionAgentSessionOut,
+)
+def update_collection_agent_session(
+    collection_id: str,
+    session_id: str,
+    data: CollectionAgentSessionUpdate,
+    container: AppContainer = Depends(get_container),
+) -> CollectionAgentSessionOut:
+    _collection_or_404(collection_id, container)
+    session = container.collection_agent_repository.get_session(session_id)
+    if session is None or session.collection_id != collection_id:
+        raise HTTPException(404, "这个 Agent 会话已不存在。")
+    if data.mode is not None and data.mode not in COLLECTION_AGENT_MODES:
+        raise HTTPException(400, "Agent 模式无效。")
+    if data.archived and container.collection_agent_repository.has_active_run_for_session(session_id):
+        raise HTTPException(400, "会话正在运行，不能归档。")
+    updated = container.collection_agent_repository.update_session(
+        session_id,
+        title=data.title,
+        mode=data.mode,
+        archived=data.archived,
+    )
+    assert updated is not None
+    return _session_to_dto(updated, container)
+
+
+@router.post(
+    "/{collection_id}/agent/sessions/{session_id}/activate",
+    response_model=CollectionAgentStateOut,
+)
+def activate_collection_agent_session(
+    collection_id: str,
+    session_id: str,
+    container: AppContainer = Depends(get_container),
+) -> CollectionAgentStateOut:
+    _collection_or_404(collection_id, container)
+    session = container.collection_agent_repository.get_session(session_id)
+    if session is None or session.collection_id != collection_id or session.archived:
+        raise HTTPException(404, "这个 Agent 会话不可用。")
+    return _collection_agent_state(collection_id, container, session_id=session_id)
+
+
+@router.post(
+    "/{collection_id}/agent/sessions/{session_id}/compact",
+    response_model=CollectionAgentSessionOut,
+)
+def compact_collection_agent_session(
+    collection_id: str,
+    session_id: str,
+    container: AppContainer = Depends(get_container),
+) -> CollectionAgentSessionOut:
+    _collection_or_404(collection_id, container)
+    session = container.collection_agent_repository.get_session(session_id)
+    if session is None or session.collection_id != collection_id:
+        raise HTTPException(404, "这个 Agent 会话已不存在。")
+    messages = container.ai_thread_repository.list_messages(session.thread_id)
+    _compact_session_locally(session, messages, container, force=True)
+    updated = container.collection_agent_repository.get_session(session_id)
+    assert updated is not None
+    return _session_to_dto(updated, container)
+
+
+@router.post(
+    "/{collection_id}/agent/sessions/{session_id}/clear",
+    response_model=CollectionAgentStateOut,
+)
+def clear_collection_agent_session(
+    collection_id: str,
+    session_id: str,
+    container: AppContainer = Depends(get_container),
+) -> CollectionAgentStateOut:
+    _collection_or_404(collection_id, container)
+    session = container.collection_agent_repository.get_session(session_id)
+    if session is None or session.collection_id != collection_id:
+        raise HTTPException(404, "这个 Agent 会话已不存在。")
+    if container.collection_agent_repository.has_active_run(collection_id):
+        raise HTTPException(400, "Agent 正在工作，请等待完成或先中断本地等待。")
+    container.collection_agent_repository.clear_session_history(collection_id, session_id)
+    container.ai_thread_repository.clear_messages(session.thread_id)
+    return _collection_agent_state(collection_id, container, session_id=session_id)
+
+
+@router.delete("/{collection_id}/agent/sessions/{session_id}", status_code=204)
+def delete_collection_agent_session(
+    collection_id: str,
+    session_id: str,
+    container: AppContainer = Depends(get_container),
+) -> Response:
+    _collection_or_404(collection_id, container)
+    session = container.collection_agent_repository.get_session(session_id)
+    if session is None or session.collection_id != collection_id:
+        raise HTTPException(404, "这个 Agent 会话已不存在。")
+    if container.collection_agent_repository.has_active_run_for_session(session_id):
+        raise HTTPException(400, "会话正在运行，不能删除。")
+    run_ids = {
+        run.id
+        for run in container.collection_agent_repository.list_runs(
+            collection_id,
+            session_id=session_id,
+            limit=1000,
+        )
+    }
+    if any(
+        action.status in {"pending", "deferred"} and action.run_id in run_ids
+        for action in container.collection_agent_repository.list_actions(collection_id, limit=1000)
+    ):
+        raise HTTPException(400, "这个会话还有待确认提案，请先处理或归档会话。")
+    container.collection_agent_repository.clear_session_history(collection_id, session_id)
+    container.ai_thread_repository.delete(session.thread_id)
+    _ensure_agent_session(_collection_or_404(collection_id, container), container)
+    return Response(status_code=204)
 
 
 @router.put("/{collection_id}/agent/settings", response_model=CollectionAgentSettingsOut)
@@ -1230,11 +1925,11 @@ def clear_collection_agent_conversation(
     _collection_or_404(collection_id, container)
     if container.collection_agent_repository.has_active_run(collection_id):
         raise HTTPException(400, "Agent 正在工作，请等待完成或先中断本地等待。")
-    thread = container.ai_thread_repository.latest_for_scope(COLLECTION_AGENT_SCOPE, collection_id)
-    container.collection_agent_repository.clear_finished_runs_and_processed_actions(collection_id)
-    if thread is not None:
-        container.ai_thread_repository.delete(thread.id)
-    return _collection_agent_state(collection_id, container)
+    collection = _collection_or_404(collection_id, container)
+    session = _ensure_agent_session(collection, container)
+    container.collection_agent_repository.clear_session_history(collection_id, session.id)
+    container.ai_thread_repository.clear_messages(session.thread_id)
+    return _collection_agent_state(collection_id, container, session_id=session.id)
 
 
 @router.get("/{collection_id}/agent/references", response_model=list[CollectionAgentReferenceOut])
@@ -1355,24 +2050,43 @@ def _start_collection_agent_run(
     _name, config, error = _profile_config(profile_id, container)
     if config is None:
         raise HTTPException(400, error or "这个 AI 配置档案不可用。")
-    thread = container.ai_thread_repository.get_or_create_for_scope(
-        COLLECTION_AGENT_SCOPE,
-        collection_id,
-        title=f"{collection.name or '作品集'} Agent",
+    session = _ensure_agent_session(
+        collection,
+        container,
+        requested_session_id=data.session_id,
     )
+    if session.archived:
+        raise HTTPException(400, "这个会话已归档，请先恢复后再继续。")
+    mode = (data.mode or session.mode or "discuss").strip()
+    if mode not in COLLECTION_AGENT_MODES:
+        raise HTTPException(400, "Agent 模式无效。")
+    parent_draft_id = (data.parent_draft_id or "").strip() or None
+    if parent_draft_id:
+        parent_draft = container.collection_agent_repository.get_draft(parent_draft_id)
+        if parent_draft is None or parent_draft.collection_id != collection_id:
+            raise HTTPException(400, "要参考的原草稿已不存在。")
     refs = [{"kind": ref.kind, "ref_id": ref.ref_id} for ref in data.context_refs]
+    draft_brief = data.draft_brief.model_dump() if data.draft_brief is not None else None
     run = container.collection_agent_repository.create_run(
         collection_id,
-        thread_id=thread.id,
+        thread_id=session.thread_id,
         profile_id=profile_id,
+        session_id=session.id,
+        mode=mode,
         request={
             "message": message,
             "task_type": data.task_type,
             "context_refs": refs,
             "request_web_context": data.request_web_context,
             "profile_id": profile_id,
+            "session_id": session.id,
+            "mode": mode,
+            "draft_brief": draft_brief,
+            "parent_draft_id": parent_draft_id,
         },
     )
+    container.collection_agent_repository.update_session(session.id, mode=mode)
+    container.collection_agent_repository.set_active_session(collection_id, session.id)
     _AGENT_EXECUTOR.submit(_run_collection_agent, run.id, container)
     return _run_to_dto(run, container)
 
@@ -1421,6 +2135,304 @@ def cancel_collection_agent_run(
     cancelled = container.collection_agent_repository.cancel_run(run_id)
     assert cancelled is not None
     return _run_to_dto(cancelled, container)
+
+
+@router.get("/{collection_id}/agent/drafts", response_model=list[CollectionAgentDraftOut])
+def list_collection_agent_drafts(
+    collection_id: str,
+    session_id: Optional[str] = Query(default=None),
+    include_applied: bool = Query(True),
+    container: AppContainer = Depends(get_container),
+) -> list[CollectionAgentDraftOut]:
+    _collection_or_404(collection_id, container)
+    if session_id:
+        session = container.collection_agent_repository.get_session(session_id)
+        if session is None or session.collection_id != collection_id:
+            raise HTTPException(404, "这个 Agent 会话已不存在。")
+    return [
+        _draft_to_dto(draft)
+        for draft in container.collection_agent_repository.list_drafts(
+            collection_id,
+            session_id=session_id,
+            include_applied=include_applied,
+            limit=200,
+        )
+    ]
+
+
+@router.get("/{collection_id}/agent/drafts/{draft_id}", response_model=CollectionAgentDraftOut)
+def get_collection_agent_draft(
+    collection_id: str,
+    draft_id: str,
+    container: AppContainer = Depends(get_container),
+) -> CollectionAgentDraftOut:
+    _collection_or_404(collection_id, container)
+    draft = container.collection_agent_repository.get_draft(draft_id)
+    if draft is None or draft.collection_id != collection_id:
+        raise HTTPException(404, "这份 Agent 草稿已不存在。")
+    return _draft_to_dto(draft)
+
+
+@router.put("/{collection_id}/agent/drafts/{draft_id}", response_model=CollectionAgentDraftOut)
+def update_collection_agent_draft(
+    collection_id: str,
+    draft_id: str,
+    data: CollectionAgentDraftUpdate,
+    container: AppContainer = Depends(get_container),
+) -> CollectionAgentDraftOut:
+    _collection_or_404(collection_id, container)
+    draft = container.collection_agent_repository.get_draft(draft_id)
+    if draft is None or draft.collection_id != collection_id:
+        raise HTTPException(404, "这份 Agent 草稿已不存在。")
+    try:
+        updated = container.collection_agent_repository.update_draft(
+            draft_id,
+            title=data.title,
+            content=data.content,
+            brief=data.brief,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    assert updated is not None
+    return _draft_to_dto(updated)
+
+
+def _entry_body_hash(body: str) -> str:
+    return hashlib.sha256((body or "").encode("utf-8")).hexdigest()
+
+
+@router.post(
+    "/{collection_id}/agent/drafts/{draft_id}/apply",
+    response_model=CollectionAgentDraftApplyOut,
+)
+def apply_collection_agent_draft(
+    collection_id: str,
+    draft_id: str,
+    data: CollectionAgentDraftApply,
+    container: AppContainer = Depends(get_container),
+) -> CollectionAgentDraftApplyOut:
+    _collection_or_404(collection_id, container)
+    draft = container.collection_agent_repository.get_draft(draft_id)
+    if draft is None or draft.collection_id != collection_id:
+        raise HTTPException(404, "这份 Agent 草稿已不存在。")
+    operation = (data.operation or "").strip()
+    if operation not in {"create_article", "append", "replace_selection"}:
+        raise HTTPException(400, "草稿写回方式无效。")
+    if draft.status == "applied":
+        entry = container.entry_repository.get(draft.target_entry_id or "")
+        if entry is None:
+            raise HTTPException(409, "这份草稿已应用，但目标文章已不存在。")
+        return CollectionAgentDraftApplyOut(
+            draft=_draft_to_dto(draft),
+            entry_id=entry.id,
+            article_title=entry.title,
+            operation=(draft.applied_ref_id or operation).split(":", 1)[0],
+        )
+
+    version_id: Optional[str] = None
+    if operation == "create_article":
+        entry = container.entry_repository.create(
+            title=(data.article_title or draft.title).strip() or "Agent 场景草稿",
+            body=draft.content,
+        )
+        container.collection_repository.add_entry(collection_id, entry.id)
+    else:
+        entry_id = (data.target_entry_id or "").strip()
+        entry = container.entry_repository.get(entry_id)
+        in_collection = any(
+            item.id == entry_id
+            for item in container.collection_repository.list_entries(collection_id)
+        )
+        if entry is None or not in_collection:
+            raise HTTPException(400, "请选择当前作品集中的目标文章。")
+        if not data.expected_body_hash or data.expected_body_hash != _entry_body_hash(entry.body):
+            raise HTTPException(409, "文章正文已发生变化，请重新预览写回位置。")
+        if operation == "append":
+            body = entry.body.rstrip()
+            new_body = f"{body}\n\n{draft.content}" if body else draft.content
+        else:
+            start = data.selection_start
+            end = data.selection_end
+            if start is None or end is None or start >= end or end > len(entry.body):
+                raise HTTPException(400, "请选择一个明确的正文范围。")
+            if start == 0 and end == len(entry.body):
+                raise HTTPException(400, "不能用 Agent 草稿覆盖整篇文章，请选择局部文字或新建文章。")
+            selected = entry.body[start:end]
+            if selected != data.expected_selected_text:
+                raise HTTPException(409, "选中的原文已发生变化，请重新选择后再应用。")
+            new_body = entry.body[:start] + draft.content + entry.body[end:]
+        run = container.collection_agent_repository.get_run(draft.run_id or "")
+        version = container.version_history_service.save_ai_before_apply(
+            entry.id,
+            label=f"Agent 草稿：{draft.title}",
+            provider=run.provider if run else None,
+            model=run.model if run else None,
+        )
+        version_id = version.id
+        updated_entry = container.entry_repository.update(
+            entry.id,
+            title=entry.title,
+            body=new_body,
+            tags=entry.tags,
+        )
+        assert updated_entry is not None
+        entry = updated_entry
+
+    applied = container.collection_agent_repository.mark_draft_applied(
+        draft.id,
+        target_entry_id=entry.id,
+        applied_ref_id=f"{operation}:{entry.id}",
+    )
+    assert applied is not None
+    return CollectionAgentDraftApplyOut(
+        draft=_draft_to_dto(applied),
+        entry_id=entry.id,
+        article_title=entry.title,
+        operation=operation,
+        version_id=version_id,
+    )
+
+
+@router.post("/{collection_id}/agent/drafts/delete", response_model=dict[str, int])
+def delete_collection_agent_drafts(
+    collection_id: str,
+    data: CollectionAgentDraftDeleteMany,
+    container: AppContainer = Depends(get_container),
+) -> dict[str, int]:
+    _collection_or_404(collection_id, container)
+    deleted = (
+        container.collection_agent_repository.clear_unapplied_drafts(collection_id)
+        if data.clear_all
+        else container.collection_agent_repository.delete_drafts(collection_id, data.draft_ids)
+    )
+    return {"deleted": deleted}
+
+
+@router.get(
+    "/{collection_id}/agent/style-samples",
+    response_model=list[CollectionAgentStyleSampleOut],
+)
+def list_collection_agent_style_samples(
+    collection_id: str,
+    container: AppContainer = Depends(get_container),
+) -> list[CollectionAgentStyleSampleOut]:
+    _collection_or_404(collection_id, container)
+    return [
+        _style_sample_to_dto(item)
+        for item in container.collection_agent_repository.list_style_samples(collection_id)
+    ]
+
+
+@router.post(
+    "/{collection_id}/agent/style-samples",
+    response_model=CollectionAgentStyleSampleOut,
+    status_code=201,
+)
+def start_collection_agent_style_sample(
+    collection_id: str,
+    data: CollectionAgentStyleSampleCreate,
+    container: AppContainer = Depends(get_container),
+) -> CollectionAgentStyleSampleOut:
+    _collection_or_404(collection_id, container)
+    entry = container.entry_repository.get(data.entry_id)
+    if entry is None or not any(
+        item.id == entry.id for item in container.collection_repository.list_entries(collection_id)
+    ):
+        raise HTTPException(400, "请选择当前作品集中的文章。")
+    sample = container.collection_agent_repository.create_style_sample(
+        collection_id,
+        entry_id=entry.id,
+        original_body=entry.body,
+    )
+    return _style_sample_to_dto(sample)
+
+
+@router.post(
+    "/{collection_id}/agent/style-samples/{sample_id}/complete",
+    response_model=CollectionAgentStyleSampleOut,
+)
+def complete_collection_agent_style_sample(
+    collection_id: str,
+    sample_id: str,
+    container: AppContainer = Depends(get_container),
+) -> CollectionAgentStyleSampleOut:
+    _collection_or_404(collection_id, container)
+    sample = container.collection_agent_repository.get_style_sample(sample_id)
+    if sample is None or sample.collection_id != collection_id:
+        raise HTTPException(404, "这个写作闭环样本已不存在。")
+    if sample.status == "completed":
+        return _style_sample_to_dto(sample)
+    entry = container.entry_repository.get(sample.entry_id)
+    if entry is None:
+        raise HTTPException(400, "样本文章已不存在。")
+    completed = container.collection_agent_repository.complete_style_sample(
+        sample_id,
+        final_body=entry.body,
+    )
+    assert completed is not None
+    return _style_sample_to_dto(completed)
+
+
+@router.get("/{collection_id}/agent/author-portrait", response_model=AuthorPortraitOut)
+def get_collection_agent_author_portrait(
+    collection_id: str,
+    container: AppContainer = Depends(get_container),
+) -> AuthorPortraitOut:
+    _collection_or_404(collection_id, container)
+    completed = container.collection_agent_repository.count_completed_style_samples()
+    return _portrait_to_dto(
+        container.collection_agent_repository.get_author_portrait(),
+        completed_style_cycles=completed,
+    )
+
+
+@router.put("/{collection_id}/agent/author-portrait", response_model=AuthorPortraitOut)
+def save_collection_agent_author_portrait(
+    collection_id: str,
+    data: AuthorPortraitUpdate,
+    container: AppContainer = Depends(get_container),
+) -> AuthorPortraitOut:
+    _collection_or_404(collection_id, container)
+    completed = container.collection_agent_repository.count_completed_style_samples()
+    portrait = container.collection_agent_repository.save_author_portrait(
+        tags=data.tags,
+        summary=data.summary,
+        evidence_count=completed,
+        reason="manual",
+    )
+    return _portrait_to_dto(portrait, completed_style_cycles=completed)
+
+
+@router.get(
+    "/{collection_id}/agent/author-portrait/versions",
+    response_model=list[AuthorPortraitVersionOut],
+)
+def list_collection_agent_author_portrait_versions(
+    collection_id: str,
+    container: AppContainer = Depends(get_container),
+) -> list[AuthorPortraitVersionOut]:
+    _collection_or_404(collection_id, container)
+    return [
+        _portrait_version_to_dto(item)
+        for item in container.collection_agent_repository.list_author_portrait_versions()
+    ]
+
+
+@router.post(
+    "/{collection_id}/agent/author-portrait/versions/{version_id}/restore",
+    response_model=AuthorPortraitOut,
+)
+def restore_collection_agent_author_portrait_version(
+    collection_id: str,
+    version_id: str,
+    container: AppContainer = Depends(get_container),
+) -> AuthorPortraitOut:
+    _collection_or_404(collection_id, container)
+    portrait = container.collection_agent_repository.restore_author_portrait_version(version_id)
+    if portrait is None:
+        raise HTTPException(404, "这个作者画像版本已不存在。")
+    completed = container.collection_agent_repository.count_completed_style_samples()
+    return _portrait_to_dto(portrait, completed_style_cycles=completed)
 
 
 def _apply_collection_agent_action(
@@ -1507,6 +2519,20 @@ def _apply_collection_agent_action(
         )
         return note.id
 
+    if action.action_type == "update_author_portrait":
+        tags = payload.get("tags")
+        summary = str(payload.get("summary") or "").strip()
+        if not isinstance(tags, list) or not summary:
+            raise ValueError("作者画像提案缺少标签或描述。")
+        completed = container.collection_agent_repository.count_completed_style_samples()
+        portrait = container.collection_agent_repository.save_author_portrait(
+            tags=[str(tag).strip() for tag in tags if str(tag).strip()],
+            summary=summary,
+            evidence_count=completed,
+            reason=f"agent_action:{action.id}",
+        )
+        return f"author_portrait:{portrait.id}"
+
     raise ValueError("不支持的 Agent 提案类型。")
 
 
@@ -1522,7 +2548,7 @@ def apply_collection_agent_action(
         raise HTTPException(404, "这个 Agent 提案已不存在。")
     if action.status == "applied":
         return _action_to_dto(action)
-    if action.status != "pending":
+    if action.status not in {"pending", "deferred"}:
         raise HTTPException(400, "这个 Agent 提案已经处理过。")
     try:
         applied_ref_id = _apply_collection_agent_action(action, container)
@@ -1550,6 +2576,23 @@ def reject_collection_agent_action(
     if action.status == "applied":
         raise HTTPException(400, "已应用的提案不能拒绝。")
     updated = container.collection_agent_repository.set_action_status(action_id, "rejected")
+    assert updated is not None
+    return _action_to_dto(updated)
+
+
+@router.post("/{collection_id}/agent/actions/{action_id}/defer", response_model=CollectionAgentActionOut)
+def defer_collection_agent_action(
+    collection_id: str,
+    action_id: str,
+    container: AppContainer = Depends(get_container),
+) -> CollectionAgentActionOut:
+    _collection_or_404(collection_id, container)
+    action = container.collection_agent_repository.get_action(action_id)
+    if action is None or action.collection_id != collection_id:
+        raise HTTPException(404, "这个 Agent 提案已不存在。")
+    if action.status == "applied":
+        raise HTTPException(400, "已应用的提案不能稍后处理。")
+    updated = container.collection_agent_repository.set_action_status(action_id, "deferred")
     assert updated is not None
     return _action_to_dto(updated)
 

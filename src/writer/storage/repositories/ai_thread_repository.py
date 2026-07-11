@@ -192,3 +192,11 @@ class AiThreadRepository:
             (thread_id, limit),
         ).fetchall()
         return list(reversed([_row_to_message(r) for r in rows]))
+
+    def clear_messages(self, thread_id: str) -> int:
+        cur = self._conn.execute(
+            "DELETE FROM ai_messages WHERE thread_id = ?",
+            (thread_id,),
+        )
+        self.touch(thread_id)
+        return cur.rowcount or 0

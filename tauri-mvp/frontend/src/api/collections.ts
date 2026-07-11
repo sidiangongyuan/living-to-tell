@@ -97,7 +97,94 @@ export interface CollectionAgentSettings {
   collection_id: string
   profile_id: string
   enabled: boolean
+  active_session_id: string | null
   updated_at: string | null
+}
+
+export type CollectionAgentMode = 'discuss' | 'plan' | 'draft' | 'review'
+
+export interface CollectionAgentSession {
+  id: string
+  collection_id: string
+  thread_id: string
+  title: string
+  mode: CollectionAgentMode
+  summary: string
+  archived: boolean
+  message_count: number
+  run_count: number
+  draft_count: number
+  created_at: string | null
+  updated_at: string | null
+  last_message_at: string | null
+}
+
+export interface CollectionAgentDraftBrief {
+  target_scene: string
+  pov: string
+  tense: string
+  target_length: number | null
+  must_happen: string[]
+  avoid: string[]
+}
+
+export interface CollectionAgentDraft {
+  id: string
+  collection_id: string
+  session_id: string
+  run_id: string | null
+  parent_draft_id: string | null
+  title: string
+  content: string
+  brief: Partial<CollectionAgentDraftBrief>
+  variant_label: string
+  status: 'draft' | 'applied' | string
+  target_entry_id: string | null
+  applied_ref_id: string | null
+  content_hash: string
+  created_at: string | null
+  updated_at: string | null
+  applied_at: string | null
+}
+
+export interface CollectionAgentDraftApplyResult {
+  draft: CollectionAgentDraft
+  entry_id: string
+  article_title: string
+  operation: 'create_article' | 'append' | 'replace_selection' | string
+  version_id: string | null
+}
+
+export interface CollectionAgentStyleSample {
+  id: string
+  collection_id: string
+  entry_id: string
+  original_body: string
+  final_body: string
+  status: 'active' | 'completed' | string
+  created_at: string | null
+  completed_at: string | null
+}
+
+export interface AuthorPortrait {
+  id: string
+  tags: string[]
+  summary: string
+  evidence_count: number
+  completed_style_cycles: number
+  reminder_due: boolean
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface AuthorPortraitVersion {
+  id: string
+  portrait_id: string
+  tags: string[]
+  summary: string
+  evidence_count: number
+  reason: string
+  created_at: string | null
 }
 
 export interface CollectionAgentReference {
@@ -122,6 +209,7 @@ export type CollectionAgentActionType =
   | 'create_outline_item'
   | 'update_outline_item'
   | 'create_article_note'
+  | 'update_author_portrait'
 
 export interface CollectionAgentAction {
   id: string
@@ -155,6 +243,9 @@ export interface CollectionAgentRun {
   provider: string | null
   model: string | null
   transport: string | null
+  session_id: string | null
+  mode: CollectionAgentMode
+  draft_id: string | null
   created_at: string | null
   started_at: string | null
   updated_at: string | null
@@ -175,6 +266,12 @@ export interface CollectionAgentState {
   runs: CollectionAgentRun[]
   actions: CollectionAgentAction[]
   profiles: CollectionAgentProfileOption[]
+  sessions: CollectionAgentSession[]
+  active_session_id: string | null
+  drafts: CollectionAgentDraft[]
+  author_portrait: AuthorPortrait | null
+  style_samples: CollectionAgentStyleSample[]
+  active_run: CollectionAgentRun | null
 }
 
 export interface CollectionAgentRunCreate {
@@ -183,6 +280,10 @@ export interface CollectionAgentRunCreate {
   context_refs?: Array<{ kind: string; ref_id: string }>
   request_web_context?: boolean
   profile_id?: string | null
+  session_id?: string | null
+  mode?: CollectionAgentMode
+  draft_brief?: CollectionAgentDraftBrief | null
+  parent_draft_id?: string | null
 }
 
 export const collectionsApi = {
@@ -312,9 +413,48 @@ export const collectionsApi = {
     return handleResponse(res)
   },
 
-  async getAgentState(collectionId: string): Promise<CollectionAgentState> {
-    const res = await apiFetch(`/api/collections/${collectionId}/agent`)
+  async getAgentState(collectionId: string, sessionId?: string | null): Promise<CollectionAgentState> {
+    const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''
+    const res = await apiFetch(`/api/collections/${collectionId}/agent${query}`)
     return handleResponse(res)
+  },
+
+  async createAgentSession(collectionId: string, data: { title: string; mode: CollectionAgentMode }): Promise<CollectionAgentSession> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async updateAgentSession(collectionId: string, sessionId: string, data: { title?: string; mode?: CollectionAgentMode; archived?: boolean }): Promise<CollectionAgentSession> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/sessions/${sessionId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async activateAgentSession(collectionId: string, sessionId: string): Promise<CollectionAgentState> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/sessions/${sessionId}/activate`, { method: 'POST' })
+    return handleResponse(res)
+  },
+
+  async compactAgentSession(collectionId: string, sessionId: string): Promise<CollectionAgentSession> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/sessions/${sessionId}/compact`, { method: 'POST' })
+    return handleResponse(res)
+  },
+
+  async clearAgentSession(collectionId: string, sessionId: string): Promise<CollectionAgentState> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/sessions/${sessionId}/clear`, { method: 'POST' })
+    return handleResponse(res)
+  },
+
+  async deleteAgentSession(collectionId: string, sessionId: string): Promise<void> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/sessions/${sessionId}`, { method: 'DELETE' })
+    if (!res.ok) await handleResponse(res)
   },
 
   async saveAgentSettings(collectionId: string, data: { profile_id: string; enabled: boolean }): Promise<CollectionAgentSettings> {
@@ -380,6 +520,86 @@ export const collectionsApi = {
     const res = await apiFetch(`/api/collections/${collectionId}/agent/actions/${actionId}/reject`, {
       method: 'POST',
     })
+    return handleResponse(res)
+  },
+
+  async deferAgentAction(collectionId: string, actionId: string): Promise<CollectionAgentAction> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/actions/${actionId}/defer`, {
+      method: 'POST',
+    })
+    return handleResponse(res)
+  },
+
+  async updateAgentDraft(collectionId: string, draftId: string, data: { title: string; content: string; brief: Partial<CollectionAgentDraftBrief> }): Promise<CollectionAgentDraft> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/drafts/${draftId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async applyAgentDraft(collectionId: string, draftId: string, data: {
+    operation: 'create_article' | 'append' | 'replace_selection'
+    target_entry_id?: string | null
+    article_title?: string
+    expected_body_hash?: string
+    selection_start?: number | null
+    selection_end?: number | null
+    expected_selected_text?: string
+  }): Promise<CollectionAgentDraftApplyResult> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/drafts/${draftId}/apply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async deleteAgentDrafts(collectionId: string, draftIds: string[], clearAll = false): Promise<{ deleted: number }> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/drafts/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ draft_ids: draftIds, clear_all: clearAll }),
+    })
+    return handleResponse(res)
+  },
+
+  async listAgentStyleSamples(collectionId: string): Promise<CollectionAgentStyleSample[]> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/style-samples`)
+    return handleResponse(res)
+  },
+
+  async startAgentStyleSample(collectionId: string, entryId: string): Promise<CollectionAgentStyleSample> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/style-samples`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entry_id: entryId }),
+    })
+    return handleResponse(res)
+  },
+
+  async completeAgentStyleSample(collectionId: string, sampleId: string): Promise<CollectionAgentStyleSample> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/style-samples/${sampleId}/complete`, { method: 'POST' })
+    return handleResponse(res)
+  },
+
+  async saveAuthorPortrait(collectionId: string, data: { tags: string[]; summary: string }): Promise<AuthorPortrait> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/author-portrait`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async listAuthorPortraitVersions(collectionId: string): Promise<AuthorPortraitVersion[]> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/author-portrait/versions`)
+    return handleResponse(res)
+  },
+
+  async restoreAuthorPortraitVersion(collectionId: string, versionId: string): Promise<AuthorPortrait> {
+    const res = await apiFetch(`/api/collections/${collectionId}/agent/author-portrait/versions/${versionId}/restore`, { method: 'POST' })
     return handleResponse(res)
   },
 }

@@ -51,7 +51,7 @@ test.describe('real author workspace journey', () => {
       await collectionCard.getByRole('button', { name: '打开' }).click()
       await expect(page).toHaveURL(new RegExp(`/collections\\?id=${sample.collection_id}`))
       await expect(page.getByRole('heading', { name: '示例项目｜雨夜来信', exact: true })).toBeVisible()
-      await expect(page.getByTestId('collection-outline-reader').getByRole('heading', { name: '第一部：信件抵达', exact: true })).toBeVisible()
+      await expect(page.getByTestId('collection-outline-reader').getByRole('heading', { name: '雨夜来信', exact: true })).toBeVisible()
       await page.screenshot({ path: testInfo.outputPath('02-collection-structure.png'), fullPage: false })
       await page.setViewportSize({ width: 1024, height: 768 })
       await expect(page.getByTestId('collection-outline-reader')).toBeVisible()

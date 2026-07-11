@@ -110,6 +110,21 @@ Common mistakes:
 - **How do I put several articles under one chapter?** A chapter can link one article directly and also contain child nodes. Select the chapter, then create children or place unplanned articles below it.
 - **Can I plan before writing articles?** Yes. Structure nodes can stay unlinked until you create or attach articles.
 
+### Co-create with the Collection Agent
+
+The Agent is bound to the current collection. It can explore a novel from zero, discuss alternatives, turn decisions into structure, write scene candidates, and review continuity. It never treats a conversation as canon and never writes a draft into the manuscript by itself.
+
+1. Open the collection's **Agent** tab and create a named session for a concrete line of work, such as `First-act discovery` or `Protagonist arc`.
+2. Choose **Discuss**, **Plan**, **Draft**, or **Review**. The selected AI profile applies to the next run; the collection default is managed in the Context panel.
+3. Type naturally. Use `@` only when the Agent needs a specific article, structure node, AI Card, motif, or reference passage. The Context panel shows what the next run can read.
+4. In Draft mode, fill only the useful scene constraints: target scene, point of view, tense, approximate length, required beats, and things to avoid.
+5. Generated prose is saved in the local Draft Library. Edit it there, request a variant, or leave the page and return later.
+6. Apply a draft by creating a new article, appending to an existing article, or replacing one explicit, unique selection. Existing-article write-back checks for text drift and creates a version snapshot first.
+7. Keep confirmed book facts in the **Project Bible**. Normal chat, session summaries, rejected proposals, and unapplied drafts do not enter long-term memory.
+8. A complete author-style evidence cycle starts from your chapter draft and ends when you mark the revised chapter complete. After three new cycles the app offers, but never runs automatically, an Author Portrait update proposal.
+
+Leaving the Agent tab does not cancel an active run. Returning reconnects to the stored run state without resending the provider request. **Interrupt** stops local waiting; a provider request already sent may still finish or incur cost.
+
 ## 5. Reference Library and Motif Star Map
 
 Use References for reusable passages, source details, usage notes, and personal reading notes. Use Motifs to connect selected text to recurring images, symbols, or ideas.

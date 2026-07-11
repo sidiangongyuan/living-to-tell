@@ -1775,6 +1775,9 @@ test('collection agent reference picker, quick task confirmation, prompt index, 
     provider: 'fake',
     model: 'fake-agent-model',
     transport: 'fake',
+    session_id: 'session-agent',
+    mode: 'discuss',
+    draft_id: null,
     created_at: '2026-07-07T08:00:00Z',
     started_at: '2026-07-07T08:00:01Z',
     updated_at: '2026-07-07T08:00:02Z',
@@ -1786,11 +1789,27 @@ test('collection agent reference picker, quick task confirmation, prompt index, 
   ]
   let runRequests = 0
   let clearRequests = 0
+  const session: any = {
+    id: 'session-agent',
+    collection_id: collection.id,
+    thread_id: 'thread-agent',
+    title: '共同构思',
+    mode: 'discuss',
+    summary: '',
+    archived: false,
+    message_count: 2,
+    run_count: 1,
+    draft_count: 0,
+    created_at: null,
+    updated_at: null,
+    last_message_at: null,
+  }
   const agentState = () => ({
     settings: {
       collection_id: collection.id,
       profile_id: 'default',
       enabled: true,
+      active_session_id: session.id,
       updated_at: null,
     },
     memory: baseMemory,
@@ -1799,6 +1818,21 @@ test('collection agent reference picker, quick task confirmation, prompt index, 
     runs: agentRuns,
     actions: [],
     profiles: [{ id: 'default', name: '默认配置' }],
+    sessions: [session],
+    active_session_id: session.id,
+    drafts: [],
+    style_samples: [],
+    author_portrait: {
+      id: 'global',
+      tags: [],
+      summary: '',
+      evidence_count: 0,
+      completed_style_cycles: 0,
+      reminder_due: false,
+      created_at: null,
+      updated_at: null,
+    },
+    active_run: null,
   })
 
   await page.route(/\/api\/collections\/collection-a\/agent(?:\/.*)?(?:\?.*)?$/, async (route) => {
@@ -1854,6 +1888,7 @@ test('collection agent reference picker, quick task confirmation, prompt index, 
           collection_id: collection.id,
           profile_id: 'default',
           enabled: true,
+          active_session_id: session.id,
           updated_at: null,
         },
       })
@@ -1868,19 +1903,19 @@ test('collection agent reference picker, quick task confirmation, prompt index, 
 
   await page.goto('/collections?id=collection-a&tab=agent')
   await expect(page.getByTestId('collection-agent-panel')).toBeVisible({ timeout: 20000 })
-  await expect(page.getByText('会话索引')).toBeVisible()
+  await expect(page.getByText('共创工作台')).toBeVisible()
   await expect(page.getByText('展开完整回答')).toBeVisible()
 
-  await page.getByRole('button', { name: '+ 添加引用' }).click()
-  await expect(page.getByPlaceholder('搜索结构节点、文章、AI卡片、意象、文脉')).toBeVisible()
-  await page.getByRole('button', { name: /^结构 旧信/ }).click()
+  await page.getByRole('button', { name: '@ 引用' }).click()
+  await expect(page.getByPlaceholder('搜索结构、文章、卡片、意象或文脉')).toBeVisible()
+  await page.getByRole('button', { name: '结构 旧信 主角收到旧信。' }).click()
   await expect(page.getByText(/结构 · 旧信 ×/)).toBeVisible()
-  await expect(page.getByPlaceholder('搜索结构节点、文章、AI卡片、意象、文脉')).toHaveCount(0)
+  await expect(page.getByPlaceholder('搜索结构、文章、卡片、意象或文脉')).toHaveCount(0)
 
   const agentPromptBox = page.getByPlaceholder(/输入 @ 加引用/)
   await agentPromptBox.fill('@旧信')
-  await expect(page.getByPlaceholder('搜索结构节点、文章、AI卡片、意象、文脉')).toBeVisible()
-  await page.getByRole('button', { name: /^结构 旧信/ }).click()
+  await expect(page.getByPlaceholder('搜索结构、文章、卡片、意象或文脉')).toBeVisible()
+  await page.getByRole('button', { name: '结构 旧信 主角收到旧信。' }).click()
   await expect(agentPromptBox).toHaveValue('')
 
   await agentPromptBox.fill('/')
@@ -1894,23 +1929,23 @@ test('collection agent reference picker, quick task confirmation, prompt index, 
   await page.getByRole('button', { name: /检查连续性/ }).click()
   expect(runRequests).toBe(0)
   await expect(page.getByText('准备运行：检查连续性')).toBeVisible()
-  await page.getByRole('button', { name: '确认运行' }).click()
+  await page.getByRole('button', { name: '确认', exact: true }).click()
   await expect.poll(() => runRequests).toBe(1)
   await expect(page.getByText('连续性检查已完成')).toBeVisible()
 
-  const promptIndex = page.locator('aside').filter({ hasText: '会话索引' })
-  await promptIndex.getByPlaceholder('搜索 prompt').fill('连续性')
+  const promptIndex = page.locator('aside').filter({ hasText: '本会话 Prompt' })
+  await promptIndex.getByPlaceholder('查找我问过的问题').fill('连续性')
   await promptIndex.getByRole('button', { name: /检查连续性/ }).first().click()
   await expect(page.locator('#collection-agent-run-agent-run-new')).toHaveClass(/ring-2/)
 
   await agentPromptBox.fill('/init')
-  await page.getByRole('button', { name: '发送给 Agent' }).click()
+  await page.getByRole('button', { name: '发送', exact: true }).click()
   await expect(page.getByText('准备运行：初始化 Agent')).toBeVisible()
   expect(runRequests).toBe(1)
   await page.getByRole('button', { name: '取消' }).click()
 
   await agentPromptBox.fill('/clear')
-  await page.getByRole('button', { name: '发送给 Agent' }).click()
+  await page.getByRole('button', { name: '发送', exact: true }).click()
   await expect(page.getByRole('heading', { name: '清空 Agent 会话？' })).toBeVisible()
   await page.getByRole('button', { name: '取消' }).click()
 
@@ -1918,7 +1953,134 @@ test('collection agent reference picker, quick task confirmation, prompt index, 
   await expect(page.getByRole('heading', { name: '清空 Agent 会话？' })).toBeVisible()
   await page.getByRole('button', { name: '确认清空' }).click()
   await expect.poll(() => clearRequests).toBe(1)
-  await expect(page.getByText('还没有 Agent 记录')).toBeVisible()
+  await expect(page.getByText('从一句还没成形的想法开始')).toBeVisible()
+})
+
+test('collection agent draft mode keeps a local draft and previews article writeback', async ({ page }) => {
+  const session = {
+    id: 'session-draft',
+    collection_id: collection.id,
+    thread_id: 'thread-draft',
+    title: '第一章共创',
+    mode: 'discuss',
+    summary: '',
+    archived: false,
+    message_count: 0,
+    run_count: 0,
+    draft_count: 0,
+    created_at: null,
+    updated_at: null,
+    last_message_at: null,
+  }
+  const draft: any = {
+    id: 'draft-a',
+    collection_id: collection.id,
+    session_id: session.id,
+    run_id: 'run-draft',
+    parent_draft_id: null,
+    title: '雨夜拆信',
+    content: '她把信封翻到背面，雨声盖住纸张裂开的轻响。',
+    brief: { target_scene: '雨夜拆信', pov: '第三人称限知', tense: '', target_length: 1200, must_happen: [], avoid: [] },
+    variant_label: '',
+    status: 'draft',
+    target_entry_id: null,
+    applied_ref_id: null,
+    content_hash: 'hash',
+    created_at: null,
+    updated_at: null,
+    applied_at: null,
+  }
+  const run: any = {
+    id: 'run-draft',
+    collection_id: collection.id,
+    thread_id: session.thread_id,
+    status: 'succeeded',
+    stage: 'succeeded',
+    stage_label: '已完成',
+    request: { message: '写这个场景。', task_type: 'free_chat', mode: 'draft' },
+    result: { answer: '候选草稿已保存。', evidence: [], next_steps: [], draft_id: draft.id },
+    error: '',
+    profile_id: 'default',
+    provider: 'fake',
+    model: 'fake-draft-model',
+    transport: 'fake',
+    session_id: session.id,
+    mode: 'draft',
+    draft_id: draft.id,
+    created_at: null,
+    started_at: null,
+    updated_at: null,
+    completed_at: null,
+    actions: [],
+  }
+  let drafts: any[] = []
+  let runPayload: Record<string, unknown> | null = null
+  let applyRequests = 0
+  const state = () => ({
+    settings: { collection_id: collection.id, profile_id: 'default', enabled: true, active_session_id: session.id, updated_at: null },
+    memory: { collection_id: collection.id, updated_at: null, sections: [] },
+    thread_id: session.thread_id,
+    messages: [],
+    runs: runPayload ? [run] : [],
+    actions: [],
+    profiles: [{ id: 'default', name: '默认配置' }],
+    sessions: [session],
+    active_session_id: session.id,
+    drafts,
+    style_samples: [],
+    author_portrait: { id: 'global', tags: [], summary: '', evidence_count: 0, completed_style_cycles: 0, reminder_due: false, created_at: null, updated_at: null },
+    active_run: null,
+  })
+
+  await page.route(/\/api\/collections\/collection-a\/agent(?:\/.*)?(?:\?.*)?$/, async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (url.pathname === `/api/collections/${collection.id}/agent/sessions/${session.id}` && request.method() === 'PUT') {
+      const body = request.postDataJSON() as { mode?: string }
+      if (body.mode) session.mode = body.mode
+      await route.fulfill({ json: session })
+      return
+    }
+    if (url.pathname === `/api/collections/${collection.id}/agent/runs` && request.method() === 'POST') {
+      runPayload = request.postDataJSON() as Record<string, unknown>
+      drafts = [draft]
+      await route.fulfill({ status: 202, json: run })
+      return
+    }
+    if (url.pathname === `/api/collections/${collection.id}/agent/runs/${run.id}`) {
+      await route.fulfill({ json: run })
+      return
+    }
+    if (url.pathname === `/api/collections/${collection.id}/agent/drafts/${draft.id}/apply` && request.method() === 'POST') {
+      applyRequests += 1
+      draft.status = 'applied'
+      draft.target_entry_id = article.id
+      draft.applied_ref_id = `create_article:${article.id}`
+      await route.fulfill({ json: { draft, entry_id: article.id, article_title: draft.title, operation: 'create_article', version_id: null } })
+      return
+    }
+    if (url.pathname === `/api/collections/${collection.id}/agent`) {
+      await route.fulfill({ json: state() })
+      return
+    }
+    await route.fallback()
+  })
+
+  await page.goto('/collections?id=collection-a&tab=agent')
+  await expect(page.getByTestId('collection-agent-panel')).toBeVisible({ timeout: 20000 })
+  await page.getByRole('button', { name: '草稿', exact: true }).click()
+  await expect(page.getByText('场景简报')).toBeVisible()
+  await page.getByPlaceholder('目标场景，例如：雨夜收到旧信').fill('雨夜拆信')
+  await page.getByPlaceholder(/描述这一场/).fill('写这个场景。')
+  await page.getByRole('button', { name: '生成草稿' }).click()
+  await expect.poll(() => runPayload?.mode).toBe('draft')
+  expect((runPayload?.draft_brief as { target_scene?: string }).target_scene).toBe('雨夜拆信')
+  await expect(page.getByText('草稿库')).toBeVisible()
+  await expect(page.getByText('雨夜拆信').last()).toBeVisible()
+  await page.getByRole('button', { name: '写入文章...' }).click()
+  await expect(page.getByRole('heading', { name: '将草稿写入文章' })).toBeVisible()
+  await page.getByRole('button', { name: '确认写入' }).click()
+  await expect.poll(() => applyRequests).toBe(1)
 })
 
 test('collection planning board groups outline items and opens the selected outline detail', async ({ page }) => {

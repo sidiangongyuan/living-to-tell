@@ -142,6 +142,7 @@ def build_container(db_path: Optional[Path] = None) -> AppContainer:
     collection_repo = CollectionRepository(conn)
     collection_outline_repo = CollectionOutlineRepository(conn)
     collection_agent_repo = CollectionAgentRepository(conn)
+    collection_agent_repo.mark_stale_runs_failed()
     work_ref_repo = WorkFragmentRefRepository(conn)
     work_version_repo = WorkVersionRepository(conn)
     work_service = WorkService(

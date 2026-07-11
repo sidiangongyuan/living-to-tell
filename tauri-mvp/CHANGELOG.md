@@ -1,5 +1,38 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.45 - Collection Coauthor Agent (2026-07-11)
+
+### Added
+
+- Added named Agent sessions inside each collection. Sessions keep separate conversations and draft work while sharing one author-confirmed Project Bible.
+- Added four explicit coauthoring modes: `Discuss`, `Plan`, `Draft`, and `Review`, each with a focused context recipe rather than one generic chat prompt.
+- Added real multi-turn context with a visible session work summary, the latest six turns, collection structure, shared canon, and explicit `@` references. Raw messages remain stored locally when older context is summarized.
+- Added a persistent local Agent Draft Library with scene briefs, editable primary drafts, on-demand variants, selective cleanup, and applied-draft history.
+- Added safe draft write-back: create a new article, append to an existing article, or replace one explicit unique selection. Existing-article writes verify text drift and create an `AI_BEFORE_APPLY` version first.
+- Added author-style evidence cycles and a reusable Author Portrait with version history. Three new completed chapter cycles produce a local reminder; no provider request runs until the author asks for a proposal.
+
+### Changed
+
+- Rebuilt the Collection Agent as a responsive three-pane coauthoring workspace: sessions and prompt navigation on the left, conversation and modes in the center, and on-demand context, drafts, proposals, and memory on the right.
+- Collection Agent can now freely brainstorm a novel from zero and write candidate scene prose, while keeping every draft outside the manuscript until explicit author confirmation.
+- Agent runs now use one explicitly selected profile per request. Each collection stores a default profile, while the top selector can override only the next run.
+- Active Agent work remains recoverable when leaving the tab. Application restart marks an unfinished persisted run as failed without automatically resending a provider request.
+
+### Safety
+
+- Normal conversations, local session summaries, rejected proposals, and unapplied drafts never become project canon automatically.
+- Draft cleanup and session cleanup are separate. Project memory, applied articles, version snapshots, and pending proposals are protected from ordinary conversation clearing.
+- Interrupting a run stops local waiting but still explains that an already-sent provider request may finish or incur cost.
+
+### Verification
+
+- `D:\anaconda\envs\writer\python.exe -m pytest tests\test_tauri_mvp_api.py tests\storage\test_motif_repository.py tests\storage\test_collection_outline_repository.py tests\storage\test_database_migration.py -q`
+- `npm test -- --run`
+- `npm run test:e2e -- --project=msedge --workers=1`
+- `npm run test:e2e:real -- --project=msedge --workers=1`
+- `npm run build`
+- `cargo check --manifest-path D:\python_proj\writer\tauri-mvp\frontend\src-tauri\Cargo.toml`
+
 ## 0.1.44 - Collection and Reference Workspace Polish (2026-07-10)
 
 ### Added

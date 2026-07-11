@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 import uuid
 from typing import Any, Optional
@@ -10,12 +11,18 @@ from writer.domain.models.collection_agent import (
     COLLECTION_AGENT_ACTION_STATUSES,
     COLLECTION_AGENT_ACTION_TYPES,
     COLLECTION_AGENT_MEMORY_SECTIONS,
+    COLLECTION_AGENT_MODES,
     COLLECTION_AGENT_RUN_STATUSES,
     COLLECTION_AGENT_STAGE_LABELS,
+    AuthorPortrait,
+    AuthorPortraitVersion,
     CollectionAgentAction,
+    CollectionAgentDraft,
     CollectionAgentMemory,
     CollectionAgentRun,
+    CollectionAgentSession,
     CollectionAgentSettings,
+    CollectionAgentStyleSample,
 )
 
 
@@ -56,11 +63,23 @@ def _json_loads(value: str | None) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _json_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return [str(item).strip() for item in parsed if str(item).strip()] if isinstance(parsed, list) else []
+
+
 def _row_to_settings(row: sqlite3.Row) -> CollectionAgentSettings:
+    keys = row.keys()
     return CollectionAgentSettings(
         collection_id=row["collection_id"],
         profile_id=row["profile_id"] or "default",
         enabled=bool(row["enabled"]),
+        active_session_id=row["active_session_id"] if "active_session_id" in keys else None,
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -76,6 +95,7 @@ def _row_to_memory(row: sqlite3.Row) -> CollectionAgentMemory:
 
 
 def _row_to_run(row: sqlite3.Row) -> CollectionAgentRun:
+    keys = row.keys()
     return CollectionAgentRun(
         id=row["id"],
         collection_id=row["collection_id"],
@@ -92,6 +112,9 @@ def _row_to_run(row: sqlite3.Row) -> CollectionAgentRun:
         provider=row["provider"],
         model=row["model"],
         transport=row["transport"],
+        session_id=row["session_id"] if "session_id" in keys else None,
+        mode=(row["mode"] if "mode" in keys else "discuss") or "discuss",
+        draft_id=row["draft_id"] if "draft_id" in keys else None,
         created_at=row["created_at"],
         started_at=row["started_at"],
         updated_at=row["updated_at"],
@@ -116,6 +139,78 @@ def _row_to_action(row: sqlite3.Row) -> CollectionAgentAction:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         applied_at=row["applied_at"],
+    )
+
+
+def _row_to_session(row: sqlite3.Row) -> CollectionAgentSession:
+    return CollectionAgentSession(
+        id=row["id"],
+        collection_id=row["collection_id"],
+        thread_id=row["thread_id"],
+        title=row["title"] or "新会话",
+        mode=row["mode"] or "discuss",
+        summary=row["summary"] or "",
+        archived=bool(row["archived"]),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        last_message_at=row["last_message_at"],
+    )
+
+
+def _row_to_draft(row: sqlite3.Row) -> CollectionAgentDraft:
+    return CollectionAgentDraft(
+        id=row["id"],
+        collection_id=row["collection_id"],
+        session_id=row["session_id"],
+        run_id=row["run_id"],
+        parent_draft_id=row["parent_draft_id"],
+        title=row["title"] or "",
+        content=row["content"] or "",
+        brief=_json_loads(row["brief_json"]),
+        variant_label=row["variant_label"] or "",
+        status=row["status"] or "draft",
+        target_entry_id=row["target_entry_id"],
+        applied_ref_id=row["applied_ref_id"],
+        content_hash=row["content_hash"] or "",
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        applied_at=row["applied_at"],
+    )
+
+
+def _row_to_style_sample(row: sqlite3.Row) -> CollectionAgentStyleSample:
+    return CollectionAgentStyleSample(
+        id=row["id"],
+        collection_id=row["collection_id"],
+        entry_id=row["entry_id"],
+        original_body=row["original_body"] or "",
+        final_body=row["final_body"] or "",
+        status=row["status"] or "active",
+        created_at=row["created_at"],
+        completed_at=row["completed_at"],
+    )
+
+
+def _row_to_portrait(row: sqlite3.Row) -> AuthorPortrait:
+    return AuthorPortrait(
+        id=row["id"],
+        tags=_json_list(row["tags_json"]),
+        summary=row["summary"] or "",
+        evidence_count=int(row["evidence_count"] or 0),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _row_to_portrait_version(row: sqlite3.Row) -> AuthorPortraitVersion:
+    return AuthorPortraitVersion(
+        id=row["id"],
+        portrait_id=row["portrait_id"],
+        tags=_json_list(row["tags_json"]),
+        summary=row["summary"] or "",
+        evidence_count=int(row["evidence_count"] or 0),
+        reason=row["reason"] or "",
+        created_at=row["created_at"],
     )
 
 
@@ -158,6 +253,167 @@ class CollectionAgentRepository:
         ).fetchone()
         assert row is not None
         return _row_to_settings(row)
+
+    def set_active_session(
+        self,
+        collection_id: str,
+        session_id: Optional[str],
+    ) -> CollectionAgentSettings:
+        self.get_settings(collection_id)
+        self._conn.execute(
+            """
+            UPDATE collection_agent_settings
+               SET active_session_id = ?,
+                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE collection_id = ?
+            """,
+            (session_id, collection_id),
+        )
+        row = self._conn.execute(
+            "SELECT * FROM collection_agent_settings WHERE collection_id = ?",
+            (collection_id,),
+        ).fetchone()
+        assert row is not None
+        return _row_to_settings(row)
+
+    # sessions --------------------------------------------------------
+    def create_session(
+        self,
+        collection_id: str,
+        *,
+        thread_id: str,
+        title: str = "新会话",
+        mode: str = "discuss",
+    ) -> CollectionAgentSession:
+        clean_mode = mode if mode in COLLECTION_AGENT_MODES else "discuss"
+        session_id = uuid.uuid4().hex
+        self._conn.execute(
+            """
+            INSERT INTO collection_agent_sessions (
+                id, collection_id, thread_id, title, mode
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                collection_id,
+                thread_id,
+                (title or "").strip()[:120] or "新会话",
+                clean_mode,
+            ),
+        )
+        loaded = self.get_session(session_id)
+        assert loaded is not None
+        return loaded
+
+    def get_session(self, session_id: str) -> Optional[CollectionAgentSession]:
+        row = self._conn.execute(
+            "SELECT * FROM collection_agent_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        return _row_to_session(row) if row else None
+
+    def get_session_by_thread(self, thread_id: str) -> Optional[CollectionAgentSession]:
+        row = self._conn.execute(
+            "SELECT * FROM collection_agent_sessions WHERE thread_id = ?",
+            (thread_id,),
+        ).fetchone()
+        return _row_to_session(row) if row else None
+
+    def list_sessions(
+        self,
+        collection_id: str,
+        *,
+        include_archived: bool = False,
+    ) -> list[CollectionAgentSession]:
+        where = "collection_id = ?"
+        if not include_archived:
+            where += " AND archived = 0"
+        rows = self._conn.execute(
+            f"""
+            SELECT * FROM collection_agent_sessions
+             WHERE {where}
+             ORDER BY COALESCE(last_message_at, updated_at) DESC, created_at DESC
+            """,
+            (collection_id,),
+        ).fetchall()
+        return [_row_to_session(row) for row in rows]
+
+    def update_session(
+        self,
+        session_id: str,
+        *,
+        title: Optional[str] = None,
+        mode: Optional[str] = None,
+        archived: Optional[bool] = None,
+    ) -> Optional[CollectionAgentSession]:
+        current = self.get_session(session_id)
+        if current is None:
+            return None
+        clean_mode = mode if mode in COLLECTION_AGENT_MODES else current.mode
+        clean_title = (title if title is not None else current.title).strip()[:120] or "新会话"
+        archived_value = current.archived if archived is None else bool(archived)
+        self._conn.execute(
+            """
+            UPDATE collection_agent_sessions
+               SET title = ?, mode = ?, archived = ?,
+                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE id = ?
+            """,
+            (clean_title, clean_mode, 1 if archived_value else 0, session_id),
+        )
+        return self.get_session(session_id)
+
+    def touch_session(self, session_id: str) -> None:
+        self._conn.execute(
+            """
+            UPDATE collection_agent_sessions
+               SET last_message_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE id = ?
+            """,
+            (session_id,),
+        )
+
+    def save_session_summary(self, session_id: str, summary: str) -> Optional[CollectionAgentSession]:
+        self._conn.execute(
+            """
+            UPDATE collection_agent_sessions
+               SET summary = ?,
+                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE id = ?
+            """,
+            ((summary or "").strip(), session_id),
+        )
+        return self.get_session(session_id)
+
+    def delete_session(self, session_id: str) -> bool:
+        cur = self._conn.execute(
+            "DELETE FROM collection_agent_sessions WHERE id = ?",
+            (session_id,),
+        )
+        return cur.rowcount > 0
+
+    def session_counts(self, session_id: str) -> dict[str, int]:
+        session = self.get_session(session_id)
+        if session is None:
+            return {"messages": 0, "runs": 0, "drafts": 0}
+        messages = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM ai_messages WHERE thread_id = ?",
+            (session.thread_id,),
+        ).fetchone()
+        runs = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM collection_agent_runs WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        drafts = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM collection_agent_drafts WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        return {
+            "messages": int(messages["n"] if messages else 0),
+            "runs": int(runs["n"] if runs else 0),
+            "drafts": int(drafts["n"] if drafts else 0),
+        }
 
     # memory -----------------------------------------------------------
     def get_memory(self, collection_id: str) -> CollectionAgentMemory:
@@ -216,14 +472,18 @@ class CollectionAgentRepository:
         thread_id: Optional[str],
         profile_id: str,
         request: dict[str, Any],
+        session_id: Optional[str] = None,
+        mode: str = "discuss",
+        draft_id: Optional[str] = None,
     ) -> CollectionAgentRun:
         run_id = uuid.uuid4().hex
+        clean_mode = mode if mode in COLLECTION_AGENT_MODES else "discuss"
         self._conn.execute(
             """
             INSERT INTO collection_agent_runs (
                 id, collection_id, thread_id, status, stage, stage_label,
-                request_json, profile_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                request_json, profile_id, session_id, mode, draft_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -234,6 +494,9 @@ class CollectionAgentRepository:
                 COLLECTION_AGENT_STAGE_LABELS["queued"],
                 _json_dumps(request),
                 (profile_id or "default").strip() or "default",
+                session_id,
+                clean_mode,
+                draft_id,
             ),
         )
         loaded = self.get_run(run_id)
@@ -247,15 +510,27 @@ class CollectionAgentRepository:
         ).fetchone()
         return _row_to_run(row) if row else None
 
-    def list_runs(self, collection_id: str, *, limit: int = 20) -> list[CollectionAgentRun]:
+    def list_runs(
+        self,
+        collection_id: str,
+        *,
+        session_id: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[CollectionAgentRun]:
+        where = "collection_id = ?"
+        params: list[Any] = [collection_id]
+        if session_id:
+            where += " AND session_id = ?"
+            params.append(session_id)
+        params.append(max(1, int(limit)))
         rows = self._conn.execute(
-            """
+            f"""
             SELECT * FROM collection_agent_runs
-             WHERE collection_id = ?
+             WHERE {where}
              ORDER BY updated_at DESC, created_at DESC
              LIMIT ?
             """,
-            (collection_id, max(1, int(limit))),
+            tuple(params),
         ).fetchall()
         return [_row_to_run(row) for row in rows]
 
@@ -271,6 +546,30 @@ class CollectionAgentRepository:
         ).fetchone()
         return row is not None
 
+    def get_active_run(self, collection_id: str) -> Optional[CollectionAgentRun]:
+        row = self._conn.execute(
+            """
+            SELECT * FROM collection_agent_runs
+             WHERE collection_id = ?
+               AND status NOT IN ('succeeded', 'failed', 'cancelled')
+             ORDER BY updated_at DESC LIMIT 1
+            """,
+            (collection_id,),
+        ).fetchone()
+        return _row_to_run(row) if row else None
+
+    def has_active_run_for_session(self, session_id: str) -> bool:
+        row = self._conn.execute(
+            """
+            SELECT 1 FROM collection_agent_runs
+             WHERE session_id = ?
+               AND status NOT IN ('succeeded', 'failed', 'cancelled')
+             LIMIT 1
+            """,
+            (session_id,),
+        ).fetchone()
+        return row is not None
+
     def clear_finished_runs_and_processed_actions(self, collection_id: str) -> None:
         self._conn.execute(
             """
@@ -278,7 +577,7 @@ class CollectionAgentRepository:
                SET run_id = NULL,
                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
              WHERE collection_id = ?
-               AND status = 'pending'
+               AND status IN ('pending', 'deferred')
             """,
             (collection_id,),
         )
@@ -286,7 +585,7 @@ class CollectionAgentRepository:
             """
             DELETE FROM collection_agent_actions
              WHERE collection_id = ?
-               AND status != 'pending'
+               AND status NOT IN ('pending', 'deferred')
             """,
             (collection_id,),
         )
@@ -298,6 +597,77 @@ class CollectionAgentRepository:
             """,
             (collection_id,),
         )
+
+    def clear_session_history(self, collection_id: str, session_id: str) -> None:
+        self._conn.execute(
+            """
+            UPDATE collection_agent_actions
+               SET run_id = NULL,
+                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE collection_id = ?
+               AND status IN ('pending', 'deferred')
+               AND run_id IN (
+                   SELECT id FROM collection_agent_runs WHERE session_id = ?
+               )
+            """,
+            (collection_id, session_id),
+        )
+        self._conn.execute(
+            """
+            DELETE FROM collection_agent_actions
+             WHERE collection_id = ?
+               AND status NOT IN ('pending', 'deferred')
+               AND run_id IN (
+                   SELECT id FROM collection_agent_runs WHERE session_id = ?
+               )
+            """,
+            (collection_id, session_id),
+        )
+        self._conn.execute(
+            """
+            DELETE FROM collection_agent_runs
+             WHERE collection_id = ? AND session_id = ?
+               AND status IN ('succeeded', 'failed', 'cancelled')
+            """,
+            (collection_id, session_id),
+        )
+        self.save_session_summary(session_id, "")
+
+    def mark_stale_runs_failed(self) -> int:
+        cur = self._conn.execute(
+            """
+            UPDATE collection_agent_runs
+               SET status = 'failed', stage = 'failed', stage_label = ?,
+                   error = '应用已重新启动，上一轮 Agent 请求不会自动重发。请确认服务商账单后再决定是否重试。',
+                   completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE status NOT IN ('succeeded', 'failed', 'cancelled')
+            """,
+            (COLLECTION_AGENT_STAGE_LABELS["failed"],),
+        )
+        return cur.rowcount or 0
+
+    def attach_draft(self, run_id: str, draft_id: str) -> Optional[CollectionAgentRun]:
+        self._conn.execute(
+            """
+            UPDATE collection_agent_runs
+               SET draft_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE id = ?
+            """,
+            (draft_id, run_id),
+        )
+        return self.get_run(run_id)
+
+    def backfill_session_for_thread(self, thread_id: str, session_id: str) -> int:
+        cur = self._conn.execute(
+            """
+            UPDATE collection_agent_runs
+               SET session_id = ?
+             WHERE thread_id = ? AND session_id IS NULL
+            """,
+            (session_id, thread_id),
+        )
+        return cur.rowcount or 0
 
     def mark_run_started(self, run_id: str) -> Optional[CollectionAgentRun]:
         self._conn.execute(
@@ -415,6 +785,331 @@ class CollectionAgentRepository:
             (message_id, run_id),
         )
         return self.get_run(run_id)
+
+    # drafts ----------------------------------------------------------
+    def create_draft(
+        self,
+        collection_id: str,
+        *,
+        session_id: str,
+        title: str,
+        content: str,
+        brief: Optional[dict[str, Any]] = None,
+        run_id: Optional[str] = None,
+        parent_draft_id: Optional[str] = None,
+        variant_label: str = "",
+    ) -> CollectionAgentDraft:
+        clean_content = (content or "").strip()
+        if not clean_content:
+            raise ValueError("Agent 草稿内容不能为空")
+        draft_id = uuid.uuid4().hex
+        content_hash = hashlib.sha256(clean_content.encode("utf-8")).hexdigest()
+        self._conn.execute(
+            """
+            INSERT INTO collection_agent_drafts (
+                id, collection_id, session_id, run_id, parent_draft_id,
+                title, content, brief_json, variant_label, content_hash
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                draft_id,
+                collection_id,
+                session_id,
+                run_id,
+                parent_draft_id,
+                (title or "").strip()[:160] or "未命名场景草稿",
+                clean_content,
+                _json_dumps(brief or {}),
+                (variant_label or "").strip()[:80],
+                content_hash,
+            ),
+        )
+        loaded = self.get_draft(draft_id)
+        assert loaded is not None
+        return loaded
+
+    def get_draft(self, draft_id: str) -> Optional[CollectionAgentDraft]:
+        row = self._conn.execute(
+            "SELECT * FROM collection_agent_drafts WHERE id = ?",
+            (draft_id,),
+        ).fetchone()
+        return _row_to_draft(row) if row else None
+
+    def list_drafts(
+        self,
+        collection_id: str,
+        *,
+        session_id: Optional[str] = None,
+        include_applied: bool = True,
+        limit: int = 100,
+    ) -> list[CollectionAgentDraft]:
+        where = "collection_id = ?"
+        params: list[Any] = [collection_id]
+        if session_id:
+            where += " AND session_id = ?"
+            params.append(session_id)
+        if not include_applied:
+            where += " AND status = 'draft'"
+        params.append(max(1, int(limit)))
+        rows = self._conn.execute(
+            f"""
+            SELECT * FROM collection_agent_drafts
+             WHERE {where}
+             ORDER BY updated_at DESC, created_at DESC
+             LIMIT ?
+            """,
+            tuple(params),
+        ).fetchall()
+        return [_row_to_draft(row) for row in rows]
+
+    def update_draft(
+        self,
+        draft_id: str,
+        *,
+        title: str,
+        content: str,
+        brief: Optional[dict[str, Any]] = None,
+    ) -> Optional[CollectionAgentDraft]:
+        current = self.get_draft(draft_id)
+        if current is None:
+            return None
+        if current.status == "applied":
+            raise ValueError("已应用的草稿不能继续修改")
+        clean_content = (content or "").strip()
+        if not clean_content:
+            raise ValueError("Agent 草稿内容不能为空")
+        self._conn.execute(
+            """
+            UPDATE collection_agent_drafts
+               SET title = ?, content = ?, brief_json = ?, content_hash = ?,
+                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE id = ?
+            """,
+            (
+                (title or "").strip()[:160] or current.title,
+                clean_content,
+                _json_dumps(brief if brief is not None else current.brief),
+                hashlib.sha256(clean_content.encode("utf-8")).hexdigest(),
+                draft_id,
+            ),
+        )
+        return self.get_draft(draft_id)
+
+    def mark_draft_applied(
+        self,
+        draft_id: str,
+        *,
+        target_entry_id: str,
+        applied_ref_id: str,
+    ) -> Optional[CollectionAgentDraft]:
+        self._conn.execute(
+            """
+            UPDATE collection_agent_drafts
+               SET status = 'applied', target_entry_id = ?, applied_ref_id = ?,
+                   applied_at = COALESCE(applied_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE id = ? AND status = 'draft'
+            """,
+            (target_entry_id, applied_ref_id, draft_id),
+        )
+        return self.get_draft(draft_id)
+
+    def delete_drafts(self, collection_id: str, draft_ids: list[str]) -> int:
+        unique = list(dict.fromkeys(item for item in draft_ids if item))
+        if not unique:
+            return 0
+        placeholders = ",".join("?" for _ in unique)
+        cur = self._conn.execute(
+            f"""
+            DELETE FROM collection_agent_drafts
+             WHERE collection_id = ? AND status = 'draft'
+               AND id IN ({placeholders})
+            """,
+            (collection_id, *unique),
+        )
+        return cur.rowcount or 0
+
+    def clear_unapplied_drafts(self, collection_id: str) -> int:
+        cur = self._conn.execute(
+            "DELETE FROM collection_agent_drafts WHERE collection_id = ? AND status = 'draft'",
+            (collection_id,),
+        )
+        return cur.rowcount or 0
+
+    # author style ----------------------------------------------------
+    def create_style_sample(
+        self,
+        collection_id: str,
+        *,
+        entry_id: str,
+        original_body: str,
+    ) -> CollectionAgentStyleSample:
+        existing = self._conn.execute(
+            """
+            SELECT * FROM collection_agent_style_samples
+             WHERE collection_id = ? AND entry_id = ? AND status = 'active'
+             ORDER BY created_at DESC LIMIT 1
+            """,
+            (collection_id, entry_id),
+        ).fetchone()
+        if existing is not None:
+            return _row_to_style_sample(existing)
+        sample_id = uuid.uuid4().hex
+        self._conn.execute(
+            """
+            INSERT INTO collection_agent_style_samples (
+                id, collection_id, entry_id, original_body
+            ) VALUES (?, ?, ?, ?)
+            """,
+            (sample_id, collection_id, entry_id, original_body or ""),
+        )
+        loaded = self.get_style_sample(sample_id)
+        assert loaded is not None
+        return loaded
+
+    def get_style_sample(self, sample_id: str) -> Optional[CollectionAgentStyleSample]:
+        row = self._conn.execute(
+            "SELECT * FROM collection_agent_style_samples WHERE id = ?",
+            (sample_id,),
+        ).fetchone()
+        return _row_to_style_sample(row) if row else None
+
+    def complete_style_sample(
+        self,
+        sample_id: str,
+        *,
+        final_body: str,
+    ) -> Optional[CollectionAgentStyleSample]:
+        self._conn.execute(
+            """
+            UPDATE collection_agent_style_samples
+               SET final_body = ?, status = 'completed',
+                   completed_at = COALESCE(completed_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+             WHERE id = ? AND status = 'active'
+            """,
+            (final_body or "", sample_id),
+        )
+        return self.get_style_sample(sample_id)
+
+    def list_style_samples(self, collection_id: str) -> list[CollectionAgentStyleSample]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM collection_agent_style_samples
+             WHERE collection_id = ?
+             ORDER BY COALESCE(completed_at, created_at) DESC
+            """,
+            (collection_id,),
+        ).fetchall()
+        return [_row_to_style_sample(row) for row in rows]
+
+    def list_completed_style_samples(self, *, limit: int = 100) -> list[CollectionAgentStyleSample]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM collection_agent_style_samples
+             WHERE status = 'completed'
+             ORDER BY completed_at DESC, created_at DESC LIMIT ?
+            """,
+            (max(1, int(limit)),),
+        ).fetchall()
+        return [_row_to_style_sample(row) for row in rows]
+
+    def count_completed_style_samples(self) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM collection_agent_style_samples WHERE status = 'completed'"
+        ).fetchone()
+        return int(row["n"] if row else 0)
+
+    def get_author_portrait(self, portrait_id: str = "global") -> AuthorPortrait:
+        row = self._conn.execute(
+            "SELECT * FROM author_portraits WHERE id = ?",
+            (portrait_id,),
+        ).fetchone()
+        if row is None:
+            self._conn.execute(
+                "INSERT INTO author_portraits (id) VALUES (?)",
+                (portrait_id,),
+            )
+            row = self._conn.execute(
+                "SELECT * FROM author_portraits WHERE id = ?",
+                (portrait_id,),
+            ).fetchone()
+        assert row is not None
+        return _row_to_portrait(row)
+
+    def save_author_portrait(
+        self,
+        *,
+        tags: list[str],
+        summary: str,
+        evidence_count: Optional[int] = None,
+        reason: str = "manual",
+        portrait_id: str = "global",
+    ) -> AuthorPortrait:
+        current = self.get_author_portrait(portrait_id)
+        self._conn.execute(
+            """
+            INSERT INTO author_portrait_versions (
+                id, portrait_id, tags_json, summary, evidence_count, reason
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                uuid.uuid4().hex,
+                portrait_id,
+                json.dumps(current.tags, ensure_ascii=False),
+                current.summary,
+                current.evidence_count,
+                (reason or "").strip()[:160],
+            ),
+        )
+        cleaned_tags = list(dict.fromkeys(str(tag).strip() for tag in tags if str(tag).strip()))[:24]
+        resolved_evidence = current.evidence_count if evidence_count is None else max(0, int(evidence_count))
+        self._conn.execute(
+            """
+            UPDATE author_portraits
+               SET tags_json = ?, summary = ?, evidence_count = ?,
+                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE id = ?
+            """,
+            (
+                json.dumps(cleaned_tags, ensure_ascii=False),
+                (summary or "").strip(),
+                resolved_evidence,
+                portrait_id,
+            ),
+        )
+        return self.get_author_portrait(portrait_id)
+
+    def list_author_portrait_versions(
+        self,
+        portrait_id: str = "global",
+        *,
+        limit: int = 30,
+    ) -> list[AuthorPortraitVersion]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM author_portrait_versions
+             WHERE portrait_id = ?
+             ORDER BY created_at DESC LIMIT ?
+            """,
+            (portrait_id, max(1, int(limit))),
+        ).fetchall()
+        return [_row_to_portrait_version(row) for row in rows]
+
+    def restore_author_portrait_version(self, version_id: str) -> Optional[AuthorPortrait]:
+        row = self._conn.execute(
+            "SELECT * FROM author_portrait_versions WHERE id = ?",
+            (version_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        version = _row_to_portrait_version(row)
+        return self.save_author_portrait(
+            portrait_id=version.portrait_id,
+            tags=version.tags,
+            summary=version.summary,
+            evidence_count=version.evidence_count,
+            reason="restore",
+        )
 
     # actions ----------------------------------------------------------
     def create_action(

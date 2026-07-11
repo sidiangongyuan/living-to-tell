@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const pythonExe = process.env.WRITER_PYTHON_EXE || 'python'
+
 export default defineConfig({
   testDir: './e2e',
   testMatch: /.*\.real\.e2e\.ts/,
@@ -12,7 +14,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'python run.py',
+      command: `"${pythonExe}" run.py`,
       url: 'http://127.0.0.1:18080/health',
       cwd: '../backend',
       reuseExistingServer: false,

@@ -336,6 +336,7 @@ CREATE TABLE IF NOT EXISTS collection_agent_settings (
     collection_id TEXT PRIMARY KEY REFERENCES collections(id) ON DELETE CASCADE,
     profile_id    TEXT NOT NULL DEFAULT 'default',
     enabled       INTEGER NOT NULL DEFAULT 1,
+    active_session_id TEXT,
     created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
@@ -346,6 +347,22 @@ CREATE TABLE IF NOT EXISTS collection_agent_memory (
     created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
+
+CREATE TABLE IF NOT EXISTS collection_agent_sessions (
+    id              TEXT PRIMARY KEY,
+    collection_id   TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    thread_id       TEXT NOT NULL UNIQUE REFERENCES ai_threads(id) ON DELETE CASCADE,
+    title           TEXT NOT NULL DEFAULT '新会话',
+    mode            TEXT NOT NULL DEFAULT 'discuss',
+    summary         TEXT NOT NULL DEFAULT '',
+    archived        INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    last_message_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_collection_agent_sessions_collection
+    ON collection_agent_sessions (collection_id, archived, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS collection_agent_runs (
     id                   TEXT PRIMARY KEY,
@@ -363,6 +380,9 @@ CREATE TABLE IF NOT EXISTS collection_agent_runs (
     provider             TEXT,
     model                TEXT,
     transport            TEXT,
+    session_id           TEXT REFERENCES collection_agent_sessions(id) ON DELETE SET NULL,
+    mode                 TEXT NOT NULL DEFAULT 'discuss',
+    draft_id             TEXT,
     created_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     started_at           TEXT,
     updated_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -392,6 +412,66 @@ CREATE TABLE IF NOT EXISTS collection_agent_actions (
 
 CREATE INDEX IF NOT EXISTS idx_collection_agent_actions_collection
     ON collection_agent_actions (collection_id, status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS collection_agent_drafts (
+    id              TEXT PRIMARY KEY,
+    collection_id   TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    session_id      TEXT NOT NULL REFERENCES collection_agent_sessions(id) ON DELETE CASCADE,
+    run_id          TEXT REFERENCES collection_agent_runs(id) ON DELETE SET NULL,
+    parent_draft_id TEXT REFERENCES collection_agent_drafts(id) ON DELETE SET NULL,
+    title           TEXT NOT NULL DEFAULT '',
+    content         TEXT NOT NULL DEFAULT '',
+    brief_json      TEXT NOT NULL DEFAULT '{}',
+    variant_label   TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'draft',
+    target_entry_id TEXT REFERENCES entries(id) ON DELETE SET NULL,
+    applied_ref_id  TEXT,
+    content_hash    TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    applied_at      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_collection_agent_drafts_collection
+    ON collection_agent_drafts (collection_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_collection_agent_drafts_session
+    ON collection_agent_drafts (session_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS collection_agent_style_samples (
+    id            TEXT PRIMARY KEY,
+    collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    entry_id      TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+    original_body TEXT NOT NULL DEFAULT '',
+    final_body    TEXT NOT NULL DEFAULT '',
+    status        TEXT NOT NULL DEFAULT 'active',
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    completed_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_collection_agent_style_samples_collection
+    ON collection_agent_style_samples (collection_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS author_portraits (
+    id             TEXT PRIMARY KEY,
+    tags_json      TEXT NOT NULL DEFAULT '[]',
+    summary        TEXT NOT NULL DEFAULT '',
+    evidence_count INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS author_portrait_versions (
+    id             TEXT PRIMARY KEY,
+    portrait_id    TEXT NOT NULL REFERENCES author_portraits(id) ON DELETE CASCADE,
+    tags_json      TEXT NOT NULL DEFAULT '[]',
+    summary        TEXT NOT NULL DEFAULT '',
+    evidence_count INTEGER NOT NULL DEFAULT 0,
+    reason         TEXT NOT NULL DEFAULT '',
+    created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_author_portrait_versions_portrait
+    ON author_portrait_versions (portrait_id, created_at DESC);
 
 -- ---------------------------------------------------------------------------
 -- Motif star map: imagery nodes, saved excerpts, and multi-motif links.
