@@ -66,12 +66,16 @@ jobs:
       - name: Reject unsafe screen-level error rendering
         shell: pwsh
         run: |
-          $matches = rg -n 'e instanceof Error|error instanceof Error|String\((e|error)\)' tauri-mvp/frontend/src --glob '*.ts' --glob '*.vue' --glob '!**/api/base.ts'
-          if ($LASTEXITCODE -eq 0) {
+          $files = Get-ChildItem tauri-mvp/frontend/src -Recurse -File |
+            Where-Object {
+              $_.Extension -in '.ts', '.vue' -and
+              $_.FullName -notlike '*\api\base.ts'
+            }
+          $matches = $files | Select-String -Pattern 'e instanceof Error|error instanceof Error|String\((e|error)\)'
+          if ($matches) {
             $matches
             throw 'Public screens must use the shared safe error formatter.'
           }
-          if ($LASTEXITCODE -gt 1) { throw 'Static error audit could not run.' }
 
       - name: Build frontend
         working-directory: tauri-mvp/frontend
