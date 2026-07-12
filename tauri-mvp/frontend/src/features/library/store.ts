@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { libraryApi, type Reference } from '../../api/library'
+import { errorMessage } from '../../api/base'
 import {
   type LibraryGroupMode,
   type ReferenceGroup,
@@ -103,7 +104,7 @@ export const useLibraryStore = defineStore('library', () => {
       const loadedReferences = await libraryApi.listReferences()
       setReferences(loadedReferences)
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
     } finally {
       loading.value = false
     }
@@ -120,7 +121,7 @@ export const useLibraryStore = defineStore('library', () => {
       const results = await libraryApi.searchReferences(query)
       setReferences(results)
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
     } finally {
       loading.value = false
     }
@@ -140,7 +141,7 @@ export const useLibraryStore = defineStore('library', () => {
       syncActiveGroups(created.id)
       return created
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
       throw e
     }
   }
@@ -160,7 +161,7 @@ export const useLibraryStore = defineStore('library', () => {
       syncActiveGroups(updated.id)
       return updated
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
       throw e
     }
   }
@@ -174,7 +175,7 @@ export const useLibraryStore = defineStore('library', () => {
       }
       ensureSelection()
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
       throw e
     }
   }

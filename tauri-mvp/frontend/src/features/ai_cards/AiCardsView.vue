@@ -134,6 +134,7 @@ const detailMode = ref<DetailMode>('read')
 const copyNotice = ref('')
 const generatorProfileId = ref('default')
 const aiProfiles = ref<AiProfile[]>([])
+const defaultAiProfileId = ref<string | null>(null)
 const aiProfilesLoading = ref(false)
 const aiProfilesSupported = ref(true)
 const activeCardJobId = ref<string | null>(null)
@@ -188,7 +189,7 @@ const selectedCardNeedsUpgrade = computed(() => {
 })
 
 const aiProfileOptions = computed<AiProfileOption[]>(() => [
-  { id: 'default', name: t('aiCards.defaultAiProfile'), detail: t('aiCards.defaultAiProfileDetail') },
+  ...(defaultAiProfileId.value ? [{ id: 'default', name: t('aiCards.defaultAiProfile'), detail: t('aiCards.defaultAiProfileDetail') }] : []),
   ...aiProfiles.value
     .filter((profile) => profile.enabled)
     .map((profile) => ({
@@ -220,6 +221,7 @@ const activeCardJobIsRunning = computed(() =>
 const canRunGenerator = computed(() =>
   !generatorLoading.value
   && !activeCardJobIsRunning.value
+  && aiProfileOptions.value.some((item) => item.id === generatorProfileId.value)
   && (generatorMode.value !== 'upgrade' || Boolean(selectedCard.value))
 )
 
@@ -286,18 +288,20 @@ async function loadAiProfiles() {
   try {
     const result = await settingsApi.listAiProfiles()
     aiProfiles.value = result.profiles
+    defaultAiProfileId.value = result.default_profile_id ?? null
     aiProfilesSupported.value = true
     if (
       generatorProfileId.value !== 'default'
       && !result.profiles.some((profile) => profile.id === generatorProfileId.value && profile.enabled)
     ) {
-      generatorProfileId.value = 'default'
+      generatorProfileId.value = defaultAiProfileId.value ? 'default' : (result.profiles.find((profile) => profile.enabled)?.id ?? '')
     }
   } catch (e) {
     if (isHttpStatus(e, 404)) {
       aiProfilesSupported.value = false
       aiProfiles.value = []
-      generatorProfileId.value = 'default'
+      defaultAiProfileId.value = null
+      generatorProfileId.value = ''
     } else {
       generatorError.value = errorMessage(e)
     }
@@ -798,7 +802,7 @@ async function copyText(text: string, message = t('aiCards.copyDone')) {
       copyTimer = null
     }, 2200)
   } catch (e) {
-    copyNotice.value = t('aiCards.copyFailed', { message: e instanceof Error ? e.message : String(e) })
+    copyNotice.value = t('aiCards.copyFailed', { message: errorMessage(e) })
   }
 }
 

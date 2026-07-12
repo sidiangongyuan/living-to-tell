@@ -219,11 +219,10 @@ function openArticleChatFromWelcome() {
   }
 
   router.push({
-    name: 'ai',
+    name: 'articles',
     query: {
-      tab: 'chat',
-      scope_kind: 'article',
-      scope_id: firstEntry.id,
+      id: firstEntry.id,
+      chat: '1',
     },
   })
 }

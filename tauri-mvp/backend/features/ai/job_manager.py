@@ -11,11 +11,11 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import re
 from threading import Lock
 from typing import Any, Callable, Optional
 
 from fastapi import HTTPException
+from features.ai.error_messages import friendly_ai_error
 
 
 AI_JOB_STAGES = {
@@ -54,16 +54,7 @@ def _stage_label(kind: str, stage: str) -> str:
 
 
 def _safe_job_error(value: Any) -> str:
-    raw = str(value or "").strip()
-    if not raw:
-        return "AI 后台任务失败，请稍后重试。"
-    lowered = raw.lower()
-    if "<!doctype html" in lowered or "<html" in lowered:
-        return "AI 服务返回了网页错误页，请检查接口协议、模型权限和密钥。"
-    if "traceback" in lowered:
-        return "AI 后台任务失败，后台返回了异常信息。请检查模型配置后重试。"
-    raw = re.sub(r"sk-[A-Za-z0-9]{12,}", "sk-***", raw)
-    return raw[:400].rstrip() + ("..." if len(raw) > 400 else "")
+    return friendly_ai_error(value)
 
 
 @dataclass
@@ -203,7 +194,18 @@ class AiJobManager:
         try:
             result = worker(lambda stage: self.update_stage(job_id, stage))
         except HTTPException as exc:
-            self.fail(job_id, _safe_job_error(exc.detail))
+            # Route workers already translate HTTPException details into public,
+            # feature-specific copy. Keep that context (for example, "AI 丰富
+            # 意象失败") while still rejecting obviously unsafe raw details.
+            detail = str(exc.detail or "").strip()
+            lowered = detail.lower()
+            if detail and not any(
+                marker in lowered
+                for marker in ("<html", "<!doctype", "traceback", "stack trace")
+            ):
+                self.fail(job_id, detail)
+            else:
+                self.fail(job_id, _safe_job_error(exc.detail))
         except Exception as exc:  # noqa: BLE001
             self.fail(job_id, _safe_job_error(exc))
             return

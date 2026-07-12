@@ -25,7 +25,7 @@ const router = createRouter({
     {
       path: '/ai',
       name: 'ai',
-      component: () => import('./features/ai/AiView.vue')
+      component: () => import('./features/ai/ArticleAiView.vue')
     },
     {
       path: '/library',

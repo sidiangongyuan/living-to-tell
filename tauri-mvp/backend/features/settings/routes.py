@@ -15,11 +15,12 @@ from urllib import error as urlerror
 from urllib.parse import urlparse
 from urllib import request as urlrequest
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field
 
 from deps import get_container
-from writer.app.settings import RUNTIME_AUTH_SOURCES, SUPPORTED_WIRE_APIS
+from features.ai.error_messages import safe_ai_diagnostic
+from writer.app.settings import RUNTIME_AUTH_SOURCES, SUPPORTED_WIRE_APIS, Settings
 from writer.app.paths import (
     DATABASE_FILENAME,
     ENV_DATA_DIR,
@@ -155,10 +156,26 @@ class AiProfileOut(AiProfileBase):
     id: str
     created_at: str
     updated_at: str
+    is_default: bool = False
+    test_status: str = "untested"
+    last_tested_at: Optional[str] = None
+    last_test_transport: Optional[str] = None
+    last_test_elapsed_ms: Optional[int] = None
+    diagnostic_code: str = ""
+    diagnostic_message: str = ""
 
 
 class AiProfileListOut(BaseModel):
     profiles: list[AiProfileOut]
+    default_profile_id: Optional[str] = None
+
+
+class AiDefaultProfileUpdate(BaseModel):
+    profile_id: str
+
+
+class AiProfileCheckRequest(BaseModel):
+    profile_ids: list[str] = Field(default_factory=list)
 
 
 class AiDiscoveredProfileOut(AiProfileBase):
@@ -205,6 +222,11 @@ class AiLiveTestOut(BaseModel):
     elapsed_ms: Optional[int] = None
     preview: str = ""
     cost: Optional[float] = None
+
+
+class AiProfileLiveTestOut(BaseModel):
+    profile: AiProfileOut
+    test: AiLiveTestOut
 
 
 class AiModelListOut(BaseModel):
@@ -474,6 +496,25 @@ def _set_user_environment_variable(name: str, value: str) -> bool:
         raise HTTPException(500, f"无法写入 Windows 用户环境变量：{exc}") from exc
 
 
+def _delete_user_environment_variable(name: str) -> bool:
+    if os.name != "nt":
+        os.environ.pop(name, None)
+        return False
+    try:
+        import winreg
+
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+            try:
+                winreg.DeleteValue(key, name)
+            except FileNotFoundError:
+                pass
+        os.environ.pop(name, None)
+        _broadcast_environment_change()
+        return True
+    except OSError as exc:
+        raise HTTPException(500, "无法删除 Windows 用户环境变量，请稍后重试。") from exc
+
+
 def _codex_status() -> AiCredentialStatus:
     status = CodexAuthResolver().status()
     return AiCredentialStatus(
@@ -658,7 +699,12 @@ def _profile_base_to_payload(
     )
 
 
-def _profile_out_from_raw(raw: dict[str, Any]) -> Optional[AiProfileOut]:
+def _profile_out_from_raw(
+    raw: dict[str, Any],
+    *,
+    default_profile_id: Optional[str] = None,
+    health: Optional[dict[str, Any]] = None,
+) -> Optional[AiProfileOut]:
     profile_id = str(raw.get("id") or "").strip()
     name = str(raw.get("name") or "").strip()
     if not profile_id or not name:
@@ -684,14 +730,38 @@ def _profile_out_from_raw(raw: dict[str, Any]) -> Optional[AiProfileOut]:
         )
     except HTTPException:
         return None
-    return AiProfileOut(**payload)
+    health_data = dict(health or {})
+    fingerprint = str(health_data.get("fingerprint") or "")
+    current_fingerprint = Settings.ai_profile_fingerprint(payload)
+    test_status = str(health_data.get("test_status") or "untested")
+    if fingerprint and fingerprint != current_fingerprint and test_status != "untested":
+        test_status = "stale"
+    if test_status not in {"untested", "passed", "failed", "stale"}:
+        test_status = "untested"
+    return AiProfileOut(
+        **payload,
+        is_default=profile_id == default_profile_id,
+        test_status=test_status,
+        last_tested_at=health_data.get("last_tested_at"),
+        last_test_transport=health_data.get("last_test_transport"),
+        last_test_elapsed_ms=health_data.get("last_test_elapsed_ms"),
+        diagnostic_code=str(health_data.get("diagnostic_code") or ""),
+        diagnostic_message=str(health_data.get("diagnostic_message") or ""),
+    )
 
 
 def _load_ai_profiles(container: AppContainer) -> list[AiProfileOut]:
+    raw_profiles, default_profile_id = container.settings.ensure_ai_profile_defaults()
+    health = container.settings.load_ai_profile_health()
     profiles: list[AiProfileOut] = []
     seen: set[str] = set()
-    for raw in container.settings.load_ai_provider_profiles():
-        profile = _profile_out_from_raw(raw)
+    for raw in raw_profiles:
+        profile_id = str(raw.get("id") or "").strip()
+        profile = _profile_out_from_raw(
+            raw,
+            default_profile_id=default_profile_id,
+            health=health.get(profile_id),
+        )
         if profile is None or profile.id in seen:
             continue
         seen.add(profile.id)
@@ -700,7 +770,17 @@ def _load_ai_profiles(container: AppContainer) -> list[AiProfileOut]:
 
 
 def _save_ai_profiles(container: AppContainer, profiles: list[AiProfileOut]) -> None:
-    container.settings.save_ai_provider_profiles([profile.model_dump() for profile in profiles])
+    fields = set(AiProfileBase.model_fields) | {"id", "created_at", "updated_at"}
+    container.settings.save_ai_provider_profiles(
+        [
+            {
+                key: value
+                for key, value in profile.model_dump().items()
+                if key in fields
+            }
+            for profile in profiles
+        ]
+    )
 
 
 def _profile_signature(profile: AiProfileOut) -> tuple[str, str, str, str, str]:
@@ -734,10 +814,8 @@ def _existing_profile_id_for_candidate(
 
 
 def _discovery_reason(prefix: str, exc: Exception) -> str:
-    text = str(exc).strip()
-    if not text:
-        text = exc.__class__.__name__
-    return f"{prefix}：{text[:180]}"
+    _code, message = _safe_ai_diagnostic(exc)
+    return f"{prefix}：{message}"
 
 
 def _discovered_opencode_profile() -> AiDiscoveredProfileOut:
@@ -754,7 +832,7 @@ def _discovered_opencode_profile() -> AiDiscoveredProfileOut:
         source_key="local:opencode",
         source_label="OpenCode 本机登录",
         available=status.available,
-        reason="" if status.available else f"OpenCode 不可用：{status.reason or 'missing_login'}",
+        reason="" if status.available else _safe_ai_diagnostic(status.reason or "missing_login")[1],
     )
 
 
@@ -792,7 +870,7 @@ def _discovered_codex_profile() -> AiDiscoveredProfileOut:
         source_key="local:codex",
         source_label="Codex 本机配置",
         available=auth_status.available and not result.is_empty(),
-        reason="" if auth_status.available else f"Codex auth 不可用：{auth_status.reason or 'missing_key'}",
+        reason="" if auth_status.available else _safe_ai_diagnostic(auth_status.reason or "missing_login")[1],
     )
 
 
@@ -829,7 +907,7 @@ def _discovered_gemini_profile() -> AiDiscoveredProfileOut:
         source_key="local:gemini",
         source_label="Gemini .env",
         available=auth_status.available and not result.is_empty(),
-        reason="" if auth_status.available else f"Gemini auth 不可用：{auth_status.reason or 'missing_key'}",
+        reason="" if auth_status.available else _safe_ai_diagnostic(auth_status.reason or "missing_var")[1],
     )
 
 
@@ -852,16 +930,63 @@ def _provider_for_config(config: AiConfig) -> AiProvider:
     return provider_for_config(config, PromptBuilder())
 
 
-def _friendly_ai_test_error(exc: Exception) -> str:
-    raw = str(exc).strip()
-    if "HTTP 403" in raw:
-        return (
-            "AI 服务拒绝了当前请求。可能是中转接口协议不匹配、"
-            "模型无权限或密钥无效。"
-        )
-    if "<html" in raw.lower() or "<!doctype html" in raw.lower():
-        return "AI 服务返回了网页错误页，请检查中转地址、模型权限和密钥。"
-    return raw or exc.__class__.__name__
+def _profile_config(profile: AiProfileOut) -> AiConfig:
+    return AiConfig(
+        provider_name=profile.provider_name,
+        base_url=profile.base_url,
+        wire_api=profile.wire_api,
+        model=profile.model,
+        api_key_source=profile.api_key_source,
+        gemini_cli_proxy=profile.gemini_cli_proxy,
+    )
+
+
+def _safe_ai_diagnostic(value: Any) -> tuple[str, str]:
+    return safe_ai_diagnostic(value)
+
+
+def _friendly_ai_test_error(exc: Exception | str) -> str:
+    return _safe_ai_diagnostic(exc)[1]
+
+
+def _profile_health_entry(
+    profile: AiProfileOut,
+    *,
+    status: str,
+    diagnostic_code: str = "",
+    diagnostic_message: str = "",
+    transport: Optional[str] = None,
+    elapsed_ms: Optional[int] = None,
+    tested: bool = False,
+) -> dict[str, Any]:
+    return {
+        "fingerprint": Settings.ai_profile_fingerprint(profile.model_dump()),
+        "test_status": status,
+        "last_tested_at": _utc_now() if tested else profile.last_tested_at,
+        "last_test_transport": transport if tested else profile.last_test_transport,
+        "last_test_elapsed_ms": elapsed_ms if tested else profile.last_test_elapsed_ms,
+        "diagnostic_code": diagnostic_code,
+        "diagnostic_message": diagnostic_message,
+    }
+
+
+def _save_profile_health(
+    container: AppContainer,
+    profile: AiProfileOut,
+    entry: dict[str, Any],
+) -> AiProfileOut:
+    health = container.settings.load_ai_profile_health()
+    health[profile.id] = entry
+    container.settings.save_ai_profile_health(health)
+    return next(item for item in _load_ai_profiles(container) if item.id == profile.id)
+
+
+def _profile_list_out(container: AppContainer) -> AiProfileListOut:
+    profiles = _load_ai_profiles(container)
+    return AiProfileListOut(
+        profiles=profiles,
+        default_profile_id=container.settings.load_ai_default_profile_id(),
+    )
 
 
 def _live_test_message(provider: str, model: str, transport: Optional[str], elapsed_ms: int) -> str:
@@ -1005,13 +1130,12 @@ def _fetch_public_pricing_models(base_url: str) -> list[str]:
 
 
 def _friendly_model_fetch_error(exc: Exception) -> str:
-    raw = str(exc).strip()
-    lowered = raw.lower()
-    if "http 403" in lowered:
+    code, message = safe_ai_diagnostic(exc)
+    if code == "forbidden":
         return "模型列表接口拒绝访问，可能是密钥权限、模型广场接口权限或中转站不开放 /v1/models。"
-    if "<html" in lowered or "<!doctype html" in lowered:
+    if code == "html_response":
         return "模型列表接口返回了网页错误页，请检查中转地址和密钥权限。"
-    return raw or exc.__class__.__name__
+    return message
 
 
 def _live_test_messages() -> list[dict[str, str]]:
@@ -1034,7 +1158,134 @@ def get_ai_settings(
 def list_ai_profiles(
     container: AppContainer = Depends(get_container),
 ) -> AiProfileListOut:
-    return AiProfileListOut(profiles=_load_ai_profiles(container))
+    return _profile_list_out(container)
+
+
+@router.put("/ai/default-profile", response_model=AiProfileListOut)
+def set_default_ai_profile(
+    data: AiDefaultProfileUpdate,
+    container: AppContainer = Depends(get_container),
+) -> AiProfileListOut:
+    profile_id = (data.profile_id or "").strip()
+    profiles = _load_ai_profiles(container)
+    selected = next((item for item in profiles if item.id == profile_id), None)
+    if selected is None:
+        raise HTTPException(404, "AI 配置档案不存在，请刷新后重试。")
+    if not selected.enabled:
+        raise HTTPException(400, "已停用的档案不能设为默认，请先启用它。")
+    container.settings.save_ai_default_profile_id(selected.id)
+    container.settings.save_ai_config(_profile_config(selected))
+    return _profile_list_out(container)
+
+
+@router.post("/ai/profiles/check", response_model=AiProfileListOut)
+def check_ai_profiles(
+    data: AiProfileCheckRequest,
+    container: AppContainer = Depends(get_container),
+) -> AiProfileListOut:
+    selected_ids = {str(item).strip() for item in data.profile_ids if str(item).strip()}
+    profiles = _load_ai_profiles(container)
+    health = container.settings.load_ai_profile_health()
+    for profile in profiles:
+        if selected_ids and profile.id not in selected_ids:
+            continue
+        issues = preflight_rewrite(_profile_config(profile), target_text="_", has_entry=True)
+        if issues:
+            code, message = _safe_ai_diagnostic(format_issues(issues))
+            health[profile.id] = _profile_health_entry(
+                profile,
+                status="failed",
+                diagnostic_code=code,
+                diagnostic_message=message,
+            )
+        elif profile.test_status != "passed":
+            health[profile.id] = _profile_health_entry(profile, status="untested")
+    container.settings.save_ai_profile_health(health)
+    return _profile_list_out(container)
+
+
+@router.post("/ai/profiles/{profile_id}/test-live", response_model=AiProfileLiveTestOut)
+def test_ai_profile_live(
+    profile_id: str,
+    container: AppContainer = Depends(get_container),
+) -> AiProfileLiveTestOut:
+    profile = next((item for item in _load_ai_profiles(container) if item.id == profile_id), None)
+    if profile is None:
+        raise HTTPException(404, "AI 配置档案不存在，请刷新后重试。")
+    config = _profile_config(profile)
+    issues = preflight_rewrite(config, target_text="_", has_entry=True)
+    if issues:
+        code, message = _safe_ai_diagnostic(format_issues(issues))
+        updated = _save_profile_health(
+            container,
+            profile,
+            _profile_health_entry(
+                profile,
+                status="failed",
+                diagnostic_code=code,
+                diagnostic_message=message,
+                tested=True,
+            ),
+        )
+        return AiProfileLiveTestOut(
+            profile=updated,
+            test=AiLiveTestOut(ok=False, message=message, provider=config.provider_key(), model=config.model),
+        )
+
+    started = time.perf_counter()
+    try:
+        response = _provider_for_config(config).chat(_live_test_messages(), model=config.model)
+    except Exception as exc:  # noqa: BLE001
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        code, message = _safe_ai_diagnostic(exc)
+        updated = _save_profile_health(
+            container,
+            profile,
+            _profile_health_entry(
+                profile,
+                status="failed",
+                diagnostic_code=code,
+                diagnostic_message=message,
+                elapsed_ms=elapsed_ms,
+                tested=True,
+            ),
+        )
+        return AiProfileLiveTestOut(
+            profile=updated,
+            test=AiLiveTestOut(
+                ok=False,
+                message=message,
+                provider=config.provider_key(),
+                model=config.model,
+                elapsed_ms=elapsed_ms,
+            ),
+        )
+
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    updated = _save_profile_health(
+        container,
+        profile,
+        _profile_health_entry(
+            profile,
+            status="passed",
+            transport=response.transport,
+            elapsed_ms=elapsed_ms,
+            tested=True,
+        ),
+    )
+    return AiProfileLiveTestOut(
+        profile=updated,
+        test=AiLiveTestOut(
+            ok=True,
+            message="真实请求已通过。",
+            provider=response.provider or config.provider_key(),
+            model=response.model or config.model,
+            transport=response.transport,
+            elapsed_ms=elapsed_ms,
+            preview=_preview_text(response.content),
+            cost=response.cost,
+        ),
+    )
 
 
 @router.post("/ai/local-key", response_model=AiLocalKeySaveOut)
@@ -1048,8 +1299,24 @@ def save_ai_local_key(
     if "\n" in key or "\r" in key:
         raise HTTPException(400, "API Key 不能包含换行。")
 
-    env_var = _local_key_env_name(data, _load_ai_profiles(container))
+    profiles = _load_ai_profiles(container)
+    env_var = _local_key_env_name(data, profiles)
     persisted = _set_user_environment_variable(env_var, key)
+    profile_id = (data.profile_id or "").strip()
+    profile = next((item for item in profiles if item.id == profile_id), None)
+    if profile is not None:
+        health = container.settings.load_ai_profile_health()
+        previous = dict(health.get(profile.id) or {})
+        previous.update(
+            {
+                "fingerprint": Settings.ai_profile_fingerprint(profile.model_dump()),
+                "test_status": "stale",
+                "diagnostic_code": "",
+                "diagnostic_message": "凭据已更新，请重新发送真实测试。",
+            }
+        )
+        health[profile.id] = previous
+        container.settings.save_ai_profile_health(health)
     return AiLocalKeySaveOut(
         api_key_source=f"env:{env_var}",
         env_var=env_var,
@@ -1119,6 +1386,11 @@ def import_local_ai_profiles(
             imported_count += 1
 
     _save_ai_profiles(container, profiles)
+    if profiles and not container.settings.load_ai_default_profile_id():
+        first_enabled = next((item for item in profiles if item.enabled), None)
+        if first_enabled is not None:
+            container.settings.save_ai_default_profile_id(first_enabled.id)
+            container.settings.save_ai_config(_profile_config(first_enabled))
     return AiProfileImportLocalOut(
         profiles=_load_ai_profiles(container),
         imported_count=imported_count,
@@ -1143,7 +1415,10 @@ def create_ai_profile(
     profile = AiProfileOut(**payload)
     profiles.append(profile)
     _save_ai_profiles(container, profiles)
-    return profile
+    if profile.enabled and not container.settings.load_ai_default_profile_id():
+        container.settings.save_ai_default_profile_id(profile.id)
+        container.settings.save_ai_config(_profile_config(profile))
+    return next(item for item in _load_ai_profiles(container) if item.id == profile.id)
 
 
 @router.put("/ai/profiles/{profile_id}", response_model=AiProfileOut)
@@ -1155,7 +1430,7 @@ def update_ai_profile(
     profiles = _load_ai_profiles(container)
     existing_index = next((index for index, item in enumerate(profiles) if item.id == profile_id), -1)
     if existing_index < 0:
-        raise HTTPException(404, "AI profile not found")
+        raise HTTPException(404, "AI 配置档案不存在，请刷新后重试。")
 
     existing = profiles[existing_index]
     merged = existing.model_dump()
@@ -1178,21 +1453,68 @@ def update_ai_profile(
         updated_at=_utc_now(),
     )
     updated = AiProfileOut(**payload)
+    if container.settings.load_ai_default_profile_id() == updated.id and not updated.enabled:
+        raise HTTPException(400, "默认档案不能停用，请先选择另一个默认档案。")
     profiles[existing_index] = updated
     _save_ai_profiles(container, profiles)
-    return updated
+    health = container.settings.load_ai_profile_health()
+    previous_health = health.get(updated.id)
+    if previous_health and str(previous_health.get("fingerprint") or "") != Settings.ai_profile_fingerprint(updated.model_dump()):
+        previous_health["test_status"] = "stale"
+        previous_health["diagnostic_code"] = ""
+        previous_health["diagnostic_message"] = "配置已变更，请重新发送真实测试。"
+        health[updated.id] = previous_health
+        container.settings.save_ai_profile_health(health)
+    if container.settings.load_ai_default_profile_id() == updated.id:
+        container.settings.save_ai_config(_profile_config(updated))
+    return next(item for item in _load_ai_profiles(container) if item.id == updated.id)
 
 
 @router.delete("/ai/profiles/{profile_id}", status_code=204)
 def delete_ai_profile(
     profile_id: str,
+    replacement_profile_id: Optional[str] = Query(None),
+    delete_local_key: bool = Query(False),
     container: AppContainer = Depends(get_container),
 ):
     profiles = _load_ai_profiles(container)
+    target = next((item for item in profiles if item.id == profile_id), None)
+    if target is None:
+        raise HTTPException(404, "AI 配置档案不存在，请刷新后重试。")
+    replacement_id = (replacement_profile_id or "").strip()
+    replacement = next((item for item in profiles if item.id == replacement_id), None)
+    is_default = container.settings.load_ai_default_profile_id() == profile_id
+    agent_refs = container.collection_agent_repository.collection_ids_for_profile(profile_id)
+    if (is_default or agent_refs) and replacement is None:
+        reason = "默认档案" if is_default else "作品集 Agent 正在使用这个档案"
+        raise HTTPException(400, f"{reason}，删除前请选择替代档案。")
+    if replacement is not None and (replacement.id == profile_id or not replacement.enabled):
+        raise HTTPException(400, "替代档案必须是另一个已启用档案。")
+
+    env_name = ""
+    if delete_local_key:
+        source = (target.api_key_source or "").strip()
+        env_name = source.split(":", 1)[1].strip() if source.startswith("env:") else ""
+        shared = any(
+            item.id != target.id and item.api_key_source == target.api_key_source
+            for item in profiles
+        )
+        if not env_name.startswith("LTT_AI_") or shared:
+            raise HTTPException(400, "这个密钥不是档案专属的 LTT_AI_* 变量，或仍被其他档案使用，不能自动删除。")
+
     remaining = [item for item in profiles if item.id != profile_id]
-    if len(remaining) == len(profiles):
-        raise HTTPException(404, "AI profile not found")
+    if agent_refs and replacement is not None:
+        container.collection_agent_repository.replace_profile(profile_id, replacement.id)
+    if is_default and replacement is not None:
+        container.settings.save_ai_default_profile_id(replacement.id)
+        container.settings.save_ai_config(_profile_config(replacement))
+    if delete_local_key:
+        _delete_user_environment_variable(env_name)
+
     _save_ai_profiles(container, remaining)
+    health = container.settings.load_ai_profile_health()
+    health.pop(profile_id, None)
+    container.settings.save_ai_profile_health(health)
 
 
 @router.get("/ai/models", response_model=AiModelListOut)
@@ -1329,7 +1651,40 @@ def save_ai_settings(
 ) -> AiSettingsOut:
     config = _request_to_config(data)
     try:
+        default_profile_id = container.settings.load_ai_default_profile_id()
+        if default_profile_id:
+            raw_profiles = container.settings.load_ai_provider_profiles()
+            for raw in raw_profiles:
+                if str(raw.get("id") or "").strip() != default_profile_id:
+                    continue
+                raw.update(
+                    {
+                        "provider_name": config.provider_key(),
+                        "base_url": config.base_url,
+                        "wire_api": config.wire_api,
+                        "model": config.model,
+                        "api_key_source": config.api_key_source,
+                        "gemini_cli_proxy": config.gemini_cli_proxy,
+                        "updated_at": _utc_now(),
+                    }
+                )
+                container.settings.save_ai_provider_profiles(raw_profiles)
+                break
         container.settings.save_ai_config(config)
+        profiles, migrated_default_id = container.settings.ensure_ai_profile_defaults()
+        if not migrated_default_id:
+            now = _utc_now()
+            raw = _config_to_profile_payload(
+                profile_id=uuid.uuid4().hex,
+                name="原默认配置",
+                config=config,
+                enabled=True,
+                created_at=now,
+                updated_at=now,
+            )
+            profiles.append(raw)
+            container.settings.save_ai_provider_profiles(profiles)
+            container.settings.save_ai_default_profile_id(str(raw["id"]))
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return _config_to_out(container.settings.load_ai_config())
@@ -1408,7 +1763,7 @@ def test_ai_settings(data: AiTestRequest) -> AiTestOut:
     config = _request_to_config(data)
     issues = preflight_rewrite(config, target_text="_", has_entry=True)
     if issues:
-        return AiTestOut(ok=False, message=format_issues(issues))
+        return AiTestOut(ok=False, message=_friendly_ai_test_error(format_issues(issues)))
     return AiTestOut(ok=True, message="Local AI configuration check passed. This does not contact the provider.")
 
 
@@ -1419,7 +1774,7 @@ def test_ai_settings_live(data: AiTestRequest) -> AiLiveTestOut:
     if issues:
         return AiLiveTestOut(
             ok=False,
-            message=format_issues(issues),
+            message=_friendly_ai_test_error(format_issues(issues)),
             provider=config.provider_key(),
             model=config.model,
         )

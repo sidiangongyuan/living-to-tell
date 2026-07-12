@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from deps import get_container
+from features.ai.error_messages import friendly_ai_error as safe_friendly_ai_error
 from writer.app.container import AppContainer
 from writer.app.settings import SUPPORTED_AI_PROVIDERS, SUPPORTED_WIRE_APIS
 from writer.domain.models.ai_config import AiConfig
@@ -650,20 +651,7 @@ def _collection_or_404(collection_id: str, container: AppContainer) -> DomainCol
 
 
 def _friendly_ai_error(exc: Exception | str) -> str:
-    raw = str(exc).strip()
-    lowered = raw.lower()
-    if not raw:
-        return "AI 请求失败，请稍后重试。"
-    if "<!doctype html" in lowered or "<html" in lowered:
-        return "AI 服务返回了网页错误页，请检查接口协议、模型权限和密钥。"
-    if "http 403" in lowered or "forbidden" in lowered:
-        return "AI 服务拒绝了当前请求，可能是模型无权限、密钥无效或接口协议不匹配。"
-    if "failed to fetch" in lowered:
-        return "后台服务正在启动或连接中，请稍后重试；如果持续出现，请重启应用。"
-    if "traceback" in lowered:
-        return "AI 请求失败，后台返回了异常信息。请检查模型配置后重试。"
-    raw = re.sub(r"sk-[A-Za-z0-9]{12,}", "sk-***", raw)
-    return raw[:260].rstrip() + ("..." if len(raw) > 260 else "")
+    return safe_friendly_ai_error(exc)
 
 
 def _parse_json_lenient(text: str) -> Optional[dict[str, Any]]:
@@ -693,8 +681,16 @@ def _parse_json_lenient(text: str) -> Optional[dict[str, Any]]:
 
 
 def _profile_options(container: AppContainer) -> list[dict[str, str]]:
-    options = [{"id": "default", "name": "默认配置"}]
-    for raw in container.settings.load_ai_provider_profiles():
+    profiles, default_profile_id = container.settings.ensure_ai_profile_defaults()
+    options: list[dict[str, str]] = []
+    if default_profile_id:
+        default_raw = next(
+            (item for item in profiles if str(item.get("id") or "").strip() == default_profile_id),
+            None,
+        )
+        if default_raw is not None:
+            options.append({"id": "default", "name": f"默认 · {str(default_raw.get('name') or 'AI 配置档案')}"})
+    for raw in profiles:
         profile_id = str(raw.get("id") or "").strip()
         name = str(raw.get("name") or "").strip()
         if profile_id and name and bool(raw.get("enabled", True)):
@@ -806,8 +802,10 @@ def _collection_agent_state(
 def _profile_config(profile_id: str, container: AppContainer) -> tuple[str, Optional[AiConfig], str]:
     normalized_id = (profile_id or "default").strip() or "default"
     if normalized_id == "default":
-        return "默认配置", container.settings.load_ai_config(), ""
-    for raw in container.settings.load_ai_provider_profiles():
+        config = container.settings.load_ai_default_profile_config()
+        return "默认配置", config or container.settings.load_ai_config(), ""
+    profiles, _default_id = container.settings.ensure_ai_profile_defaults()
+    for raw in profiles:
         raw_id = str(raw.get("id") or "").strip()
         if raw_id != normalized_id:
             continue

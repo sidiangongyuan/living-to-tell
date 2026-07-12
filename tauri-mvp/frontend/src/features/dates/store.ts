@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { datesApi, type DailyStat, type DailyEntrySummary, type DailyQuote } from '../../api/dates'
+import { errorMessage } from '../../api/base'
 
 export const DAILY_QUOTE_CACHE_KEY = 'living_to_tell_daily_quote_cache'
 
@@ -60,7 +61,7 @@ export const useDatesStore = defineStore('dates', () => {
     try {
       dailyStats.value = await datesApi.getDailyStats(year, month)
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
     } finally {
       loading.value = false
     }
@@ -79,7 +80,7 @@ export const useDatesStore = defineStore('dates', () => {
       dailyQuote.value = quote
       cacheDailyQuote(quote, dateStr)
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
     } finally {
       loading.value = false
     }
@@ -106,7 +107,7 @@ export const useDatesStore = defineStore('dates', () => {
       dailyQuote.value = quote
       cacheDailyQuote(quote, todayStr)
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
     } finally {
       loading.value = false
     }

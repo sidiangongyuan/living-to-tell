@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { expect, test, type Page, type Route } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
 
 declare global {
   interface Window {
@@ -277,7 +278,9 @@ async function expectArticleEditorBody(page: Page, body: string) {
   await expect(page.getByTestId('article-body-editor')).toHaveValue(body, { timeout: 20000 })
 }
 
-async function mockVisibleActionApi(page: Page) {
+async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
+  let currentArticleTaskRun: Record<string, any> | null = null
+  let articleTaskRunGetCount = 0
   let sampleProjectInstalled = false
   const sampleProjectState = () => ({
     installed: sampleProjectInstalled,
@@ -290,8 +293,9 @@ async function mockVisibleActionApi(page: Page) {
     missing_ids: [],
   })
 
-  await page.addInitScript(() => {
+  await page.addInitScript((initialLanguage) => {
     window.localStorage.clear()
+    window.localStorage.setItem('language', initialLanguage)
     window.localStorage.setItem('living_to_tell_collections_tour_dismissed', 'true')
     ;(window as Window & {
       __WRITER_API_BASE__?: string
@@ -306,7 +310,7 @@ async function mockVisibleActionApi(page: Page) {
       },
       configurable: true,
     })
-  })
+  }, language)
 
   await page.route('**/api/app/version', async (route) => {
     await route.fulfill({
@@ -663,6 +667,51 @@ async function mockVisibleActionApi(page: Page) {
     await route.fulfill({ json: existingReference })
   })
 
+  const visualMotif = {
+    id: 'motif-visual',
+    name: language === 'zh' ? '旧信' : 'Old letter',
+    aliases: [],
+    note: '',
+    profile: {
+      definition: '',
+      core_tension: '',
+      writing_functions: [],
+      scene_triggers: [],
+      character_signals: [],
+      imagery_translations: [],
+      short_examples: [],
+      misuse_warnings: [],
+      micro_exercises: [],
+      source_hints: [],
+    },
+    tags: [],
+    pinned: false,
+    excerpt_count: 0,
+    created_at: null,
+    updated_at: null,
+  }
+  await page.route(/\/api\/motifs(?:\/|\?|$)/, async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname === '/api/motifs') {
+      await route.fulfill({ json: [visualMotif] })
+      return
+    }
+    if (url.pathname === '/api/motifs/graph' || url.pathname === `/api/motifs/${visualMotif.id}/graph`) {
+      await route.fulfill({
+        json: {
+          nodes: [{ id: visualMotif.id, name: visualMotif.name, excerpt_count: 0, pinned: false, is_center: true }],
+          edges: [],
+        },
+      })
+      return
+    }
+    if (url.pathname === `/api/motifs/${visualMotif.id}/excerpts`) {
+      await route.fulfill({ json: [] })
+      return
+    }
+    await route.fulfill({ json: [] })
+  })
+
   await page.route('**/api/ai-cards**', async (route) => {
     const url = new URL(route.request().url())
     const cards = [
@@ -713,12 +762,87 @@ async function mockVisibleActionApi(page: Page) {
             api_key_source: 'env:GEMINI_API_KEY',
             gemini_cli_proxy: null,
             enabled: true,
+            is_default: true,
+            test_status: 'passed',
+            diagnostic_code: '',
+            diagnostic_message: '',
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+          },
+          {
+            id: 'profile-deepseek',
+            name: 'DeepSeek 测试',
+            provider_name: 'openai',
+            base_url: 'https://relay.example/v1',
+            wire_api: 'chat_completions',
+            model: 'deepseek-test-model',
+            api_key_source: 'env:DEEPSEEK_API_KEY',
+            gemini_cli_proxy: null,
+            enabled: true,
+            is_default: false,
+            test_status: 'passed',
+            diagnostic_code: '',
+            diagnostic_message: '',
             created_at: '2026-01-01T00:00:00Z',
             updated_at: '2026-01-01T00:00:00Z',
           },
         ],
+        default_profile_id: 'profile-gemini',
       },
     })
+  })
+  await page.route('**/api/ai/task-runs**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (url.pathname === '/api/ai/task-runs/active') {
+      await route.fulfill({ json: currentArticleTaskRun })
+      return
+    }
+    if (url.pathname === '/api/ai/task-runs' && request.method() === 'POST') {
+      const body = request.postDataJSON() as { article_id: string; task_type: string; profile_ids: string[]; selection_start?: number | null; selection_end?: number | null }
+      articleTaskRunGetCount = 0
+      currentArticleTaskRun = {
+        run_id: 'article-run-1', article_id: body.article_id, article_title: article.title,
+        task_type: body.task_type, article_hash: 'hash', original_text: article.body, selection_start: body.selection_start ?? null,
+        selection_end: body.selection_end ?? null, status: 'queued', stage: 'queued', stage_label: '排队中', error: '',
+        profiles: body.profile_ids.map((id) => ({ profile_id: id, profile_name: id === 'profile-gemini' ? 'Gemini 测试' : 'DeepSeek 测试', provider: id === 'profile-gemini' ? 'gemini' : 'openai', model: id === 'profile-gemini' ? 'gemini-test-model' : 'deepseek-test-model' })),
+        results: body.profile_ids.map((id) => ({ profile_id: id, profile_name: id === 'profile-gemini' ? 'Gemini 测试' : 'DeepSeek 测试', provider: id === 'profile-gemini' ? 'gemini' : 'openai', model: id === 'profile-gemini' ? 'gemini-test-model' : 'deepseek-test-model', transport: null, status: 'pending', result: '', error: '', elapsed_ms: 0, input_tokens: null, output_tokens: null, cost: null, finish_reason: null, stats: { input_chars: article.body.length, output_chars: 0, delta_chars: -article.body.length, output_ratio: 0, input_paragraphs: 1, output_paragraphs: 0 } })),
+        created_at: '2026-01-01T00:00:00Z', started_at: null, updated_at: '2026-01-01T00:00:00Z', completed_at: null, elapsed_ms: 0,
+        applied_profile_id: null, applied_at: null, applied_version_id: null,
+      }
+      await route.fulfill({ status: 202, json: currentArticleTaskRun })
+      return
+    }
+    if (!currentArticleTaskRun) {
+      await route.fulfill({ status: 404, json: { detail: '任务不存在' } })
+      return
+    }
+    if (url.pathname.endsWith('/cancel') && request.method() === 'POST') {
+      currentArticleTaskRun = { ...currentArticleTaskRun, status: 'cancelled', stage: 'cancelled', stage_label: '已中断本地等待', error: '已停止本地等待。' }
+      await route.fulfill({ json: currentArticleTaskRun })
+      return
+    }
+    if (url.pathname.endsWith('/apply') && request.method() === 'POST') {
+      const profileId = (request.postDataJSON() as { profile_id: string }).profile_id
+      const result = (currentArticleTaskRun.results as Array<Record<string, any>>).find((item) => item.profile_id === profileId)
+      currentArticleTaskRun = { ...currentArticleTaskRun, applied_profile_id: profileId, applied_at: '2026-01-01T00:00:02Z', applied_version_id: 'version-before-ai' }
+      await route.fulfill({ json: { run: currentArticleTaskRun, entry: { ...article, body: result?.result || article.body }, version_id: 'version-before-ai', was_noop: false } })
+      return
+    }
+    if (request.method() === 'DELETE') {
+      currentArticleTaskRun = null
+      await route.fulfill({ status: 204 })
+      return
+    }
+    articleTaskRunGetCount += 1
+    const results = (currentArticleTaskRun.results as Array<Record<string, any>>).map((item, index) => {
+      if (articleTaskRunGetCount === 1 && index > 0) return item
+      const output = item.profile_id === 'profile-gemini' ? 'Gemini 增量结果' : 'DeepSeek 增量结果'
+      return { ...item, status: 'success', result: output, transport: item.profile_id === 'profile-gemini' ? 'gemini_native' : 'chat_completions', elapsed_ms: index ? 240 : 80, input_tokens: 8, output_tokens: 12, cost: 0.001, stats: { ...item.stats, output_chars: output.length, delta_chars: output.length - article.body.length, output_ratio: 0.5, output_paragraphs: 1 } }
+    })
+    const done = results.every((item) => item.status === 'success')
+    currentArticleTaskRun = { ...currentArticleTaskRun, results, status: done ? 'succeeded' : 'running', stage: done ? 'succeeded' : 'collecting_results', stage_label: done ? '已完成' : '正在收集模型结果', elapsed_ms: done ? 240 : 80 }
+    await route.fulfill({ json: currentArticleTaskRun })
   })
   await page.route('**/api/ai/task/compare/stream', async (route) => fulfillCompareStream(route))
   await page.route('**/api/ai/task', async (route) => {
@@ -741,6 +865,7 @@ async function mockVisibleActionApi(page: Page) {
           role: 'assistant',
           content: '这是 AI 回复。',
           timestamp: null,
+          meta: { provider: 'fake', model: 'fake-model', transport: 'chat_completions' },
         },
       },
     })
@@ -1010,8 +1135,8 @@ test('article pending edits are flushed before switching, AI chat, and archive a
   await page.getByTestId('article-body-editor').fill('AI 对话前未保存正文')
   await page.getByRole('button', { name: 'AI 对话', exact: true }).click()
   await expect.poll(() => updates.some((body) => body.body === 'AI 对话前未保存正文')).toBe(true)
-  await expect(page).toHaveURL(/\/ai\?.*tab=chat/)
-  await expect(page).toHaveURL(/scope_id=article-a/)
+  await expect(page.getByTestId('article-ai-chat-drawer')).toBeVisible()
+  await expect(page).toHaveURL(/\/articles\?.*id=article-a/)
 
   await page.goto('/articles?id=article-a')
   await page.getByTestId('article-body-editor').fill('归档前未保存正文')
@@ -1300,12 +1425,11 @@ test('article list filters, context pane, save, AI navigation, archive, and coll
   expect((saveRequest.postDataJSON() as Record<string, unknown>).body).toBe('自动保存正文')
 
   await page.getByRole('button', { name: 'AI 对话' }).click()
-  await expect(page).toHaveURL(/\/ai\?.*tab=chat/)
-  await expect(page).toHaveURL(/scope_id=article-a/)
+  await expect(page.getByTestId('article-ai-chat-drawer')).toBeVisible()
+  await page.getByTestId('article-ai-chat-drawer').getByRole('button', { name: '关闭' }).click()
 
-  await page.goto('/articles?id=article-a')
-  await page.getByRole('button', { name: 'AI 工具' }).click()
-  await expect(page).toHaveURL(/\/ai\?.*tab=tools/)
+  await page.getByRole('main').getByRole('button', { name: 'AI 修改' }).click()
+  await expect(page).toHaveURL(/\/ai\?/)
   await expect(page).toHaveURL(/scope_id=article-a/)
 
   await page.goto('/articles?id=article-a')
@@ -1478,9 +1602,8 @@ test('welcome checklist creates a real reference and opens article chat with art
 
   await page.goto('/dates')
   await page.getByRole('button', { name: '从文章进入 AI 对话' }).click()
-  await expect(page).toHaveURL(/\/ai\?.*tab=chat/)
-  await expect(page).toHaveURL(/scope_kind=article/)
-  await expect(page).toHaveURL(/scope_id=article-a/)
+  await expect(page).toHaveURL(/\/articles\?.*id=article-a/)
+  await expect(page.getByTestId('article-ai-chat-drawer')).toBeVisible()
 })
 
 test('runtime close dialog controls call the native close action', async ({ page }) => {
@@ -2520,410 +2643,139 @@ test('library autosave failures show a visible unsaved-state error', async ({ pa
   await expect(page.getByText('保存失败：磁盘不可写')).toBeVisible()
 })
 
-test('AI tools run tasks, attach contexts, and keep generated outputs actionable', async ({ page }) => {
-  const taskBodies: Array<Record<string, unknown>> = []
+test('article AI runs only selected profiles, reveals incremental results, previews apply, and clears explicitly', async ({ page }) => {
+  const runRequests: Array<Record<string, unknown>> = []
   page.on('request', (request) => {
-    if (request.method() === 'POST' && request.url().includes('/api/ai/task/compare/stream')) {
-      taskBodies.push(request.postDataJSON() as Record<string, unknown>)
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/ai/task-runs') {
+      runRequests.push(request.postDataJSON() as Record<string, unknown>)
     }
   })
-
-  await page.goto('/ai?tab=tools&scope_kind=article&scope_id=article-a')
-  await expect(page.getByRole('button', { name: '运行任务' })).toBeVisible({ timeout: 20000 })
-  const modelCompareSection = page.locator('section').filter({ hasText: '模型对比' })
-  await modelCompareSection.getByRole('button', { name: '刷新' }).click()
-  await expect(modelCompareSection.getByText('AI 配置档案已刷新')).toBeVisible()
-
-  await page.getByRole('button', { name: '添加文章便签' }).click()
-  await page.getByRole('button', { name: '加入全部未完成' }).click()
-  await expect(page.getByText('上下文已添加')).toBeVisible()
-  await expect(page.getByText('文章便签 · 1 条')).toBeVisible()
+  await page.goto('/ai?scope_kind=article&scope_id=article-a')
+  await expect(page.getByRole('heading', { name: 'AI 修改' })).toBeVisible({ timeout: 15000 })
+  await expect(page.getByText('已选择 1 个模型')).toBeVisible()
+  await page.getByText('已选择 1 个模型').click()
+  await expect(page.getByRole('dialog', { name: '选择 AI 配置档案' })).toBeVisible()
+  await page.locator('label').filter({ hasText: 'DeepSeek 测试' }).locator('input').check()
+  await expect(page.getByText('已选择 1 个模型')).toBeVisible()
+  await page.locator('label').filter({ hasText: 'Gemini 测试' }).locator('input').check()
   await page.getByRole('button', { name: '完成', exact: true }).click()
+  await expect(page.getByText('已选择 2 个模型')).toBeVisible()
 
-  await page.getByRole('button', { name: '添加文脉标本' }).click()
-  await page.getByPlaceholder('搜索标本...').fill('不存在的标本')
-  await page.getByPlaceholder('搜索标本...').press('Enter')
-  await expect(page.getByText('暂无标本。点击"新建"添加。')).toBeVisible()
-  await page.getByPlaceholder('搜索标本...').fill('')
-  await page.getByPlaceholder('搜索标本...').press('Enter')
-  await page.getByRole('button', { name: /已有标本正文/ }).click()
-  await page.getByRole('button', { name: /添加所选上下文/ }).click()
-  await page.getByRole('button', { name: '完成', exact: true }).click()
-  const referenceContext = page.locator('article').filter({ hasText: '测试书' })
-  await expect(referenceContext).toBeVisible()
-  await referenceContext.getByRole('button', { name: '×' }).click()
-  await expect(referenceContext).toHaveCount(0)
+  await page.getByRole('button', { name: '运行 AI 修改' }).click()
+  await expect.poll(() => runRequests.length).toBe(1)
+  expect(runRequests[0].profile_ids).toEqual(['profile-deepseek', 'profile-gemini'])
+  expect(runRequests[0]).toEqual(expect.objectContaining({ article_id: 'article-a', task_type: 'polish' }))
+  await expect(page.getByText('DeepSeek 增量结果')).toBeVisible({ timeout: 10000 })
+  await page.getByRole('button', { name: /Gemini 测试.*已完成/ }).click()
+  await expect(page.getByText('Gemini 增量结果')).toBeVisible({ timeout: 10000 })
 
-  await page.getByRole('button', { name: '添加文脉标本' }).click()
-  await page.getByRole('button', { name: /已有标本正文/ }).click()
-  await page.getByRole('button', { name: /添加所选上下文/ }).click()
-  await expect(page.locator('article').filter({ hasText: '测试书' })).toBeVisible()
-  await page.getByRole('button', { name: '完成', exact: true }).click()
-
-  await page.getByRole('button', { name: '运行任务' }).click()
-  await expect.poll(() => taskBodies.length).toBe(1)
-  expect(taskBodies[0]).toEqual(expect.objectContaining({
-    task_type: 'polish',
-    target_kind: 'article',
-    target_ref_id: article.id,
-  }))
-  expect(taskBodies[0].attachments).toEqual(expect.arrayContaining([
-    expect.objectContaining({ kind: 'writing_note' }),
-    expect.objectContaining({ kind: 'reference' }),
-  ]))
-  await expect(page.getByText('AI 生成结果')).toBeVisible()
-
-  await page.getByRole('button', { name: '复制结果' }).click()
-  await expect.poll(() => page.evaluate(() => window.__copiedText)).toBe('AI 生成结果')
-  await expect(page.getByText('已复制到剪贴板')).toBeVisible()
-  await expect(page.getByRole('button', { name: '← 返回' })).toHaveCount(0)
-})
-
-test('AI presets, card contexts, and clear controls update the workspace visibly', async ({ page }) => {
-  let savedPresets: Record<string, unknown[]> = {}
-
-  await page.route('**/api/ai/task-presets', async (route) => {
-    if (route.request().method() === 'PUT') {
-      savedPresets = route.request().postDataJSON() as Record<string, unknown[]>
-      await route.fulfill({ json: savedPresets })
-      return
-    }
-    await route.fulfill({ json: savedPresets })
-  })
-
-  await page.goto('/ai?tab=tools')
-  await page.getByPlaceholder('预设名称').fill('测试预设')
-  await page.getByRole('button', { name: '保存' }).click()
-  await expect.poll(() => savedPresets.polish?.length ?? 0).toBe(1)
-  await expect(page.getByText('预设已保存')).toBeVisible()
-  await expect(page.getByRole('button', { name: '测试预设' })).toBeVisible()
-
-  await page.getByRole('button', { name: '测试预设' }).click()
-  await expect(page.getByText('预设已应用')).toBeVisible()
-  await page.getByRole('button', { name: '删除' }).click()
-  await expect.poll(() => savedPresets.polish?.length ?? 0).toBe(0)
-  await expect(page.getByRole('button', { name: '测试预设' })).toHaveCount(0)
-
-  await page.getByRole('button', { name: '添加 AI 卡片' }).click()
-  await page.getByRole('button', { name: /克制风格/ }).click()
-  await expect(page.locator('article').filter({ hasText: '克制风格' })).toBeVisible()
-  await page.getByPlaceholder('搜索风格、人物、场景卡...').fill('等待')
-  await page.getByRole('button', { name: /等待回应/ }).click()
-  await expect(page.locator('article').filter({ hasText: '等待回应' })).toBeVisible()
-  await page.getByRole('button', { name: '完成', exact: true }).click()
-  await page.getByRole('button', { name: '清空上下文' }).click()
-  await expect(page.locator('article').filter({ hasText: '等待回应' })).toHaveCount(0)
-  await page.getByRole('button', { name: '添加 AI 卡片' }).click()
-  await page.getByPlaceholder('搜索风格、人物、场景卡...').fill('')
-  await expect(page.getByRole('button', { name: /克制风格/ })).toHaveCount(1)
-  await expect(page.getByRole('button', { name: /等待回应/ })).toHaveCount(1)
-  await page.getByRole('button', { name: '完成', exact: true }).click()
-  await expect(page.getByText('尚未添加上下文。AI 只会处理原文，除非你手动加入卡片、便签或文脉标本。')).toBeVisible()
-
-  await page.getByRole('button', { name: '粘贴文本' }).click()
-  await page.getByPlaceholder('粘贴需要处理的文本...').fill('需要润色的文本')
-  await page.getByRole('button', { name: '运行任务' }).click()
-  await expect(page.getByText('AI 生成结果')).toBeVisible()
-
-  await page.getByRole('button', { name: '清空结果' }).click()
-  await expect(page.getByText('当前结果已清空')).toBeVisible()
-  await expect(page.getByText('AI 生成结果')).toHaveCount(0)
-
-  await page.getByPlaceholder('粘贴需要处理的文本...').fill('临时输入')
-  await page.getByRole('button', { name: '清空任务' }).click()
-  await expect(page.getByText('当前任务状态已清空')).toBeVisible()
-  await expect(page.getByPlaceholder('粘贴需要处理的文本...')).toHaveValue('')
-
-  await page.getByPlaceholder('粘贴需要处理的文本...').fill('准备清空全部')
-  page.once('dialog', async (dialog) => dialog.dismiss())
-  await page.getByRole('button', { name: '清空全部' }).click()
-  await expect(page.getByPlaceholder('粘贴需要处理的文本...')).toHaveValue('准备清空全部')
+  await page.getByRole('button', { name: '预览写回' }).click()
+  await expect(page.getByRole('dialog', { name: '确认写回文章' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '确认写回文章' })).toBeVisible()
+  await expect(page.getByText('AI_BEFORE_APPLY')).toBeVisible()
+  await page.getByRole('button', { name: '创建版本并写回' }).click()
+  await expect(page.getByText('已写回文章，并创建写回前版本。')).toBeVisible()
 
   page.once('dialog', async (dialog) => dialog.accept())
-  await page.getByRole('button', { name: '清空全部' }).click()
-  await expect(page.getByText('全部 AI 工作区状态已清空')).toBeVisible()
-  await expect(page.getByRole('button', { name: '粘贴文本' })).toBeVisible()
+  await page.getByRole('button', { name: '清空本轮结果' }).click()
+  await expect(page.getByText('DeepSeek 增量结果')).toHaveCount(0)
 })
 
-test('AI tools show long request diagnostics and honest pending state while models run', async ({ page }) => {
-  await page.unroute('**/api/ai/task/compare/stream')
-  await page.route('**/api/ai/task/compare/stream', async (route) => {
-    const body = route.request().postDataJSON() as { task_type?: string; text?: string; profile_ids?: string[] }
-    await new Promise((resolve) => setTimeout(resolve, 450))
-    await route.fulfill({
-      contentType: 'application/x-ndjson',
-      body: compareStreamBody(body, (profileId) => profileId === 'default' ? '长文本默认模型结果' : '长文本 Gemini 结果'),
-    })
+test('article AI background run survives navigation and is recovered without resending', async ({ page }) => {
+  let creates = 0
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/ai/task-runs') creates += 1
   })
-
-  await page.goto('/ai?tab=tools')
-  await page.getByRole('button', { name: '粘贴文本' }).click()
-  await page.getByPlaceholder('粘贴需要处理的文本...').fill('段落。'.repeat(2200))
-  await expect(page.getByText('请求规模')).toBeVisible()
-  await expect(page.getByText('较长', { exact: true })).toBeVisible()
-
-  await page.getByLabel('Gemini 测试').check()
-  await expect(page.getByRole('button', { name: '运行任务' })).toBeVisible()
-  await page.getByLabel('默认配置').check()
-  await page.getByRole('button', { name: '运行 2 个模型' }).click()
-  await expect(page.getByText('正在等待 2 个模型返回')).toBeVisible()
-  await expect(page.getByText('等待中')).toHaveCount(2)
-  await expect(page.getByText('长文本默认模型结果')).toBeVisible()
-  await expect(page.getByText('长文本 Gemini 结果')).toBeVisible()
+  await page.goto('/ai?scope_kind=article&scope_id=article-a')
+  await page.getByRole('button', { name: '运行 AI 修改' }).click()
+  await expect.poll(() => creates).toBe(1)
+  await page.goto('/dates')
+  await page.goto('/ai')
+  await expect(page.getByText('Gemini 增量结果')).toBeVisible({ timeout: 10000 })
+  expect(creates).toBe(1)
 })
 
-test('AI result replace cancel does not update the selected article', async ({ page }) => {
-  const updates: Array<{ title?: string; body?: string; tags?: string[] }> = []
-
-  await page.route('**/api/articles/article-a', async (route) => {
-    const request = route.request()
-    if (request.method() === 'PUT') {
-      const body = request.postDataJSON() as { title?: string; body?: string; tags?: string[] }
-      updates.push(body)
-      await route.fulfill({ json: { ...article, ...body } })
-      return
-    }
-    await route.fulfill({ json: article })
-  })
-
-  await page.goto('/ai?tab=tools&scope_kind=article&scope_id=article-a')
-  await page.getByRole('button', { name: '运行任务' }).click()
-  await expect(page.getByText('AI 生成结果')).toBeVisible()
-
-  await page.evaluate(() => {
-    window.__confirmMessages = []
-    window.confirm = (message?: string) => {
-      window.__confirmMessages?.push(String(message ?? ''))
-      return false
-    }
-  })
-  await page.getByRole('button', { name: '✏️ 替换原文' }).click()
-  await expect.poll(() => page.evaluate(() => window.__confirmMessages?.length ?? 0)).toBe(1)
-  await expect.poll(() => page.evaluate(() => window.__confirmMessages?.[0] ?? '')).toContain('确定要替换原文章内容吗')
-  expect(updates).toEqual([])
+test('article chat drawer preserves its draft when closed and records the actual model metadata', async ({ page }) => {
+  await page.goto('/articles?id=article-a')
+  await page.getByRole('button', { name: 'AI 对话' }).click()
+  const drawer = page.getByTestId('article-ai-chat-drawer')
+  await expect(drawer).toBeVisible()
+  await expect(page.getByRole('dialog', { name: '文章 AI 对话' })).toBeVisible()
+  const input = drawer.getByPlaceholder('输入问题，Ctrl+Enter 发送')
+  await input.fill('关闭抽屉后不要丢失。')
+  await drawer.getByRole('button', { name: '关闭' }).click()
+  await expect(drawer).toBeHidden()
+  await page.getByRole('button', { name: 'AI 对话' }).click()
+  await expect(input).toHaveValue('关闭抽屉后不要丢失。')
+  await drawer.getByRole('button', { name: '发送' }).click()
+  await expect(drawer.getByText('这是 AI 回复。')).toBeVisible()
+  await expect(drawer.getByText('fake · fake-model · chat_completions')).toBeVisible()
+  await drawer.getByRole('button', { name: '存为便签' }).click()
+  await expect(drawer.getByText('已保存为当前文章便签。')).toBeVisible()
+  await drawer.getByRole('button', { name: '预览后存为文脉' }).click()
+  await expect(page.getByRole('dialog', { name: '预览并保存为文脉' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name: '预览并保存为文脉' })).toBeHidden()
 })
 
-test('AI result replace updates the selected article after confirmation', async ({ page }) => {
-  const updates: Array<{ title?: string; body?: string; tags?: string[] }> = []
-
-  await page.route('**/api/articles/article-a', async (route) => {
-    const request = route.request()
-    if (request.method() === 'PUT') {
-      const body = request.postDataJSON() as { title?: string; body?: string; tags?: string[] }
-      updates.push(body)
-      await route.fulfill({ json: { ...article, ...body } })
-      return
-    }
-    await route.fulfill({ json: article })
-  })
-
-  await page.goto('/ai?tab=tools&scope_kind=article&scope_id=article-a')
-  await page.getByRole('button', { name: '运行任务' }).click()
-  await expect(page.getByText('AI 生成结果')).toBeVisible()
-
-  await page.evaluate(() => {
-    window.__confirmMessages = []
-    window.confirm = (message?: string) => {
-      window.__confirmMessages?.push(String(message ?? ''))
-      return true
-    }
-  })
-  await page.getByRole('button', { name: '✏️ 替换原文' }).click()
-  await expect.poll(() => page.evaluate(() => window.__confirmMessages?.length ?? 0)).toBe(1)
-  await expect.poll(() => updates.length).toBe(1)
-  expect(updates[0]).toEqual(expect.objectContaining({ body: 'AI 生成结果' }))
-  await expect(page).toHaveURL(/\/articles\?.*id=article-a/)
-  await expect(page).toHaveURL(/focus_start=/)
+test('primary settings, article, collection, AI, and backup surfaces have no serious accessibility violations', async ({ page }) => {
+  const routes = ['/settings', '/articles?id=article-a', '/collections?id=collection-a', '/ai?scope_kind=article&scope_id=article-a', '/backup']
+  for (const path of routes) {
+    await page.goto(path)
+    await page.waitForLoadState('domcontentloaded')
+    const results = await new AxeBuilder({ page }).analyze()
+    const serious = results.violations.filter((item) => item.impact === 'serious' || item.impact === 'critical')
+    expect(serious, `${path}: ${serious.map((item) => `${item.id} (${item.nodes.length})`).join(', ')}`).toEqual([])
+  }
 })
 
-test('AI result insert appends to the selected article', async ({ page }) => {
-  const updates: Array<{ title?: string; body?: string; tags?: string[] }> = []
+test('all primary surfaces avoid horizontal overflow at release viewports in both languages', async ({ browser }) => {
+  const viewports = [
+    { width: 1024, height: 768 },
+    { width: 1400, height: 900 },
+    { width: 1920, height: 1080 },
+  ]
+  const routes = [
+    ['/dates', 'dates'],
+    ['/articles?id=article-a', 'articles'],
+    ['/collections?id=collection-a', 'collections'],
+    ['/library', 'library'],
+    ['/motifs', 'motifs'],
+    ['/ai-cards', 'ai-cards'],
+    ['/ai?scope_kind=article&scope_id=article-a', 'article-ai'],
+    ['/backup', 'backup'],
+    ['/settings', 'settings'],
+  ] as const
 
-  await page.route('**/api/articles/article-a', async (route) => {
-    const request = route.request()
-    if (request.method() === 'PUT') {
-      const body = request.postDataJSON() as { title?: string; body?: string; tags?: string[] }
-      updates.push(body)
-      await route.fulfill({ json: { ...article, ...body } })
-      return
+  for (const language of ['zh', 'en'] as const) {
+    for (const viewport of viewports) {
+      const context = await browser.newContext({ viewport })
+      const page = await context.newPage()
+      await mockVisibleActionApi(page, language)
+      try {
+        for (const [route, name] of routes) {
+          await page.goto(route)
+          await page.waitForLoadState('domcontentloaded')
+          await page.waitForTimeout(400)
+          const dimensions = await page.evaluate(() => ({
+            viewport: window.innerWidth,
+            html: document.documentElement.scrollWidth,
+            body: document.body.scrollWidth,
+          }))
+          expect(
+            Math.max(dimensions.html, dimensions.body),
+            `${language} ${viewport.width}x${viewport.height} ${route}`,
+          ).toBeLessThanOrEqual(dimensions.viewport + 1)
+          if (process.env.CAPTURE_VISUAL_AUDIT === '1') {
+            await page.screenshot({
+              path: path.resolve(process.cwd(), 'test-results', 'visual-audit', `${language}-${viewport.width}x${viewport.height}-${name}.png`),
+              fullPage: false,
+            })
+          }
+        }
+      } finally {
+        await context.close()
+      }
     }
-    await route.fulfill({ json: article })
-  })
-
-  await page.goto('/ai?tab=tools&scope_kind=article&scope_id=article-a')
-  await page.getByRole('button', { name: '运行任务' }).click()
-  await page.getByRole('button', { name: '插入到文末' }).click()
-  await expect.poll(() => updates.length).toBe(1)
-  expect(updates[0].body).toContain(article.body)
-  expect(updates[0].body).toContain('AI 生成结果')
-})
-
-test('AI article chat can copy assistant replies and save them as article notes', async ({ page }) => {
-  const noteBodies: string[] = []
-  const referenceBodies: Array<Record<string, unknown>> = []
-  const createdArticleBodies: Array<Record<string, unknown>> = []
-
-  await page.route('**/api/articles/article-a/notes', async (route) => {
-    if (route.request().method() === 'POST') {
-      const body = route.request().postDataJSON() as { body?: string }
-      noteBodies.push(body.body ?? '')
-      await route.fulfill({ status: 201, json: { ...openNote, id: 'note-from-chat', body: body.body ?? '' } })
-      return
-    }
-    await route.fulfill({ json: [openNote] })
-  })
-  await page.route('**/api/library/references', async (route) => {
-    if (route.request().method() === 'POST') {
-      const body = route.request().postDataJSON() as Record<string, unknown>
-      referenceBodies.push(body)
-      await route.fulfill({ status: 201, json: { ...reference, ...body, id: 'ref-from-chat' } })
-      return
-    }
-    await route.fulfill({ json: [existingReference] })
-  })
-  await page.route('**/api/articles', async (route) => {
-    if (route.request().method() === 'POST') {
-      const body = route.request().postDataJSON() as Record<string, unknown>
-      createdArticleBodies.push(body)
-      await route.fulfill({ status: 201, json: { ...article, ...body, id: 'article-from-chat' } })
-      return
-    }
-    await route.fulfill({ json: [article, articleB] })
-  })
-
-  await page.goto('/ai?tab=chat&scope_kind=article&scope_id=article-a')
-  await expect(page.getByRole('main').getByText('导出测试文章')).toBeVisible()
-  await page.getByPlaceholder('输入你想讨论的问题，Ctrl/⌘ + Enter 发送...').fill('帮我看一下结尾。')
-  await page.getByRole('button', { name: '发送' }).click()
-
-  await expect(page.getByText('这是 AI 回复。')).toBeVisible()
-  await page.getByRole('button', { name: '复制回复' }).click()
-  await expect.poll(() => page.evaluate(() => window.__copiedText)).toBe('这是 AI 回复。')
-  await expect(page.getByText('回复已复制')).toBeVisible()
-
-  await page.getByRole('button', { name: '保存为文章便签' }).click()
-  await expect.poll(() => noteBodies).toEqual(['这是 AI 回复。'])
-  await expect(page.getByText('已保存为文章便签')).toBeVisible()
-
-  await page.getByRole('button', { name: '保存为文脉标本' }).click()
-  await expect(page.getByTestId('ai-chat-capture-dialog')).toBeVisible()
-  await expect(page.getByText('确认保存为文脉标本')).toBeVisible()
-  await expect.poll(() => referenceBodies.length).toBe(0)
-  await expect(page.getByLabel('标题 / 出处')).toHaveValue('AI 对话｜导出测试文章')
-  await expect(page.getByLabel('正文')).toHaveValue('这是 AI 回复。')
-  await expect(page.getByLabel('标签')).toHaveValue('AI')
-  await page.getByRole('button', { name: '确认保存' }).click()
-  await expect.poll(() => referenceBodies.length).toBe(1)
-  expect(referenceBodies[0]).toEqual(expect.objectContaining({
-    content: '这是 AI 回复。',
-    source_title: 'AI 对话｜导出测试文章',
-    usage_kind: 'reflection',
-    tags: ['AI'],
-  }))
-  await expect(page.getByText('已保存为文脉标本')).toBeVisible()
-
-  await page.getByRole('button', { name: '另存为新文章' }).click()
-  await expect(page.getByTestId('ai-chat-capture-dialog')).toBeVisible()
-  await expect(page.getByText('确认另存为新文章')).toBeVisible()
-  await expect.poll(() => createdArticleBodies.length).toBe(0)
-  await expect(page.getByLabel('标题 / 出处')).toHaveValue('AI 对话草稿｜导出测试文章')
-  await page.getByRole('button', { name: '确认保存' }).click()
-  await expect.poll(() => createdArticleBodies.length).toBe(1)
-  expect(createdArticleBodies[0]).toEqual(expect.objectContaining({
-    title: 'AI 对话草稿｜导出测试文章',
-    body: '这是 AI 回复。',
-    tags: ['AI'],
-  }))
-  await expect(page).toHaveURL(/\/articles\?.*id=article-from-chat/)
-})
-
-test('AI article chat keeps the draft message when sending fails', async ({ page }) => {
-  await page.route('**/api/ai/chat', async (route) => {
-    await route.fulfill({ status: 503, json: { detail: '后台服务暂时不可用' } })
-  })
-
-  await page.goto('/ai?tab=chat&scope_kind=article&scope_id=article-a')
-  await expect(page.getByRole('main').getByText('导出测试文章')).toBeVisible()
-  await page.getByPlaceholder('输入你想讨论的问题，Ctrl/⌘ + Enter 发送...').fill('这段问题不能因为失败而丢失。')
-  await page.getByRole('button', { name: '发送' }).click()
-
-  await expect(page.getByPlaceholder('输入你想讨论的问题，Ctrl/⌘ + Enter 发送...')).toHaveValue('这段问题不能因为失败而丢失。')
-  await expect(page.getByText('后台服务暂时不可用')).toBeVisible()
-})
-
-test('AI chat standing instruction saves and back-to-article navigates to the scoped article', async ({ page }) => {
-  const prompts: string[] = []
-
-  await page.route('**/api/ai/chat-settings', async (route) => {
-    if (route.request().method() === 'PUT') {
-      const body = route.request().postDataJSON() as { system_prompt?: string }
-      prompts.push(body.system_prompt ?? '')
-      await route.fulfill({ json: { system_prompt: body.system_prompt ?? '' } })
-      return
-    }
-    await route.fulfill({ json: { system_prompt: '' } })
-  })
-
-  await page.goto('/ai?tab=chat&scope_kind=article&scope_id=article-a')
-  await page.getByPlaceholder('例如：回答要具体、克制，不要替作者做过度判断；可以提出修改建议，但不要直接覆盖原文。').fill('回答要具体、克制。')
-  await page.getByRole('button', { name: '保存常驻指令' }).click()
-  await expect.poll(() => prompts).toEqual(['回答要具体、克制。'])
-  await expect(page.getByText('常驻指令已保存')).toBeVisible()
-
-  await page.getByRole('button', { name: '返回文章' }).click()
-  await expect(page).toHaveURL(/\/articles\?.*id=article-a/)
-})
-
-test('AI chat clears old article messages during scope switches so replies cannot save to the wrong note list', async ({ page }) => {
-  let resolveArticleBThread: (() => void) | null = null
-
-  await page.route('**/api/ai/threads**', async (route) => {
-    const url = new URL(route.request().url())
-    if (url.pathname !== '/api/ai/threads/current') {
-      await route.fulfill({ json: [] })
-      return
-    }
-
-    const scopeId = url.searchParams.get('scope_id')
-    if (scopeId === articleB.id) {
-      await new Promise<void>((resolve) => {
-        resolveArticleBThread = resolve
-      })
-      await route.fulfill({ json: { thread: {
-        id: 'thread-b',
-        title: articleB.title,
-        scope_kind: 'article',
-        scope_id: articleB.id,
-        created_at: null,
-        updated_at: null,
-      }, messages: [] } })
-      return
-    }
-
-    await route.fulfill({ json: { thread: {
-      id: 'thread-a',
-      title: article.title,
-      scope_kind: 'article',
-      scope_id: article.id,
-      created_at: null,
-      updated_at: null,
-    }, messages: [{
-      id: 'message-old-assistant',
-      thread_id: 'thread-a',
-      role: 'assistant',
-      content: 'A 文章的旧回复',
-      timestamp: null,
-    }] } })
-  })
-
-  await page.goto('/ai?tab=chat&scope_kind=article&scope_id=article-a')
-  await expect(page.getByText('A 文章的旧回复')).toBeVisible()
-  await expect(page.getByRole('button', { name: '保存为文章便签' })).toBeVisible()
-
-  await page.getByRole('combobox').selectOption(articleB.id)
-  await expect(page.getByText('A 文章的旧回复')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '保存为文章便签' })).toHaveCount(0)
-
-  resolveArticleBThread?.()
-  await expect(page.getByText('还没有对话。你可以直接讨论当前文章。')).toBeVisible()
+  }
 })

@@ -43,6 +43,9 @@ describe('api base errors', () => {
     expect(errorMessage(new TypeError('Failed to fetch'))).toContain('后台服务正在启动或连接中')
     expect(errorMessage(new Error('<!doctype html><html><title>403</title></html>'))).not.toContain('<html')
     expect(errorMessage(new Error('Traceback (most recent call last): boom'))).not.toContain('Traceback')
+    expect(errorMessage(new Error('missing_var'))).toContain('API Key')
+    expect(errorMessage(new Error('HTTP 429 rate limit'))).toContain('请求过于频繁')
+    expect(errorMessage(new Error('request timeout'))).toContain('远端仍可能继续生成')
     const fakeKey = `sk-${'1234567890abcdefghijkl'}`
     expect(errorMessage(new Error(`provider rejected ${fakeKey}`))).toBe('provider rejected sk-***')
   })

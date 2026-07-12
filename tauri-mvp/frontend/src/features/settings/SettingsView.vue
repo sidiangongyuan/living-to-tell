@@ -1,28 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { appApi } from '../../api/app'
 import { errorMessage, isHttpStatus } from '../../api/base'
-import {
-  settingsApi,
-  type AiDiscoveredProfile,
-  type AiLiveTestResult,
-  type AiModelListResult,
-  type AiProfile,
-  type AiProfileCreate,
-  type AiProviderName,
-  type AiSettings,
-  type AiSettingsUpdate,
-  type DataLocationInfo,
-} from '../../api/settings'
+import { settingsApi, type DataLocationInfo } from '../../api/settings'
 import { useI18n } from '../../i18n'
 import { useAppUpdateStore } from '../../stores/appUpdate'
 import { useSettingsStore } from '../../stores/settings'
-import {
-  buildCredentialOptions,
-  collectSavedLocalCredentialSources,
-  localEnvVarFromCredentialSource,
-} from './credentialOptions'
+import AiProfilesSettings from './AiProfilesSettings.vue'
 
 interface DataDirectoryOverrideState {
   override_path?: string | null
@@ -30,67 +15,24 @@ interface DataDirectoryOverrideState {
   warning?: string | null
 }
 
-type UiLiveTestResult = AiLiveTestResult & { success: boolean }
-type UiModelFetchResult = AiModelListResult & { success: boolean }
-
-interface DiagnosticRow {
-  label: string
-  value: string
-  detail?: string
-  tone: 'default' | 'good' | 'warn' | 'bad'
-}
+type SettingsCategory = 'ai' | 'data' | 'interface' | 'about'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const settings = useSettingsStore()
 const appUpdate = useAppUpdateStore()
-const OPENCODE_DEFAULT_MODEL = 'opencode/deepseek-v4-flash-free'
+const activeSettingsCategory = ref<SettingsCategory>('ai')
+const settingsCategories = computed(() => [
+  { id: 'ai' as const, label: t('settings.categories.ai') },
+  { id: 'data' as const, label: t('settings.categories.data') },
+  { id: 'interface' as const, label: t('settings.categories.interface') },
+  { id: 'about' as const, label: t('settings.categories.about') },
+])
 
-const aiProvider = ref<AiProviderName>('openai')
-const model = ref('gpt-4o-mini')
-const baseUrl = ref('')
-const apiKeySource = ref('env:OPENAI_API_KEY')
-const geminiCliProxy = ref('')
-const aiSettings = ref<AiSettings | null>(null)
-const loadingAiSettings = ref(false)
 const savingSettings = ref(false)
-const testingConnection = ref(false)
-const testingLiveConnection = ref(false)
-const fetchingModels = ref(false)
-const localApiKeyInput = ref('')
-const savingLocalApiKey = ref(false)
-const importing = ref<'codex' | 'gemini' | null>(null)
-const testResult = ref<{ success: boolean; message: string } | null>(null)
-const liveTestResult = ref<UiLiveTestResult | null>(null)
-const modelFetchResult = ref<UiModelFetchResult | null>(null)
 const saveNotice = ref('')
 const saveError = ref('')
-const fetchedModelPresets = ref<Partial<Record<AiProviderName, string[]>>>({})
-const transientLocalCredentialSources = ref<Partial<Record<AiProviderName, string[]>>>({})
-let applyingAiSettings = false
-
-const aiProfiles = ref<AiProfile[]>([])
-const loadingProfiles = ref(false)
-const savingProfile = ref(false)
-const testingProfile = ref(false)
-const fetchingProfileModels = ref(false)
-const profileEditorOpen = ref(false)
-const editingProfileId = ref<string | null>(null)
-const profileDraft = ref<AiProfileCreate>(createEmptyProfileDraft())
-const profileNotice = ref('')
-const profileError = ref('')
-const profileTestResult = ref<UiLiveTestResult | null>(null)
-const profileModelFetchResult = ref<UiModelFetchResult | null>(null)
-const profileModelPresets = ref<Partial<Record<AiProviderName, string[]>>>({})
-const profileLocalApiKeyInput = ref('')
-const savingProfileLocalApiKey = ref(false)
-const discoveredProfiles = ref<AiDiscoveredProfile[]>([])
-const discoveringProfiles = ref(false)
-const importingLocalProfiles = ref(false)
-const aiProfilesSectionRef = ref<HTMLElement | null>(null)
-let profileStateSeq = 0
-
 const closeBehaviorNotice = ref('')
 const dataLocation = ref<DataLocationInfo | null>(null)
 const dataOverride = ref<DataDirectoryOverrideState | null>(null)
@@ -102,848 +44,48 @@ const dataLocationError = ref('')
 const dataLocationUnsupported = ref(false)
 const updateActionError = ref('')
 
-const providerOptions = computed<Array<{ value: AiProviderName; label: string }>>(() => [
-  { value: 'openai', label: t('settings.providers.openai') },
-  { value: 'gemini', label: t('settings.providers.gemini') },
-  { value: 'gemini_cli', label: t('settings.providers.geminiCli') },
-  { value: 'opencode', label: t('settings.providers.opencode') },
-])
-
-const credentialOptions = computed<Array<{ value: string; label: string }>>(() => buildCredentialOptions(
-  aiProvider.value,
-  apiKeySource.value,
-  t,
-  savedLocalCredentialSourcesFor(aiProvider.value, apiKeySource.value),
-))
-const profileCredentialOptions = computed<Array<{ value: string; label: string }>>(() =>
-  buildCredentialOptions(
-    profileDraft.value.provider_name,
-    profileDraft.value.api_key_source,
-    t,
-    savedLocalCredentialSourcesFor(profileDraft.value.provider_name, profileDraft.value.api_key_source),
-  )
-)
-
-const modelPresets = computed(() =>
-  fetchedModelPresets.value[aiProvider.value]
-  ?? aiSettings.value?.model_presets?.[aiProvider.value]
-  ?? []
-)
-
-const profileModelOptions = computed(() =>
-  profileModelPresets.value[profileDraft.value.provider_name]
-  ?? fetchedModelPresets.value[profileDraft.value.provider_name]
-  ?? aiSettings.value?.model_presets?.[profileDraft.value.provider_name]
-  ?? []
-)
-
-const activeStatus = computed(() => {
-  if (!aiSettings.value) return null
-  if (aiProvider.value === 'opencode') return aiSettings.value.status.opencode
-  if (aiProvider.value === 'gemini_cli') return aiSettings.value.status.gemini_cli
-  if (apiKeySource.value === 'codex') return aiSettings.value.status.codex
-  if (apiKeySource.value === 'gemini') return aiSettings.value.status.gemini
-  return aiSettings.value.status.env
-})
-
-const statusMatchesSavedConfig = computed(() => {
-  if (!aiSettings.value) return false
-  if (aiProvider.value === 'opencode') return true
-  if (aiSettings.value.provider_name !== aiProvider.value) return false
-  if (aiProvider.value === 'gemini_cli') {
-    return (aiSettings.value.gemini_cli_proxy ?? '') === (geminiCliProxy.value.trim() || '')
-  }
-  return aiSettings.value.api_key_source === apiKeySource.value.trim()
-})
-
-const statusLabel = computed(() => {
-  if (!statusMatchesSavedConfig.value) return t('settings.statusPending')
-  const status = activeStatus.value
-  if (!status) return t('settings.statusUnknown')
-  if (status.available) return t('settings.statusAvailable')
-  return status.reason ? t('settings.statusUnavailableWithReason', { reason: status.reason }) : t('settings.statusUnavailable')
-})
-
-const statusDetail = computed(() => {
-  if (!statusMatchesSavedConfig.value) return ''
-  const status = activeStatus.value
-  if (!status) return ''
-  if (aiProvider.value === 'opencode') {
-    const parts = [
-      status.command ? `${t('settings.openCodeCommand')}: ${status.command}` : '',
-      status.path ? `${t('settings.credentialPath')}: ${status.path}` : '',
-    ].filter(Boolean)
-    return parts.join('\n')
-  }
-  if (aiProvider.value === 'gemini_cli') {
-    const parts = [
-      status.command ? `${t('settings.geminiCliCommand')}: ${status.command}` : '',
-      status.account ? `${t('settings.geminiCliAccount')}: ${status.account}` : '',
-      status.path ? `${t('settings.credentialPath')}: ${status.path}` : '',
-    ].filter(Boolean)
-    return parts.join('\n')
-  }
-  return status.path ? `${t('settings.credentialPath')}: ${status.path}` : ''
-})
-
-const diagnosticRows = computed<DiagnosticRow[]>(() => {
-  const providerLabel = providerOptions.value.find((provider) => provider.value === aiProvider.value)?.label ?? aiProvider.value
-  const modelListSource = modelFetchResult.value
-    ? modelFetchResult.value.source === 'live'
-      ? t('settings.diagnostics.modelSourceLive')
-      : t('settings.diagnostics.modelSourcePreset')
-    : t('settings.diagnostics.notFetched')
-  const localCheck = testResult.value
-    ? testResult.value.success
-      ? t('settings.diagnostics.localCheckPassed')
-      : t('settings.diagnostics.localCheckFailed')
-    : statusMatchesSavedConfig.value && activeStatus.value
-      ? statusLabel.value
-      : t('settings.diagnostics.notChecked')
-  const liveStatus = liveTestResult.value
-    ? liveTestResult.value.success
-      ? t('settings.diagnostics.liveTestPassed')
-      : t('settings.diagnostics.liveTestFailed')
-    : t('settings.diagnostics.notTested')
-  const elapsed = liveTestResult.value?.elapsed_ms ?? null
-
-  return [
-    {
-      label: t('settings.diagnostics.provider'),
-      value: providerLabel,
-      detail: aiProvider.value,
-      tone: 'default',
-    },
-    {
-      label: t('settings.diagnostics.model'),
-      value: model.value.trim() || t('settings.diagnostics.empty'),
-      tone: model.value.trim() ? 'default' : 'warn',
-    },
-    {
-      label: t('settings.diagnostics.transport'),
-      value: liveTestResult.value?.transport || inferredTransportLabel(),
-      detail: liveTestResult.value?.provider ? `${liveTestResult.value.provider} · ${liveTestResult.value.model}` : undefined,
-      tone: liveTestResult.value?.success ? 'good' : 'default',
-    },
-    {
-      label: t('settings.diagnostics.credential'),
-      value: diagnosticCredentialSource(),
-      detail: activeStatus.value?.command || undefined,
-      tone: activeStatus.value?.available ? 'good' : 'warn',
-    },
-    {
-      label: t('settings.diagnostics.localCheck'),
-      value: localCheck,
-      detail: testResult.value?.message,
-      tone: testResult.value ? (testResult.value.success ? 'good' : 'bad') : activeStatus.value?.available ? 'good' : 'warn',
-    },
-    {
-      label: t('settings.diagnostics.realRequest'),
-      value: elapsed !== null && elapsed !== undefined ? `${liveStatus} · ${elapsed}ms` : liveStatus,
-      detail: liveTestResult.value?.preview || liveTestResult.value?.message,
-      tone: liveTestResult.value ? (liveTestResult.value.success ? 'good' : 'bad') : 'warn',
-    },
-    {
-      label: t('settings.diagnostics.modelList'),
-      value: modelListSource,
-      detail: modelFetchResult.value?.message,
-      tone: modelFetchResult.value?.source === 'live' ? 'good' : modelFetchResult.value ? 'warn' : 'default',
-    },
-  ]
-})
-
-function inferredTransportLabel(): string {
-  if (aiProvider.value === 'opencode') return 'opencode_cli'
-  if (aiProvider.value === 'gemini_cli') return 'gemini_cli'
-  if (aiProvider.value === 'gemini') {
-    if (baseUrl.value.trim() && apiKeySource.value.trim().startsWith('sk-')) return 'chat_completions'
-    return baseUrl.value.trim() ? t('settings.diagnostics.autoTransport') : 'gemini_native'
-  }
-  return baseUrl.value.trim() ? (aiSettings.value?.wire_api || 'chat_completions') : 'chat_completions'
-}
-
-function diagnosticCredentialSource(): string {
-  if (aiProvider.value === 'opencode') return t('settings.credentialOpenCode')
-  if (aiProvider.value === 'gemini_cli') return t('settings.credentialGeminiCli')
-  const option = credentialOptions.value.find((item) => item.value === apiKeySource.value)
-  return option?.label ?? apiKeySource.value.trim() ?? t('settings.diagnostics.empty')
-}
-
-function rememberLocalCredentialSource(provider: AiProviderName, source: string) {
-  const normalized = source.trim()
-  if (!localEnvVarFromCredentialSource(normalized)) return
-  const current = transientLocalCredentialSources.value[provider] ?? []
-  if (current.includes(normalized)) return
-  transientLocalCredentialSources.value = {
-    ...transientLocalCredentialSources.value,
-    [provider]: [...current, normalized],
-  }
-}
-
-function savedLocalCredentialSourcesFor(provider: AiProviderName, currentSource: string): string[] {
-  return Array.from(new Set([
-    ...collectSavedLocalCredentialSources(provider, currentSource, aiSettings.value, aiProfiles.value),
-    ...(transientLocalCredentialSources.value[provider] ?? []),
-  ]))
-}
-
-function diagnosticToneClass(tone: DiagnosticRow['tone']): string {
-  if (tone === 'good') return 'border-emerald-100 bg-emerald-50 text-emerald-900'
-  if (tone === 'bad') return 'border-red-100 bg-red-50 text-red-900'
-  if (tone === 'warn') return 'border-amber-100 bg-amber-50 text-amber-900'
-  return 'border-slate-100 bg-slate-50 text-slate-900'
-}
-
 onMounted(() => {
-  void loadSettings()
-  void loadProfiles()
   void loadDataLocation()
   void settings.loadNativePreferences()
   void appUpdate.ensureVersionLoaded()
-  void focusRequestedSection()
+  focusRequestedSection()
 })
 
-watch(() => route.query.section, () => {
-  void focusRequestedSection()
-})
+watch(() => route.query.section, focusRequestedSection)
 
-watch(aiProvider, (provider, previous) => {
-  if (applyingAiSettings) return
-  if (provider === previous) return
-  testResult.value = null
-  liveTestResult.value = null
-  modelFetchResult.value = null
-  localApiKeyInput.value = ''
-  saveNotice.value = ''
-  saveError.value = ''
-  if (provider === 'openai') {
-    apiKeySource.value = 'env:OPENAI_API_KEY'
-    if (!model.value || model.value.startsWith('gemini')) model.value = 'gpt-4o-mini'
-  } else if (provider === 'gemini') {
-    apiKeySource.value = 'env:GEMINI_API_KEY'
-    if (!model.value || model.value.startsWith('gpt-') || model.value.startsWith('opencode/')) model.value = 'gemini-2.5-flash'
-  } else if (provider === 'gemini_cli') {
-    apiKeySource.value = 'gemini-cli'
-    baseUrl.value = ''
-    if (!model.value || model.value.startsWith('gpt-') || model.value.startsWith('opencode/')) model.value = 'gemini-cli-default'
-  } else {
-    apiKeySource.value = 'opencode'
-    baseUrl.value = ''
-    if (!model.value || model.value.startsWith('gpt-') || model.value.startsWith('gemini')) model.value = OPENCODE_DEFAULT_MODEL
-  }
-})
-
-async function loadSettings() {
-  loadingAiSettings.value = true
-  saveError.value = ''
-  try {
-    const loaded = await settingsApi.getAiSettings()
-    applyAiSettings(loaded)
-  } catch (e) {
-    saveError.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    loadingAiSettings.value = false
-  }
-}
-
-function applyAiSettings(loaded: AiSettings) {
-  applyingAiSettings = true
-  aiSettings.value = loaded
-  aiProvider.value = loaded.provider_name
-  model.value = loaded.model
-  baseUrl.value = loaded.base_url ?? ''
-  apiKeySource.value = loaded.provider_name === 'gemini_cli'
-    ? 'gemini-cli'
-    : loaded.provider_name === 'opencode'
-      ? 'opencode'
-      : loaded.api_key_source
-  geminiCliProxy.value = loaded.gemini_cli_proxy ?? loaded.status.gemini_cli.proxy ?? ''
-  window.setTimeout(() => {
-    applyingAiSettings = false
-  }, 0)
-}
-
-function buildAiSettingsUpdate(): AiSettingsUpdate {
-  return {
-    provider_name: aiProvider.value,
-    base_url: aiProvider.value === 'gemini_cli' || aiProvider.value === 'opencode' ? null : baseUrl.value.trim() || null,
-    wire_api: 'responses',
-    model: model.value.trim() || (aiProvider.value === 'gemini_cli' ? 'gemini-cli-default' : aiProvider.value === 'opencode' ? OPENCODE_DEFAULT_MODEL : ''),
-    api_key_source: aiProvider.value === 'gemini_cli' ? 'gemini-cli' : aiProvider.value === 'opencode' ? 'opencode' : apiKeySource.value.trim(),
-    gemini_cli_proxy: aiProvider.value === 'gemini_cli' ? geminiCliProxy.value.trim() || null : null,
-  }
-}
-
-function createEmptyProfileDraft(): AiProfileCreate {
-  return {
-    name: '',
-    provider_name: 'openai',
-    base_url: '',
-    wire_api: 'chat_completions',
-    model: '',
-    api_key_source: 'env:OPENAI_API_KEY',
-    gemini_cli_proxy: null,
-    enabled: true,
-    source_key: null,
-  }
-}
-
-function profileToDraft(profile: AiProfile): AiProfileCreate {
-  return {
-    name: profile.name,
-    provider_name: profile.provider_name,
-    base_url: profile.base_url ?? '',
-    wire_api: profile.wire_api || 'responses',
-    model: profile.model,
-    api_key_source: profile.api_key_source,
-    gemini_cli_proxy: profile.gemini_cli_proxy,
-    enabled: profile.enabled,
-    source_key: profile.source_key ?? null,
-  }
-}
-
-function profileDraftToSettingsUpdate(draft = profileDraft.value): AiSettingsUpdate {
-  const provider = draft.provider_name
-  return {
-    provider_name: provider,
-    base_url: provider === 'gemini_cli' || provider === 'opencode' ? null : (draft.base_url || '').trim() || null,
-    wire_api: provider === 'openai' ? (draft.wire_api || 'chat_completions') : 'responses',
-    model: (draft.model || '').trim() || (provider === 'gemini_cli' ? 'gemini-cli-default' : provider === 'opencode' ? OPENCODE_DEFAULT_MODEL : ''),
-    api_key_source: provider === 'gemini_cli' ? 'gemini-cli' : provider === 'opencode' ? 'opencode' : (draft.api_key_source || '').trim(),
-    gemini_cli_proxy: provider === 'gemini_cli' ? (draft.gemini_cli_proxy || '').trim() || null : null,
-  }
-}
-
-function normalizeProfileDraftForProvider() {
-  const draft = profileDraft.value
-  if (draft.provider_name === 'openai') {
-    if (!draft.api_key_source || ['gemini', 'gemini-cli', 'opencode'].includes(draft.api_key_source)) {
-      draft.api_key_source = 'env:OPENAI_API_KEY'
-    }
-    if (!draft.wire_api) draft.wire_api = 'chat_completions'
-    if (draft.model.startsWith('gemini') || draft.model.startsWith('opencode/')) draft.model = ''
-    return
-  }
-  if (draft.provider_name === 'gemini') {
-    if (!draft.api_key_source || ['codex', 'gemini-cli', 'opencode'].includes(draft.api_key_source)) {
-      draft.api_key_source = 'env:GEMINI_API_KEY'
-    }
-    draft.wire_api = 'responses'
-    if (draft.model.startsWith('gpt-') || draft.model.startsWith('opencode/')) draft.model = ''
-    return
-  }
-  if (draft.provider_name === 'gemini_cli') {
-    draft.api_key_source = 'gemini-cli'
-    draft.base_url = null
-    draft.wire_api = 'responses'
-    if (!draft.model || draft.model.startsWith('gpt-') || draft.model.startsWith('opencode/')) {
-      draft.model = 'gemini-cli-default'
-    }
-    return
-  }
-  draft.api_key_source = 'opencode'
-  draft.base_url = null
-  draft.wire_api = 'responses'
-  if (!draft.model || draft.model.startsWith('gpt-') || draft.model.startsWith('gemini')) {
-    draft.model = OPENCODE_DEFAULT_MODEL
-  }
-}
-
-async function loadProfiles() {
-  const seq = ++profileStateSeq
-  loadingProfiles.value = true
-  profileError.value = ''
-  try {
-    const result = await settingsApi.listAiProfiles()
-    if (seq !== profileStateSeq) return
-    aiProfiles.value = result.profiles
-  } catch (e) {
-    if (seq !== profileStateSeq) return
-    profileError.value = errorMessage(e)
-  } finally {
-    if (seq === profileStateSeq) loadingProfiles.value = false
-  }
-}
-
-function startCreateProfile() {
-  profileEditorOpen.value = true
-  editingProfileId.value = null
-  profileDraft.value = createEmptyProfileDraft()
-  profileNotice.value = ''
-  profileError.value = ''
-  profileTestResult.value = null
-  profileModelFetchResult.value = null
-  profileLocalApiKeyInput.value = ''
-}
-
-function startEditProfile(profile: AiProfile) {
-  profileEditorOpen.value = true
-  editingProfileId.value = profile.id
-  profileDraft.value = profileToDraft(profile)
-  profileNotice.value = ''
-  profileError.value = ''
-  profileTestResult.value = null
-  profileModelFetchResult.value = null
-  profileLocalApiKeyInput.value = ''
-}
-
-function cancelProfileEdit() {
-  profileEditorOpen.value = false
-  editingProfileId.value = null
-  profileDraft.value = createEmptyProfileDraft()
-  profileError.value = ''
-  profileTestResult.value = null
-  profileModelFetchResult.value = null
-  profileLocalApiKeyInput.value = ''
-}
-
-async function saveProfile() {
-  savingProfile.value = true
-  profileNotice.value = ''
-  profileError.value = ''
-  profileTestResult.value = null
-  profileModelFetchResult.value = null
-  try {
-    const update = profileDraftToSettingsUpdate()
-    const payload: AiProfileCreate = {
-      name: profileDraft.value.name.trim(),
-      provider_name: update.provider_name,
-      base_url: update.base_url,
-      wire_api: update.wire_api,
-      model: update.model,
-      api_key_source: update.api_key_source,
-      gemini_cli_proxy: update.gemini_cli_proxy,
-      enabled: profileDraft.value.enabled ?? true,
-      source_key: profileDraft.value.source_key ?? null,
-    }
-    if (!payload.name) {
-      profileError.value = t('settings.aiProfileNameRequired')
-      return
-    }
-    if (!payload.model) {
-      profileError.value = t('settings.aiProfileModelRequired')
-      return
-    }
-    if (editingProfileId.value) {
-      await settingsApi.updateAiProfile(editingProfileId.value, payload)
-      profileNotice.value = t('settings.aiProfileUpdated')
-    } else {
-      await settingsApi.createAiProfile(payload)
-      profileNotice.value = t('settings.aiProfileCreated')
-    }
-    await loadProfiles()
-    syncDiscoveredProfilesWithSavedProfiles()
-    cancelProfileEdit()
-  } catch (e) {
-    profileError.value = errorMessage(e)
-  } finally {
-    savingProfile.value = false
-  }
-}
-
-async function deleteProfile(profile: AiProfile) {
-  if (!window.confirm(t('settings.aiProfileDeleteConfirm', { name: profile.name }))) return
-  const seq = ++profileStateSeq
-  loadingProfiles.value = false
-  profileError.value = ''
-  profileNotice.value = ''
-  try {
-    await settingsApi.deleteAiProfile(profile.id)
-    if (seq !== profileStateSeq) return
-    aiProfiles.value = aiProfiles.value.filter((item) => item.id !== profile.id)
-    syncDiscoveredProfilesWithSavedProfiles()
-    if (editingProfileId.value === profile.id) cancelProfileEdit()
-    profileNotice.value = t('settings.aiProfileDeleted')
-  } catch (e) {
-    if (seq !== profileStateSeq) return
-    profileError.value = errorMessage(e)
-  }
-}
-
-async function discoverProfiles() {
-  discoveringProfiles.value = true
-  profileError.value = ''
-  try {
-    discoveredProfiles.value = await settingsApi.discoverAiProfiles()
-    syncDiscoveredProfilesWithSavedProfiles()
-  } catch (e) {
-    profileError.value = errorMessage(e)
-    discoveredProfiles.value = []
-  } finally {
-    discoveringProfiles.value = false
-  }
-}
-
-async function importLocalProfiles(sourceKeys: string[] = []) {
-  const seq = ++profileStateSeq
-  importingLocalProfiles.value = true
-  loadingProfiles.value = false
-  profileError.value = ''
-  profileNotice.value = ''
-  try {
-    const result = await settingsApi.importLocalAiProfiles(sourceKeys, true)
-    if (seq !== profileStateSeq) return
-    aiProfiles.value = result.profiles
-    syncDiscoveredProfilesWithSavedProfiles()
-    const changed = result.imported_count + result.updated_count
-    if (changed > 0) {
-      profileNotice.value = t('settings.localProfilesImported', {
-        imported: result.imported_count,
-        updated: result.updated_count,
-      })
-    } else if (result.skipped.length) {
-      profileNotice.value = result.skipped.join('；')
-    } else {
-      profileNotice.value = t('settings.localProfilesNoChanges')
-    }
-  } catch (e) {
-    if (seq !== profileStateSeq) return
-    profileError.value = errorMessage(e)
-  } finally {
-    if (seq === profileStateSeq) {
-      importingLocalProfiles.value = false
-      loadingProfiles.value = false
-    }
-  }
-}
-
-function syncDiscoveredProfilesWithSavedProfiles() {
-  if (!discoveredProfiles.value.length) return
-  discoveredProfiles.value = discoveredProfiles.value.map((candidate) => ({
-    ...candidate,
-    existing_profile_id:
-      aiProfiles.value.find((profile) =>
-        (profile.source_key && profile.source_key === candidate.source_key)
-        || (
-          profile.provider_name === candidate.provider_name
-          && (profile.base_url ?? '') === (candidate.base_url ?? '')
-          && (profile.wire_api ?? '') === (candidate.wire_api ?? '')
-          && profile.model === candidate.model
-          && profile.api_key_source === candidate.api_key_source
-        )
-      )?.id ?? null,
-  }))
-}
-
-function removeDiscoveredProfile(sourceKey: string) {
-  discoveredProfiles.value = discoveredProfiles.value.filter((candidate) => candidate.source_key !== sourceKey)
-}
-
-function clearDiscoveredProfiles() {
-  discoveredProfiles.value = []
-}
-
-function fillDraftFromDiscovered(candidate: AiDiscoveredProfile) {
-  profileEditorOpen.value = true
-  editingProfileId.value = candidate.existing_profile_id ?? null
-  profileDraft.value = {
-    name: candidate.name,
-    provider_name: candidate.provider_name,
-    base_url: candidate.base_url ?? '',
-    wire_api: candidate.wire_api || (candidate.provider_name === 'openai' ? 'chat_completions' : 'responses'),
-    model: candidate.model,
-    api_key_source: candidate.api_key_source,
-    gemini_cli_proxy: candidate.gemini_cli_proxy ?? null,
-    enabled: candidate.enabled,
-    source_key: candidate.source_key,
-  }
-  profileNotice.value = ''
-  profileError.value = ''
-  profileTestResult.value = null
-  profileModelFetchResult.value = null
-  profileLocalApiKeyInput.value = ''
-}
-
-async function focusRequestedSection() {
-  if (route.query.section !== 'ai_profiles') return
-  await nextTick()
-  aiProfilesSectionRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
-async function toggleProfileEnabled(profile: AiProfile) {
-  const seq = ++profileStateSeq
-  loadingProfiles.value = false
-  profileError.value = ''
-  profileNotice.value = ''
-  try {
-    const updated = await settingsApi.updateAiProfile(profile.id, { enabled: !profile.enabled })
-    if (seq !== profileStateSeq) return
-    aiProfiles.value = aiProfiles.value.map((item) => item.id === updated.id ? updated : item)
-  } catch (e) {
-    if (seq !== profileStateSeq) return
-    profileError.value = errorMessage(e)
-  }
-}
-
-async function testProfileLive() {
-  testingProfile.value = true
-  profileTestResult.value = null
-  profileError.value = ''
-  profileNotice.value = ''
-  try {
-    const result = await settingsApi.testAiSettingsLive(profileDraftToSettingsUpdate())
-    profileTestResult.value = {
-      ...result,
-      success: result.ok,
-    }
-  } catch (e) {
-    profileTestResult.value = {
-      ok: false,
-      success: false,
-      message: errorMessage(e),
-      provider: profileDraft.value.provider_name,
-      model: profileDraft.value.model,
-      transport: null,
-      elapsed_ms: null,
-      preview: '',
-      cost: null,
-    }
-  } finally {
-    testingProfile.value = false
-  }
-}
-
-async function fetchProfileModels() {
-  fetchingProfileModels.value = true
-  profileModelFetchResult.value = null
-  profileError.value = ''
-  profileNotice.value = ''
-  try {
-    const update = profileDraftToSettingsUpdate()
-    const result = await settingsApi.getAiModels(update.provider_name, true, update)
-    profileModelPresets.value = {
-      ...profileModelPresets.value,
-      [update.provider_name]: result.models,
-    }
-    profileModelFetchResult.value = {
-      ...result,
-      success: result.source === 'live',
-    }
-    if (!profileDraft.value.model.trim() && result.models.length > 0) {
-      profileDraft.value.model = result.models[0]
-    }
-  } catch (e) {
-    profileModelFetchResult.value = {
-      provider: profileDraft.value.provider_name,
-      models: [],
-      source: 'preset',
-      success: false,
-      message: errorMessage(e),
-    }
-  } finally {
-    fetchingProfileModels.value = false
-  }
+function focusRequestedSection() {
+  const requested = String(route.query.section || '')
+  if (requested === 'ai' || requested === 'ai_profiles') activeSettingsCategory.value = 'ai'
+  else if (requested === 'data' || requested === 'storage') activeSettingsCategory.value = 'data'
+  else if (requested === 'interface' || requested === 'tutorials') activeSettingsCategory.value = 'interface'
+  else if (requested === 'about' || requested === 'updates') activeSettingsCategory.value = 'about'
 }
 
 async function saveSettings() {
   savingSettings.value = true
   saveNotice.value = ''
   saveError.value = ''
-  testResult.value = null
-  liveTestResult.value = null
-  modelFetchResult.value = null
   try {
-    const saved = await settingsApi.saveAiSettings(buildAiSettingsUpdate())
-    applyAiSettings(saved)
     closeBehaviorNotice.value = ''
-    const requestedCloseBehavior = settings.closeBehavior
-    const effectiveCloseBehavior = await settings.saveCloseBehavior(requestedCloseBehavior)
-    if (effectiveCloseBehavior !== requestedCloseBehavior) {
-      closeBehaviorNotice.value = t('settings.closeBehaviorTrayUnavailable')
-    }
+    const requested = settings.closeBehavior
+    const effective = await settings.saveCloseBehavior(requested)
+    if (effective !== requested) closeBehaviorNotice.value = t('settings.closeBehaviorTrayUnavailable')
     saveNotice.value = t('settings.saved')
-  } catch (e) {
-    saveError.value = e instanceof Error ? e.message : String(e)
+  } catch (error) {
+    saveError.value = errorMessage(error)
   } finally {
     savingSettings.value = false
-  }
-}
-
-async function testConnection() {
-  testingConnection.value = true
-  testResult.value = null
-  liveTestResult.value = null
-  modelFetchResult.value = null
-  saveNotice.value = ''
-  saveError.value = ''
-  try {
-    const result = await settingsApi.testAiSettings(buildAiSettingsUpdate())
-    testResult.value = {
-      success: result.ok,
-      message: result.ok
-        ? t('settings.configCheckPassed')
-        : result.message,
-    }
-  } catch (e) {
-    testResult.value = { success: false, message: e instanceof Error ? e.message : String(e) }
-  } finally {
-    testingConnection.value = false
-  }
-}
-
-async function testLiveConnection() {
-  testingLiveConnection.value = true
-  testResult.value = null
-  liveTestResult.value = null
-  saveNotice.value = ''
-  saveError.value = ''
-  try {
-    const result = await settingsApi.testAiSettingsLive(buildAiSettingsUpdate())
-    liveTestResult.value = {
-      ...result,
-      success: result.ok,
-    }
-    if (result.ok) settings.markOnboardingAiReviewed()
-  } catch (e) {
-    liveTestResult.value = {
-      ok: false,
-      success: false,
-      message: errorMessage(e),
-      provider: aiProvider.value,
-      model: model.value,
-      transport: null,
-      elapsed_ms: null,
-      preview: '',
-      cost: null,
-    }
-  } finally {
-    testingLiveConnection.value = false
-  }
-}
-
-async function importCodex() {
-  importing.value = 'codex'
-  saveNotice.value = ''
-  saveError.value = ''
-  try {
-    const result = await settingsApi.importCodexSettings()
-    applyAiSettings(result.config)
-    saveNotice.value = t('settings.importedCodex')
-  } catch (e) {
-    saveError.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    importing.value = null
-  }
-}
-
-async function importGemini() {
-  importing.value = 'gemini'
-  saveNotice.value = ''
-  saveError.value = ''
-  try {
-    const result = await settingsApi.importGeminiSettings()
-    applyAiSettings(result.config)
-    saveNotice.value = t('settings.importedGemini')
-  } catch (e) {
-    saveError.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    importing.value = null
-  }
-}
-
-function choosePreset(value: string) {
-  if (value) model.value = value
-}
-
-async function fetchModels() {
-  fetchingModels.value = true
-  modelFetchResult.value = null
-  saveNotice.value = ''
-  saveError.value = ''
-  try {
-    const result = await settingsApi.getAiModels(aiProvider.value, true, buildAiSettingsUpdate())
-    fetchedModelPresets.value = {
-      ...fetchedModelPresets.value,
-      [aiProvider.value]: result.models,
-    }
-    modelFetchResult.value = {
-      ...result,
-      success: result.source === 'live',
-    }
-    if (!model.value.trim() && result.models.length > 0) {
-      model.value = result.models[0]
-    }
-  } catch (e) {
-    modelFetchResult.value = {
-      provider: aiProvider.value,
-      models: [],
-      source: 'preset',
-      success: false,
-      message: errorMessage(e),
-    }
-  } finally {
-    fetchingModels.value = false
-  }
-}
-
-async function saveLocalApiKey() {
-  const key = localApiKeyInput.value.trim()
-  saveNotice.value = ''
-  saveError.value = ''
-  testResult.value = null
-  liveTestResult.value = null
-  if (!key) {
-    saveError.value = t('settings.localApiKeyRequired')
-    return
-  }
-  savingLocalApiKey.value = true
-  try {
-    const result = await settingsApi.saveLocalAiKey({
-      api_key: key,
-      provider_name: aiProvider.value,
-      model: model.value.trim(),
-      label: 'default',
-      env_var: localEnvVarFromCredentialSource(apiKeySource.value) ?? undefined,
-    })
-    apiKeySource.value = result.api_key_source
-    rememberLocalCredentialSource(aiProvider.value, result.api_key_source)
-    localApiKeyInput.value = ''
-    saveNotice.value = result.message + ' ' + t('settings.localApiKeySourceApplied')
-  } catch (e) {
-    saveError.value = errorMessage(e)
-  } finally {
-    savingLocalApiKey.value = false
-  }
-}
-
-async function saveProfileLocalApiKey() {
-  const key = profileLocalApiKeyInput.value.trim()
-  profileNotice.value = ''
-  profileError.value = ''
-  profileTestResult.value = null
-  if (!key) {
-    profileError.value = t('settings.localApiKeyRequired')
-    return
-  }
-  savingProfileLocalApiKey.value = true
-  try {
-    const result = await settingsApi.saveLocalAiKey({
-      api_key: key,
-      provider_name: profileDraft.value.provider_name,
-      model: profileDraft.value.model.trim(),
-      profile_id: editingProfileId.value,
-      label: profileDraft.value.name.trim() || 'profile',
-      env_var: localEnvVarFromCredentialSource(profileDraft.value.api_key_source) ?? undefined,
-    })
-    profileDraft.value.api_key_source = result.api_key_source
-    rememberLocalCredentialSource(profileDraft.value.provider_name, result.api_key_source)
-    profileLocalApiKeyInput.value = ''
-    profileNotice.value = result.message + ' ' + t('settings.localApiKeyProfileSourceApplied')
-  } catch (e) {
-    profileError.value = errorMessage(e)
-  } finally {
-    savingProfileLocalApiKey.value = false
   }
 }
 
 function resetWelcomeChecklist() {
   settings.resetWelcomeChecklist()
   saveNotice.value = t('settings.welcomeChecklistReset')
+  saveError.value = ''
 }
 
 async function showCollectionsTutorial() {
   settings.resetCollectionsTour()
-  saveNotice.value = t('settings.collectionsTutorialReset')
   await router.push({ name: 'collections', query: { tour: 'collection' } })
 }
 
@@ -952,13 +94,23 @@ async function invokeNative<T>(command: string, args?: Record<string, unknown>):
   return invoke<T>(command, args)
 }
 
+async function backendSupports(capability: string): Promise<boolean | null> {
+  try {
+    const info = await appApi.getVersion()
+    return info.capabilities.includes(capability)
+  } catch (error) {
+    if (isHttpStatus(error, 404)) return false
+    return null
+  }
+}
+
 async function loadDataLocation() {
   loadingDataLocation.value = true
   dataLocationError.value = ''
   dataLocationUnsupported.value = false
   try {
-    const supportsDataLocation = await backendSupports('data_location')
-    if (supportsDataLocation === false) {
+    const supported = await backendSupports('data_location')
+    if (supported === false) {
       dataLocation.value = null
       dataLocationUnsupported.value = true
       return
@@ -970,25 +122,15 @@ async function loadDataLocation() {
     dataLocation.value = info
     dataOverride.value = native
     selectedDataDir.value = native?.active_path || native?.override_path || ''
-  } catch (e) {
-    if (isHttpStatus(e, 404)) {
+  } catch (error) {
+    if (isHttpStatus(error, 404)) {
       dataLocation.value = null
       dataLocationUnsupported.value = true
     } else {
-      dataLocationError.value = errorMessage(e)
+      dataLocationError.value = errorMessage(error)
     }
   } finally {
     loadingDataLocation.value = false
-  }
-}
-
-async function backendSupports(capability: string): Promise<boolean | null> {
-  try {
-    const info = await appApi.getVersion()
-    return info.capabilities.includes(capability)
-  } catch (e) {
-    if (isHttpStatus(e, 404)) return false
-    return null
   }
 }
 
@@ -1001,8 +143,8 @@ async function chooseDataDirectory() {
       selectedDataDir.value = picked
       dataLocationNotice.value = t('settings.dataLocationSelected')
     }
-  } catch (e) {
-    dataLocationError.value = errorMessage(e)
+  } catch (error) {
+    dataLocationError.value = errorMessage(error)
   }
 }
 
@@ -1015,15 +157,15 @@ async function openDataPath(path?: string | null, kind: 'data' | 'backup' = 'dat
     dataLocationNotice.value = kind === 'backup'
       ? t('settings.backupDirectoryOpened')
       : t('settings.dataDirectoryOpened')
-  } catch (e) {
-    dataLocationError.value = errorMessage(e)
+  } catch (error) {
+    dataLocationError.value = errorMessage(error)
   }
 }
 
-async function restartAfterDataLocationChange() {
+function restartAfterDataLocationChange() {
   window.setTimeout(() => {
-    void invokeNative<void>('restart_app').catch((e) => {
-      dataLocationError.value = errorMessage(e)
+    void invokeNative<void>('restart_app').catch((error) => {
+      dataLocationError.value = errorMessage(error)
     })
   }, 900)
 }
@@ -1033,8 +175,8 @@ async function restartAppNow() {
   dataLocationNotice.value = t('settings.restartRequested')
   try {
     await invokeNative<void>('restart_app')
-  } catch (e) {
-    dataLocationError.value = errorMessage(e)
+  } catch (error) {
+    dataLocationError.value = errorMessage(error)
   }
 }
 
@@ -1052,9 +194,9 @@ async function migrateToSelectedDirectory() {
     const result = await settingsApi.migrateDataLocation({ target_dir: target })
     await invokeNative<DataDirectoryOverrideState>('set_data_directory_override', { path: result.target_dir })
     dataLocationNotice.value = t('settings.dataLocationMigrated')
-    await restartAfterDataLocationChange()
-  } catch (e) {
-    dataLocationError.value = errorMessage(e)
+    restartAfterDataLocationChange()
+  } catch (error) {
+    dataLocationError.value = errorMessage(error)
   } finally {
     migratingDataLocation.value = false
   }
@@ -1077,9 +219,9 @@ async function restoreDefaultDataDirectory() {
     })
     await invokeNative<DataDirectoryOverrideState>('clear_data_directory_override')
     dataLocationNotice.value = t('settings.dataLocationRestored')
-    await restartAfterDataLocationChange()
-  } catch (e) {
-    dataLocationError.value = errorMessage(e)
+    restartAfterDataLocationChange()
+  } catch (error) {
+    dataLocationError.value = errorMessage(error)
   } finally {
     migratingDataLocation.value = false
   }
@@ -1089,8 +231,8 @@ async function checkForUpdates() {
   updateActionError.value = ''
   try {
     await appUpdate.checkForUpdates({ force: true, source: 'manual' })
-  } catch (e) {
-    updateActionError.value = errorMessage(e)
+  } catch (error) {
+    updateActionError.value = errorMessage(error)
   }
 }
 
@@ -1098,8 +240,8 @@ async function openLatestInstaller() {
   updateActionError.value = ''
   try {
     await appUpdate.openDownload()
-  } catch (e) {
-    updateActionError.value = errorMessage(e)
+  } catch (error) {
+    updateActionError.value = errorMessage(error)
   }
 }
 
@@ -1107,8 +249,8 @@ async function downloadAndInstallLatest() {
   updateActionError.value = ''
   try {
     await appUpdate.downloadAndInstall()
-  } catch (e) {
-    updateActionError.value = errorMessage(e)
+  } catch (error) {
+    updateActionError.value = errorMessage(error)
   }
 }
 
@@ -1116,599 +258,41 @@ async function openReleasePage() {
   updateActionError.value = ''
   try {
     await appUpdate.openReleasePage()
-  } catch (e) {
-    updateActionError.value = errorMessage(e)
+  } catch (error) {
+    updateActionError.value = errorMessage(error)
   }
 }
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-y-auto bg-gray-50">
-    <div class="mx-auto w-full max-w-4xl space-y-6 p-6">
+  <div class="flex h-full min-h-0 bg-stone-50">
+    <aside class="w-52 shrink-0 border-r border-stone-200 bg-white p-4">
+      <h1 class="px-2 text-lg font-semibold text-stone-900">{{ t('settings.title') }}</h1>
+      <nav class="mt-5 space-y-1" :aria-label="t('settings.title')">
+        <button
+          v-for="category in settingsCategories"
+          :key="category.id"
+          type="button"
+          :class="[
+            'w-full rounded-md px-3 py-2 text-left text-sm font-medium transition-colors',
+            activeSettingsCategory === category.id ? 'bg-stone-900 text-white' : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900',
+          ]"
+          @click="activeSettingsCategory = category.id"
+        >
+          {{ category.label }}
+        </button>
+      </nav>
+    </aside>
+    <main class="min-w-0 flex-1 overflow-y-auto">
+    <div class="mx-auto w-full max-w-5xl space-y-6 p-6 lg:p-8">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">{{ t('settings.title') }}</h1>
-        <p class="mt-1 text-sm text-gray-500">{{ t('settings.subtitle') }}</p>
+        <h2 class="text-xl font-semibold text-stone-900">{{ settingsCategories.find((item) => item.id === activeSettingsCategory)?.label }}</h2>
+        <p class="mt-1 text-sm text-stone-500">{{ t(`settings.categoryHelp.${activeSettingsCategory}`) }}</p>
       </div>
 
-      <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <div class="mb-4 flex items-center justify-between gap-3">
-          <h2 class="text-lg font-bold text-gray-900">{{ t('settings.aiConfig') }}</h2>
-          <span v-if="loadingAiSettings" class="text-sm text-gray-400">{{ t('common.loading') }}</span>
-        </div>
+      <AiProfilesSettings v-if="activeSettingsCategory === 'ai'" />
 
-        <div v-if="saveError" class="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ saveError }}</div>
-        <div v-if="saveNotice" class="mb-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">{{ saveNotice }}</div>
-
-        <div class="space-y-5">
-          <div>
-            <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.provider') }}</label>
-            <select
-              v-model="aiProvider"
-              class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option v-for="provider in providerOptions" :key="provider.value" :value="provider.value">
-                {{ provider.label }}
-              </option>
-            </select>
-          </div>
-
-          <div v-if="aiProvider !== 'gemini_cli' && aiProvider !== 'opencode'">
-            <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.baseUrl') }}</label>
-            <input
-              v-model="baseUrl"
-              type="text"
-              class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-              :placeholder="aiProvider === 'gemini' ? 'https://generativelanguage.googleapis.com' : 'https://api.openai.com/v1'"
-            />
-            <p class="mt-1 text-xs text-gray-500">{{ t('settings.baseUrlHelp') }}</p>
-          </div>
-
-          <div>
-            <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.model') }}</label>
-            <div class="grid gap-3 md:grid-cols-[1fr_220px_auto]">
-              <input
-                v-model="model"
-                type="text"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                :placeholder="aiProvider === 'openai' ? 'gpt-4o-mini' : aiProvider === 'gemini' ? 'gemini-2.5-flash' : aiProvider === 'opencode' ? OPENCODE_DEFAULT_MODEL : 'gemini-cli-default'"
-              />
-              <select
-                :value="modelPresets.includes(model) ? model : ''"
-                @change="choosePreset(($event.target as HTMLSelectElement).value)"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">{{ t('settings.customModel') }}</option>
-                <option v-for="preset in modelPresets" :key="preset" :value="preset">{{ preset }}</option>
-              </select>
-              <button
-                @click="fetchModels"
-                :disabled="fetchingModels"
-                class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-              >
-                {{ fetchingModels ? t('settings.fetchingModels') : t('settings.fetchModels') }}
-              </button>
-            </div>
-            <div
-              v-if="modelFetchResult"
-              :class="[
-                'mt-2 rounded-lg p-3 text-sm',
-                modelFetchResult.success ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800',
-              ]"
-            >
-              {{ modelFetchResult.message }}
-            </div>
-          </div>
-
-          <div v-if="aiProvider !== 'gemini_cli' && aiProvider !== 'opencode'">
-            <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.credentialSource') }}</label>
-            <select
-              v-model="apiKeySource"
-              class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option v-for="option in credentialOptions" :key="option.value" :value="option.value">
-                {{ option.label }}
-              </option>
-            </select>
-            <p class="mt-1 text-xs text-gray-500">{{ t('settings.credentialHelp') }}</p>
-            <div class="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <label class="mb-2 block text-xs font-semibold text-slate-600">{{ t('settings.localApiKeyLabel') }}</label>
-              <div class="grid gap-2 md:grid-cols-[1fr_auto]">
-                <input
-                  v-model="localApiKeyInput"
-                  type="password"
-                  autocomplete="off"
-                  class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                  :placeholder="t('settings.localApiKeyPlaceholder')"
-                />
-                <button
-                  @click="saveLocalApiKey"
-                  :disabled="savingLocalApiKey"
-                  class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                >
-                  {{ savingLocalApiKey ? t('common.saving') : t('settings.saveLocalApiKey') }}
-                </button>
-              </div>
-              <p class="mt-2 text-xs leading-5 text-slate-500">{{ t('settings.localApiKeyHelp') }}</p>
-            </div>
-          </div>
-
-          <div v-else-if="aiProvider === 'gemini_cli'">
-            <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.geminiCliProxy') }}</label>
-            <input
-              v-model="geminiCliProxy"
-              type="text"
-              class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="http://127.0.0.1:7890"
-            />
-            <p class="mt-1 text-xs text-gray-500">{{ t('settings.geminiCliHelp') }}</p>
-          </div>
-
-          <div v-else class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm leading-6 text-gray-600">
-            {{ t('settings.openCodeHelp') }}
-          </div>
-
-          <div class="rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <div class="flex items-center justify-between gap-3">
-              <div>
-                <div class="text-sm font-semibold text-gray-800">{{ t('settings.credentialStatus') }}</div>
-                <div :class="['mt-1 text-sm', activeStatus?.available ? 'text-green-700' : 'text-amber-700']">
-                  {{ statusLabel }}
-                </div>
-              </div>
-              <div class="flex flex-wrap justify-end gap-2">
-                <button
-                  v-if="aiProvider === 'openai'"
-                  @click="importCodex"
-                  :disabled="importing !== null"
-                  class="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-700 disabled:opacity-40"
-                >
-                  {{ importing === 'codex' ? t('common.loading') : t('settings.importCodex') }}
-                </button>
-                <button
-                  v-if="aiProvider === 'gemini'"
-                  @click="importGemini"
-                  :disabled="importing !== null"
-                  class="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-700 disabled:opacity-40"
-                >
-                  {{ importing === 'gemini' ? t('common.loading') : t('settings.importGemini') }}
-                </button>
-                <button
-                  @click="testConnection"
-                  :disabled="testingConnection"
-                  class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
-                >
-                  {{ testingConnection ? t('settings.testing') : t('settings.testConnection') }}
-                </button>
-                <button
-                  @click="testLiveConnection"
-                  :disabled="testingLiveConnection"
-                  class="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
-                >
-                  {{ testingLiveConnection ? t('settings.liveTesting') : t('settings.testLiveConnection') }}
-                </button>
-              </div>
-            </div>
-            <pre v-if="statusDetail" class="mt-3 whitespace-pre-wrap text-xs leading-5 text-gray-500">{{ statusDetail }}</pre>
-            <div
-              v-if="testResult"
-              :class="[
-                'mt-3 rounded-lg p-3 text-sm',
-                testResult.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800',
-              ]"
-            >
-              {{ testResult.message }}
-            </div>
-            <div
-              v-if="liveTestResult"
-              :class="[
-                'mt-3 rounded-lg p-3 text-sm',
-                liveTestResult.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800',
-              ]"
-            >
-              <div>{{ liveTestResult.message }}</div>
-              <div v-if="liveTestResult.preview" class="mt-1 text-xs opacity-80">
-                {{ t('settings.liveTestPreview') }}：{{ liveTestResult.preview }}
-              </div>
-              <div v-if="liveTestResult.cost !== undefined && liveTestResult.cost !== null" class="mt-1 text-xs opacity-80">
-                {{ t('settings.liveTestCost') }}：{{ liveTestResult.cost }}
-              </div>
-            </div>
-          </div>
-
-          <section data-testid="ai-diagnostics-panel" class="rounded-2xl border border-slate-200 bg-white p-4">
-            <div class="mb-3 flex items-start justify-between gap-3">
-              <div>
-                <h3 class="text-sm font-semibold text-slate-900">{{ t('settings.diagnostics.title') }}</h3>
-                <p class="mt-1 text-xs leading-5 text-slate-500">{{ t('settings.diagnostics.help') }}</p>
-              </div>
-              <span class="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                {{ liveTestResult?.success ? t('settings.diagnostics.ready') : t('settings.diagnostics.needsTest') }}
-              </span>
-            </div>
-            <div class="grid gap-2 md:grid-cols-2">
-              <article
-                v-for="row in diagnosticRows"
-                :key="row.label"
-                :class="['rounded-xl border p-3', diagnosticToneClass(row.tone)]"
-              >
-                <div class="text-xs font-semibold opacity-70">{{ row.label }}</div>
-                <div class="mt-1 break-words text-sm font-semibold">{{ row.value }}</div>
-                <p v-if="row.detail" class="mt-1 line-clamp-2 break-words text-xs leading-5 opacity-70">{{ row.detail }}</p>
-              </article>
-            </div>
-          </section>
-        </div>
-      </section>
-
-      <section ref="aiProfilesSectionRef" class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <div class="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <h2 class="text-lg font-bold text-gray-900">{{ t('settings.aiProfiles') }}</h2>
-            <p class="mt-1 text-sm leading-6 text-gray-500">{{ t('settings.aiProfilesHelp') }}</p>
-          </div>
-          <div class="flex shrink-0 flex-wrap justify-end gap-2">
-            <button
-              @click="discoverProfiles"
-              :disabled="discoveringProfiles"
-              class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-            >
-              {{ discoveringProfiles ? t('settings.scanningLocalProfiles') : t('settings.scanLocalProfiles') }}
-            </button>
-            <button
-              @click="startCreateProfile"
-              class="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-700"
-            >
-              {{ t('settings.addAiProfile') }}
-            </button>
-          </div>
-        </div>
-
-        <div v-if="profileError" class="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ profileError }}</div>
-        <div v-if="profileNotice" class="mb-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">{{ profileNotice }}</div>
-
-        <div class="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 class="text-sm font-semibold text-slate-900">{{ t('settings.localProfileDiscovery') }}</h3>
-              <p class="mt-1 text-xs leading-5 text-slate-500">{{ t('settings.localProfileDiscoveryHelp') }}</p>
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <button
-                v-if="discoveredProfiles.length"
-                @click="clearDiscoveredProfiles"
-                class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-              >
-                {{ t('settings.clearDiscoveredProfiles') }}
-              </button>
-              <button
-                @click="importLocalProfiles()"
-                :disabled="importingLocalProfiles || !discoveredProfiles.some((item) => item.available)"
-                class="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-40"
-              >
-                {{ importingLocalProfiles ? t('common.saving') : t('settings.importAllLocalProfiles') }}
-              </button>
-            </div>
-          </div>
-          <div v-if="discoveringProfiles && !discoveredProfiles.length" class="rounded-lg bg-white p-3 text-sm text-slate-500">
-            {{ t('settings.scanningLocalProfiles') }}
-          </div>
-          <div v-else-if="!discoveredProfiles.length" class="rounded-lg border border-dashed border-slate-200 bg-white p-4 text-sm leading-6 text-slate-500">
-            {{ t('settings.noDiscoveredProfiles') }}
-          </div>
-          <div v-else class="grid gap-3 lg:grid-cols-3">
-            <article
-              v-for="candidate in discoveredProfiles"
-              :key="candidate.source_key"
-              :class="[
-                'rounded-xl border bg-white p-3 shadow-sm',
-                candidate.available ? 'border-emerald-100' : 'border-amber-100',
-              ]"
-            >
-              <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">{{ candidate.source_label }}</div>
-                  <h4 class="mt-1 truncate text-sm font-semibold text-slate-900">{{ candidate.name }}</h4>
-                  <p class="mt-1 break-all text-xs leading-5 text-slate-500">
-                    {{ candidate.provider_name }} · {{ candidate.model }}
-                  </p>
-                </div>
-                <span
-                  :class="[
-                    'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
-                    candidate.available ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800',
-                  ]"
-                >
-                  {{ candidate.available ? t('settings.importable') : t('settings.unavailable') }}
-                </span>
-              </div>
-              <p v-if="candidate.reason" class="mt-2 line-clamp-2 text-xs leading-5 text-amber-800">{{ candidate.reason }}</p>
-              <div class="mt-3 flex flex-wrap gap-2">
-                <button
-                  @click="importLocalProfiles([candidate.source_key])"
-                  :disabled="importingLocalProfiles || !candidate.available"
-                  class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
-                >
-                  {{ candidate.existing_profile_id ? t('settings.updateProfile') : t('settings.importProfile') }}
-                </button>
-                <button
-                  @click="fillDraftFromDiscovered(candidate)"
-                  class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  {{ t('settings.fillProfileDraft') }}
-                </button>
-                <button
-                  @click="removeDiscoveredProfile(candidate.source_key)"
-                  class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50"
-                >
-                  {{ t('settings.removeDiscoveredProfile') }}
-                </button>
-              </div>
-            </article>
-          </div>
-        </div>
-
-        <div v-if="loadingProfiles" class="rounded-lg bg-gray-50 p-4 text-sm text-gray-500">{{ t('common.loading') }}</div>
-        <div v-else-if="!aiProfiles.length" class="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4 text-sm leading-6 text-gray-500">
-          {{ t('settings.noAiProfiles') }}
-        </div>
-        <div v-else class="grid gap-3">
-          <article
-            v-for="profile in aiProfiles"
-            :key="profile.id"
-            class="rounded-xl border border-gray-200 bg-gray-50 p-4"
-          >
-            <div class="flex flex-wrap items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-2">
-                  <h3 class="font-semibold text-gray-900">{{ profile.name }}</h3>
-                  <span
-                    :class="[
-                      'rounded-full px-2 py-0.5 text-xs font-semibold',
-                      profile.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600',
-                    ]"
-                  >
-                    {{ profile.enabled ? t('settings.enabled') : t('settings.disabled') }}
-                  </span>
-                </div>
-                <p class="mt-1 break-all text-sm text-gray-600">
-                  {{ providerOptions.find((item) => item.value === profile.provider_name)?.label || profile.provider_name }}
-                  · {{ profile.model }}
-                  <span v-if="profile.provider_name === 'openai'"> · {{ profile.wire_api === 'chat_completions' ? 'Chat Completions' : 'Responses' }}</span>
-                </p>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <button
-                  @click="toggleProfileEnabled(profile)"
-                  class="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-white"
-                >
-                  {{ profile.enabled ? t('settings.disable') : t('settings.enable') }}
-                </button>
-                <button
-                  @click="startEditProfile(profile)"
-                  class="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-gray-700 ring-1 ring-gray-200 hover:bg-gray-100"
-                >
-                  {{ t('common.edit') }}
-                </button>
-                <button
-                  @click="deleteProfile(profile)"
-                  class="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100"
-                >
-                  {{ t('common.delete') }}
-                </button>
-              </div>
-            </div>
-          </article>
-        </div>
-
-        <Teleport to="body">
-          <div
-            v-if="profileEditorOpen"
-            class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-5"
-            @click.self="cancelProfileEdit"
-          >
-            <div
-              role="dialog"
-              aria-modal="true"
-              :aria-label="editingProfileId ? t('settings.editAiProfile') : t('settings.newAiProfile')"
-              class="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
-            >
-              <div class="flex items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
-                <div>
-                  <h3 class="text-lg font-bold text-gray-950">
-                    {{ editingProfileId ? t('settings.editAiProfile') : t('settings.newAiProfile') }}
-                  </h3>
-                  <p class="mt-1 text-sm text-gray-500">{{ t('settings.aiProfileDialogHelp') }}</p>
-                </div>
-                <button
-                  @click="cancelProfileEdit"
-                  class="rounded-lg px-3 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-800"
-                >
-                  {{ t('common.cancel') }}
-                </button>
-              </div>
-
-              <div class="overflow-y-auto px-5 py-4">
-                <div v-if="profileError" class="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ profileError }}</div>
-
-          <div class="grid gap-4 md:grid-cols-2">
-            <div>
-              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.aiProfileName') }}</label>
-              <input
-                v-model="profileDraft.name"
-                type="text"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                :placeholder="t('settings.aiProfileNamePlaceholder')"
-              />
-            </div>
-
-            <div>
-              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.provider') }}</label>
-              <select
-                v-model="profileDraft.provider_name"
-                @change="normalizeProfileDraftForProvider"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option v-for="provider in providerOptions" :key="provider.value" :value="provider.value">
-                  {{ provider.label }}
-                </option>
-              </select>
-            </div>
-
-            <div v-if="profileDraft.provider_name !== 'gemini_cli' && profileDraft.provider_name !== 'opencode'" class="md:col-span-2">
-              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.baseUrl') }}</label>
-              <input
-                v-model="profileDraft.base_url"
-                type="text"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                :placeholder="profileDraft.provider_name === 'gemini' ? 'https://generativelanguage.googleapis.com' : 'https://api.openai.com/v1'"
-              />
-            </div>
-
-            <div v-if="profileDraft.provider_name === 'openai'">
-              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.wireApi') }}</label>
-              <select
-                v-model="profileDraft.wire_api"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="chat_completions">Chat Completions</option>
-                <option value="responses">Responses</option>
-              </select>
-            </div>
-
-            <div :class="profileDraft.provider_name === 'openai' ? '' : 'md:col-span-2'">
-              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.model') }}</label>
-              <div class="grid gap-2 md:grid-cols-[1fr_auto]">
-                <input
-                  v-model="profileDraft.model"
-                  type="text"
-                  class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                  :placeholder="profileDraft.provider_name === 'openai' ? 'deepseek-chat / gpt-4o-mini' : profileDraft.provider_name === 'gemini' ? 'gemini-2.5-flash' : profileDraft.provider_name === 'opencode' ? OPENCODE_DEFAULT_MODEL : 'gemini-cli-default'"
-                />
-                <button
-                  @click="fetchProfileModels"
-                  :disabled="fetchingProfileModels"
-                  class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-                >
-                  {{ fetchingProfileModels ? t('settings.fetchingModels') : t('settings.fetchModels') }}
-                </button>
-              </div>
-              <select
-                :value="profileModelOptions.includes(profileDraft.model) ? profileDraft.model : ''"
-                @change="profileDraft.model = ($event.target as HTMLSelectElement).value || profileDraft.model"
-                class="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">{{ t('settings.customModel') }}</option>
-                <option v-for="preset in profileModelOptions" :key="preset" :value="preset">{{ preset }}</option>
-              </select>
-              <div
-                v-if="profileModelFetchResult"
-                :class="[
-                  'mt-2 rounded-lg p-3 text-sm',
-                  profileModelFetchResult.success ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800',
-                ]"
-              >
-                {{ profileModelFetchResult.message }}
-              </div>
-            </div>
-
-            <div v-if="profileDraft.provider_name !== 'gemini_cli' && profileDraft.provider_name !== 'opencode'" class="md:col-span-2">
-              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.credentialSource') }}</label>
-              <select
-                v-model="profileDraft.api_key_source"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option v-for="option in profileCredentialOptions" :key="option.value" :value="option.value">
-                  {{ option.label }}
-                </option>
-              </select>
-              <p class="mt-1 text-xs text-gray-500">{{ t('settings.credentialHelp') }}</p>
-              <div class="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <label class="mb-2 block text-xs font-semibold text-slate-600">{{ t('settings.localApiKeyLabel') }}</label>
-                <div class="grid gap-2 md:grid-cols-[1fr_auto]">
-                  <input
-                    v-model="profileLocalApiKeyInput"
-                    type="password"
-                    autocomplete="off"
-                    class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                    :placeholder="t('settings.localApiKeyPlaceholder')"
-                  />
-                  <button
-                    @click="saveProfileLocalApiKey"
-                    :disabled="savingProfileLocalApiKey"
-                    class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                  >
-                    {{ savingProfileLocalApiKey ? t('common.saving') : t('settings.saveLocalApiKey') }}
-                  </button>
-                </div>
-                <p class="mt-2 text-xs leading-5 text-slate-500">{{ t('settings.localApiKeyProfileHelp') }}</p>
-              </div>
-            </div>
-
-            <div v-else-if="profileDraft.provider_name === 'gemini_cli'" class="md:col-span-2">
-              <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.geminiCliProxy') }}</label>
-              <input
-                v-model="profileDraft.gemini_cli_proxy"
-                type="text"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="http://127.0.0.1:7890"
-              />
-            </div>
-
-            <div v-else class="rounded-lg border border-blue-100 bg-white p-3 text-sm leading-6 text-blue-900 md:col-span-2">
-              {{ t('settings.openCodeHelp') }}
-            </div>
-          </div>
-
-          <label class="mt-4 flex items-center gap-2 text-sm font-semibold text-gray-700">
-            <input v-model="profileDraft.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
-            {{ t('settings.aiProfileEnabled') }}
-          </label>
-
-          <div
-            v-if="profileTestResult"
-            :class="[
-              'mt-3 rounded-lg p-3 text-sm',
-              profileTestResult.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800',
-            ]"
-          >
-            <div>{{ profileTestResult.message }}</div>
-            <div v-if="profileTestResult.preview" class="mt-1 text-xs opacity-80">
-              {{ t('settings.liveTestPreview') }}：{{ profileTestResult.preview }}
-            </div>
-            <div v-if="profileTestResult.cost !== undefined && profileTestResult.cost !== null" class="mt-1 text-xs opacity-80">
-              {{ t('settings.liveTestCost') }}：{{ profileTestResult.cost }}
-            </div>
-          </div>
-
-          <div class="mt-4 flex flex-wrap justify-end gap-2">
-            <button
-              @click="cancelProfileEdit"
-              class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-            >
-              {{ t('common.cancel') }}
-            </button>
-            <button
-              @click="testProfileLive"
-              :disabled="testingProfile"
-              class="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
-            >
-              {{ testingProfile ? t('settings.liveTesting') : t('settings.testLiveConnection') }}
-            </button>
-            <button
-              @click="saveProfile"
-              :disabled="savingProfile"
-              class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
-            >
-              {{ savingProfile ? t('common.saving') : t('settings.saveAiProfile') }}
-            </button>
-          </div>
-              </div>
-            </div>
-          </div>
-        </Teleport>
-      </section>
-
-      <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <section v-if="activeSettingsCategory === 'data'" class="border-t border-stone-200 bg-white p-6">
         <div class="mb-4 flex items-center justify-between gap-3">
           <div>
             <h2 class="text-lg font-bold text-gray-900">{{ t('settings.dataStorage') }}</h2>
@@ -1813,8 +397,10 @@ async function openReleasePage() {
         </div>
       </section>
 
-      <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <section v-if="activeSettingsCategory === 'interface'" class="border-t border-stone-200 bg-white p-6">
         <h2 class="mb-4 text-lg font-bold text-gray-900">{{ t('settings.interfaceSettings') }}</h2>
+        <div v-if="saveError" class="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{{ saveError }}</div>
+        <div v-if="saveNotice" class="mb-4 rounded-lg bg-green-50 p-3 text-sm text-green-800">{{ saveNotice }}</div>
         <div class="space-y-4">
           <div>
             <label class="mb-2 block text-sm font-semibold text-gray-700">{{ t('settings.language') }}</label>
@@ -1874,7 +460,7 @@ async function openReleasePage() {
         </div>
       </section>
 
-      <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <section v-if="activeSettingsCategory === 'about'" class="border-t border-stone-200 bg-white p-6">
         <div class="mb-4">
           <h2 class="text-lg font-bold text-gray-900">{{ t('updates.sectionTitle') }}</h2>
           <p class="mt-1 text-sm text-gray-500">{{ t('updates.sectionHelp') }}</p>
@@ -1978,7 +564,7 @@ async function openReleasePage() {
         </div>
       </section>
 
-      <div class="flex justify-end">
+      <div v-if="activeSettingsCategory === 'interface'" class="flex justify-end">
         <button
           @click="saveSettings"
           :disabled="savingSettings"
@@ -1988,5 +574,6 @@ async function openReleasePage() {
         </button>
       </div>
     </div>
+    </main>
   </div>
 </template>

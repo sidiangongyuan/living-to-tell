@@ -121,6 +121,13 @@ const aiProfiles = [
     api_key_source: 'opencode',
     gemini_cli_proxy: null,
     enabled: true,
+    is_default: true,
+    test_status: 'passed',
+    last_tested_at: now,
+    last_test_transport: 'opencode_cli',
+    last_test_elapsed_ms: 1860,
+    diagnostic_code: '',
+    diagnostic_message: '',
     source_key: 'opencode:default',
     created_at: '2026-06-18T09:00:00',
     updated_at: now,
@@ -135,6 +142,13 @@ const aiProfiles = [
     api_key_source: 'codex',
     gemini_cli_proxy: null,
     enabled: true,
+    is_default: false,
+    test_status: 'passed',
+    last_tested_at: now,
+    last_test_transport: 'openai_responses',
+    last_test_elapsed_ms: 1420,
+    diagnostic_code: '',
+    diagnostic_message: '',
     source_key: 'codex:default',
     created_at: '2026-06-18T09:05:00',
     updated_at: now,
@@ -177,6 +191,8 @@ const aiSettings = {
   },
 }
 
+let articleTaskRun = null
+
 function json(route, data, status = 200) {
   return route.fulfill({
     status,
@@ -205,14 +221,18 @@ async function installDemoApi(page) {
     if (pathname === '/api/app/version') {
       return json(route, {
         app_name: 'Living to Tell',
-        version: '0.1.18',
+        version: '0.1.47',
         api_version: '2.0.0',
         capabilities: [
           'data_location',
           'ai_chat_settings',
           'ai_task_presets',
           'ai_profiles',
+          'ai_profile_defaults',
+          'ai_profile_health',
           'ai_task_compare',
+          'article_ai_task_runs',
+          'article_ai_chat_drawer',
           'motif_star_map',
           'update_check',
           'article_versions',
@@ -252,6 +272,36 @@ async function installDemoApi(page) {
     if (pathname === '/api/ai-cards') return json(route, aiCards)
     if (pathname === '/api/ai-cards/presets/list') return json(route, aiCards)
     if (pathname === '/api/ai/task-presets') return json(route, {})
+    if (pathname === '/api/ai/task-runs/active' && method === 'GET') return json(route, articleTaskRun)
+    if (pathname === '/api/ai/task-runs' && method === 'POST') {
+      const request = route.request().postDataJSON()
+      const selected = aiProfiles.filter((profile) => (request.profile_ids || []).includes(profile.id))
+      const results = selected.map((profile, index) => ({
+        profile_id: profile.id,
+        profile_name: profile.name,
+        provider: profile.provider_name,
+        model: profile.model,
+        transport: profile.id === 'demo-profile-opencode' ? 'opencode_cli' : 'openai_responses',
+        status: 'success',
+        result: index === 0
+          ? '风越过堤岸，带来盐、潮气和一点清晨的亮。\n\n我把昨天没写完的段落又读了一遍，发现该留下的并不是发生过什么，而是那种被光一点点托起来的感觉。'
+          : '风从堤岸吹来，裹着盐意和潮湿的晨光。\n\n重读昨天搁下的段落时，我才意识到真正应该留下的不是事件本身，而是它一点点亮起来的过程。',
+        error: '', elapsed_ms: index === 0 ? 1860 : 2380, input_tokens: 76, output_tokens: index === 0 ? 109 : 114,
+        cost: index === 0 ? 0 : 0.0005, finish_reason: 'stop',
+        stats: { input_chars: articles[0].body.length, output_chars: 88, delta_chars: 10, output_ratio: 1.08, input_paragraphs: 3, output_paragraphs: 2 },
+      }))
+      articleTaskRun = {
+        run_id: 'demo-run', article_id: articles[0].id, article_title: articles[0].title, task_type: request.task_type || 'polish',
+        article_hash: 'demo-hash', original_text: articles[0].body, selection_start: null, selection_end: null,
+        status: 'succeeded', stage: 'succeeded', stage_label: '已完成', error: '',
+        profiles: selected.map((profile) => ({ profile_id: profile.id, profile_name: profile.name, provider: profile.provider_name, model: profile.model })),
+        results, created_at: now, started_at: now, updated_at: now, completed_at: now, elapsed_ms: 2380,
+        applied_profile_id: null, applied_at: null, applied_version_id: null,
+      }
+      return json(route, articleTaskRun, 202)
+    }
+    if (pathname === '/api/ai/task-runs/demo-run' && method === 'GET') return json(route, articleTaskRun)
+    if (pathname === '/api/ai/task-runs/demo-run' && method === 'DELETE') { articleTaskRun = null; return route.fulfill({ status: 204 }) }
     if (pathname === '/api/ai/task/compare' && method === 'POST') {
       const request = route.request().postDataJSON()
       const inputText = request.text || ''
@@ -341,9 +391,9 @@ async function installDemoApi(page) {
       return json(route, {
         thread: {
           id: 'demo-thread-1',
-          scope_kind: 'global',
-          scope_id: null,
-          title: '全局对话',
+          scope_kind: 'article',
+          scope_id: 'demo-article-1',
+          title: articles[0].title,
           created_at: now,
           updated_at: now,
         },
@@ -352,7 +402,7 @@ async function installDemoApi(page) {
             id: 'demo-message-1',
             thread_id: 'demo-thread-1',
             role: 'user',
-            content: '帮我把这段文字的结尾变得更有余韵。',
+            content: '这个开头的节奏哪里可以再克制一点？',
             timestamp: now,
             meta: {},
           },
@@ -360,9 +410,9 @@ async function installDemoApi(page) {
             id: 'demo-message-2',
             thread_id: 'demo-thread-1',
             role: 'assistant',
-            content: '可以把结尾落在一个可感的动作上，让主题从画面里浮出来，而不是直接解释。',
+            content: '第二句已经承担了回望和判断，可以先删去解释，让盐、潮气和亮起来的动作自己完成收束。',
             timestamp: now,
-            meta: {},
+            meta: { provider: 'opencode', model: 'opencode/deepseek-v4-flash-free', transport: 'opencode_cli' },
           },
         ],
       })
@@ -370,7 +420,7 @@ async function installDemoApi(page) {
     if (pathname === '/api/ai/threads') return json(route, [])
     if (pathname === '/api/ai/chat-settings') return json(route, { system_prompt: '' })
     if (pathname === '/api/settings/ai') return json(route, aiSettings)
-    if (pathname === '/api/settings/ai/profiles') return json(route, { profiles: aiProfiles })
+    if (pathname === '/api/settings/ai/profiles') return json(route, { profiles: aiProfiles, default_profile_id: 'demo-profile-opencode' })
     if (pathname === '/api/settings/ai/profiles/discover') return json(route, [])
     if (pathname === '/api/settings/ai/models') {
       const provider = url.searchParams.get('provider') || 'openai'
@@ -441,24 +491,24 @@ async function main() {
   })
   await shot(page, '/collections', 'collections.png')
   await shot(page, '/library?ref=demo-reference-1&group=source', 'reference-library.png')
-  await shot(page, '/ai?tab=tools', 'ai-workspace.png', {
+  await shot(page, '/ai?scope_kind=article&scope_id=demo-article-1', 'ai-workspace.png', {
     before: async (page) => {
-      await page.getByPlaceholder('粘贴需要处理的文本...').fill(
-        '风从堤岸那边过来，带着一点盐和潮湿的光。\n\n' +
-        '我把昨天没有写完的一段重新读了一遍，发现真正要留下的不是事件，而是那种慢慢亮起来的感觉。\n\n' +
-        '如果一个段落还能让人听见脚步声、闻到雨后的石头，它就还有继续往前走的可能。'
-      )
-      await page.locator('label').filter({ hasText: 'OpenCode · DeepSeek Flash' }).click()
-      await page.locator('label').filter({ hasText: 'Codex 本地登录' }).click()
-      await page.getByRole('button', { name: /运行/ }).click()
-      await page.getByText('风从堤岸那边吹来').waitFor({ timeout: 5000 })
+      await page.getByRole('button', { name: /已选择 1 个模型/ }).click()
+      await page.locator('label').filter({ hasText: 'Codex 本地登录' }).locator('input').check()
+      await page.getByRole('button', { name: '完成', exact: true }).click()
+      await page.getByRole('button', { name: '运行 AI 修改' }).click()
+      await page.getByText(/风越过堤岸/).waitFor({ timeout: 5000 })
+      await page.getByRole('button', { name: '与原文差异' }).click()
     },
   })
-  await shot(page, '/settings?section=ai_profiles', 'settings.png', {
+  await shot(page, '/settings?section=ai_profiles', 'settings.png')
+  await shot(page, '/settings?section=ai_profiles', 'settings-wizard.png', {
     before: async (page) => {
-      await page.evaluate(() => window.scrollTo({ top: 560, behavior: 'instant' }))
+      await page.getByRole('button', { name: '新增档案' }).click()
+      await page.getByRole('button', { name: /中转站 \/ 兼容接口/ }).click()
     },
   })
+  await shot(page, '/articles?id=demo-article-1&chat=1', 'article-ai-chat.png')
 
   await browser.close()
 }

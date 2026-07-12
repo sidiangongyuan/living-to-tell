@@ -52,6 +52,13 @@ export interface AiProfile {
   source_key?: string | null
   created_at: string
   updated_at: string
+  is_default?: boolean
+  test_status?: 'untested' | 'passed' | 'failed' | 'stale'
+  last_tested_at?: string | null
+  last_test_transport?: string | null
+  last_test_elapsed_ms?: number | null
+  diagnostic_code?: string
+  diagnostic_message?: string
 }
 
 export interface AiProfileCreate {
@@ -70,6 +77,12 @@ export type AiProfileUpdate = Partial<AiProfileCreate>
 
 export interface AiProfileListResult {
   profiles: AiProfile[]
+  default_profile_id?: string | null
+}
+
+export interface AiProfileLiveTestResult {
+  profile: AiProfile
+  test: AiLiveTestResult
 }
 
 export interface AiDiscoveredProfile extends AiProfileCreate {
@@ -176,6 +189,31 @@ export const settingsApi = {
     return handleResponse(res)
   },
 
+  async setDefaultAiProfile(profileId: string): Promise<AiProfileListResult> {
+    const res = await apiFetch('/api/settings/ai/default-profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile_id: profileId }),
+    })
+    return handleResponse(res)
+  },
+
+  async checkAiProfiles(profileIds: string[] = []): Promise<AiProfileListResult> {
+    const res = await apiFetch('/api/settings/ai/profiles/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile_ids: profileIds }),
+    })
+    return handleResponse(res)
+  },
+
+  async testAiProfileLive(profileId: string): Promise<AiProfileLiveTestResult> {
+    const res = await apiFetch(`/api/settings/ai/profiles/${encodeURIComponent(profileId)}/test-live`, {
+      method: 'POST',
+    })
+    return handleResponse(res)
+  },
+
   async discoverAiProfiles(): Promise<AiDiscoveredProfile[]> {
     const res = await apiFetch('/api/settings/ai/profiles/discover')
     return handleResponse(res)
@@ -208,8 +246,15 @@ export const settingsApi = {
     return handleResponse(res)
   },
 
-  async deleteAiProfile(id: string): Promise<void> {
-    const res = await apiFetch(`/api/settings/ai/profiles/${encodeURIComponent(id)}`, {
+  async deleteAiProfile(
+    id: string,
+    options: { replacementProfileId?: string; deleteLocalKey?: boolean } = {},
+  ): Promise<void> {
+    const params = new URLSearchParams()
+    if (options.replacementProfileId) params.set('replacement_profile_id', options.replacementProfileId)
+    if (options.deleteLocalKey) params.set('delete_local_key', 'true')
+    const suffix = params.toString() ? `?${params}` : ''
+    const res = await apiFetch(`/api/settings/ai/profiles/${encodeURIComponent(id)}${suffix}`, {
       method: 'DELETE',
     })
     return handleResponse(res)

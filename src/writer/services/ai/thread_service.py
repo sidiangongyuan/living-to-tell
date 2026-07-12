@@ -88,6 +88,9 @@ class AiThreadService:
         attachments: Optional[List[AiContextAttachment]] = None,
         system_prompt: str = "",
         cost_tier: AiCostTier = AiCostTier.BALANCED,
+        provider_override: Optional[AiProvider] = None,
+        model_override: Optional[str] = None,
+        profile_id: Optional[str] = None,
         history_window: int = DEFAULT_HISTORY_WINDOW,
         context_budget_chars: int = DEFAULT_CHAT_CONTEXT_BUDGET_CHARS,
     ) -> ChatTurn:
@@ -133,13 +136,16 @@ class AiThreadService:
             attachments=attachments_list,
             system_prompt=system_prompt,
         )
-        provider = self._provider_factory()
-        model = self._tasks.model_for_tier(cost_tier)
+        provider = provider_override or self._provider_factory()
+        model = model_override or self._tasks.model_for_tier(cost_tier)
         response = provider.chat(messages, model=model)
 
         meta_assistant = json.dumps(
             {
                 "model": response.model,
+                "provider": response.provider,
+                "transport": response.transport,
+                "profile_id": profile_id,
                 "input_tokens": response.input_tokens,
                 "output_tokens": response.output_tokens,
             },

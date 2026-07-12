@@ -82,6 +82,7 @@ async function mockSettingsPage(
   const state = {
     aiSaves: [] as Array<Record<string, unknown>>,
     aiProfiles: [] as Array<Record<string, unknown>>,
+    defaultProfileId: null as string | null,
     discoveredProfiles: [
       {
         name: 'OpenCode · DeepSeek v4 Flash Free',
@@ -283,6 +284,10 @@ async function mockSettingsPage(
         source_key: candidate.source_key,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        is_default: false,
+        test_status: 'untested',
+        diagnostic_code: '',
+        diagnostic_message: '',
       }
       if (existingIndex >= 0) {
         state.aiProfiles[existingIndex] = payload
@@ -323,8 +328,13 @@ async function mockSettingsPage(
         source_key: body.source_key ?? null,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        is_default: state.defaultProfileId === null,
+        test_status: 'untested',
+        diagnostic_code: '',
+        diagnostic_message: '',
       }
       state.aiProfiles.push(created)
+      if (!state.defaultProfileId) state.defaultProfileId = String(created.id)
       await route.fulfill({ status: 201, json: created })
       return
     }
@@ -334,7 +344,30 @@ async function mockSettingsPage(
       await new Promise((resolve) => setTimeout(resolve, options.staleInitialProfileListDelayMs))
     }
     state.profileListResponses += 1
-    await route.fulfill({ json: { profiles: responseProfiles } })
+    await route.fulfill({ json: { profiles: responseProfiles.map((profile) => ({ ...profile, is_default: profile.id === state.defaultProfileId })), default_profile_id: state.defaultProfileId } })
+  })
+
+  await page.route('http://backend.test/api/settings/ai/default-profile', async (route) => {
+    const body = route.request().postDataJSON() as { profile_id: string }
+    state.defaultProfileId = body.profile_id
+    await route.fulfill({ json: { profiles: state.aiProfiles.map((profile) => ({ ...profile, is_default: profile.id === state.defaultProfileId })), default_profile_id: state.defaultProfileId } })
+  })
+
+  await page.route('http://backend.test/api/settings/ai/profiles/check', async (route) => {
+    await route.fulfill({ json: { profiles: state.aiProfiles.map((profile) => ({ ...profile, is_default: profile.id === state.defaultProfileId })), default_profile_id: state.defaultProfileId } })
+  })
+
+  await page.route(/http:\/\/backend\.test\/api\/settings\/ai\/profiles\/[^/]+\/test-live$/, async (route) => {
+    const profileId = new URL(route.request().url()).pathname.split('/').at(-2) ?? ''
+    state.aiLiveTests.push({ profile_id: profileId })
+    const index = state.aiProfiles.findIndex((profile) => profile.id === profileId)
+    const updated = { ...state.aiProfiles[index], test_status: 'passed', last_tested_at: '2026-01-01T00:00:00Z', last_test_transport: 'chat_completions', last_test_elapsed_ms: 120, diagnostic_code: '', diagnostic_message: '', is_default: profileId === state.defaultProfileId }
+    state.aiProfiles[index] = updated
+    await route.fulfill({ json: { profile: updated, test: { ok: true, message: '真实请求已通过。', provider: 'openai', model: updated.model, transport: 'chat_completions', elapsed_ms: 120, preview: '测试通过。', cost: 0.001 } } })
+  })
+
+  await page.route('http://backend.test/api/settings/ai/local-key', async (route) => {
+    await route.fulfill({ json: { api_key_source: 'env:LTT_AI_TEST_KEY', env_var: 'LTT_AI_TEST_KEY', message: '密钥已保存到本机。', persisted: true } })
   })
 
   await page.route('http://backend.test/api/articles*', async (route) => {
@@ -467,161 +500,32 @@ async function mockSettingsPage(
   return state
 }
 
-test('settings AI buttons import, test, save, and reset with visible feedback', async ({ page }) => {
+test('settings profile hub creates a relay profile, stores its key locally, and records live health', async ({ page }) => {
   const state = await mockSettingsPage(page)
-
   await page.goto('/settings')
-  await expect(page.getByRole('heading', { name: 'AI 配置', exact: true })).toBeVisible({ timeout: 15000 })
-
-  await page.getByRole('button', { name: '导入 Codex 配置' }).click()
-  await expect.poll(() => state.codexImports).toBe(1)
-  await expect(page.getByText('已导入 Codex 配置')).toBeVisible()
-
-  await page.locator('section').filter({ hasText: 'AI 配置' }).locator('select').first().selectOption('gemini')
-  await page.getByRole('button', { name: '导入 Gemini 配置' }).click()
-  await expect.poll(() => state.geminiImports).toBe(1)
-  await expect(page.getByText('已导入 Gemini 配置')).toBeVisible()
-
-  await page.getByRole('button', { name: '检查本地配置' }).click()
-  await expect.poll(() => state.aiTests.length).toBe(1)
-  expect(state.aiTests[0]).toEqual(expect.objectContaining({
-    provider_name: 'gemini',
-    model: 'gemini-2.5-flash',
-    api_key_source: 'gemini',
-  }))
-  await expect(page.locator('div').filter({ hasText: /^本地配置检查通过。/ }).first()).toBeVisible()
-
-  await page.getByRole('button', { name: '发送真实测试请求' }).click()
-  await expect.poll(() => state.aiLiveTests.length).toBe(1)
-  expect(state.aiLiveTests[0]).toEqual(expect.objectContaining({
-    provider_name: 'gemini',
-    model: 'gemini-2.5-flash',
-    api_key_source: 'gemini',
-  }))
-  await expect(page.getByText(/真实 AI 请求成功/)).toBeVisible()
-  await expect(page.getByText(/响应预览：雨夜车站，两个人就此告别。/)).toBeVisible()
-  const diagnostics = page.getByTestId('ai-diagnostics-panel')
-  await expect(diagnostics.getByText('已真实验证')).toBeVisible()
-  await expect(diagnostics.getByText('Gemini 接口 / 中转')).toBeVisible()
-  await expect(diagnostics.getByText('gemini-2.5-flash', { exact: true })).toBeVisible()
-  await expect(diagnostics.getByText('gateway_compatible')).toBeVisible()
-  await expect(diagnostics.getByText(/真实请求成功 · 120ms/)).toBeVisible()
-  await expect(diagnostics.getByText('雨夜车站，两个人就此告别。')).toBeVisible()
-
-  await page.locator('section').filter({ hasText: '界面设置' }).locator('select').nth(1).selectOption('tray')
-  await page.getByRole('button', { name: '保存设置' }).click()
-  await expect.poll(() => state.aiSaves.length).toBe(1)
-  await expect(page.getByText('设置已保存')).toBeVisible()
-  await expect(page.getByText('当前环境无法使用系统托盘')).toBeVisible()
-
-  await page.getByRole('button', { name: '重新显示', exact: true }).click()
-  await expect(page.getByText('欢迎清单会在日期页重新显示。')).toBeVisible()
-
-  await page.getByRole('button', { name: '重新显示教程' }).click()
-  await expect(page).toHaveURL(/\/collections/)
-  await expect(page.getByTestId('guided-tour-overlay')).toBeVisible()
-  await expect(page.getByText('作品集是一本文稿项目')).toBeVisible()
-  await page.getByRole('button', { name: '下一步' }).click()
-  await expect(page.getByText('先新建或打开一个作品集')).toBeVisible()
-})
-
-test('settings supports OpenCode model refresh and local login config', async ({ page }) => {
-  const state = await mockSettingsPage(page)
-
-  await page.goto('/settings')
-  await expect(page.getByRole('heading', { name: '设置', level: 1 })).toBeVisible({ timeout: 15000 })
-  await expect(page.getByText('本机配置发现')).toBeVisible()
-  await expect.poll(() => state.localProfileDiscoveries).toBe(0)
-  await expect(page.getByText('OpenCode · DeepSeek v4 Flash Free')).toHaveCount(0)
-  await expect(page.getByText(/点击“扫描本机配置”/)).toBeVisible()
-
-  await page.getByRole('button', { name: '扫描本机配置' }).click()
-  await expect.poll(() => state.localProfileDiscoveries).toBe(1)
-  await expect(page.getByText('OpenCode · DeepSeek v4 Flash Free')).toBeVisible()
-
-  await page.locator('article').filter({ hasText: 'OpenCode · DeepSeek v4 Flash Free' }).getByRole('button', { name: '移除' }).click()
-  await expect(page.getByText('OpenCode · DeepSeek v4 Flash Free')).toHaveCount(0)
-  await expect(page.getByText('Codex / OpenAI · gpt-5.4')).toBeVisible()
-
-  await page.getByRole('button', { name: '扫描本机配置' }).click()
-  await expect.poll(() => state.localProfileDiscoveries).toBe(2)
-  await expect(page.getByText('OpenCode · DeepSeek v4 Flash Free')).toBeVisible()
-
-  await page.getByRole('button', { name: '导入可用配置' }).click()
-  await expect.poll(() => state.localProfileImports.length).toBe(1)
-  await expect(page.getByText('本机配置已导入：新增 2 个，更新 0 个。')).toBeVisible()
-  await expect(page.locator('section').filter({ hasText: 'AI 配置档案' }).getByRole('heading', { name: 'Codex / OpenAI · gpt-5.4', level: 3 })).toBeVisible()
-
+  await expect(page.getByRole('heading', { name: 'AI 配置档案' })).toBeVisible({ timeout: 15000 })
   await page.getByRole('button', { name: '新增档案' }).click()
-  const profileDialog = page.getByRole('dialog', { name: '新建配置档案' })
-  await expect(profileDialog.getByRole('heading', { name: '新建配置档案' })).toBeVisible()
-  await profileDialog.getByRole('button', { name: '取消' }).first().click()
-  await expect(page.getByRole('heading', { name: '新建配置档案' })).toHaveCount(0)
-
-  await page.locator('section').filter({ hasText: 'AI 配置' }).locator('select').first().selectOption('opencode')
-  const aiSection = page.locator('section').filter({ hasText: 'AI 配置' })
-  const modelInput = aiSection.locator('input').first()
-
-  await expect(page.getByText('OpenCode 使用本机 opencode auth login 的登录状态')).toBeVisible()
-  await expect(page.getByText(/命令: opencode/)).toBeVisible()
-  await expect(modelInput).toHaveValue('opencode/deepseek-v4-flash-free')
-
-  await page.getByRole('button', { name: '获取模型' }).click()
-  await expect.poll(() => state.modelFetches).toContain('opencode')
-  await expect(page.locator('div').filter({ hasText: /^已从 OpenCode 真实拉取模型列表。$/ }).first()).toBeVisible()
-  await aiSection.locator('select').nth(1).selectOption('opencode/mimo-v2.5-free')
-  await expect(modelInput).toHaveValue('opencode/mimo-v2.5-free')
-
-  await page.getByRole('button', { name: '保存设置' }).click()
-  await expect.poll(() => state.aiSaves.at(-1)).toEqual(expect.objectContaining({
-    provider_name: 'opencode',
-    base_url: null,
-    model: 'opencode/mimo-v2.5-free',
-    api_key_source: 'opencode',
-    gemini_cli_proxy: null,
-  }))
-})
-
-test('imported AI profiles survive a stale profile load and settings/tools route round trip', async ({ page }) => {
-  const state = await mockSettingsPage(page, { staleInitialProfileListDelayMs: 900 })
-  const settingsProfiles = page.locator('section').filter({ hasText: 'AI 配置档案' })
-
-  await page.goto('/settings?section=ai_profiles')
-  await expect(page.getByRole('heading', { name: '设置', level: 1 })).toBeVisible({ timeout: 15000 })
-  await expect(page.getByText('本机配置发现')).toBeVisible()
-
-  await page.getByRole('button', { name: '扫描本机配置' }).click()
-  await expect(page.getByText('OpenCode · DeepSeek v4 Flash Free')).toBeVisible()
-  await expect(page.getByText('Codex / OpenAI · gpt-5.4')).toBeVisible()
-
-  await page.getByRole('button', { name: '导入可用配置' }).click()
-  await expect.poll(() => state.localProfileImports.length).toBe(1)
-  await expect(settingsProfiles.getByRole('heading', { name: 'OpenCode · DeepSeek v4 Flash Free', level: 3 })).toBeVisible()
-  await expect(settingsProfiles.getByRole('heading', { name: 'Codex / OpenAI · gpt-5.4', level: 3 })).toBeVisible()
-
-  await expect.poll(() => state.profileListResponses).toBeGreaterThanOrEqual(1)
-  await expect(settingsProfiles.getByRole('heading', { name: 'OpenCode · DeepSeek v4 Flash Free', level: 3 })).toBeVisible()
-  await expect(settingsProfiles.getByRole('heading', { name: 'Codex / OpenAI · gpt-5.4', level: 3 })).toBeVisible()
-
-  await page.goto('/ai?tab=tools')
-  const modelCompare = page.locator('section').filter({ hasText: '模型对比' })
-  await expect(modelCompare.getByText('OpenCode · DeepSeek v4 Flash Free')).toBeVisible()
-  await expect(modelCompare.getByText('Codex / OpenAI · gpt-5.4')).toBeVisible()
-
-  await modelCompare.getByRole('button', { name: '管理配置' }).click()
-  await expect(page).toHaveURL(/\/settings\?section=ai_profiles/)
-  await expect(settingsProfiles.getByRole('heading', { name: 'OpenCode · DeepSeek v4 Flash Free', level: 3 })).toBeVisible()
-  await expect(settingsProfiles.getByRole('heading', { name: 'Codex / OpenAI · gpt-5.4', level: 3 })).toBeVisible()
-
-  await page.goto('/ai?tab=tools')
-  await expect(modelCompare.getByText('OpenCode · DeepSeek v4 Flash Free')).toBeVisible()
-  await expect(modelCompare.getByText('Codex / OpenAI · gpt-5.4')).toBeVisible()
+  await expect(page.getByRole('dialog', { name: '新建 AI 配置档案' })).toBeVisible()
+  await page.getByRole('button', { name: /中转站 \/ 兼容接口/ }).click()
+  const dialog = page.getByRole('dialog')
+  const textboxes = dialog.getByRole('textbox')
+  await textboxes.nth(0).fill('DeepSeek 中转')
+  await textboxes.nth(1).fill('deepseek-v4-pro')
+  await textboxes.nth(2).fill('https://relay.example/v1')
+  await dialog.getByLabel('API Key').fill('sk-test-only')
+  await dialog.getByRole('button', { name: '保存并继续' }).click()
+  await expect(dialog.getByText('档案已保存')).toBeVisible()
+  await dialog.getByRole('button', { name: '发送最小真实测试' }).click()
+  await expect.poll(() => state.aiLiveTests).toEqual([{ profile_id: 'profile-1' }])
+  await expect(page.getByText('已通过', { exact: true })).toBeVisible()
+  expect(state.defaultProfileId).toBe('profile-1')
 })
 
 test('settings data storage buttons call native commands and protect migration with confirmation', async ({ page }) => {
   const state = await mockSettingsPage(page, { customDataDir: true })
 
   await page.goto('/settings')
+  await page.getByRole('button', { name: '数据与备份' }).click()
   await expect(page.getByText('数据与存储')).toBeVisible()
 
   await page.getByRole('button', { name: '打开数据目录' }).click()
@@ -663,6 +567,7 @@ test('settings data storage degrades cleanly when backend capability is missing'
   await mockSettingsPage(page, { dataLocationCapability: false })
 
   await page.goto('/settings')
+  await page.getByRole('button', { name: '数据与备份' }).click()
   await expect(page.getByText('后台服务版本过旧或安装不完整')).toBeVisible()
   await expect(page.getByText('当前后台服务不支持数据目录管理。请退出应用后重新安装最新版本；你的写作数据不会被删除。')).toBeVisible()
 
@@ -675,6 +580,7 @@ test('settings can check for updates, download internally, and launch installer'
   const state = await mockSettingsPage(page, { updateAvailable: true })
 
   await page.goto('/settings')
+  await page.getByRole('button', { name: '更新与关于' }).click()
   const updateSection = page.locator('section').filter({ hasText: '关于与更新' })
   await expect(updateSection).toBeVisible({ timeout: 15000 })
 

@@ -1,6 +1,6 @@
 {
   "name": "living-to-tell-app",
-  "version": "0.1.46",
+  "version": "0.1.47",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -21,6 +21,7 @@
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "^1.61.0",
     "@tauri-apps/cli": "^2.1.0",
     "@vitejs/plugin-vue": "^5.0.0",

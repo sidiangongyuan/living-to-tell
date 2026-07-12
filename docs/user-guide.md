@@ -10,8 +10,8 @@ Use this to confirm where the app lives, where your writing lives, and what upgr
 
 Steps:
 
-1. Download the latest Windows preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.36).
-2. Run the recommended installer: `LivingToTell_0.1.36_x64-setup.exe`. The MSI asset is `LivingToTell_0.1.36_x64_zh-CN.msi`.
+1. Download the latest Windows preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.47).
+2. Run the recommended installer: `LivingToTell_0.1.47_x64-setup.exe`. The MSI asset is `LivingToTell_0.1.47_x64_zh-CN.msi`.
 3. Open **活着为了讲述** from the Start menu or desktop shortcut.
 4. Open **Settings → Data and Storage** to review the active SQLite database, backup folder, and checkpoint folder.
 5. Before major edits, open **Export & Backup** and create a backup or named checkpoint.
@@ -156,35 +156,42 @@ Common mistakes:
 - **Can one sentence belong to several motifs?** Yes. One excerpt can link to multiple motifs.
 - **Will removing it from one motif delete it everywhere?** No. The default action unlinks only the current motif.
 
-## 6. AI, AI Cards, and Multi-Model Comparison
+## 6. AI Edit, Article Chat, and AI Cards
 
-Use AI for polish, rewrite, expand, continue, summarize, title generation, structure diagnosis, and reusable style/character/scene context.
+Use **AI Edit** for polish, rewrite, expand, and continue on one real article or explicit selection. Use the article-side chat drawer for discussion, and AI Cards for reusable style, character, and scene guidance. Collection-level discussion and drafting stay in the Collection Agent.
 
 Steps:
 
-1. Open **Settings → AI** and choose OpenAI-compatible, Gemini, Gemini CLI, or OpenCode.
-2. Click **Check Local Config** to verify local credential sources.
-3. Click **Send Real Test Request** to verify the provider, model, base URL, key, and transport with a real minimal request.
-4. For multi-model comparison, create or import GPT, Gemini, DeepSeek, or OpenCode profiles.
-5. Open **AI Workspace**, choose the task, scope, and input text.
-6. Select one or more profiles and run the same task.
-7. Compare output length, paragraph changes, latency, tokens, and cost when available. More selected models can mean longer waits and higher provider cost.
-8. Pick a winning result before copying, replacing, or inserting.
-9. Open **AI Cards** to create style, character, or scene cards. Use AI Card Builder for drafts, review the structured preview, then save only when ready.
-10. Use **Copy as Prompt** on a card when you want to paste its type, tags, and structured guidance into an AI task or another writing tool.
+1. Open **Settings → AI**. Create a profile with the three-step wizard or scan local Codex, Gemini, or OpenCode configuration.
+2. Choose one profile as the default. Single-model features use this profile unless the feature has an explicit temporary selector.
+3. Run **Check All Locally** first. This checks local credential and login availability without contacting a model.
+4. Select only the profiles you want to verify, then send a minimal real test. Real tests can use tokens and incur provider cost; each profile keeps its last health state and test time.
+5. Open an article and choose **AI Edit**, or select text first and enter from the article toolbar. Direct entry to AI Edit asks you to choose an article; there is no arbitrary paste mode.
+6. Choose Polish, Rewrite, Expand, or Continue. Additional presets, cards, notes, references, and detailed controls stay under **More Requirements**.
+7. Select one or more profiles. Selecting a non-default profile replaces the sole default selection; the default returns only if you explicitly select it again.
+8. Run the task and read the first successful result immediately. A failed model stays local to its status row and does not block other models. Leaving the page does not restart the task.
+9. Switch between **Generated Result** and **Difference from Original**. Write-back always opens a preview, verifies that the article has not drifted, and creates an `AI_BEFORE_APPLY` version first.
+10. In Articles, open **AI Chat** for discussion. Closing the drawer keeps the draft, thread, and in-flight reply. Copying or saving a reply remains explicit.
+11. Open **AI Cards** to create style, character, or scene cards. Review generated card drafts before saving, and use **Copy as Prompt** when a card should become explicit context.
 
 Safety notes:
 
-- AI providers receive only the text you explicitly send.
+- AI providers receive the article/selection and optional context shown for the task you explicitly run.
 - Local config checks are not remote availability proof. Only a successful real test request proves the model works.
-- Scene modules are searched and selected manually; unselected cards are not sent to AI.
+- Multi-model requests contain exactly the selected profile IDs; the default profile is never injected silently.
+- Reconnection only checks task state. It never resends a provider request. Local cancellation cannot guarantee that a request already sent to a provider stops generating or billing.
+- Article drift blocks positional write-back. Copy the result or rerun against the current article instead of forcing an unsafe replacement.
+- Scene modules and other context are selected manually; unselected material is not sent to AI.
 - AI Cards should store structure and guidance, not long source excerpts. Keep cards readable enough that you can reuse them as prompt context later.
 
 Common mistakes:
 
 - **Does OpenCode require saving a key in the app?** No. The app uses the local CLI session from `opencode auth login`.
-- **Why did Gemini proxy keys produce 403 before?** `sk-...` gateway keys with custom base URLs now use a compatible chat completions transport.
+- **Can I sign into ChatGPT inside the app?** No. Official OpenAI access uses an API key; local Codex access reuses an existing Codex login.
+- **Why did a provider charge tokens after a timeout?** A provider can keep processing after the local wait ends. The app does not automatically resend on reconnect, which avoids duplicate billing.
 - **Can AI overwrite my article automatically?** No. Write-back is always explicit.
+
+For actionable diagnostics by status code and access method, see [AI Setup Troubleshooting](ai-troubleshooting.md).
 
 ## 7. Export & Backup Center
 

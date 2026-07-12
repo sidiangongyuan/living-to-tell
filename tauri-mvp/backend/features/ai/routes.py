@@ -6,10 +6,12 @@ Long-running AI calls are synchronous with extended timeout (handled by frontend
 from __future__ import annotations
 
 import json
+import hashlib
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
 from dataclasses import dataclass
+from threading import Lock
 from typing import Any, Iterable
 from typing import Optional
 
@@ -19,6 +21,11 @@ from pydantic import BaseModel, Field
 
 from deps import get_container
 from features.ai.job_manager import AiJobRecord, ai_job_manager
+from features.ai.article_task_runs import (
+    ArticleTaskRunRecord,
+    article_task_run_manager,
+)
+from features.ai.error_messages import friendly_ai_error as safe_friendly_ai_error
 from features.ai_cards.routes import (
     AiCardDraftOut,
     AiCardDraftRequest,
@@ -47,6 +54,7 @@ from writer.services.ai.task_types import (
 from writer.services.ai.task_types import AiTaskRequest as DomainAiTaskRequest
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
+_article_task_apply_lock = Lock()
 
 KEY_TAURI_AI_TASK_PRESETS = "ai.tauri_task_presets"
 KEY_TAURI_AI_CHAT_SYSTEM_PROMPT = "ai.tauri_chat_system_prompt"
@@ -146,6 +154,62 @@ class AiTaskCompareResponse(BaseModel):
     results: list[AiTaskCompareResult]
 
 
+class ArticleTaskRunCreate(BaseModel):
+    article_id: str
+    task_type: str
+    profile_ids: list[str]
+    selection_start: Optional[int] = None
+    selection_end: Optional[int] = None
+    instructions: Optional[str] = None
+    context: Optional[str] = None
+    style: Optional[str] = None
+    intensity: Optional[str] = None
+    extra_instructions: Optional[str] = None
+    max_output_chars: Optional[int] = None
+    preserve_meaning: bool = True
+    preserve_voice: bool = True
+    forbid_terms: list[str] = Field(default_factory=list)
+    must_keep_terms: list[str] = Field(default_factory=list)
+    attachments: list[AiAttachmentIn] = Field(default_factory=list)
+    cost_tier: str = "balanced"
+
+
+class ArticleTaskRunApply(BaseModel):
+    profile_id: str
+
+
+class ArticleTaskRunOut(BaseModel):
+    run_id: str
+    article_id: str
+    article_title: str
+    task_type: str
+    article_hash: str
+    original_text: str
+    selection_start: Optional[int] = None
+    selection_end: Optional[int] = None
+    status: str
+    stage: str
+    stage_label: str
+    error: str = ""
+    profiles: list[dict[str, Any]]
+    results: list[AiTaskCompareResult]
+    created_at: str
+    started_at: Optional[str] = None
+    updated_at: str
+    completed_at: Optional[str] = None
+    elapsed_ms: int
+    applied_profile_id: Optional[str] = None
+    applied_at: Optional[str] = None
+    applied_version_id: Optional[str] = None
+
+
+class ArticleTaskApplyOut(BaseModel):
+    run: ArticleTaskRunOut
+    entry: dict[str, Any]
+    version_id: str
+    was_noop: bool = False
+
+
 class AiJobSnapshot(BaseModel):
     job_id: str
     kind: str
@@ -234,6 +298,7 @@ class ChatRequest(BaseModel):
     message: str
     scope_kind: Optional[str] = None
     scope_id: Optional[str] = None
+    profile_id: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -416,21 +481,7 @@ def _task_stats(input_text: str, output_text: str) -> AiTaskResultStats:
 
 
 def _friendly_ai_error(exc: Exception) -> str:
-    raw = str(exc).strip()
-    lowered = raw.lower()
-    if not raw:
-        return "AI 请求失败，请稍后重试。"
-    if "<!doctype html" in lowered or "<html" in lowered:
-        return "AI 服务返回了网页错误页，请检查接口协议、模型权限和密钥。"
-    if "http 403" in lowered or "forbidden" in lowered:
-        return "AI 服务拒绝了当前请求，可能是模型无权限、密钥无效或接口协议不匹配。"
-    if "failed to fetch" in lowered:
-        return "后台服务正在启动或连接中，请稍后重试；如果持续出现，请重启应用。"
-    if "traceback" in lowered:
-        return "AI 请求失败，后台返回了异常信息。请检查模型配置后重试。"
-    if len(raw) > 240:
-        return raw[:240].rstrip() + "..."
-    return raw
+    return safe_friendly_ai_error(exc)
 
 
 def _profile_config_from_raw(raw: dict[str, Any]) -> Optional[_ProfileRuntime]:
@@ -482,8 +533,9 @@ def _resolve_compare_profiles(
     if not unique_ids:
         raise HTTPException(400, "请选择至少一个 AI 配置。")
 
+    raw_profiles, default_profile_id = container.settings.ensure_ai_profile_defaults()
     stored: dict[str, _ProfileRuntime] = {}
-    for raw in container.settings.load_ai_provider_profiles():
+    for raw in raw_profiles:
         profile = _profile_config_from_raw(raw)
         if profile is not None:
             stored[profile.profile_id] = profile
@@ -491,11 +543,24 @@ def _resolve_compare_profiles(
     resolved: list[_ProfileRuntime] = []
     for profile_id in unique_ids:
         if profile_id == "default":
-            resolved.append(
-                _ProfileRuntime(
+            default_profile = stored.get(default_profile_id or "")
+            if default_profile is None or default_profile.config is None:
+                # Compatibility for old direct API callers. The current UI
+                # never advertises this implicit entry on a fresh install.
+                default_profile = _ProfileRuntime(
                     profile_id="default",
                     profile_name="默认配置",
                     config=container.settings.load_ai_config(),
+                )
+            resolved.append(
+                _ProfileRuntime(
+                    profile_id="default",
+                    profile_name=(
+                        f"默认 · {default_profile.profile_name}"
+                        if default_profile.profile_id != "default"
+                        else "默认配置"
+                    ),
+                    config=default_profile.config,
                 )
             )
             continue
@@ -548,6 +613,47 @@ def _job_snapshot(record: AiJobRecord) -> AiJobSnapshot:
         model=record.model,
         transport=record.transport,
     )
+
+
+def _article_run_out(record: ArticleTaskRunRecord) -> ArticleTaskRunOut:
+    return ArticleTaskRunOut(
+        run_id=record.run_id,
+        article_id=record.article_id,
+        article_title=record.article_title,
+        task_type=record.task_type,
+        article_hash=record.article_hash,
+        original_text=record.target_text,
+        selection_start=record.selection_start,
+        selection_end=record.selection_end,
+        status=record.status,
+        stage=record.stage,
+        stage_label=record.stage_label,
+        error=record.error,
+        profiles=record.profiles,
+        results=[AiTaskCompareResult(**item) for item in record.results],
+        created_at=record.created_at,
+        started_at=record.started_at,
+        updated_at=record.updated_at,
+        completed_at=record.completed_at,
+        elapsed_ms=record.elapsed_ms(),
+        applied_profile_id=record.applied_profile_id,
+        applied_at=record.applied_at,
+        applied_version_id=record.applied_version_id,
+    )
+
+
+def _entry_payload(entry: Any) -> dict[str, Any]:
+    return {
+        "id": entry.id,
+        "title": entry.title,
+        "body": entry.body,
+        "entry_type": entry.entry_type,
+        "created_at": entry.created_at,
+        "updated_at": entry.updated_at,
+        "tags": list(entry.tags),
+        "archived_at": entry.archived_at,
+        "curation_status": entry.curation_status,
+    }
 
 
 def _stream_compare_results(
@@ -800,7 +906,7 @@ def _run_compare_profile(
             model=config.model,
             transport=None,
             status="error",
-            error=format_issues(issues),
+            error=safe_friendly_ai_error(format_issues(issues)),
             elapsed_ms=int((time.perf_counter() - started) * 1000),
             stats=_task_stats(input_text, ""),
         )
@@ -900,6 +1006,248 @@ def compare_ai_task_stream(
         ),
         media_type="application/x-ndjson",
     )
+
+
+@router.post("/task-runs", response_model=ArticleTaskRunOut, status_code=202)
+def create_article_task_run(
+    request: ArticleTaskRunCreate,
+    container: AppContainer = Depends(get_container),
+) -> ArticleTaskRunOut:
+    if request.task_type not in {"polish", "rewrite", "expand", "continue"}:
+        raise HTTPException(400, "文章 AI 修改只支持润色、改写、扩写和续写。")
+    article = container.entry_repository.get((request.article_id or "").strip())
+    if article is None:
+        raise HTTPException(404, "文章不存在，可能已被删除。")
+
+    body = article.body or ""
+    start = request.selection_start
+    end = request.selection_end
+    if (start is None) != (end is None):
+        raise HTTPException(400, "选区起止位置必须同时提供。")
+    if start is not None and end is not None:
+        if start < 0 or end < start or end > len(body):
+            raise HTTPException(400, "文章选区已经失效，请回到文章页重新选择。")
+        if start == end:
+            start = None
+            end = None
+    target_text = body[start:end] if start is not None and end is not None else body
+    if not target_text.strip():
+        raise HTTPException(400, "文章或选区没有可处理的正文。")
+
+    task_request = AiTaskRequest(
+        task_type=request.task_type,
+        text=target_text,
+        instructions=request.instructions,
+        context=request.context,
+        target_kind="selection" if start is not None else "article",
+        target_ref_id=article.id,
+        style=request.style,
+        intensity=request.intensity,
+        extra_instructions=request.extra_instructions,
+        max_output_chars=request.max_output_chars,
+        preserve_meaning=request.preserve_meaning,
+        preserve_voice=request.preserve_voice,
+        forbid_terms=request.forbid_terms,
+        must_keep_terms=request.must_keep_terms,
+        attachments=request.attachments,
+        cost_tier=request.cost_tier,
+    )
+    domain_request = _domain_task_request(task_request)
+    profiles = _resolve_compare_profiles(
+        request.profile_ids,
+        container,
+        allow_default_fallback=False,
+    )
+    profile_snapshots = [
+        _compare_profile_snapshot(profile).model_dump()
+        for profile in profiles
+    ]
+    pending_results = [
+        AiTaskCompareResult(
+            profile_id=profile.profile_id,
+            profile_name=profile.profile_name,
+            provider=profile.config.provider_key() if profile.config is not None else "",
+            model=profile.config.model if profile.config is not None else "",
+            status="pending",
+            stats=_task_stats(target_text, ""),
+        ).model_dump()
+        for profile in profiles
+    ]
+    run_id = uuid.uuid4().hex
+    record = ArticleTaskRunRecord(
+        run_id=run_id,
+        article_id=article.id,
+        article_title=(article.title or "").strip() or "未命名文章",
+        task_type=request.task_type,
+        article_hash=hashlib.sha256(body.encode("utf-8")).hexdigest(),
+        article_body=body,
+        target_text=target_text,
+        selection_start=start,
+        selection_end=end,
+        request=task_request.model_dump(),
+        profiles=profile_snapshots,
+        results=pending_results,
+    )
+
+    def worker(active_run_id: str) -> None:
+        article_task_run_manager.set_stage(active_run_id, "sending_request")
+        executor = ThreadPoolExecutor(max_workers=min(8, len(profiles)))
+        cancelled = False
+        try:
+            future_profiles = {
+                executor.submit(
+                    _run_compare_profile,
+                    profile,
+                    domain_request,
+                    target_text,
+                    container,
+                ): profile.profile_id
+                for profile in profiles
+            }
+            article_task_run_manager.set_stage(active_run_id, "waiting_model")
+            pending = set(future_profiles)
+            while pending:
+                if article_task_run_manager.is_cancelled(active_run_id):
+                    cancelled = True
+                    for future in pending:
+                        future.cancel()
+                    return
+                done, pending = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
+                for future in done:
+                    result = future.result()
+                    article_task_run_manager.set_result(
+                        active_run_id,
+                        result.profile_id,
+                        result.model_dump(),
+                    )
+        finally:
+            executor.shutdown(wait=not cancelled, cancel_futures=cancelled)
+        article_task_run_manager.complete(active_run_id)
+
+    return _article_run_out(article_task_run_manager.create(record, worker))
+
+
+@router.get("/task-runs/active", response_model=Optional[ArticleTaskRunOut])
+def get_latest_article_task_run() -> Optional[ArticleTaskRunOut]:
+    record = article_task_run_manager.latest()
+    return _article_run_out(record) if record is not None else None
+
+
+@router.get("/task-runs/{run_id}", response_model=ArticleTaskRunOut)
+def get_article_task_run(run_id: str) -> ArticleTaskRunOut:
+    return _article_run_out(article_task_run_manager.get(run_id))
+
+
+@router.post("/task-runs/{run_id}/cancel", response_model=ArticleTaskRunOut)
+def cancel_article_task_run(run_id: str) -> ArticleTaskRunOut:
+    return _article_run_out(article_task_run_manager.cancel(run_id))
+
+
+def _apply_article_task_run(
+    run_id: str,
+    data: ArticleTaskRunApply,
+    container: AppContainer,
+) -> ArticleTaskApplyOut:
+    record = article_task_run_manager.get(run_id)
+    profile_id = (data.profile_id or "").strip()
+    if record.applied_profile_id:
+        if record.applied_profile_id != profile_id:
+            raise HTTPException(409, "这轮结果已经写回文章，不能再写入另一个模型结果。")
+        if record.applied_entry is None or not record.applied_version_id:
+            raise HTTPException(409, "这轮结果已经写回，请刷新文章查看。")
+        return ArticleTaskApplyOut(
+            run=_article_run_out(record),
+            entry=record.applied_entry,
+            version_id=record.applied_version_id,
+            was_noop=True,
+        )
+    if record.status != "succeeded":
+        raise HTTPException(400, "任务尚未完成，暂时不能写回文章。")
+    result = next(
+        (
+            item for item in record.results
+            if str(item.get("profile_id") or "") == profile_id
+            and item.get("status") == "success"
+        ),
+        None,
+    )
+    if result is None:
+        raise HTTPException(400, "请选择一个已经成功返回的模型结果。")
+
+    entry = container.entry_repository.get(record.article_id)
+    if entry is None:
+        raise HTTPException(404, "原文章已不存在，不能写回。")
+    current_hash = hashlib.sha256((entry.body or "").encode("utf-8")).hexdigest()
+    if current_hash != record.article_hash:
+        raise HTTPException(
+            409,
+            "文章在 AI 运行后已经发生变化。为避免覆盖新内容，请重新运行；当前结果仍可复制。",
+        )
+
+    generated = str(result.get("result") or "")
+    if not generated.strip():
+        raise HTTPException(400, "这个模型没有返回可写入的内容。")
+    start = record.selection_start
+    end = record.selection_end
+    if record.task_type == "continue":
+        insert_at = end if start is not None and end is not None else len(entry.body)
+        before = entry.body[:insert_at]
+        after = entry.body[insert_at:]
+        before_separator = "" if not before or before.endswith(("\n", " ")) else "\n\n"
+        after_separator = (
+            ""
+            if not after or generated.endswith(("\n", " ")) or after.startswith(("\n", " "))
+            else "\n\n"
+        )
+        next_body = before + before_separator + generated + after_separator + after
+    elif start is not None and end is not None:
+        next_body = entry.body[:start] + generated + entry.body[end:]
+    else:
+        next_body = generated
+
+    version = container.version_history_service.save_ai_before_apply(
+        entry.id,
+        label=f"AI {record.task_type}",
+        provider=str(result.get("provider") or "") or None,
+        model=str(result.get("model") or "") or None,
+    )
+    updated = container.entry_repository.update(
+        entry.id,
+        title=entry.title,
+        body=next_body,
+        tags=entry.tags,
+    )
+    if updated is None:
+        raise HTTPException(404, "原文章已不存在，不能写回。")
+    payload = _entry_payload(updated)
+    applied = article_task_run_manager.mark_applied(
+        run_id,
+        profile_id=profile_id,
+        version_id=version.id,
+        entry=payload,
+    )
+    return ArticleTaskApplyOut(
+        run=_article_run_out(applied),
+        entry=payload,
+        version_id=version.id,
+    )
+
+
+@router.post("/task-runs/{run_id}/apply", response_model=ArticleTaskApplyOut)
+def apply_article_task_run(
+    run_id: str,
+    data: ArticleTaskRunApply,
+    container: AppContainer = Depends(get_container),
+) -> ArticleTaskApplyOut:
+    # A double-click, retry, or second window must observe the first apply
+    # before it can create another version or mutate the article again.
+    with _article_task_apply_lock:
+        return _apply_article_task_run(run_id, data, container)
+
+
+@router.delete("/task-runs/{run_id}", status_code=204)
+def delete_article_task_run(run_id: str):
+    article_task_run_manager.delete(run_id)
 
 
 def _clean_task_presets(raw: Any) -> dict[str, list[AiTaskPreset]]:
@@ -1096,12 +1444,35 @@ def chat(
     try:
         thread, scope_attachment = _resolve_thread_for_chat(request, container)
 
+        profile_id = (request.profile_id or "default").strip() or "default"
+        runtime: Optional[_ProfileRuntime] = None
+        provider = None
+        if request.profile_id is not None and profile_id != "default":
+            runtime = _resolve_compare_profiles(
+                [profile_id],
+                container,
+                allow_default_fallback=False,
+            )[0]
+            if runtime.config is None:
+                raise HTTPException(400, runtime.error or "这个 AI 配置档案不可用。")
+            prompt_builder = PromptBuilder()
+            provider = provider_for_config(runtime.config, prompt_builder)
+
+        message_profile_id = (
+            runtime.profile_id
+            if runtime is not None
+            else container.settings.load_ai_default_profile_id()
+        )
+
         # Call AI service (this is where the long blocking call happens)
         turn = container.ai_thread_service.send(
             thread_id=thread.id,
             user_text=request.message,
             scope_attachment=scope_attachment,
             system_prompt=_chat_system_prompt(container),
+            provider_override=provider,
+            model_override=runtime.config.model if runtime and runtime.config else None,
+            profile_id=message_profile_id,
         )
 
         return ChatResponse(
@@ -1119,9 +1490,10 @@ def chat(
                 role="assistant",
                 content=turn.assistant_message.content,
                 timestamp=turn.assistant_message.created_at,
+                meta=_message_to_dto(turn.assistant_message).meta,
             ),
         )
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, f"Chat failed: {str(e)}")
+        raise HTTPException(500, _friendly_ai_error(e))

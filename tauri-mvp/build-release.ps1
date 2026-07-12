@@ -75,18 +75,32 @@ Write-Host "Sidecar source/target:"
 ) | Format-Table -AutoSize
 
 Write-Host "Building Tauri installer..."
+$PreviousRustFlags = $env:RUSTFLAGS
+$RustRemapFlags = @(
+    "--remap-path-prefix=$env:USERPROFILE=C:\build-home"
+    "--remap-path-prefix=$Root=D:\source"
+) -join " "
 Push-Location $Frontend
 try {
     npm run build
     if ($LASTEXITCODE -ne 0) {
         throw "npm run build failed with exit code $LASTEXITCODE."
     }
+    $env:RUSTFLAGS = (@($PreviousRustFlags, $RustRemapFlags) |
+        Where-Object { $_ -and $_.Trim() } |
+        ForEach-Object { $_.Trim() }) -join " "
     npm run tauri build
     if ($LASTEXITCODE -ne 0) {
         throw "npm run tauri build failed with exit code $LASTEXITCODE."
     }
 }
 finally {
+    if ($null -eq $PreviousRustFlags) {
+        Remove-Item Env:RUSTFLAGS -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:RUSTFLAGS = $PreviousRustFlags
+    }
     Pop-Location
 }
 

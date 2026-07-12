@@ -16,7 +16,7 @@ This list tracks product-facing work that would make Living to Tell more reliabl
 - [x] Add article notes for keeping ideas, reminders, and next-step thoughts beside the current article.
 - [x] Restore the last article editing position and improve long-document comfort near the end of a draft.
 - [ ] Add editor layout presets for compact, balanced, and wide screens.
-- [ ] Improve keyboard-only navigation across Dates, Articles, Collections, and AI Workspace.
+- [ ] Improve keyboard-only navigation across Dates, Articles, Collections, and AI Edit beyond the 0.1.47 focus/contrast/dialog baseline.
 - [ ] Add richer collection publishing options such as cover notes, section dividers, and saved export presets.
 - [x] Add optional backup reminders for active daily writers.
 
@@ -32,7 +32,9 @@ This list tracks product-facing work that would make Living to Tell more reliabl
 - [x] Add OpenCode local-auth support with live model fetching for OpenCode models.
 - [x] Add clearer long-text request size, wait-time, and timeout feedback.
 - [x] Make it easier to turn AI chat ideas into articles or reference material.
-- [ ] Improve quota, model availability, network, and proxy error messages.
+- [x] Improve quota, model availability, network, proxy, credential, and HTML error messages with safe actionable diagnostics.
+- [x] Unify AI settings around independent profiles, one default profile, saved health, local checks, and selected real tests.
+- [x] Add recoverable article multi-model tasks with exact profile selection, partial results, local cancellation, and drift-safe write-back.
 - [ ] Add provider-native token counting where available.
 - [ ] Expand clickable AI reports so issues can locate source text or become follow-up tasks.
 
@@ -55,7 +57,7 @@ This list tracks product-facing work that would make Living to Tell more reliabl
 
 - [x] Keep English and Chinese user guides in sync.
 - [x] Add short tutorial videos or GIFs after clean demo screenshots are available.
-- [ ] Add a troubleshooting page for AI provider setup.
+- [x] Add English and Chinese troubleshooting pages for AI provider setup.
 
 ## Completed recently
 
@@ -74,3 +76,4 @@ This list tracks product-facing work that would make Living to Tell more reliabl
 - Improved long-form editing with last-position restore, wider writing layout, and end-of-document breathing space.
 - Added daily writing quote links and one-click start writing.
 - Fixed the window close button flow with native ask / tray / exit behavior.
+- Unified AI settings, rebuilt article AI editing around real articles/selections, moved article chat into a persistent drawer, and added a complete automated quality gate.

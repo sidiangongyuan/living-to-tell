@@ -74,23 +74,24 @@ Expected result: references preserve source context; motifs preserve recurring c
 
 Safety note: one excerpt can belong to several motifs. Removing it from one motif does not remove it everywhere.
 
-## 5. AI and AI Cards: Real Tests, Model Comparison, Structured Context
+## 5. AI Profiles, Article Editing, and AI Cards
 
 ![AI and AI Cards tutorial](../tauri-mvp/docs/assets/tutorials/05-ai-cards.gif)
 
-Goal: verify AI connectivity, compare multiple models, and keep reusable style/character/scene context in AI Cards.
+Goal: configure one reliable default profile, compare article edits across explicitly selected models, and keep reusable style/character/scene context in AI Cards.
 
 Steps:
 
-1. In **Settings → AI**, distinguish **Check Local Config** from **Send Real Test Request**.
-2. Open **AI Workspace** and paste text.
-3. Select one or more provider profiles and run one task.
-4. Compare output length, paragraph changes, latency, tokens, and cost when available. More selected models can mean longer waits and higher provider cost.
-5. Open **AI Cards** to maintain style, character, and scene modules. Use **Copy as Prompt** when a card should become explicit AI context.
+1. In **Settings → AI**, review profile health, choose one default, and open the three-step profile wizard.
+2. Run local checks first; send a minimal real test only for profiles you explicitly select.
+3. Open **AI Edit** from an article or selection, choose Polish, Rewrite, Expand, or Continue, then select one or more profiles.
+4. Read the first successful result immediately, switch to the paragraph difference, and open the write-back preview. More selected models can mean longer waits and higher provider cost.
+5. Open the article-side **AI Chat** drawer for discussion without leaving the draft.
+6. Open **AI Cards** to maintain style, character, and scene modules. Use **Copy as Prompt** when a card should become explicit AI context.
 
-Expected result: AI output stays in preview until you choose a winning result and explicitly copy, replace, or insert.
+Expected result: AI Edit uses the selected article and exact selected profiles; output stays in preview until you explicitly copy or apply it, and article chat remains separate from write-back.
 
-Safety note: local config existence does not prove remote model availability. A real test request does.
+Safety note: local config existence does not prove remote model availability. Real tests can use tokens and cost money. Reconnection checks status without resending the provider request.
 
 ## 6. Export and Backup: Restore Points First
 

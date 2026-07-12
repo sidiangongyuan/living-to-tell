@@ -24,6 +24,8 @@ import TagSelector from '../../components/TagSelector.vue'
 import PaneResizeHandle from '../../components/PaneResizeHandle.vue'
 import ContextMenu from '../../components/ContextMenu.vue'
 import ArticleVersionsPanel from './ArticleVersionsPanel.vue'
+import ArticleAiChatDrawer from './ArticleAiChatDrawer.vue'
+import { useArticleTaskRunStore } from '../ai/articleTaskRunStore'
 import { useI18n } from '../../i18n'
 import { saveBlobWithDialog } from '../../utils/exportFile'
 import { collectArticleTags, countParagraphs, filterArticlesByTag } from './articleList'
@@ -43,6 +45,7 @@ import {
 
 const store = useArticlesStore()
 const settings = useSettingsStore()
+const articleTaskRun = useArticleTaskRunStore()
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
@@ -51,6 +54,7 @@ const saveTimer = ref<number | null>(null)
 const searchInput = ref('')
 const selectedTag = ref('')
 const showFindReplace = ref(false)
+const aiChatDrawerOpen = ref(false)
 const bodyRef = ref<HTMLTextAreaElement | null>(null)
 const editorScrollRef = ref<HTMLDivElement | null>(null)
 const findQuery = ref('')
@@ -414,7 +418,7 @@ async function loadMotifCandidates() {
   try {
     motifCandidates.value = await motifsApi.listMotifs('', 500)
   } catch (e) {
-    motifAttachError.value = e instanceof Error ? e.message : String(e)
+    motifAttachError.value = errorMessage(e)
   }
 }
 
@@ -1135,7 +1139,7 @@ async function exportArticle(format: ArticleExportFormat) {
     }
   } catch (e) {
     exportError.value = t('articles.exportFailed', {
-      message: e instanceof Error ? e.message : String(e),
+      message: errorMessage(e),
     })
   } finally {
     exportingFormat.value = null
@@ -1146,15 +1150,12 @@ async function openAiChatForArticle() {
   if (!store.selectedEntry) return
   const saved = await saveNow()
   if (!saved) return
-  const entryId = store.selectedEntry.id
-  router.push({
-    name: 'ai',
-    query: {
-      tab: 'chat',
-      scope_kind: 'article',
-      scope_id: entryId,
-    },
-  })
+  aiChatDrawerOpen.value = true
+}
+
+async function handleChatArticleCreated(entry: Entry) {
+  await store.loadEntries()
+  await router.push({ name: 'articles', query: { id: entry.id } })
 }
 
 async function openAiToolsForArticle() {
@@ -1926,6 +1927,7 @@ onMounted(async () => {
   syncDraftFromSelected()
   await refreshArticleSideData()
   await restoreEditorPositionIfNeeded()
+  if (route.query.chat === '1' && store.selectedEntry) aiChatDrawerOpen.value = true
   updateTailSpace()
   window.addEventListener('resize', updateTailSpace)
   window.addEventListener('keydown', handleKeydown)
@@ -2096,16 +2098,16 @@ watch(
         @queryChange="syncFindQuery"
       />
 
-      <div v-if="!settings.focusMode" class="flex items-center justify-between gap-4 p-4 border-b border-stone-200 bg-white/80">
+      <div v-if="!settings.focusMode" class="flex flex-wrap items-center justify-between gap-4 border-b border-stone-200 bg-white/80 p-4">
         <input
           v-if="store.selectedEntry"
           v-model="store.selectedEntry.title"
           @input="scheduleSave"
-          class="text-2xl font-bold flex-1 min-w-0 bg-transparent focus:outline-none"
+          class="min-w-[220px] flex-[1_1_240px] bg-transparent text-2xl font-bold focus:outline-none"
           :placeholder="t('articles.titlePlaceholder')"
         />
-        <div v-else class="text-stone-400">{{ t('articles.noArticleSelected') }}</div>
-        <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+        <div v-else class="min-w-[220px] flex-[1_1_240px] text-stone-400">{{ t('articles.noArticleSelected') }}</div>
+        <div class="flex min-w-0 flex-[1_1_520px] flex-wrap items-center justify-end gap-2">
           <button
             v-if="store.selectedEntry"
             @click="showFindReplace = !showFindReplace"
@@ -2143,9 +2145,11 @@ watch(
             </button>
             <button
               @click="openAiToolsForArticle"
-              class="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-amber-700"
+              class="relative rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-amber-700"
+              :title="articleTaskRun.run?.stage_label"
             >
               {{ t('articles.aiTools') }}
+              <span v-if="articleTaskRun.running" class="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-white"></span>
             </button>
             <button
               v-if="!store.selectedEntry.archived_at"
@@ -2703,6 +2707,13 @@ watch(
         </div>
       </div>
     </div>
+
+    <ArticleAiChatDrawer
+      :open="aiChatDrawerOpen"
+      :article="store.selectedEntry"
+      @close="aiChatDrawerOpen = false"
+      @article-created="handleChatArticleCreated"
+    />
   </div>
 </template>
 

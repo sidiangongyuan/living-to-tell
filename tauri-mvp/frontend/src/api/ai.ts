@@ -85,6 +85,55 @@ export interface AiTaskCompareDoneEvent {
   run_id: string
 }
 
+export interface ArticleAiTaskRunCreate extends Omit<AiTaskRequest, 'text' | 'target_kind' | 'target_ref_id'> {
+  article_id: string
+  profile_ids: string[]
+  selection_start?: number | null
+  selection_end?: number | null
+}
+
+export interface ArticleAiTaskRun {
+  run_id: string
+  article_id: string
+  article_title: string
+  task_type: 'polish' | 'rewrite' | 'expand' | 'continue'
+  article_hash: string
+  original_text: string
+  selection_start?: number | null
+  selection_end?: number | null
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+  stage: string
+  stage_label: string
+  error: string
+  profiles: AiTaskCompareProfileSnapshot[]
+  results: AiTaskCompareResult[]
+  created_at: string
+  started_at?: string | null
+  updated_at: string
+  completed_at?: string | null
+  elapsed_ms: number
+  applied_profile_id?: string | null
+  applied_at?: string | null
+  applied_version_id?: string | null
+}
+
+export interface ArticleAiTaskApplyResult {
+  run: ArticleAiTaskRun
+  entry: {
+    id: string
+    title: string
+    body: string
+    tags: string[]
+    entry_type: string
+    created_at: string | null
+    updated_at: string | null
+    archived_at: string | null
+    curation_status: string
+  }
+  version_id: string
+  was_noop: boolean
+}
+
 export type AiTaskCompareStreamEvent =
   | AiTaskCompareStartedEvent
   | AiTaskCompareResultEvent
@@ -144,6 +193,7 @@ export interface ChatRequest {
   message: string
   scope_kind?: 'global' | 'article' | 'collection'
   scope_id?: string | null
+  profile_id?: string | null
 }
 
 export interface ChatResponse {
@@ -162,6 +212,48 @@ export interface CurrentThreadResponse {
 }
 
 export const aiApi = {
+  async createArticleTaskRun(request: ArticleAiTaskRunCreate): Promise<ArticleAiTaskRun> {
+    const res = await apiFetch('/api/ai/task-runs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    })
+    return handleResponse(res)
+  },
+
+  async getLatestArticleTaskRun(): Promise<ArticleAiTaskRun | null> {
+    const res = await apiFetch('/api/ai/task-runs/active')
+    return handleResponse(res)
+  },
+
+  async getArticleTaskRun(runId: string): Promise<ArticleAiTaskRun> {
+    const res = await apiFetch(`/api/ai/task-runs/${encodeURIComponent(runId)}`)
+    return handleResponse(res)
+  },
+
+  async cancelArticleTaskRun(runId: string): Promise<ArticleAiTaskRun> {
+    const res = await apiFetch(`/api/ai/task-runs/${encodeURIComponent(runId)}/cancel`, {
+      method: 'POST',
+    })
+    return handleResponse(res)
+  },
+
+  async applyArticleTaskRun(runId: string, profileId: string): Promise<ArticleAiTaskApplyResult> {
+    const res = await apiFetch(`/api/ai/task-runs/${encodeURIComponent(runId)}/apply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile_id: profileId }),
+    })
+    return handleResponse(res)
+  },
+
+  async clearArticleTaskRun(runId: string): Promise<void> {
+    const res = await apiFetch(`/api/ai/task-runs/${encodeURIComponent(runId)}`, {
+      method: 'DELETE',
+    })
+    return handleResponse(res)
+  },
+
   async runTask(request: AiTaskRequest): Promise<AiTaskResponse> {
     const res = await apiFetch('/api/ai/task', {
       method: 'POST',

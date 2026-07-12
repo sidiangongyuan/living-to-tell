@@ -9,6 +9,7 @@ import {
   type AiTaskCompareStreamHandlers,
   type AiTaskRequest,
 } from '../../api/ai'
+import { errorMessage } from '../../api/base'
 
 type ScopedMessage = Message & {
   __scope_kind?: 'global' | 'article' | 'collection'
@@ -20,8 +21,11 @@ export const useAiStore = defineStore('ai', () => {
   const selectedThreadId = ref<string | null>(null)
   const messages = ref<ScopedMessage[]>([])
   const loading = ref(false)
+  const chatSending = ref(false)
   const taskRunning = ref(false)
   const error = ref<string | null>(null)
+  let pendingChatRequests = 0
+  let currentThreadLoadSeq = 0
 
   const selectedThread = computed(() =>
     threads.value.find((t) => t.id === selectedThreadId.value) ?? null
@@ -36,7 +40,7 @@ export const useAiStore = defineStore('ai', () => {
         selectedThreadId.value = threads.value[0].id
       }
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
     } finally {
       loading.value = false
     }
@@ -50,7 +54,7 @@ export const useAiStore = defineStore('ai', () => {
       messages.value = []
       return created
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
       throw e
     }
   }
@@ -64,7 +68,7 @@ export const useAiStore = defineStore('ai', () => {
         messages.value = []
       }
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
       throw e
     }
   }
@@ -74,10 +78,12 @@ export const useAiStore = defineStore('ai', () => {
     scopeId: string | null = null,
     create = true,
   ) {
+    const loadSeq = ++currentThreadLoadSeq
     loading.value = true
     error.value = null
     try {
       const current = await aiApi.getCurrentThread(scopeKind, scopeId, create)
+      if (loadSeq !== currentThreadLoadSeq) return null
       if (!current) {
         selectedThreadId.value = null
         messages.value = []
@@ -97,10 +103,10 @@ export const useAiStore = defineStore('ai', () => {
       }))
       return current.thread
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      if (loadSeq === currentThreadLoadSeq) error.value = errorMessage(e)
       throw e
     } finally {
-      loading.value = false
+      if (loadSeq === currentThreadLoadSeq) loading.value = false
     }
   }
 
@@ -108,9 +114,13 @@ export const useAiStore = defineStore('ai', () => {
     message: string,
     scopeKind: 'global' | 'article' | 'collection' = 'global',
     scopeId: string | null = null,
+    profileId: string | null = null,
   ) {
+    pendingChatRequests += 1
+    chatSending.value = true
     loading.value = true
     error.value = null
+    let requestedThreadId: string | null = null
     try {
       const currentThread = selectedThread.value
       const threadMatchesScope = Boolean(
@@ -119,30 +129,41 @@ export const useAiStore = defineStore('ai', () => {
         && (currentThread.scope_id ?? null) === (scopeId ?? null),
       )
       const threadId = currentThread && threadMatchesScope ? currentThread.id : null
+      requestedThreadId = threadId
       const response = await aiApi.chat({
         thread_id: threadId,
         message,
         scope_kind: scopeKind,
         scope_id: scopeId,
+        profile_id: profileId,
       })
+      const stillShowingRequestedThread = selectedThreadId.value === response.thread_id
+        || selectedThreadId.value === threadId
+        || selectedThreadId.value === null
       if (!selectedThreadId.value) {
         selectedThreadId.value = response.thread_id
       }
-      messages.value.push({
-        ...response.user_message,
-        __scope_kind: scopeKind,
-        __scope_id: scopeId,
-      })
-      messages.value.push({
-        ...response.assistant_message,
-        __scope_kind: scopeKind,
-        __scope_id: scopeId,
-      })
+      if (stillShowingRequestedThread) {
+        messages.value.push({
+          ...response.user_message,
+          __scope_kind: scopeKind,
+          __scope_id: scopeId,
+        })
+        messages.value.push({
+          ...response.assistant_message,
+          __scope_kind: scopeKind,
+          __scope_id: scopeId,
+        })
+      }
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      if (selectedThreadId.value === requestedThreadId || selectedThreadId.value === null) {
+        error.value = errorMessage(e)
+      }
       throw e
     } finally {
-      loading.value = false
+      pendingChatRequests = Math.max(0, pendingChatRequests - 1)
+      chatSending.value = pendingChatRequests > 0
+      if (!chatSending.value) loading.value = false
     }
   }
 
@@ -153,7 +174,7 @@ export const useAiStore = defineStore('ai', () => {
       const response = await aiApi.runTask(request)
       return response.result
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
       throw e
     } finally {
       taskRunning.value = false
@@ -166,7 +187,7 @@ export const useAiStore = defineStore('ai', () => {
     try {
       return await aiApi.compareTask(request)
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
       throw e
     } finally {
       taskRunning.value = false
@@ -182,7 +203,7 @@ export const useAiStore = defineStore('ai', () => {
     try {
       await aiApi.compareTaskStream(request, handlers)
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
       throw e
     } finally {
       taskRunning.value = false
@@ -200,6 +221,7 @@ export const useAiStore = defineStore('ai', () => {
     selectedThread,
     messages,
     loading,
+    chatSending,
     taskRunning,
     error,
     loadThreads,

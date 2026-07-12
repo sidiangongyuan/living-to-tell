@@ -51,6 +51,7 @@ const chipEditorOpen = ref(false)
 const chipEditorKind = ref<'tags' | 'aliases'>('tags')
 const chipEditorText = ref('')
 const aiProfiles = ref<AiProfile[]>([])
+const defaultAiProfileId = ref<string | null>(null)
 const enrichmentOpen = ref(false)
 const enrichmentMotifId = ref<string | null>(null)
 const enrichmentConcept = ref('')
@@ -182,7 +183,7 @@ const formDirty = computed(() => {
     || formPinned.value !== motif.pinned
 })
 const aiProfileOptions = computed(() => [
-  { id: 'default', name: t('motifs.enrichDefaultProfile'), provider: '', model: '' },
+  ...(defaultAiProfileId.value ? [{ id: 'default', name: t('motifs.enrichDefaultProfile'), provider: '', model: '' }] : []),
   ...aiProfiles.value
     .filter((profile) => profile.enabled)
     .map((profile) => ({
@@ -619,11 +620,14 @@ async function loadAiProfiles() {
   try {
     const result = await settingsApi.listAiProfiles()
     aiProfiles.value = result.profiles
+    defaultAiProfileId.value = result.default_profile_id ?? null
     if (!aiProfileOptions.value.some((profile) => profile.id === enrichmentProfileId.value)) {
-      enrichmentProfileId.value = 'default'
+      enrichmentProfileId.value = defaultAiProfileId.value ? 'default' : (result.profiles.find((profile) => profile.enabled)?.id ?? '')
     }
   } catch {
     aiProfiles.value = []
+    defaultAiProfileId.value = null
+    enrichmentProfileId.value = ''
   }
 }
 
@@ -2026,7 +2030,7 @@ async function removeSourceAnchorFromPicker(excerpt: MotifExcerpt) {
               </div>
               <button
                 @click="generateEnrichmentDraft"
-                :disabled="enrichmentGenerating || !enrichmentConcept.trim()"
+                :disabled="enrichmentGenerating || !enrichmentConcept.trim() || !enrichmentProfileId"
                 class="mt-4 w-full rounded-xl bg-stone-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:opacity-40"
               >
                 {{ enrichmentGenerating ? t('motifs.enrichGenerating') : t('motifs.enrichGenerate') }}

@@ -41,8 +41,16 @@
 - [x] Chat capture preview for saving assistant replies as reference material or new drafts.
 - [x] Clearer long-text request size and wait-state feedback.
 - [ ] AI report items that can locate source text or open an editable action.
-- [ ] More chat actions to turn discussion into article notes, reference material, or a new draft.
-- [ ] Cancellation controls for long-running AI requests.
+- [x] More chat actions to turn discussion into article notes, reference material, or a new draft.
+- [x] Cancellation controls and recoverable status polling for long-running article AI requests.
+
+## 0.1.47 stability baseline
+
+- [x] Unify AI settings around profiles plus one default profile, with lossless legacy migration and no fake fresh-install default.
+- [x] Add profile health, local checks, selected real tests, safe diagnostics, and replacement-aware deletion.
+- [x] Rebuild AI Edit around a real article or selection and exact multi-model profile snapshots.
+- [x] Move article AI chat into a closable drawer that preserves drafts, threads, and in-flight replies.
+- [x] Run complete Python, frontend, browser, real-backend, accessibility, responsive-visual, build, and Rust checks.
 
 ## Completed recently
 

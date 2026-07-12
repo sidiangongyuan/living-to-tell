@@ -436,7 +436,7 @@ async function mockMotifFlowApi(page: Page) {
     })
   })
   await page.route(/\/api\/settings\/ai\/profiles$/, async (route) => {
-    await route.fulfill({ json: { profiles: [] } })
+    await route.fulfill({ json: { profiles: [], default_profile_id: 'default-profile' } })
   })
   function makeEnrichmentDraft(concept: string, suffix: string) {
     return {

@@ -1002,7 +1002,7 @@ async function createAgentSession() {
     agentCreatingSession.value = false
     await loadAgentState(session.id)
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   } finally {
     agentSessionBusy.value = false
   }
@@ -1018,7 +1018,7 @@ async function switchAgentSession(session: CollectionAgentSession) {
     try {
       await collectionsApi.updateAgentSession(store.selectedCollectionId, session.id, { archived: false })
     } catch (e) {
-      agentError.value = e instanceof Error ? e.message : String(e)
+      agentError.value = errorMessage(e)
       return
     }
   }
@@ -1043,7 +1043,7 @@ async function archiveActiveAgentSession() {
       await createAgentSession()
     }
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   } finally {
     agentSessionBusy.value = false
   }
@@ -1073,7 +1073,7 @@ async function saveAgentSessionTitle() {
     }
     agentRenamingSession.value = false
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   }
 }
 
@@ -1086,7 +1086,7 @@ async function deleteActiveAgentSession() {
     selectedAgentDraftId.value = null
     await loadAgentState()
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   } finally {
     agentSessionBusy.value = false
   }
@@ -1108,7 +1108,7 @@ async function changeAgentMode(mode: CollectionAgentMode) {
       }
     }
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   }
 }
 
@@ -1123,7 +1123,7 @@ async function compactActiveAgentSession() {
       }
     }
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   }
 }
 
@@ -1152,7 +1152,7 @@ async function saveSelectedAgentDraft() {
       }
     }
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   } finally {
     agentDraftSaving.value = false
   }
@@ -1214,7 +1214,7 @@ async function applySelectedAgentDraft() {
       articlesApi.listArticles(500).then((items) => { allArticles.value = items }),
     ])
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   } finally {
     agentDraftApplying.value = false
   }
@@ -1232,7 +1232,7 @@ async function deleteSelectedAgentDrafts(clearAll = false) {
     selectedAgentDraftId.value = null
     await loadAgentState(agentState.value?.active_session_id)
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   }
 }
 
@@ -1252,7 +1252,7 @@ async function startAgentStyleCycle() {
     const sample = await collectionsApi.startAgentStyleSample(store.selectedCollectionId, agentStyleEntryId.value)
     agentStyleSamples.value = [sample, ...agentStyleSamples.value.filter((item) => item.id !== sample.id)]
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   }
 }
 
@@ -1263,7 +1263,7 @@ async function completeAgentStyleCycle() {
     agentStyleSamples.value = agentStyleSamples.value.map((item) => item.id === sample.id ? sample : item)
     await loadAgentState(agentState.value?.active_session_id)
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   }
 }
 
@@ -1277,7 +1277,7 @@ async function saveAgentPortrait() {
     })
     if (agentState.value) agentState.value = { ...agentState.value, author_portrait: portrait }
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   } finally {
     agentPortraitSaving.value = false
   }
@@ -1289,7 +1289,7 @@ async function loadAgentPortraitHistory() {
     agentPortraitVersions.value = await collectionsApi.listAuthorPortraitVersions(store.selectedCollectionId)
     agentPortraitHistoryOpen.value = true
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   }
 }
 
@@ -1302,7 +1302,7 @@ async function restoreAgentPortraitVersion(versionId: string) {
     agentPortraitSummary.value = portrait.summary
     agentPortraitHistoryOpen.value = false
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   }
 }
 
@@ -1367,7 +1367,7 @@ async function saveAgentSettings() {
     })
     agentState.value = { ...agentState.value, settings }
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   }
 }
 
@@ -1383,7 +1383,7 @@ async function saveAgentMemory() {
     agentState.value = { ...agentState.value, memory }
     syncAgentDrafts(agentState.value)
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   } finally {
     agentMemorySaving.value = false
   }
@@ -1406,7 +1406,7 @@ async function searchAgentReferences() {
     agentReferenceResults.value = results
   } catch (e) {
     if (token !== agentReferenceSearchToken || store.selectedCollectionId !== collectionId) return
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   } finally {
     if (token === agentReferenceSearchToken && store.selectedCollectionId === collectionId) {
       agentSearchLoading.value = false
@@ -1598,7 +1598,7 @@ async function runAgentPrompt(
     }
     scheduleAgentPoll(run.id)
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   } finally {
     agentRunning.value = false
   }
@@ -1641,7 +1641,7 @@ async function cancelActiveAgentRun() {
     }
     stopAgentPolling()
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   }
 }
 
@@ -1670,7 +1670,7 @@ async function clearAgentConversation() {
     syncAgentRunCollapse(state)
     agentClearDialogOpen.value = false
   } catch (e) {
-    agentError.value = e instanceof Error ? e.message : String(e)
+    agentError.value = errorMessage(e)
   } finally {
     agentClearing.value = false
   }
@@ -1963,7 +1963,7 @@ async function createCollection() {
     await store.createCollection(newTitle.value.trim(), newDescription.value.trim(), newProjectType.value)
     createDialogOpen.value = false
   } catch (e) {
-    actionError.value = e instanceof Error ? e.message : String(e)
+    actionError.value = errorMessage(e)
   }
 }
 
@@ -2010,7 +2010,7 @@ async function saveCollectionMetaIfNeeded(): Promise<boolean> {
     )
     return true
   } catch (e) {
-    actionError.value = e instanceof Error ? e.message : String(e)
+    actionError.value = errorMessage(e)
     return false
   } finally {
     savingMeta.value = false
@@ -2096,7 +2096,7 @@ async function createOutlineItem(type: OutlineItemType = articleTypeForProject(p
       outlineCreateMenuOpen.value = false
     }
   } catch (e) {
-    outlineActionError.value = e instanceof Error ? e.message : String(e)
+    outlineActionError.value = errorMessage(e)
   }
 }
 
@@ -2128,7 +2128,7 @@ async function createNodeFromArticle(article: CollectionArticle, parentId: strin
       viewMode.value = 'structure'
     }
   } catch (e) {
-    outlineActionError.value = e instanceof Error ? e.message : String(e)
+    outlineActionError.value = errorMessage(e)
   }
 }
 
@@ -2149,7 +2149,7 @@ async function saveOutlineItem() {
     }
     outlineEditing.value = false
   } catch (e) {
-    outlineActionError.value = e instanceof Error ? e.message : String(e)
+    outlineActionError.value = errorMessage(e)
   } finally {
     outlineSaving.value = false
   }
@@ -2206,7 +2206,7 @@ async function deleteSelectedOutlineItem() {
   try {
     await store.deleteOutlineItem(store.selectedOutlineItem.id)
   } catch (e) {
-    outlineActionError.value = e instanceof Error ? e.message : String(e)
+    outlineActionError.value = errorMessage(e)
   }
 }
 
@@ -2238,7 +2238,7 @@ async function changeOutlineParent(item: CollectionOutlineItem, parentId: string
   try {
     await store.updateOutlineItem(item.id, payloadFromItem(item, { parent_id: parentId }))
   } catch (e) {
-    outlineActionError.value = e instanceof Error ? e.message : String(e)
+    outlineActionError.value = errorMessage(e)
   }
 }
 
@@ -2280,7 +2280,7 @@ async function createArticleFromOutline() {
     outlineDraftEntryId.value = article.id
     await saveOutlineItem()
   } catch (e) {
-    outlineActionError.value = e instanceof Error ? e.message : String(e)
+    outlineActionError.value = errorMessage(e)
   }
 }
 
@@ -2300,7 +2300,7 @@ async function openArticlePicker() {
     actionError.value = null
     allArticles.value = await articlesApi.listArticles(500)
   } catch (e) {
-    actionError.value = e instanceof Error ? e.message : String(e)
+    actionError.value = errorMessage(e)
     return
   }
   selectedArticleIds.value = []
@@ -2323,7 +2323,7 @@ async function addSelectedArticles() {
     await store.addArticles(selectedArticleIds.value)
     articlePickerOpen.value = false
   } catch (e) {
-    actionError.value = e instanceof Error ? e.message : String(e)
+    actionError.value = errorMessage(e)
   }
 }
 
@@ -2332,7 +2332,7 @@ async function removeUnplannedArticle(entryId: string) {
   try {
     await store.removeArticle(entryId)
   } catch (e) {
-    actionError.value = e instanceof Error ? e.message : String(e)
+    actionError.value = errorMessage(e)
   }
 }
 
@@ -2350,7 +2350,7 @@ async function deleteSelectedCollection() {
   try {
     await store.deleteCollection(store.selectedCollection.id)
   } catch (e) {
-    actionError.value = e instanceof Error ? e.message : String(e)
+    actionError.value = errorMessage(e)
   }
 }
 
@@ -2388,7 +2388,7 @@ async function exportOutlineMarkdown() {
       saveBlobWithDialog(blob, safeCollectionFilename(`${store.selectedCollection?.title || 'collection'}-planning`, 'md'), 'md')
     )
   } catch (e) {
-    outlineActionError.value = e instanceof Error ? `导出大纲失败：${e.message}` : `导出大纲失败：${String(e)}`
+    outlineActionError.value = `导出大纲失败：${errorMessage(e)}`
   } finally {
     outlineExporting.value = false
   }
@@ -2531,7 +2531,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                     {{ projectTypeLabel(projectType, locale) }}
                   </span>
                 </div>
-                <p class="mt-1 line-clamp-1 text-sm text-stone-500">{{ store.selectedCollection.description || t('collections.noDescription') }}</p>
+                <p class="mt-1 line-clamp-1 text-sm text-stone-600">{{ store.selectedCollection.description || t('collections.noDescription') }}</p>
               </div>
               <div class="flex shrink-0 items-center gap-2">
                 <button
@@ -2567,7 +2567,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
             </div>
 
             <div v-if="!collectionMetaEditing" class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-stone-200/80 pt-3">
-              <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
+              <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-600">
                 <span>{{ t('collections.articleCount', { count: store.articles.length }) }}</span>
                 <span>{{ t('collectionOutline.itemCount', { count: store.outline.length }) }}</span>
                 <span>{{ t('collectionOutline.linkedCompact', { linked: outlineProgress.linkedItems, total: outlineProgress.totalItems }) }}</span>
@@ -2622,7 +2622,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
             <div class="mb-3 flex items-center justify-between gap-3">
               <div>
                 <h3 class="text-base font-semibold text-stone-900">{{ t('collectionOutline.structureTitle') }}</h3>
-                <p class="mt-0.5 text-xs text-stone-400">{{ t('collectionOutline.structureCount', { count: store.outline.length }) }}</p>
+                <p class="mt-0.5 text-xs text-stone-600">{{ t('collectionOutline.structureCount', { count: store.outline.length }) }}</p>
               </div>
               <div class="relative flex items-center gap-1" data-tour="outline-create-buttons">
                 <button
@@ -2652,7 +2652,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
               </div>
             </div>
             <div class="mb-3">
-              <button class="text-xs font-semibold text-stone-500 hover:text-stone-800" @click="structureGuideOpen = !structureGuideOpen">
+              <button class="text-xs font-semibold text-stone-600 hover:text-stone-800" @click="structureGuideOpen = !structureGuideOpen">
                 {{ structureGuideOpen ? '⌄' : '›' }} {{ t('collectionOutline.structureGuide') }}
               </button>
               <p v-if="structureGuideOpen" class="mt-2 rounded-lg bg-white px-3 py-2 text-xs leading-5 text-stone-600 ring-1 ring-stone-200">
@@ -2663,7 +2663,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
             <div v-if="outlineActionError || store.error" class="mb-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
               {{ outlineActionError || store.error }}
             </div>
-            <div v-if="store.outlineLoading" class="rounded-xl bg-white/70 p-4 text-sm text-stone-400">
+            <div v-if="store.outlineLoading" class="rounded-xl bg-white/70 p-4 text-sm text-stone-600">
               {{ t('common.loading') }}
             </div>
             <div v-else-if="!store.outline.length" class="rounded-2xl border border-dashed border-stone-300 bg-white/70 p-6 text-center">
@@ -2751,7 +2751,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                   {{ t('collections.addArticles') }}
                 </button>
               </div>
-              <div v-if="!unplanned.length" class="mt-4 rounded-xl border border-dashed border-stone-200 p-4 text-center text-xs text-stone-400">
+              <div v-if="!unplanned.length" class="mt-4 rounded-xl border border-dashed border-stone-200 p-4 text-center text-xs text-stone-600">
                 {{ t('collectionOutline.noUnplanned') }}
               </div>
               <div v-else class="mt-4 space-y-2">

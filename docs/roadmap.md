@@ -6,14 +6,14 @@ Living to Tell is an actively developed, local-first Windows writing studio. The
 
 - Make long-form writing more comfortable through layout presets, keyboard navigation, and careful behavior around large documents.
 - Keep Collections readable as projects grow: stronger manuscript navigation, clearer board views, and useful project-level Agent memory without automatic manuscript edits.
-- Improve AI setup diagnostics, provider error handling, long-task recovery, and cost visibility while keeping model selection explicit.
+- Maintain the unified AI profile/default model workflow, provider diagnostics, recoverable long tasks, and explicit cost-aware model selection introduced in 0.1.47.
 - Improve Reference Library and Motif Star Map navigation for larger personal archives.
 - Keep backups, restore points, data paths, and installer updates understandable to non-technical writers.
 
 ## Before beta
 
 - Publish signed Windows builds or provide a stable, reproducible verification path for unsigned installers.
-- Complete accessibility review for keyboard navigation, focus order, contrast, and screen-reader labels.
+- Extend the 0.1.47 accessibility baseline with deeper keyboard-only and screen-reader journeys across long documents and complex Agent sessions.
 - Test larger real-world libraries, long manuscripts, and extended Agent conversations for performance and recovery.
 - Refine first-run guidance for language, data location, backups, sample content, and optional AI setup.
 - Add installer smoke testing to the release workflow.

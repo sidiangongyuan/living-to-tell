@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { articlesApi } from '../api/articles'
+import { errorMessage } from '../api/base'
 import { useI18n } from '../i18n'
 
 const show = ref(false)
@@ -40,7 +41,7 @@ async function save() {
     show.value = false
   } catch (e) {
     console.error('Quick capture save failed:', e)
-    error.value = e instanceof Error ? e.message : t('quickCapture.saveError')
+    error.value = errorMessage(e) || t('quickCapture.saveError')
   } finally {
     saving.value = false
   }

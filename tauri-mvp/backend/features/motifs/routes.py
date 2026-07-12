@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from deps import get_container
+from features.ai.error_messages import friendly_ai_error as safe_friendly_ai_error
 from writer.app.settings import SUPPORTED_AI_PROVIDERS, SUPPORTED_WIRE_APIS
 from writer.app.container import AppContainer
 from writer.domain.enums import AiCostTier
@@ -648,21 +649,7 @@ def _parse_enrichment_payload(
 
 
 def _friendly_ai_error(exc: Exception) -> str:
-    raw = str(exc).strip()
-    lowered = raw.lower()
-    if not raw:
-        return "AI 请求失败，请稍后重试。"
-    if "<!doctype html" in lowered or "<html" in lowered:
-        return "AI 服务返回了网页错误页，请检查接口协议、模型权限和密钥。"
-    if "http 403" in lowered or "forbidden" in lowered:
-        return "AI 服务拒绝了当前请求，可能是模型无权限、密钥无效或接口协议不匹配。"
-    if "failed to fetch" in lowered:
-        return "后台服务正在启动或连接中，请稍后重试；如果持续出现，请重启应用。"
-    if "traceback" in lowered:
-        return "AI 请求失败，后台返回了异常信息。请检查模型配置后重试。"
-    if len(raw) > 240:
-        return raw[:240].rstrip() + "..."
-    return raw
+    return safe_friendly_ai_error(exc)
 
 
 def _cost_tier(value: str) -> AiCostTier:
@@ -818,8 +805,10 @@ def _coerce_enrichment_draft(
 def _profile_config(profile_id: str, container: AppContainer) -> tuple[str, Optional[AiConfig], str]:
     normalized_id = (profile_id or "default").strip() or "default"
     if normalized_id == "default":
-        return "默认配置", container.settings.load_ai_config(), ""
-    for raw in container.settings.load_ai_provider_profiles():
+        config = container.settings.load_ai_default_profile_config()
+        return "默认配置", config or container.settings.load_ai_config(), ""
+    profiles, _default_id = container.settings.ensure_ai_profile_defaults()
+    for raw in profiles:
         raw_id = str(raw.get("id") or "").strip()
         if raw_id != normalized_id:
             continue
@@ -963,6 +952,10 @@ def _generate_with_profile(
     _profile_name, config, error = _profile_config(profile_id, container)
     if config is None:
         raise HTTPException(400, error or "这个 AI 配置档案不可用。")
+    # ``default`` is the compatibility alias for the profile mirrored into the
+    # legacy AI settings. Route it through the shared service so old callers and
+    # injected integrations keep working; only real profile IDs need a separate
+    # provider instance.
     if profile_id == "default":
         return container.ai_task_service.generate_from_messages(
             messages,

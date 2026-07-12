@@ -263,6 +263,13 @@ const aiProfiles = [
     api_key_source: 'opencode',
     gemini_cli_proxy: null,
     enabled: true,
+    is_default: true,
+    test_status: 'passed',
+    last_tested_at: now,
+    last_test_transport: 'opencode_cli',
+    last_test_elapsed_ms: 1860,
+    diagnostic_code: '',
+    diagnostic_message: '',
     source_key: 'opencode:default',
     created_at: now,
     updated_at: now,
@@ -277,6 +284,13 @@ const aiProfiles = [
     api_key_source: 'env:GEMINI_API_KEY',
     gemini_cli_proxy: null,
     enabled: true,
+    is_default: false,
+    test_status: 'passed',
+    last_tested_at: now,
+    last_test_transport: 'openai_chat_completions',
+    last_test_elapsed_ms: 1320,
+    diagnostic_code: '',
+    diagnostic_message: '',
     source_key: 'gemini:demo',
     created_at: now,
     updated_at: now,
@@ -302,6 +316,8 @@ let sampleState = {
   created_at: null,
   missing_ids: [],
 }
+
+let articleTaskRun = null
 
 function json(route, data, status = 200) {
   return route.fulfill({
@@ -340,6 +356,7 @@ async function installDemoApi(page) {
     localStorage.setItem('right_context_pane_collapsed', 'false')
     localStorage.setItem('living_to_tell_last_selected_entry_id', 'demo-article-1')
     localStorage.setItem('living_to_tell_last_selected_collection_id', 'demo-collection-1')
+    localStorage.setItem('living_to_tell_collections_tour_dismissed', 'true')
     localStorage.removeItem('living_to_tell_welcome_checklist_dismissed')
   })
 
@@ -357,14 +374,18 @@ async function installDemoApi(page) {
     if (pathname === '/api/app/version') {
       return json(route, {
         app_name: 'Living to Tell',
-        version: '0.1.24',
+        version: '0.1.47',
         api_version: '2.0.0',
         capabilities: [
           'data_location',
           'ai_chat_settings',
           'ai_task_presets',
           'ai_profiles',
+          'ai_profile_defaults',
+          'ai_profile_health',
           'ai_task_compare',
+          'article_ai_task_runs',
+          'article_ai_chat_drawer',
           'motif_star_map',
           'article_versions',
           'collection_outline',
@@ -493,6 +514,43 @@ async function installDemoApi(page) {
     })
 
     if (pathname === '/api/ai/task-presets') return json(route, {})
+    if (pathname === '/api/ai/task-runs/active' && method === 'GET') return json(route, articleTaskRun)
+    if (pathname === '/api/ai/task-runs' && method === 'POST') {
+      const body = request.postDataJSON()
+      const requestedProfiles = aiProfiles.filter((profile) => (body.profile_ids || []).includes(profile.id))
+      const results = requestedProfiles.map((profile, index) => ({
+        profile_id: profile.id,
+        profile_name: profile.name,
+        provider: profile.provider_name,
+        model: profile.model,
+        transport: profile.id === 'demo-profile-opencode' ? 'opencode_cli' : 'openai_chat_completions',
+        status: 'success',
+        result: index === 0
+          ? '风越过堤岸，带来盐、潮气和一点清晨的亮。\n\n我把昨天没写完的段落又读了一遍，发现该留下的并不是发生过什么，而是那种被光一点点托起来的感觉。'
+          : '风从堤岸吹来，裹着盐意和潮湿的晨光。\n\n重读昨天搁下的段落时，我才意识到真正应该留下的不是事件本身，而是它一点点亮起来的过程。',
+        error: '',
+        elapsed_ms: index === 0 ? 1860 : 2380,
+        input_tokens: 76,
+        output_tokens: index === 0 ? 109 : 114,
+        cost: index === 0 ? 0 : 0.0005,
+        finish_reason: 'stop',
+        stats: { input_chars: articleBody.length, output_chars: 88, delta_chars: 10, output_ratio: 1.08, input_paragraphs: 3, output_paragraphs: 2 },
+      }))
+      articleTaskRun = {
+        run_id: 'demo-article-run-1', article_id: 'demo-article-1', article_title: articles[0].title,
+        task_type: body.task_type || 'polish', article_hash: 'demo-hash', original_text: articleBody,
+        selection_start: null, selection_end: null, status: 'succeeded', stage: 'succeeded', stage_label: '已完成', error: '',
+        profiles: requestedProfiles.map((profile) => ({ profile_id: profile.id, profile_name: profile.name, provider: profile.provider_name, model: profile.model })),
+        results, created_at: now, started_at: now, updated_at: now, completed_at: now, elapsed_ms: 2380,
+        applied_profile_id: null, applied_at: null, applied_version_id: null,
+      }
+      return json(route, articleTaskRun, 202)
+    }
+    if (pathname === '/api/ai/task-runs/demo-article-run-1' && method === 'GET') return json(route, articleTaskRun)
+    if (pathname === '/api/ai/task-runs/demo-article-run-1' && method === 'DELETE') {
+      articleTaskRun = null
+      return route.fulfill({ status: 204 })
+    }
     if (pathname === '/api/ai/task/compare') {
       const body = request.postDataJSON()
       const inputText = body.text || ''
@@ -535,8 +593,11 @@ async function installDemoApi(page) {
       })
     }
     if (pathname === '/api/ai/threads/current') return json(route, {
-      thread: { id: 'demo-thread-1', scope_kind: 'global', scope_id: null, title: '全局对话', created_at: now, updated_at: now },
-      messages: [],
+      thread: { id: 'demo-thread-1', scope_kind: 'article', scope_id: 'demo-article-1', title: articles[0].title, created_at: now, updated_at: now },
+      messages: [
+        { id: 'demo-chat-user', thread_id: 'demo-thread-1', role: 'user', content: '这个开头的节奏哪里可以再克制一点？', timestamp: now, meta: {} },
+        { id: 'demo-chat-assistant', thread_id: 'demo-thread-1', role: 'assistant', content: '第二句已经承担了回望和判断，可以先删去“真正要留下的不是事件”这一层解释，让盐、潮气和亮起来的动作自己完成收束。', timestamp: now, meta: { provider: 'opencode', model: 'opencode/deepseek-v4-flash-free', transport: 'opencode_cli' } },
+      ],
     })
     if (pathname === '/api/ai/threads') return json(route, [])
     if (pathname === '/api/ai/chat-settings') return json(route, { system_prompt: '' })
@@ -557,7 +618,7 @@ async function installDemoApi(page) {
       },
       model_presets: { openai: ['gpt-4o-mini'], gemini: ['gemini-2.5-flash'], gemini_cli: ['gemini-cli-default'], opencode: ['opencode/deepseek-v4-flash-free'] },
     })
-    if (pathname === '/api/settings/ai/profiles') return json(route, { profiles: aiProfiles })
+    if (pathname === '/api/settings/ai/profiles') return json(route, { profiles: aiProfiles, default_profile_id: 'demo-profile-opencode' })
     if (pathname === '/api/settings/ai/profiles/discover') return json(route, [])
     if (pathname === '/api/settings/ai/models') return json(route, { provider: url.searchParams.get('provider') || 'openai', models: ['opencode/deepseek-v4-flash-free'], source: 'preset', message: '演示模型列表。' })
     if (pathname === '/api/settings/data-location') return json(route, {
@@ -751,16 +812,15 @@ async function main() {
     })
 
     await recordFlow(browser, '03-collection-planning.gif', async (page, frames, dir) => {
-      await goto(page, '/collections')
-      await capture(page, frames, dir, 'Step 1：作品集先管理文章顺序和阅读节奏。')
-      await page.getByRole('button', { name: /^大纲$/ }).click()
+      await goto(page, '/collections?id=demo-collection-1')
+      await capture(page, frames, dir, 'Step 1：作品集用一棵书稿树统一管理层级、文章和导出顺序。')
+      await clickText(page, '第一部：海边的清晨')
+      await capture(page, frames, dir, 'Step 2：分部、章节、场景和笔记是不同粒度的结构节点；节点可以继续包含子项。')
+      await page.getByRole('button', { name: /^看板$/ }).click()
       await page.waitForTimeout(500)
-      await capture(page, frames, dir, 'Step 2：切到大纲，把长篇拆成分部、章节、场景和笔记。')
-      await page.getByRole('button', { name: /^规划看板$/ }).click()
-      await page.waitForTimeout(500)
-      await capture(page, frames, dir, 'Step 3：规划看板按状态总览构思、草稿、修订、完成和暂停。')
+      await capture(page, frames, dir, 'Step 3：看板按状态总览构思、草稿、修订、完成和暂停。')
       await clickText(page, '场景：潮湿的堤岸')
-      await capture(page, frames, dir, 'Step 4：选择大纲卡片后，在右侧维护摘要、目标字数和关联文章。')
+      await capture(page, frames, dir, 'Step 4：点击看板卡片会回到书稿详情，继续维护摘要、目标字数和关联文章。')
     })
 
     await recordFlow(browser, '04-reference-motif.gif', async (page, frames, dir) => {
@@ -776,14 +836,16 @@ async function main() {
 
     await recordFlow(browser, '05-ai-cards.gif', async (page, frames, dir) => {
       await goto(page, '/settings?section=ai_profiles')
-      await capture(page, frames, dir, 'Step 1：设置中区分本地配置检查和真实请求测试。')
-      await goto(page, '/ai?tab=tools')
-      await page.getByPlaceholder('粘贴需要处理的文本...').fill(articleBody)
-      await page.locator('label').filter({ hasText: 'OpenCode · DeepSeek Flash' }).click()
-      await capture(page, frames, dir, 'Step 2：在 AI 工具中勾选多个配置档案，同一任务并行对比。')
-      await page.getByRole('button', { name: /运行/ }).click()
-      await page.getByText('风从堤岸那边吹来').waitFor({ timeout: 6000 })
-      await capture(page, frames, dir, 'Step 3：逐张结果卡比较字数、段落、耗时、token 和成本。')
+      await capture(page, frames, dir, 'Step 1：AI 设置只保留配置档案和一个默认档案；本地检查与真实请求分开。')
+      await goto(page, '/ai?scope_kind=article&scope_id=demo-article-1')
+      await page.getByRole('button', { name: /已选择 1 个模型/ }).click()
+      await page.locator('label').filter({ hasText: 'Gemini 中转' }).locator('input').check()
+      await page.getByRole('button', { name: '完成', exact: true }).click()
+      await capture(page, frames, dir, 'Step 2：AI 修改围绕当前文章工作，只运行作者明确勾选的档案。')
+      await page.getByRole('button', { name: '运行 AI 修改' }).click()
+      await page.getByText(/风越过堤岸/).waitFor({ timeout: 6000 })
+      await page.getByRole('button', { name: '与原文差异' }).click()
+      await capture(page, frames, dir, 'Step 3：模型先完成先出现；切换结果并查看差异，确认后才写回文章。')
       await goto(page, '/ai-cards?id=demo-card-scene')
       await capture(page, frames, dir, 'Step 4：AI Card 用风格、人物、场景模板沉淀可复用写作上下文。')
     })

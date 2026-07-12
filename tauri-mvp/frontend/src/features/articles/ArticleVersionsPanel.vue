@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { articlesApi, type Entry, type EntryVersion } from '../../api/articles'
-import { isHttpStatus } from '../../api/base'
+import { errorMessage, isHttpStatus } from '../../api/base'
 import { useI18n } from '../../i18n'
 import { buildParagraphDiff, type ParagraphDiffRow } from './versionDiff'
 
@@ -72,7 +72,7 @@ async function loadVersions() {
   } catch (e) {
     error.value = isHttpStatus(e, 404)
       ? t('articleVersions.unsupported')
-      : e instanceof Error ? e.message : String(e)
+      : errorMessage(e)
   } finally {
     loading.value = false
   }
@@ -92,7 +92,7 @@ async function saveManualVersion() {
   } catch (e) {
     error.value = isHttpStatus(e, 404)
       ? t('articleVersions.unsupported')
-      : e instanceof Error ? e.message : String(e)
+      : errorMessage(e)
   } finally {
     saving.value = false
   }
@@ -113,7 +113,7 @@ async function restoreSelectedVersion() {
   } catch (e) {
     error.value = isHttpStatus(e, 404)
       ? t('articleVersions.versionMissing')
-      : e instanceof Error ? e.message : String(e)
+      : errorMessage(e)
   }
 }
 
@@ -130,7 +130,7 @@ async function cloneSelectedVersion() {
   } catch (e) {
     error.value = isHttpStatus(e, 404)
       ? t('articleVersions.versionMissing')
-      : e instanceof Error ? e.message : String(e)
+      : errorMessage(e)
   }
 }
 
@@ -145,7 +145,7 @@ async function deleteVersion(version: EntryVersion) {
   } catch (e) {
     error.value = isHttpStatus(e, 404)
       ? t('articleVersions.versionMissing')
-      : e instanceof Error ? e.message : String(e)
+      : errorMessage(e)
   }
 }
 

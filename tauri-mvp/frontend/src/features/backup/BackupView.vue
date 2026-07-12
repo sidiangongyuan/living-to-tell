@@ -8,6 +8,7 @@ import { collectionsApi, type CollectionExportFormat } from '../../api/collectio
 import { saveBlobWithDialog } from '../../utils/exportFile'
 import { LAST_SELECTED_ARTICLE_KEY } from '../articles/editorPosition'
 import ContextMenu from '../../components/ContextMenu.vue'
+import { errorMessage } from '../../api/base'
 
 const LAST_SELECTED_COLLECTION_KEY = 'living_to_tell_last_selected_collection_id'
 const BACKUP_REMINDER_DAYS_KEY = 'living_to_tell_backup_reminder_days'
@@ -99,25 +100,30 @@ const daysSinceLatestRestore = computed(() => {
 const backupDue = computed(() =>
   daysSinceLatestRestore.value === null || daysSinceLatestRestore.value >= backupReminderDays.value
 )
+const latestRestoreAge = computed(() =>
+  daysSinceLatestRestore.value === null
+    ? t('backup.aWhile')
+    : t('backup.daysCount', { count: daysSinceLatestRestore.value })
+)
 const protectionState = computed(() => {
   if (!restorePoints.value.length) {
     return {
       tone: 'empty',
-      title: '还没有恢复点',
-      copy: '先创建一个安全备份。以后恢复、迁移或大改前都有明确回退点。',
+      title: t('backup.noRestorePointTitle'),
+      copy: t('backup.noRestorePointCopy'),
     }
   }
   if (backupDue.value) {
     return {
       tone: 'warn',
-      title: '建议更新备份',
-      copy: `最近恢复点距离现在 ${daysSinceLatestRestore.value ?? '较久'} 天。高频写作建议先创建一次备份。`,
+      title: t('backup.backupDueTitle'),
+      copy: t('backup.backupDueCopy', { age: latestRestoreAge.value }),
     }
   }
   return {
     tone: 'good',
-    title: '当前有可用恢复点',
-    copy: '数据库、检查点和恢复入口都在这里。恢复前应用会自动备份当前数据库。',
+    title: t('backup.protectedTitle'),
+    copy: t('backup.protectedCopy'),
   }
 })
 
@@ -140,7 +146,7 @@ async function loadData() {
         .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime())[0]?.path ?? ''
     }
   } catch (e) {
-    error.value = e instanceof Error ? e.message : t('common.error')
+    error.value = errorMessage(e)
   } finally {
     loading.value = false
   }
@@ -155,7 +161,7 @@ async function createBackup() {
     await loadData()
     notice.value = t('backup.backupCreated')
   } catch (e) {
-    error.value = e instanceof Error ? e.message : t('common.error')
+    error.value = errorMessage(e)
   } finally {
     loading.value = false
   }
@@ -180,7 +186,7 @@ async function createCheckpoint() {
     await loadData()
     notice.value = t('backup.checkpointCreated')
   } catch (e) {
-    error.value = e instanceof Error ? e.message : t('common.error')
+    error.value = errorMessage(e)
   } finally {
     creatingCheckpoint.value = false
   }
@@ -195,7 +201,7 @@ function confirmRestore(path: string, name: string) {
 function confirmSelectedRestore() {
   const point = selectedRestorePoint.value
   if (!point) {
-    error.value = '请先选择一个恢复点。'
+    error.value = t('backup.selectRestorePointFirst')
     return
   }
   confirmRestore(point.path, point.name)
@@ -219,7 +225,7 @@ async function restore(path: string) {
         .catch(() => location.reload())
     }, 900)
   } catch (e) {
-    error.value = e instanceof Error ? e.message : t('common.error')
+    error.value = errorMessage(e)
   } finally {
     loading.value = false
   }
@@ -267,7 +273,7 @@ async function deleteItem(path: string, type: 'backup' | 'checkpoint') {
     await loadData()
     notice.value = t('backup.deleted')
   } catch (e) {
-    error.value = e instanceof Error ? e.message : t('common.error')
+    error.value = errorMessage(e)
   } finally {
     loading.value = false
   }
@@ -284,7 +290,7 @@ function formatDate(isoString: string): string {
 }
 
 function restoreTypeLabel(type: RestorePointType): string {
-  return type === 'checkpoint' ? '检查点' : '自动备份'
+  return type === 'checkpoint' ? t('backup.checkpointType') : t('backup.autoBackupType')
 }
 
 function protectionToneClass(tone: string): string {
@@ -297,9 +303,9 @@ async function copyPath(path: string | null | undefined) {
   if (!path) return
   try {
     await navigator.clipboard.writeText(path)
-    notice.value = '路径已复制。'
+    notice.value = t('backup.pathCopied')
   } catch {
-    error.value = '复制路径失败。'
+    error.value = t('backup.copyPathFailed')
   }
 }
 
@@ -311,7 +317,7 @@ function safeFilename(title: string, format: string): string {
 async function openPath(path: string | null | undefined) {
   if (!path) {
     notice.value = ''
-    error.value = '路径不存在，无法打开。'
+    error.value = t('backup.pathUnavailable')
     return
   }
   error.value = ''
@@ -319,7 +325,7 @@ async function openPath(path: string | null | undefined) {
     const { invoke } = await import('@tauri-apps/api/core')
     await invoke('open_path', { path })
   } catch (e) {
-    error.value = e instanceof Error ? `无法打开目录：${e.message}` : `无法打开目录：${String(e)}`
+    error.value = t('backup.openDirectoryFailed', { error: errorMessage(e) })
   }
 }
 
@@ -327,7 +333,7 @@ async function exportLastArticle(format: ArticleExportFormat) {
   const articleId = localStorage.getItem(LAST_SELECTED_ARTICLE_KEY)
   if (!articleId) {
     notice.value = ''
-    error.value = '还没有最近使用的文章。请先在文章页选中一篇文章，再回到这里导出。'
+    error.value = t('backup.noRecentArticle')
     return
   }
   exportShortcutBusy.value = `article-${format}`
@@ -337,9 +343,9 @@ async function exportLastArticle(format: ArticleExportFormat) {
     const article = await articlesApi.get(articleId)
     const blob = await articlesApi.exportArticle(articleId, format)
     const result = await saveBlobWithDialog(blob, safeFilename(article.title || 'article', format), format)
-    notice.value = result.status === 'cancelled' ? '已取消文章导出。' : '已导出最近文章。'
+    notice.value = result.status === 'cancelled' ? t('backup.articleExportCancelled') : t('backup.articleExported')
   } catch (e) {
-    error.value = e instanceof Error ? `导出最近文章失败：${e.message}` : `导出最近文章失败：${String(e)}`
+    error.value = t('backup.articleExportFailed', { error: errorMessage(e) })
   } finally {
     exportShortcutBusy.value = ''
   }
@@ -349,7 +355,7 @@ async function exportLastCollection(format: CollectionExportFormat) {
   const collectionId = localStorage.getItem(LAST_SELECTED_COLLECTION_KEY)
   if (!collectionId) {
     notice.value = ''
-    error.value = '还没有最近使用的作品集。请先在作品集页选中一个作品集，再回到这里导出。'
+    error.value = t('backup.noRecentCollection')
     return
   }
   exportShortcutBusy.value = `collection-${format}`
@@ -359,9 +365,9 @@ async function exportLastCollection(format: CollectionExportFormat) {
     const collection = await collectionsApi.getCollection(collectionId)
     const blob = await collectionsApi.exportCollection(collectionId, format)
     const result = await saveBlobWithDialog(blob, safeFilename(collection.title || 'collection', format), format)
-    notice.value = result.status === 'cancelled' ? '已取消作品集导出。' : '已导出最近作品集。'
+    notice.value = result.status === 'cancelled' ? t('backup.collectionExportCancelled') : t('backup.collectionExported')
   } catch (e) {
-    error.value = e instanceof Error ? `导出最近作品集失败：${e.message}` : `导出最近作品集失败：${String(e)}`
+    error.value = t('backup.collectionExportFailed', { error: errorMessage(e) })
   } finally {
     exportShortcutBusy.value = ''
   }
@@ -379,14 +385,14 @@ async function exportLastCollection(format: CollectionExportFormat) {
         <div class="flex gap-3">
           <button
             @click="showCheckpointDialog = true"
-            class="rounded-lg bg-green-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-green-700"
+            class="rounded-lg bg-green-700 px-4 py-2 font-semibold text-white transition-colors hover:bg-green-800"
           >
             {{ t('backup.createCheckpoint') }}
           </button>
           <button
             @click="createBackup"
             :disabled="loading"
-            class="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-blue-700 disabled:bg-gray-400"
+            class="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-blue-700 disabled:bg-gray-600"
           >
             {{ loading ? t('backup.creatingBackup') : t('backup.createBackup') }}
           </button>
@@ -403,54 +409,51 @@ async function exportLastCollection(format: CollectionExportFormat) {
         >
           <div class="flex items-start justify-between gap-4">
             <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.22em] opacity-70">Safety</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.22em] opacity-70">{{ t('backup.safety') }}</p>
               <h2 class="mt-1 text-xl font-bold">{{ protectionState.title }}</h2>
               <p class="mt-2 max-w-xl text-sm leading-6 opacity-80">{{ protectionState.copy }}</p>
             </div>
             <div class="rounded-2xl bg-white/70 px-4 py-3 text-right shadow-sm">
-              <div class="text-xs font-semibold opacity-60">最近恢复点</div>
+              <div class="text-xs font-semibold opacity-80">{{ t('backup.latestRestorePoint') }}</div>
               <div class="mt-1 text-2xl font-bold">
-                {{ daysSinceLatestRestore === null ? '—' : `${daysSinceLatestRestore} 天` }}
+                {{ daysSinceLatestRestore === null ? '—' : latestRestoreAge }}
               </div>
             </div>
           </div>
           <div class="mt-5 grid grid-cols-4 gap-2 text-center text-xs">
             <div class="rounded-2xl bg-white/70 px-3 py-3">
-              <div class="font-semibold opacity-60">{{ t('backup.autoBackups') }}</div>
+              <div class="font-semibold opacity-80">{{ t('backup.autoBackups') }}</div>
               <div class="mt-1 text-xl font-bold">{{ stats.backup_count }}</div>
             </div>
             <div class="rounded-2xl bg-white/70 px-3 py-3">
-              <div class="font-semibold opacity-60">{{ t('backup.checkpoints') }}</div>
+              <div class="font-semibold opacity-80">{{ t('backup.checkpoints') }}</div>
               <div class="mt-1 text-xl font-bold">{{ stats.checkpoint_count }}</div>
             </div>
             <div class="rounded-2xl bg-white/70 px-3 py-3">
-              <div class="font-semibold opacity-60">{{ t('backup.backupSize') }}</div>
+              <div class="font-semibold opacity-80">{{ t('backup.backupSize') }}</div>
               <div class="mt-1 text-xl font-bold">{{ formatSize(stats.total_backup_size) }}</div>
             </div>
             <div class="rounded-2xl bg-white/70 px-3 py-3">
-              <div class="font-semibold opacity-60">{{ t('backup.totalSize') }}</div>
+              <div class="font-semibold opacity-80">{{ t('backup.totalSize') }}</div>
               <div class="mt-1 text-xl font-bold">{{ formatSize(stats.total_size) }}</div>
             </div>
           </div>
           <div class="mt-4 flex flex-wrap items-center gap-3 rounded-2xl bg-white/70 px-4 py-3 text-sm">
-            <span class="font-semibold">提醒阈值</span>
-            <select v-model.number="backupReminderDays" class="rounded-xl border border-white bg-white px-3 py-2 text-sm outline-none">
-              <option :value="1">每天</option>
-              <option :value="3">3 天</option>
-              <option :value="7">7 天</option>
-              <option :value="14">14 天</option>
-              <option :value="30">30 天</option>
+            <span class="font-semibold">{{ t('backup.reminderThreshold') }}</span>
+            <select v-model.number="backupReminderDays" :aria-label="t('backup.reminderThreshold')" class="rounded-xl border border-white bg-white px-3 py-2 text-sm outline-none">
+              <option :value="1">{{ t('backup.daily') }}</option>
+              <option v-for="days in [3, 7, 14, 30]" :key="days" :value="days">{{ t('backup.daysCount', { count: days }) }}</option>
             </select>
-            <span class="text-xs opacity-70">只保存在本机，用来判断是否该提示你更新备份。</span>
+            <span class="text-xs opacity-70">{{ t('backup.reminderHelp') }}</span>
           </div>
         </section>
 
         <section class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="backup-restore-planner">
           <div class="flex items-start justify-between gap-4">
             <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Recovery</p>
-              <h2 class="mt-1 text-xl font-bold text-slate-950">选择恢复点</h2>
-              <p class="mt-2 text-sm leading-6 text-slate-500">恢复只允许使用应用管理的备份或检查点。执行前会自动备份当前数据库，然后重启应用。</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.22em] text-slate-600">{{ t('backup.recovery') }}</p>
+              <h2 class="mt-1 text-xl font-bold text-slate-950">{{ t('backup.chooseRestorePoint') }}</h2>
+              <p class="mt-2 text-sm leading-6 text-slate-500">{{ t('backup.restorePlannerHelp') }}</p>
             </div>
             <button
               type="button"
@@ -458,7 +461,7 @@ async function exportLastCollection(format: CollectionExportFormat) {
               :disabled="!selectedRestorePoint || loading"
               @click="confirmSelectedRestore"
             >
-              恢复所选
+              {{ t('backup.restoreSelected') }}
             </button>
           </div>
           <div v-if="restorePoints.length" class="mt-4 grid gap-2 md:grid-cols-2">
@@ -487,7 +490,7 @@ async function exportLastCollection(format: CollectionExportFormat) {
             </button>
           </div>
           <div v-else class="mt-4 rounded-2xl border border-dashed border-slate-200 p-5 text-center text-sm text-slate-400">
-            还没有恢复点。先创建安全备份或命名检查点。
+            {{ t('backup.noRestorePointsHelp') }}
           </div>
         </section>
       </div>
@@ -496,22 +499,22 @@ async function exportLastCollection(format: CollectionExportFormat) {
         <section class="rounded-3xl border border-stone-200 bg-stone-50/70 p-5">
           <div class="mb-3 flex items-center justify-between gap-3">
             <div>
-              <h2 class="text-sm font-semibold text-stone-900">数据位置</h2>
-              <p class="mt-1 text-xs text-stone-500">这里显示真实数据库、备份和检查点目录；打开或复制路径不会修改数据。</p>
+              <h2 class="text-sm font-semibold text-stone-900">{{ t('backup.dataLocation') }}</h2>
+              <p class="mt-1 text-xs text-stone-500">{{ t('backup.dataLocationHelp') }}</p>
             </div>
             <button
               type="button"
               class="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-stone-700 ring-1 ring-stone-200 hover:bg-stone-50"
               @click="openPath(dataLocation?.data_dir)"
             >
-              打开数据目录
+              {{ t('backup.openDataDirectory') }}
             </button>
           </div>
           <div v-if="dataLocation" class="space-y-2 text-xs text-stone-600">
             <div class="rounded-2xl bg-white px-3 py-2">
               <div class="flex items-center justify-between gap-3">
-                <div class="font-semibold text-stone-500">数据库</div>
-                <button class="text-[11px] font-semibold text-stone-500 hover:text-stone-900" @click="copyPath(dataLocation.database_path)">复制</button>
+                <div class="font-semibold text-stone-500">{{ t('backup.database') }}</div>
+                <button class="text-[11px] font-semibold text-stone-500 hover:text-stone-900" @click="copyPath(dataLocation.database_path)">{{ t('backup.copy') }}</button>
               </div>
               <div class="mt-1 break-all font-mono text-[11px] text-stone-800">{{ dataLocation.database_path }}</div>
             </div>
@@ -521,7 +524,7 @@ async function exportLastCollection(format: CollectionExportFormat) {
                 class="rounded-2xl bg-white px-3 py-2 text-left ring-1 ring-stone-200 hover:bg-stone-50"
                 @click="openPath(dataLocation.backup_dir)"
               >
-                <div class="font-semibold text-stone-500">备份目录</div>
+                <div class="font-semibold text-stone-500">{{ t('backup.backupDirectory') }}</div>
                 <div class="mt-1 break-all font-mono text-[11px] text-stone-700">{{ dataLocation.backup_dir }}</div>
               </button>
               <button
@@ -529,22 +532,22 @@ async function exportLastCollection(format: CollectionExportFormat) {
                 class="rounded-2xl bg-white px-3 py-2 text-left ring-1 ring-stone-200 hover:bg-stone-50"
                 @click="openPath(dataLocation.checkpoint_dir)"
               >
-                <div class="font-semibold text-stone-500">检查点目录</div>
+                <div class="font-semibold text-stone-500">{{ t('backup.checkpointDirectory') }}</div>
                 <div class="mt-1 break-all font-mono text-[11px] text-stone-700">{{ dataLocation.checkpoint_dir }}</div>
               </button>
             </div>
           </div>
           <div v-else class="rounded-xl bg-white px-3 py-3 text-sm text-stone-500">
-            当前后台暂时无法读取数据路径；备份和检查点功能仍可按列表使用。
+            {{ t('backup.dataLocationUnavailable') }}
           </div>
         </section>
 
         <section class="rounded-3xl border border-amber-100 bg-amber-50/60 p-5">
-          <h2 class="text-sm font-semibold text-stone-900">导出快捷操作</h2>
-          <p class="mt-1 text-xs leading-5 text-stone-600">基于最近打开的文章或作品集。没有上下文时会提示你先去对应页面选择。</p>
+          <h2 class="text-sm font-semibold text-stone-900">{{ t('backup.exportShortcuts') }}</h2>
+          <p class="mt-1 text-xs leading-5 text-stone-600">{{ t('backup.exportShortcutsHelp') }}</p>
           <div class="mt-3 space-y-3">
             <div>
-              <div class="mb-1 text-xs font-semibold text-stone-500">最近文章</div>
+              <div class="mb-1 text-xs font-semibold text-stone-500">{{ t('backup.recentArticle') }}</div>
               <div class="flex flex-wrap gap-2">
                 <button
                   v-for="format in articleExportFormats"
@@ -559,7 +562,7 @@ async function exportLastCollection(format: CollectionExportFormat) {
               </div>
             </div>
             <div>
-              <div class="mb-1 text-xs font-semibold text-stone-500">最近作品集</div>
+              <div class="mb-1 text-xs font-semibold text-stone-500">{{ t('backup.recentCollection') }}</div>
               <div class="flex flex-wrap gap-2">
                 <button
                   v-for="format in collectionExportFormats"
@@ -615,7 +618,7 @@ async function exportLastCollection(format: CollectionExportFormat) {
                 </div>
               </div>
             </article>
-            <div v-if="!checkpoints.length" class="py-8 text-center text-gray-400">
+            <div v-if="!checkpoints.length" class="py-8 text-center text-gray-600">
               {{ t('backup.noCheckpoints') }}
             </div>
           </div>
@@ -648,7 +651,7 @@ async function exportLastCollection(format: CollectionExportFormat) {
                 </div>
               </div>
             </article>
-            <div v-if="!backups.length" class="py-8 text-center text-gray-400">
+            <div v-if="!backups.length" class="py-8 text-center text-gray-600">
               {{ t('backup.noBackups') }}
             </div>
           </div>

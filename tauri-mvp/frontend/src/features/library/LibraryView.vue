@@ -273,7 +273,7 @@ async function flushPendingReferenceSave(): Promise<boolean> {
     return true
   } catch (e) {
     pendingReferenceSave.value = snapshot
-    const message = e instanceof Error ? e.message : String(e)
+    const message = errorMessage(e)
     store.error = message
     saveNotice.value = t('library.saveFailed', { message })
     saveFailed.value = true
@@ -466,7 +466,7 @@ async function copyText(text: string, noticeKey: string) {
     await navigator.clipboard.writeText(text)
     copyNotice.value = t(noticeKey)
   } catch (e) {
-    copyNotice.value = e instanceof Error ? e.message : String(e)
+    copyNotice.value = errorMessage(e)
   }
   window.setTimeout(() => {
     copyNotice.value = ''
@@ -513,7 +513,7 @@ async function loadMotifCandidates() {
   try {
     motifCandidates.value = await motifsApi.listMotifs('', 500)
   } catch (e) {
-    motifAttachError.value = e instanceof Error ? e.message : String(e)
+    motifAttachError.value = errorMessage(e)
   }
 }
 
@@ -733,7 +733,7 @@ async function saveMotifAttachSelection() {
       motifAttachNotice.value = ''
     }, 1800)
   } catch (e) {
-    motifAttachError.value = e instanceof Error ? e.message : String(e)
+    motifAttachError.value = errorMessage(e)
   } finally {
     motifAttachSaving.value = false
   }

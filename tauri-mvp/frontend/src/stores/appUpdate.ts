@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { appApi, type AppUpdateInfo, type AppUpdateStatus } from '../api/app'
+import { errorMessage } from '../api/base'
 import { openExternalUrl } from '../utils/openExternal'
 
 export const UPDATE_DISMISSED_VERSION_KEY = 'living_to_tell_dismissed_update_version'
@@ -112,7 +113,7 @@ export const useAppUpdateStore = defineStore('appUpdate', () => {
         return
       }
       status.value = 'error'
-      message.value = error instanceof Error ? error.message : String(error)
+      message.value = errorMessage(error)
       cached.value = false
     }
   }
@@ -162,7 +163,7 @@ export const useAppUpdateStore = defineStore('appUpdate', () => {
       await invoke('install_update_and_exit', { installerPath: downloaded.file_path })
     } catch (error) {
       downloadStatus.value = 'idle'
-      downloadMessage.value = error instanceof Error ? error.message : String(error)
+      downloadMessage.value = errorMessage(error)
       throw error
     }
   }

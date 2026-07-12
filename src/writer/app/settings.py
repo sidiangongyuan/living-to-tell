@@ -10,7 +10,10 @@ configuration will land alongside the settings dialog in a later milestone.
 from __future__ import annotations
 
 import json
+import hashlib
+import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from writer.app.locale import SUPPORTED_LOCALES
@@ -26,6 +29,9 @@ KEY_AI_PROVIDER = "ai.provider"
 KEY_AI_GEMINI_CLI_PROXY = "ai.gemini_cli_proxy"
 KEY_AI_CUSTOM_TASK_PRESETS = "ai.custom_task_presets"
 KEY_AI_PROVIDER_PROFILES = "ai.provider_profiles.v1"
+KEY_AI_DEFAULT_PROFILE_ID = "ai.default_profile_id.v1"
+KEY_AI_PROFILE_HEALTH = "ai.profile_health.v1"
+KEY_AI_PROFILE_MIGRATED = "ai.profile_defaults_migrated.v1"
 
 DEFAULT_GEMINI_CLI_MODEL = "gemini-cli-default"
 DEFAULT_OPENCODE_MODEL = "opencode/deepseek-v4-flash-free"
@@ -139,6 +145,9 @@ class Settings:
 
     def set(self, key: str, value: str) -> None:
         self._repo.set(key, value)
+
+    def delete(self, key: str) -> None:
+        self._repo.delete(key)
 
     @property
     def ai_base_url(self) -> Optional[str]:
@@ -271,6 +280,210 @@ class Settings:
         self._repo.set(
             KEY_AI_PROVIDER_PROFILES,
             json.dumps(profiles, ensure_ascii=False, sort_keys=True),
+        )
+
+    def load_ai_default_profile_id(self) -> Optional[str]:
+        value = (self._repo.get(KEY_AI_DEFAULT_PROFILE_ID) or "").strip()
+        return value or None
+
+    def save_ai_default_profile_id(self, profile_id: Optional[str]) -> None:
+        value = (profile_id or "").strip()
+        if value:
+            self._repo.set(KEY_AI_DEFAULT_PROFILE_ID, value)
+        else:
+            self._repo.delete(KEY_AI_DEFAULT_PROFILE_ID)
+
+    def load_ai_profile_health(self) -> dict[str, dict[str, Any]]:
+        raw = self._repo.get(KEY_AI_PROFILE_HEALTH)
+        if not raw:
+            return {}
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {
+            str(profile_id): value
+            for profile_id, value in data.items()
+            if isinstance(value, dict)
+        }
+
+    def save_ai_profile_health(self, health: dict[str, dict[str, Any]]) -> None:
+        cleaned = {
+            str(profile_id): value
+            for profile_id, value in health.items()
+            if str(profile_id).strip() and isinstance(value, dict)
+        }
+        if not cleaned:
+            self._repo.delete(KEY_AI_PROFILE_HEALTH)
+            return
+        self._repo.set(
+            KEY_AI_PROFILE_HEALTH,
+            json.dumps(cleaned, ensure_ascii=False, sort_keys=True),
+        )
+
+    @staticmethod
+    def ai_profile_fingerprint(profile: dict[str, Any]) -> str:
+        payload = {
+            "provider_name": str(profile.get("provider_name") or "").strip().lower(),
+            "base_url": str(profile.get("base_url") or "").strip().rstrip("/"),
+            "wire_api": str(profile.get("wire_api") or "responses").strip().lower(),
+            "model": str(profile.get("model") or "").strip(),
+            "api_key_source": str(profile.get("api_key_source") or "").strip(),
+            "gemini_cli_proxy": str(profile.get("gemini_cli_proxy") or "").strip(),
+        }
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def ensure_ai_profile_defaults(self) -> tuple[list[dict[str, Any]], Optional[str]]:
+        """Migrate the legacy global AI config to profiles exactly once.
+
+        A fresh install has no explicitly persisted legacy fields, so it stays
+        empty. Existing installs either select an exact matching profile or
+        receive a lossless ``原默认配置`` profile. The selected profile is then
+        mirrored back to the legacy fields for old desktop/backend callers.
+        """
+        profiles = self.load_ai_provider_profiles()
+        default_id = self.load_ai_default_profile_id()
+        migrated = self._repo.get(KEY_AI_PROFILE_MIGRATED) == "1"
+
+        default_profile = next(
+            (
+                item for item in profiles
+                if str(item.get("id") or "").strip() == default_id
+            ),
+            None,
+        )
+        if default_id and (default_profile is None or not bool(default_profile.get("enabled", True))):
+            default_id = None
+            self.save_ai_default_profile_id(None)
+
+        if not migrated:
+            legacy_keys = (
+                KEY_AI_PROVIDER,
+                KEY_AI_BASE_URL,
+                KEY_AI_WIRE_API,
+                KEY_AI_MODEL,
+                KEY_AI_API_KEY_SOURCE,
+                KEY_AI_GEMINI_CLI_PROXY,
+            )
+            has_explicit_legacy = any(self._repo.get(key) is not None for key in legacy_keys)
+            if has_explicit_legacy:
+                legacy = self.load_ai_config()
+                legacy_payload = {
+                    "provider_name": legacy.provider_key(),
+                    "base_url": legacy.base_url,
+                    "wire_api": legacy.wire_api,
+                    "model": legacy.model,
+                    "api_key_source": legacy.api_key_source,
+                    "gemini_cli_proxy": legacy.gemini_cli_proxy,
+                }
+                legacy_fingerprint = self.ai_profile_fingerprint(legacy_payload)
+                match = next(
+                    (
+                        item for item in profiles
+                        if self.ai_profile_fingerprint(item) == legacy_fingerprint
+                    ),
+                    None,
+                )
+                if match is None:
+                    now = datetime.now(timezone.utc).isoformat()
+                    match = {
+                        "id": uuid.uuid4().hex,
+                        "name": "原默认配置",
+                        **legacy_payload,
+                        "enabled": True,
+                        "source_key": None,
+                        "created_at": now,
+                        "updated_at": now,
+                    }
+                    profiles.append(match)
+                    self.save_ai_provider_profiles(profiles)
+                elif not bool(match.get("enabled", True)):
+                    match["enabled"] = True
+                    match["updated_at"] = datetime.now(timezone.utc).isoformat()
+                    self.save_ai_provider_profiles(profiles)
+                default_id = str(match.get("id") or "").strip() or None
+            elif profiles:
+                first_enabled = next(
+                    (item for item in profiles if bool(item.get("enabled", True))),
+                    None,
+                )
+                default_id = (
+                    str(first_enabled.get("id") or "").strip() or None
+                    if first_enabled is not None
+                    else None
+                )
+
+            self.save_ai_default_profile_id(default_id)
+            self._repo.set(KEY_AI_PROFILE_MIGRATED, "1")
+
+        if not default_id:
+            first_enabled = next(
+                (item for item in profiles if bool(item.get("enabled", True))),
+                None,
+            )
+            if first_enabled is not None:
+                default_id = str(first_enabled.get("id") or "").strip() or None
+                self.save_ai_default_profile_id(default_id)
+
+        if default_id:
+            selected = next(
+                (item for item in profiles if str(item.get("id") or "").strip() == default_id),
+                None,
+            )
+            if selected is not None:
+                try:
+                    self.save_ai_config(
+                        AiConfig(
+                            provider_name=str(selected.get("provider_name") or "openai"),
+                            base_url=str(selected.get("base_url") or "").strip() or None,
+                            wire_api=str(selected.get("wire_api") or "responses"),
+                            model=str(selected.get("model") or "").strip(),
+                            api_key_source=str(selected.get("api_key_source") or "").strip(),
+                            gemini_cli_proxy=str(selected.get("gemini_cli_proxy") or "").strip() or None,
+                        )
+                    )
+                except ValueError:
+                    # Invalid historical profiles remain visible for repair;
+                    # never guess a different protocol or model during migration.
+                    pass
+        return profiles, default_id
+
+    def load_ai_default_profile(self) -> Optional[dict[str, Any]]:
+        profiles, default_id = self.ensure_ai_profile_defaults()
+        if not default_id:
+            return None
+        return next(
+            (
+                item for item in profiles
+                if str(item.get("id") or "").strip() == default_id
+                and bool(item.get("enabled", True))
+            ),
+            None,
+        )
+
+    def load_ai_default_profile_config(self) -> Optional[AiConfig]:
+        profile = self.load_ai_default_profile()
+        if profile is None:
+            return None
+        provider_name = str(profile.get("provider_name") or "").strip().lower()
+        wire_api = str(profile.get("wire_api") or "responses").strip().lower()
+        model = str(profile.get("model") or "").strip()
+        if (
+            provider_name not in SUPPORTED_AI_PROVIDERS
+            or wire_api not in SUPPORTED_WIRE_APIS
+            or not model
+        ):
+            return None
+        return AiConfig(
+            provider_name=provider_name,
+            base_url=str(profile.get("base_url") or "").strip() or None,
+            wire_api=wire_api,
+            model=model,
+            api_key_source=str(profile.get("api_key_source") or "").strip(),
+            gemini_cli_proxy=str(profile.get("gemini_cli_proxy") or "").strip() or None,
         )
 
     def load_ai_custom_task_presets(self) -> dict[str, list[str]]:

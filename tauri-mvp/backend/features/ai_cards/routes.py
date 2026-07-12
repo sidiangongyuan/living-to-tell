@@ -11,6 +11,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from deps import get_container
+from features.ai.error_messages import friendly_ai_error
 from writer.app.settings import SUPPORTED_AI_PROVIDERS, SUPPORTED_WIRE_APIS
 from writer.app.container import AppContainer
 from writer.domain.enums import AiCostTier
@@ -275,8 +276,10 @@ def _cost_tier(value: str) -> AiCostTier:
 def _profile_config(profile_id: str, container: AppContainer) -> tuple[str, Optional[AiConfig], str]:
     normalized_id = (profile_id or "default").strip() or "default"
     if normalized_id == "default":
-        return "默认配置", container.settings.load_ai_config(), ""
-    for raw in container.settings.load_ai_provider_profiles():
+        config = container.settings.load_ai_default_profile_config()
+        return "默认配置", config or container.settings.load_ai_config(), ""
+    profiles, _default_id = container.settings.ensure_ai_profile_defaults()
+    for raw in profiles:
         raw_id = str(raw.get("id") or "").strip()
         if raw_id != normalized_id:
             continue
@@ -329,15 +332,7 @@ def _generate_with_profile(
 
 
 def _friendly_ai_card_error(exc: Exception) -> str:
-    raw = str(exc).strip()
-    if "HTTP 403" in raw:
-        return (
-            "AI 服务拒绝了当前请求。可能是中转接口协议不匹配、"
-            "模型无权限或密钥无效。"
-        )
-    if "<html" in raw.lower() or "<!doctype html" in raw.lower():
-        return "AI 服务返回了网页错误页，请检查中转地址、模型权限和密钥。"
-    return raw or exc.__class__.__name__
+    return friendly_ai_error(exc)
 
 
 def generate_ai_card_draft_core(

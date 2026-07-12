@@ -9,7 +9,7 @@ import {
   type CollectionOutlineItem,
   type CollectionOutlineItemInput,
 } from '../../api/collections'
-import { isHttpStatus } from '../../api/base'
+import { errorMessage, isHttpStatus } from '../../api/base'
 import { saveBlobWithDialog } from '../../utils/exportFile'
 
 export const useCollectionsStore = defineStore('collections', () => {
@@ -37,7 +37,7 @@ export const useCollectionsStore = defineStore('collections', () => {
   }
 
   function collectionErrorMessage(error: unknown, fallback: string): string {
-    return isHttpStatus(error, 404) ? fallback : error instanceof Error ? error.message : String(error)
+    return isHttpStatus(error, 404) ? fallback : errorMessage(error)
   }
 
   const selectedCollection = computed(() =>
@@ -242,7 +242,7 @@ export const useCollectionsStore = defineStore('collections', () => {
       }
       await refreshSelectedCollection()
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
       throw e
     }
   }
@@ -265,7 +265,7 @@ export const useCollectionsStore = defineStore('collections', () => {
     try {
       articles.value = await collectionsApi.reorderArticles(selectedCollectionId.value, entryIds)
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
       throw e
     }
   }
@@ -280,7 +280,7 @@ export const useCollectionsStore = defineStore('collections', () => {
       await refreshSelectedCollection()
       return created
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
       throw e
     }
   }
@@ -295,7 +295,7 @@ export const useCollectionsStore = defineStore('collections', () => {
       await refreshSelectedCollection()
       return updated
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
       throw e
     }
   }
@@ -311,7 +311,7 @@ export const useCollectionsStore = defineStore('collections', () => {
       }
       await refreshSelectedCollection()
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
       throw e
     }
   }
@@ -322,7 +322,7 @@ export const useCollectionsStore = defineStore('collections', () => {
     try {
       outline.value = await collectionsApi.reorderOutline(selectedCollectionId.value, itemIds)
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
       throw e
     }
   }
@@ -339,7 +339,7 @@ export const useCollectionsStore = defineStore('collections', () => {
       const result = await saveBlobWithDialog(blob, `${safeTitle}.${format}`, format)
       exportMessage.value = result.status === 'cancelled' ? '已取消导出。' : '已导出到文件。'
     } catch (e) {
-      error.value = e instanceof Error ? `导出失败：${e.message}` : `导出失败：${String(e)}`
+      error.value = `导出失败：${errorMessage(e)}`
     } finally {
       exportingFormat.value = null
     }

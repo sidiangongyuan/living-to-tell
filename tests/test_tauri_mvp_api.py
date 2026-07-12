@@ -4,6 +4,7 @@ import json
 import hashlib
 import sqlite3
 import time
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 import sys
 import uuid
@@ -1130,15 +1131,14 @@ def test_tauri_ai_card_generate_draft_rejects_bad_json(monkeypatch):
 
 def test_tauri_ai_card_generate_draft_sanitizes_html_errors(monkeypatch):
     client = _tauri_client(monkeypatch)
-    from deps import get_container
+    from features.ai_cards import routes as ai_card_routes
 
-    class FakeTaskService:
-        def generate_from_messages(self, messages, *, cost_tier):
-            raise RuntimeError(
-                "AI request failed: <!doctype html><html><title>403 | Forbidden</title></html>"
-            )
+    def fail_with_html(*args, **kwargs):
+        raise RuntimeError(
+            "AI request failed: <!doctype html><html><title>403 | Forbidden</title></html>"
+        )
 
-    get_container().ai_task_service = FakeTaskService()
+    monkeypatch.setattr(ai_card_routes, "_generate_with_profile", fail_with_html)
 
     response = client.post(
         "/api/ai-cards/generate-draft",
@@ -3557,6 +3557,30 @@ def test_tauri_ai_settings_live_test_sanitizes_html_errors(monkeypatch):
     assert "<!doctype html>" not in payload["message"]
 
 
+def test_tauri_ai_provider_errors_hide_raw_gateway_details(monkeypatch):
+    _tauri_client(monkeypatch)
+    from features.ai.error_messages import friendly_ai_error, safe_ai_diagnostic
+
+    raw = (
+        "Error code: 403 - {'error': {'message': "
+        "'无权访问 glm-private-shared 分组 (request id: secret-request-id)'}}"
+    )
+    code, diagnostic = safe_ai_diagnostic(raw)
+    message = friendly_ai_error(raw)
+
+    assert code == "forbidden"
+    assert message == diagnostic
+    assert "服务拒绝" in message
+    assert "glm-private-shared" not in message
+    assert "secret-request-id" not in message
+
+    local_message = friendly_ai_error(
+        r"Codex auth file was not found at C:\Users\private-user\.codex\auth.json"
+    )
+    assert "本机工具或登录" in local_message
+    assert "private-user" not in local_message
+
+
 def test_tauri_ai_settings_import_failures_are_explicit(monkeypatch):
     client = _tauri_client(monkeypatch)
 
@@ -3895,6 +3919,502 @@ def test_tauri_docx_export_cleans_temp_file_on_generation_failure(
         raise AssertionError("docx export failure was not raised")
 
     assert not list(tmp_path.glob("*.docx"))
+
+
+def test_tauri_ai_profiles_migrate_default_and_store_health(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    monkeypatch.setenv("WRITER_PROFILE_TEST_KEY", "test-key")
+    saved = client.put(
+        "/api/settings/ai",
+        json={
+            "provider_name": "openai",
+            "base_url": "https://relay.example/v1",
+            "wire_api": "chat_completions",
+            "model": "legacy-model",
+            "api_key_source": "env:WRITER_PROFILE_TEST_KEY",
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    migrated_payload = client.get("/api/settings/ai/profiles").json()
+    legacy = next(item for item in migrated_payload["profiles"] if item["model"] == "legacy-model")
+    assert migrated_payload["default_profile_id"] == legacy["id"]
+    assert legacy["wire_api"] == "chat_completions"
+    assert legacy["is_default"] is True
+
+    replacement = client.post(
+        "/api/settings/ai/profiles",
+        json={
+            "name": "Replacement",
+            "provider_name": "openai",
+            "base_url": "https://other.example/v1",
+            "wire_api": "responses",
+            "model": "replacement-model",
+            "api_key_source": "env:WRITER_PROFILE_TEST_KEY",
+        },
+    ).json()
+    from features.settings import routes as settings_routes
+    from writer.services.ai.interfaces import ChatResponse
+
+    class FakeProvider:
+        def chat(self, messages, *, model=None):
+            return ChatResponse(
+                content="测试通过。",
+                model=model or "replacement-model",
+                provider="fake",
+                transport="fake_transport",
+                input_tokens=1,
+                output_tokens=1,
+            )
+
+    monkeypatch.setattr(settings_routes, "_provider_for_config", lambda config: FakeProvider())
+    tested = client.post(f"/api/settings/ai/profiles/{replacement['id']}/test-live")
+    assert tested.status_code == 200, tested.text
+    assert tested.json()["profile"]["test_status"] == "passed"
+    assert tested.json()["profile"]["last_test_transport"] == "fake_transport"
+    assert client.delete(f"/api/settings/ai/profiles/{legacy['id']}").status_code == 400
+    deleted = client.delete(
+        f"/api/settings/ai/profiles/{legacy['id']}",
+        params={"replacement_profile_id": replacement["id"]},
+    )
+    assert deleted.status_code == 204, deleted.text
+    assert client.get("/api/settings/ai/profiles").json()["default_profile_id"] == replacement["id"]
+
+
+def test_ai_profiles_fresh_install_stays_empty(tmp_path):
+    from writer.app.settings import Settings
+    from writer.storage.database import open_and_initialize
+    from writer.storage.repositories.settings_repository import SettingsRepository
+
+    connection = open_and_initialize(tmp_path / "fresh-profile-settings.sqlite3")
+    try:
+        settings = Settings(SettingsRepository(connection))
+        profiles, default_profile_id = settings.ensure_ai_profile_defaults()
+        assert profiles == []
+        assert default_profile_id is None
+        assert settings.load_ai_default_profile_id() is None
+    finally:
+        connection.close()
+
+
+def test_ai_profiles_do_not_choose_a_disabled_default(tmp_path):
+    from writer.app.settings import Settings
+    from writer.storage.database import open_and_initialize
+    from writer.storage.repositories.settings_repository import SettingsRepository
+
+    connection = open_and_initialize(tmp_path / "disabled-profile-settings.sqlite3")
+    try:
+        settings = Settings(SettingsRepository(connection))
+        disabled = {
+            "id": "disabled",
+            "name": "Disabled",
+            "provider_name": "openai",
+            "base_url": "https://disabled.example/v1",
+            "wire_api": "chat_completions",
+            "model": "disabled-model",
+            "api_key_source": "env:DISABLED_PROFILE_KEY",
+            "enabled": False,
+        }
+        enabled = {
+            "id": "enabled",
+            "name": "Enabled",
+            "provider_name": "openai",
+            "base_url": "https://enabled.example/v1",
+            "wire_api": "chat_completions",
+            "model": "enabled-model",
+            "api_key_source": "env:ENABLED_PROFILE_KEY",
+            "enabled": True,
+        }
+        settings.save_ai_provider_profiles([disabled])
+        _profiles, default_profile_id = settings.ensure_ai_profile_defaults()
+        assert default_profile_id is None
+
+        settings.save_ai_provider_profiles([disabled, enabled])
+        _profiles, default_profile_id = settings.ensure_ai_profile_defaults()
+        assert default_profile_id == "enabled"
+    finally:
+        connection.close()
+
+
+def test_tauri_ai_profile_delete_replaces_collection_agent_reference(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    monkeypatch.setenv("WRITER_PROFILE_REPLACE_KEY", "test-key")
+
+    def create_profile(name, model):
+        return client.post(
+            "/api/settings/ai/profiles",
+            json={
+                "name": name,
+                "provider_name": "openai",
+                "base_url": "https://relay.example/v1",
+                "wire_api": "chat_completions",
+                "model": model,
+                "api_key_source": "env:WRITER_PROFILE_REPLACE_KEY",
+            },
+        ).json()
+
+    original = create_profile("Original", "original-model")
+    replacement = create_profile("Replacement", "replacement-model")
+    assert client.put(
+        "/api/settings/ai/default-profile",
+        json={"profile_id": original["id"]},
+    ).status_code == 200
+    collection = client.post(
+        "/api/collections",
+        json={"title": "Agent Profile Replacement", "description": ""},
+    ).json()
+    saved = client.put(
+        f"/api/collections/{collection['id']}/agent/settings",
+        json={"profile_id": original["id"], "enabled": True},
+    )
+    assert saved.status_code == 200, saved.text
+
+    deleted = client.delete(
+        f"/api/settings/ai/profiles/{original['id']}",
+        params={"replacement_profile_id": replacement["id"]},
+    )
+
+    assert deleted.status_code == 204, deleted.text
+    from deps import get_container
+
+    stored = get_container().collection_agent_repository.get_settings(collection["id"])
+    assert stored.profile_id == replacement["id"]
+    profile_state = client.get("/api/settings/ai/profiles").json()
+    assert profile_state["default_profile_id"] == replacement["id"]
+    assert original["id"] not in {item["id"] for item in profile_state["profiles"]}
+    assert replacement["id"] in {item["id"] for item in profile_state["profiles"]}
+
+
+def test_tauri_ai_profile_invalid_key_delete_has_no_partial_mutation(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    monkeypatch.setenv("WRITER_SHARED_PROFILE_KEY", "test-key")
+
+    def create_profile(name, model):
+        return client.post(
+            "/api/settings/ai/profiles",
+            json={
+                "name": name,
+                "provider_name": "openai",
+                "base_url": "https://relay.example/v1",
+                "wire_api": "chat_completions",
+                "model": model,
+                "api_key_source": "env:WRITER_SHARED_PROFILE_KEY",
+            },
+        ).json()
+
+    original = create_profile("Original", "original-model")
+    replacement = create_profile("Replacement", "replacement-model")
+    assert client.put(
+        "/api/settings/ai/default-profile",
+        json={"profile_id": original["id"]},
+    ).status_code == 200
+    collection = client.post(
+        "/api/collections",
+        json={"title": "Atomic Delete", "description": ""},
+    ).json()
+    assert client.put(
+        f"/api/collections/{collection['id']}/agent/settings",
+        json={"profile_id": original["id"], "enabled": True},
+    ).status_code == 200
+
+    blocked = client.delete(
+        f"/api/settings/ai/profiles/{original['id']}",
+        params={
+            "replacement_profile_id": replacement["id"],
+            "delete_local_key": True,
+        },
+    )
+
+    assert blocked.status_code == 400
+    assert "不能自动删除" in blocked.json()["detail"]
+    from deps import get_container
+
+    assert get_container().collection_agent_repository.get_settings(collection["id"]).profile_id == original["id"]
+    profile_state = client.get("/api/settings/ai/profiles").json()
+    assert profile_state["default_profile_id"] == original["id"]
+    profile_ids = {item["id"] for item in profile_state["profiles"]}
+    assert original["id"] in profile_ids
+    assert replacement["id"] in profile_ids
+
+
+def test_tauri_ai_chat_records_actual_profile_transport_metadata(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    monkeypatch.setenv("WRITER_CHAT_PROFILE_KEY", "test-key")
+    profile = client.post(
+        "/api/settings/ai/profiles",
+        json={
+            "name": "Chat Relay",
+            "provider_name": "openai",
+            "base_url": "https://relay.example/v1",
+            "wire_api": "chat_completions",
+            "model": "chat-model",
+            "api_key_source": "env:WRITER_CHAT_PROFILE_KEY",
+        },
+    ).json()
+    article = client.post(
+        "/api/articles",
+        json={"title": "AI Chat Metadata", "body": "Synthetic text.", "tags": []},
+    ).json()
+
+    from features.ai import routes as ai_routes
+    from writer.services.ai.interfaces import ChatResponse
+
+    class FakeProvider:
+        def chat(self, messages, *, model=None):
+            return ChatResponse(
+                content="Synthetic reply.",
+                model=model or "chat-model",
+                provider="fake-relay",
+                transport="chat_completions",
+                input_tokens=4,
+                output_tokens=5,
+            )
+
+    monkeypatch.setattr(
+        ai_routes,
+        "provider_for_config",
+        lambda config, prompt_builder=None: FakeProvider(),
+    )
+    response = client.post(
+        "/api/ai/chat",
+        json={
+            "message": "Give one concise observation.",
+            "scope_kind": "article",
+            "scope_id": article["id"],
+            "profile_id": profile["id"],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["assistant_message"]["meta"] == {
+        "model": "chat-model",
+        "provider": "fake-relay",
+        "transport": "chat_completions",
+        "profile_id": profile["id"],
+        "input_tokens": 4,
+        "output_tokens": 5,
+    }
+    history = client.get(f"/api/ai/threads/{payload['thread_id']}/messages").json()
+    assert history[-1]["meta"]["transport"] == "chat_completions"
+
+
+def test_tauri_article_ai_task_cancel_allows_next_run_without_adopting_late_result(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    monkeypatch.setenv("WRITER_CANCEL_AI_KEY", "test-key")
+    profile = client.post(
+        "/api/settings/ai/profiles",
+        json={
+            "name": "Slow",
+            "provider_name": "openai",
+            "base_url": "https://relay.example/v1",
+            "wire_api": "chat_completions",
+            "model": "slow-model",
+            "api_key_source": "env:WRITER_CANCEL_AI_KEY",
+        },
+    ).json()
+    article = client.post(
+        "/api/articles",
+        json={"title": "Cancellation", "body": "Synthetic source text.", "tags": []},
+    ).json()
+
+    import threading
+    from features.ai import routes as ai_routes
+    from writer.services.ai.interfaces import ChatResponse
+
+    entered = threading.Event()
+    release = threading.Event()
+
+    class SlowProvider:
+        def chat(self, messages, *, model=None):
+            entered.set()
+            release.wait(timeout=3)
+            return ChatResponse(
+                content="Late result.",
+                model=model or "slow-model",
+                provider="fake",
+                transport="chat_completions",
+            )
+
+    monkeypatch.setattr(
+        ai_routes,
+        "provider_for_config",
+        lambda config, prompt_builder=None: SlowProvider(),
+    )
+    body = {
+        "article_id": article["id"],
+        "task_type": "polish",
+        "profile_ids": [profile["id"]],
+    }
+    first = client.post("/api/ai/task-runs", json=body)
+    assert first.status_code == 202, first.text
+    assert entered.wait(timeout=1)
+    assert client.post("/api/ai/task-runs", json=body).status_code == 409
+
+    cancelled = client.post(f"/api/ai/task-runs/{first.json()['run_id']}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+    second = client.post("/api/ai/task-runs", json=body)
+    assert second.status_code == 202, second.text
+    release.set()
+
+    second_id = second.json()["run_id"]
+    for _ in range(100):
+        time.sleep(0.02)
+        if client.get(f"/api/ai/task-runs/{second_id}").json()["status"] == "succeeded":
+            break
+    assert client.get(f"/api/ai/task-runs/{first.json()['run_id']}").json()["status"] == "cancelled"
+    assert client.get(f"/api/ai/task-runs/{second_id}").json()["status"] == "succeeded"
+    assert client.delete(f"/api/ai/task-runs/{first.json()['run_id']}").status_code == 204
+    assert client.delete(f"/api/ai/task-runs/{second_id}").status_code == 204
+
+
+def test_tauri_article_ai_task_run_streams_applies_once_and_blocks_drift(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    monkeypatch.setenv("WRITER_ARTICLE_AI_KEY", "test-key")
+    from features.ai import routes as ai_routes
+    from writer.services.ai.interfaces import ChatResponse
+
+    def create_profile(name, model, wire_api):
+        return client.post(
+            "/api/settings/ai/profiles",
+            json={
+                "name": name,
+                "provider_name": "openai",
+                "base_url": f"https://{name.lower()}.example/v1",
+                "wire_api": wire_api,
+                "model": model,
+                "api_key_source": "env:WRITER_ARTICLE_AI_KEY",
+            },
+        ).json()
+
+    fast = create_profile("Fast", "fast-model", "chat_completions")
+    slow = create_profile("Slow", "slow-model", "responses")
+
+    class FakeProvider:
+        def __init__(self, config):
+            self.config = config
+
+        def chat(self, messages, *, model=None):
+            used_model = model or self.config.model
+            time.sleep(0.18 if used_model == "slow-model" else 0.02)
+            return ChatResponse(
+                content=f"{used_model} 生成结果",
+                model=used_model,
+                provider="fake",
+                transport=f"fake_{self.config.wire_api}",
+                input_tokens=2,
+                output_tokens=3,
+            )
+
+    monkeypatch.setattr(
+        ai_routes,
+        "provider_for_config",
+        lambda config, prompt_builder=None: FakeProvider(config),
+    )
+    article = client.post(
+        "/api/articles",
+        json={"title": "后台修改", "body": "雨夜里，两个人在车站告别。", "tags": []},
+    ).json()
+    created = client.post(
+        "/api/ai/task-runs",
+        json={
+            "article_id": article["id"],
+            "task_type": "polish",
+            "profile_ids": [fast["id"], slow["id"]],
+        },
+    )
+    assert created.status_code == 202, created.text
+    run_id = created.json()["run_id"]
+    assert [item["profile_id"] for item in created.json()["profiles"]] == [fast["id"], slow["id"]]
+    saw_partial = False
+    finished = None
+    for _ in range(80):
+        time.sleep(0.02)
+        snapshot = client.get(f"/api/ai/task-runs/{run_id}").json()
+        statuses = {item["profile_id"]: item["status"] for item in snapshot["results"]}
+        if statuses.get(fast["id"]) == "success" and statuses.get(slow["id"]) == "pending":
+            saw_partial = True
+        if snapshot["status"] == "succeeded":
+            finished = snapshot
+            break
+    assert saw_partial is True
+    assert finished is not None
+
+    from deps import get_container
+
+    version_service = get_container().version_history_service
+    original_save = version_service.save_ai_before_apply
+
+    def delayed_save(*args, **kwargs):
+        time.sleep(0.08)
+        return original_save(*args, **kwargs)
+
+    monkeypatch.setattr(version_service, "save_ai_before_apply", delayed_save)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(
+            executor.map(
+                lambda _index: client.post(
+                    f"/api/ai/task-runs/{run_id}/apply",
+                    json={"profile_id": fast["id"]},
+                ),
+                range(2),
+            )
+        )
+    assert all(response.status_code == 200 for response in responses)
+    assert sorted(response.json()["was_noop"] for response in responses) == [False, True]
+    assert all(response.json()["entry"]["body"] == "fast-model 生成结果" for response in responses)
+    versions = client.get(f"/api/articles/{article['id']}/versions").json()
+    assert len(versions) == 1
+    assert versions[0]["version_type"] == "ai_before_apply"
+    assert client.delete(f"/api/ai/task-runs/{run_id}").status_code == 204
+
+    live = client.get(f"/api/articles/{article['id']}").json()
+    reset = client.put(
+        f"/api/articles/{article['id']}",
+        json={"title": live["title"], "body": "开头。结尾。", "tags": live["tags"]},
+    )
+    assert reset.status_code == 200, reset.text
+    continue_run = client.post(
+        "/api/ai/task-runs",
+        json={
+            "article_id": article["id"],
+            "task_type": "continue",
+            "profile_ids": [fast["id"]],
+            "selection_start": 0,
+            "selection_end": 3,
+        },
+    ).json()
+    continue_id = continue_run["run_id"]
+    for _ in range(50):
+        time.sleep(0.02)
+        if client.get(f"/api/ai/task-runs/{continue_id}").json()["status"] == "succeeded":
+            break
+    continued = client.post(
+        f"/api/ai/task-runs/{continue_id}/apply",
+        json={"profile_id": fast["id"]},
+    )
+    assert continued.status_code == 200, continued.text
+    assert continued.json()["entry"]["body"] == "开头。\n\nfast-model 生成结果\n\n结尾。"
+    assert client.delete(f"/api/ai/task-runs/{continue_id}").status_code == 204
+
+    drift_run = client.post(
+        "/api/ai/task-runs",
+        json={"article_id": article["id"], "task_type": "continue", "profile_ids": [fast["id"]]},
+    ).json()
+    drift_id = drift_run["run_id"]
+    for _ in range(50):
+        time.sleep(0.02)
+        if client.get(f"/api/ai/task-runs/{drift_id}").json()["status"] == "succeeded":
+            break
+    live = client.get(f"/api/articles/{article['id']}").json()
+    client.put(
+        f"/api/articles/{article['id']}",
+        json={"title": live["title"], "body": live["body"] + "\n作者新写了一句。", "tags": live["tags"]},
+    )
+    blocked_apply = client.post(f"/api/ai/task-runs/{drift_id}/apply", json={"profile_id": fast["id"]})
+    assert blocked_apply.status_code == 409
+    assert "发生变化" in blocked_apply.json()["detail"]
+    assert client.delete(f"/api/ai/task-runs/{drift_id}").status_code == 204
 
 
 def test_tauri_collection_docx_export_cleans_temp_file_on_generation_failure(

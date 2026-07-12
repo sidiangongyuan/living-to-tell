@@ -18,6 +18,8 @@ GitHub-facing screenshots live in `tauri-mvp/docs/assets/screenshots/`. They are
 - `reference-library.png`
 - `ai-workspace.png`
 - `settings.png`
+- `settings-wizard.png`
+- `article-ai-chat.png`
 - `dates-onboarding.png`
 - `backup-center.png`
 

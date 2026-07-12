@@ -4,7 +4,7 @@
 
 ### The current Windows desktop preview for 活着为了讲述 / Living to Tell
 
-[![Version](https://img.shields.io/badge/version-0.1.46-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.47-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-preview-orange.svg)](#download)
@@ -28,9 +28,13 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 | :---: | :---: |
 | ![Collections](docs/assets/screenshots/collections.png) | ![Reference library](docs/assets/screenshots/reference-library.png) |
 
-| AI Workspace | Settings |
+| Article AI Edit | AI Profiles |
 | :---: | :---: |
-| ![AI workspace](docs/assets/screenshots/ai-workspace.png) | ![Settings](docs/assets/screenshots/settings.png) |
+| ![Article AI edit](docs/assets/screenshots/ai-workspace.png) | ![AI profile settings](docs/assets/screenshots/settings.png) |
+
+| Profile Setup Wizard | Article AI Chat |
+| :---: | :---: |
+| ![AI profile setup wizard](docs/assets/screenshots/settings-wizard.png) | ![Article AI chat drawer](docs/assets/screenshots/article-ai-chat.png) |
 
 | First-Run Checklist | Export & Backup |
 | :---: | :---: |
@@ -83,10 +87,11 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 - Focused AI tools for polishing, rewriting, expanding, and continuing.
 - Per-tool personal presets.
-- AI results are reviewed before writing back, with explicit replace, insert, and copy actions.
-- AI Tools show request size and selected-model diagnostics before running, then show honest pending cards while model comparison is in flight.
-- AI Tools can run one task across one or more saved provider profiles and compare result size, paragraph changes, latency, tokens, and cost when available. Selecting more models may increase wait time, token use, and provider cost.
-- Article-scoped chat with one ongoing conversation per article.
+- AI Edit is bound to one real article or selection and never asks users to paste an unrelated text block.
+- AI results are reviewed as one readable result at a time, with a paragraph diff before explicit write-back and an `AI_BEFORE_APPLY` version snapshot.
+- Background article tasks show honest per-model waiting, success, and failure states; they continue after navigation and reconnect by status query without resending provider requests.
+- AI Edit runs exactly the explicitly selected provider profiles and compares latency, tokens, cost, and actual transport when available. Selecting more models may increase wait time, token use, and provider cost.
+- Article-scoped chat lives in a closable article drawer; drafts, history, and an in-flight reply survive closing.
 - Standing chat instructions, copy actions, save-reply-as-article-note actions, and reviewed capture to reference material or new articles.
 - AI Cards for style, character, and scene context, with readable sections, prompt-copy actions, type/source filters, and keyword search.
 - AI card generation creates template-based style, character, and scene drafts with suggested tags for review before saving.
@@ -111,15 +116,15 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.46).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.47).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.46_x64-setup.exe`
+- `LivingToTell_0.1.47_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.46_x64_zh-CN.msi`
+- `LivingToTell_0.1.47_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 
@@ -134,16 +139,16 @@ Windows SmartScreen may warn because preview builds are unsigned. Only run insta
 
 ## AI Setup
 
-Open Settings and choose one provider:
+Open **Settings → AI** and create or import a profile. The three-step wizard keeps transport details in Advanced settings and lets the profile survive a failed real test without losing what you entered.
 
 - OpenAI-compatible: set a base URL/model, choose the right wire API, and use `env:OPENAI_API_KEY` or Codex local auth.
 - Gemini API: use `env:GEMINI_API_KEY` or import local Gemini configuration.
 - Gemini CLI / OAuth: reuse a local Gemini CLI login. No API key field is required.
 - OpenCode: reuse a local `opencode auth login` session. No API key field is required, and Settings can fetch the current OpenCode model list.
 
-The global provider remains the default for every AI feature. Settings can also store additional AI profiles without raw keys; AI Tools can select one or more profiles for a side-by-side model comparison. Selecting more models may increase wait time, token use, and provider cost.
+Choose exactly one profile as the default for single-model features. AI Edit can select one or more profiles, sends exactly those real profile IDs, and never silently adds the default profile. Saved health is shown as untested, passed, failed, or changed and needs retesting.
 
-Use **AI profiles → Scan Local Configs** to discover local OpenCode, Codex/OpenAI, and Gemini configs and import them as comparison profiles. Discovery is local only; use the real test request button to verify the remote provider/model/base URL/key path.
+Use **Scan Local Configs** to discover local OpenCode, Codex/OpenAI, and Gemini configs. Discovery and **Check All Locally** are local only; choose profiles explicitly before sending minimal real test requests, which may consume tokens or incur provider cost.
 
 OpenCode model fetching is live. On the current local OpenCode setup, the available models include:
 
@@ -154,6 +159,8 @@ OpenCode model fetching is live. On the current local OpenCode setup, the availa
 - `opencode/north-mini-code-free`
 
 Long Gemini requests default to a 120 second wait. Advanced users can tune this with `WRITER_GEMINI_TIMEOUT_SECONDS` or `WRITER_GEMINI_CLI_TIMEOUT_SECONDS`.
+
+For status-code, local-login, relay, transport, timeout, and billing guidance, see [AI Setup Troubleshooting](../docs/ai-troubleshooting.md).
 
 ## Data & Privacy
 

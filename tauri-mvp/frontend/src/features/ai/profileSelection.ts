@@ -1,7 +1,10 @@
-const DEFAULT_PROFILE_ID = 'default'
-
-export function toggleAiTaskProfileSelection(selectedIds: string[], profileId: string): string[] {
+export function toggleAiTaskProfileSelection(
+  selectedIds: string[],
+  profileId: string,
+  defaultProfileId = 'default',
+): string[] {
   const normalizedProfileId = String(profileId || '').trim()
+  const normalizedDefaultId = String(defaultProfileId || '').trim()
   if (!normalizedProfileId) return selectedIds
 
   if (selectedIds.includes(normalizedProfileId)) {
@@ -9,9 +12,10 @@ export function toggleAiTaskProfileSelection(selectedIds: string[], profileId: s
   }
 
   if (
-    normalizedProfileId !== DEFAULT_PROFILE_ID
+    normalizedDefaultId
+    && normalizedProfileId !== normalizedDefaultId
     && selectedIds.length === 1
-    && selectedIds[0] === DEFAULT_PROFILE_ID
+    && selectedIds[0] === normalizedDefaultId
   ) {
     return [normalizedProfileId]
   }

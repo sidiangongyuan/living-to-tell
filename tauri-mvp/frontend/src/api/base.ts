@@ -54,6 +54,33 @@ export function errorMessage(error: unknown): string {
   const raw = (error instanceof Error ? error.message : String(error ?? '')).trim()
   if (!raw) return '操作失败，请稍后重试。'
   const lowered = raw.toLowerCase()
+  if (lowered.includes('<!doctype html') || lowered.includes('<html')) {
+    return '后台或 AI 服务返回了网页错误页，请检查服务状态、接口地址或稍后重试。'
+  }
+  if (lowered.includes('traceback') || lowered.includes('stack trace')) {
+    return '后台返回了异常信息，请重试；如果持续出现，请保留操作步骤用于排查。'
+  }
+  if (lowered.includes('missing_var') || lowered.includes('environment variable') && lowered.includes('empty')) {
+    return '未找到所需的本机 API Key，请到设置中重新保存密钥。'
+  }
+  if (lowered.includes('missing_login')) {
+    return '未找到可复用的本机登录，请先在对应命令行工具中登录。'
+  }
+  if (lowered.includes('auth_list_timeout')) {
+    return '读取本机登录状态超时，请确认对应命令行工具可以正常启动。'
+  }
+  if (/\b401\b/.test(lowered) || lowered.includes('unauthorized')) {
+    return '认证失败，请检查 API Key、账号状态和接口地址。'
+  }
+  if (/\b403\b/.test(lowered) || lowered.includes('forbidden')) {
+    return '服务拒绝了请求，请检查密钥权限、模型权限和接口协议。'
+  }
+  if (/\b429\b/.test(lowered) || lowered.includes('rate limit')) {
+    return '请求过于频繁或额度不足，请稍后重试并检查账户额度。'
+  }
+  if (lowered.includes('timeout') || lowered.includes('timed out')) {
+    return '请求超时。若这是 AI 请求，远端仍可能继续生成并计费，请先检查服务商记录再决定是否重试。'
+  }
   if (lowered === 'not found' || lowered === 'http 404: not found') {
     return '请求的内容不存在或已被刷新，请返回后重试。'
   }
@@ -66,13 +93,9 @@ export function errorMessage(error: unknown): string {
   if (lowered === 'failed to fetch') {
     return BACKEND_UNAVAILABLE_MESSAGE
   }
-  if (lowered.includes('<!doctype html') || lowered.includes('<html')) {
-    return '后台或 AI 服务返回了网页错误页，请检查服务状态、接口地址或稍后重试。'
-  }
-  if (lowered.includes('traceback')) {
-    return '后台返回了异常信息，请重试；如果持续出现，请保留操作步骤用于排查。'
-  }
-  return raw.replace(/sk-[A-Za-z0-9]{12,}/g, 'sk-***')
+  return raw
+    .replace(/sk-[A-Za-z0-9]{12,}/g, 'sk-***')
+    .replace(/[A-Z]:\\Users\\[^\\\s]+\\[^\s"']+/gi, '[本机路径]')
 }
 
 function apiBaseFromWindow(): string | null {

@@ -1,5 +1,36 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.47 - Unified AI Profiles and Article AI Stability (2026-07-12)
+
+### Added
+
+- Added one explicit default AI profile with persisted health states, free local checks, selected minimal real tests, and a three-step setup wizard for API keys, relays, Codex, Gemini, Gemini CLI, OpenCode, and local discovery.
+- Added recoverable in-process article AI task runs. One or many explicitly selected profiles can finish independently, survive navigation, reconnect by status query, and be interrupted locally without resending provider requests.
+- Added an article-side AI chat drawer that preserves its draft, thread, and in-flight reply when closed, records the actual provider/model/transport, and keeps every capture action explicit.
+- Added bilingual AI setup troubleshooting and a release quality report that separates mock, real-backend, real-provider, visual, accessibility, packaging, and installation evidence.
+
+### Changed
+
+- Reorganized Settings into AI, Data & Backup, Interface & Tutorials, and Updates & About so ordinary profile setup no longer sits inside one long technical form.
+- Replaced the standalone AI workspace with **AI Edit**, bound to one real article or selection and focused on Polish, Rewrite, Expand, and Continue. Legacy task APIs and saved presets remain compatible.
+- Replaced the multi-card result grid with a model status list and one readable result surface, including paragraph differences, actual transport, token/cost metadata, and first-success selection.
+- Unified all single-model features around the chosen default profile. Multi-model requests contain exactly the profile IDs selected at run start and never inject the default silently.
+- Updated public screenshots, the fifth GIF tutorial, README files, user guides, AI troubleshooting, roadmap, TODO, and CI documentation for the new workflow.
+
+### Fixed
+
+- Migrated legacy global AI settings without guessing: exact matches become the default existing profile, mismatches become a preserved `原默认配置` profile, and fresh installs no longer receive an unusable fake environment-key default.
+- Protected article write-back with a run-time text snapshot, code-point-safe selection offsets, article hash validation, an explicit preview, idempotent apply, and an `AI_BEFORE_APPLY` version.
+- Prevented late article-chat replies or failures from appearing after the user switches to another article.
+- Replaced raw provider reason codes, HTML pages, traceback text, and credential paths with safe actionable diagnostics for missing credentials/login, 401, 403, 404, 429, timeout, and gateway responses.
+- Fixed compact article headers, bilingual Backup copy, form labeling, color contrast, and Motif visual-audit coverage at the minimum supported window size.
+
+### Quality and release workflow
+
+- Upgraded GitHub Actions to run the complete Python suite, Vitest, static unsafe-error audit, frontend build, Mock E2E, isolated real-backend E2E, and locked Cargo check on pushes, pull requests, and manual runs. Real provider requests never run in CI.
+- Changed the legacy Python UI build to a clearly manual workflow that cannot attach artifacts to the current Tauri Release.
+- Removed obsolete skipped browser tests and added deterministic coverage for migration, profile replacement, key isolation, partial model failure, cancellation, reconnection without resend, drift-safe/idempotent apply, UTF-16 selection conversion, article switching, accessibility, and bilingual responsive overflow.
+
 ## 0.1.46 - Collection Agent Reliability and Roomier Conversation (2026-07-11)
 
 ### Fixed

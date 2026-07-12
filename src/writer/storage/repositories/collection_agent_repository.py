@@ -255,6 +255,34 @@ class CollectionAgentRepository:
         assert row is not None
         return _row_to_settings(row)
 
+    def collection_ids_for_profile(self, profile_id: str) -> list[str]:
+        rows = self._conn.execute(
+            """
+            SELECT collection_id
+              FROM collection_agent_settings
+             WHERE profile_id = ?
+             ORDER BY collection_id
+            """,
+            ((profile_id or "").strip(),),
+        ).fetchall()
+        return [str(row["collection_id"]) for row in rows]
+
+    def replace_profile(self, old_profile_id: str, new_profile_id: str) -> int:
+        old_value = (old_profile_id or "").strip()
+        new_value = (new_profile_id or "").strip()
+        if not old_value or not new_value:
+            return 0
+        cur = self._conn.execute(
+            """
+            UPDATE collection_agent_settings
+               SET profile_id = ?,
+                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE profile_id = ?
+            """,
+            (new_value, old_value),
+        )
+        return cur.rowcount or 0
+
     def set_active_session(
         self,
         collection_id: str,

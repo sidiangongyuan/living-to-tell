@@ -130,6 +130,7 @@ async function mockAiCardsApi(page: Page) {
             updated_at: '2026-01-01T00:00:00Z',
           },
         ],
+        default_profile_id: 'profile-deepseek',
       },
     })
   })

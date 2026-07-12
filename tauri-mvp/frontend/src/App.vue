@@ -9,10 +9,13 @@ import { useAppUpdateStore } from './stores/appUpdate'
 import { useI18n } from './i18n'
 import CommandPalette from './components/CommandPalette.vue'
 import QuickCapture from './components/QuickCapture.vue'
+import { errorMessage } from './api/base'
+import { useArticleTaskRunStore } from './features/ai/articleTaskRunStore'
 
 const router = useRouter()
 const settings = useSettingsStore()
 const appUpdate = useAppUpdateStore()
+const articleTaskRun = useArticleTaskRunStore()
 const { t } = useI18n()
 const commandPaletteRef = ref<InstanceType<typeof CommandPalette> | null>(null)
 const quickCaptureRef = ref<InstanceType<typeof QuickCapture> | null>(null)
@@ -105,7 +108,7 @@ async function confirmCloseChoice() {
       showCloseDialog.value = false
     }
   } catch (error) {
-    closeDialogMessage.value = error instanceof Error ? error.message : String(error)
+    closeDialogMessage.value = errorMessage(error)
   }
 }
 
@@ -114,7 +117,7 @@ async function openUpdateDownload() {
   try {
     await appUpdate.downloadAndInstall()
   } catch (error) {
-    updateBannerError.value = error instanceof Error ? error.message : String(error)
+    updateBannerError.value = errorMessage(error)
   }
 }
 
@@ -123,7 +126,7 @@ async function openUpdateReleasePage() {
   try {
     await appUpdate.openReleasePage()
   } catch (error) {
-    updateBannerError.value = error instanceof Error ? error.message : String(error)
+    updateBannerError.value = errorMessage(error)
   }
 }
 </script>
@@ -240,7 +243,7 @@ async function openUpdateReleasePage() {
         :key="item.name"
         @click="router.push({ name: item.name })"
         :class="[
-          'w-14 h-14 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors',
+          'relative w-14 h-14 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors',
           router.currentRoute.value.name === item.name
             ? 'bg-blue-600 text-white'
             : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
@@ -250,7 +253,12 @@ async function openUpdateReleasePage() {
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon" />
         </svg>
-        <span class="text-xs">{{ item.label }}</span>
+        <span :class="['text-xs', router.currentRoute.value.name === item.name ? 'text-white' : '']">{{ item.label }}</span>
+        <span
+          v-if="item.name === 'ai' && articleTaskRun.running"
+          class="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-gray-900"
+          :title="articleTaskRun.run?.stage_label"
+        ></span>
       </button>
 
       <!-- Spacer -->

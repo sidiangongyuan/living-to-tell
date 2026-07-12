@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { articlesApi, type Entry } from '../../api/articles'
+import { errorMessage } from '../../api/base'
 
 export const useArticlesStore = defineStore('articles', () => {
   const entries = ref<Entry[]>([])
@@ -29,7 +30,7 @@ export const useArticlesStore = defineStore('articles', () => {
         selectedId.value = null
       }
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
     } finally {
       loading.value = false
     }
@@ -44,7 +45,7 @@ export const useArticlesStore = defineStore('articles', () => {
     try {
       searchResults.value = await articlesApi.search(query)
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
     }
   }
 
@@ -55,7 +56,7 @@ export const useArticlesStore = defineStore('articles', () => {
       selectedId.value = created.id
       return created
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
       throw e
     }
   }
@@ -68,7 +69,7 @@ export const useArticlesStore = defineStore('articles', () => {
       if (idx !== -1) entries.value[idx] = updated
       return updated
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
       throw e
     } finally {
       saving.value = false
@@ -83,7 +84,7 @@ export const useArticlesStore = defineStore('articles', () => {
         selectedId.value = entries.value.length ? entries.value[0].id : null
       }
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
       throw e
     }
   }
@@ -94,7 +95,7 @@ export const useArticlesStore = defineStore('articles', () => {
       const idx = entries.value.findIndex((e) => e.id === id)
       if (idx !== -1) entries.value[idx] = updated
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = errorMessage(e)
     }
   }
 
