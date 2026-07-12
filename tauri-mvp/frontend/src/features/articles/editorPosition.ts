@@ -159,13 +159,13 @@ export function saveArticleEditorPosition(
   articleId: string,
   position: Partial<ArticleEditorPosition>,
   interactionOrStorage: ArticleEditorInteraction | StorageLike = 'edit',
-  storage: StorageLike = localStorage
+  storage?: StorageLike
 ): void {
   if (!articleId) return
   const interaction: ArticleEditorInteraction =
     typeof interactionOrStorage === 'string' ? interactionOrStorage : 'edit'
   const targetStorage: StorageLike =
-    typeof interactionOrStorage === 'string' ? storage : interactionOrStorage
+    typeof interactionOrStorage === 'string' ? (storage ?? localStorage) : interactionOrStorage
   const positions = readPositionMap(targetStorage)
   const current = positions[articleId] ?? { updatedAt: Date.now() }
   const normalized = normalizeEditorPosition({

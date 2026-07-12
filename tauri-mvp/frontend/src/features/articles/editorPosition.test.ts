@@ -65,6 +65,19 @@ describe('article editor position helpers', () => {
     })
   })
 
+  it('uses an injected storage without requiring the browser localStorage global', () => {
+    const storage = new MemoryStorage()
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    Reflect.deleteProperty(globalThis, 'localStorage')
+
+    try {
+      saveArticleEditorPosition('a1', { selectionStart: 3, selectionEnd: 3, scrollTop: 40 }, storage)
+      expect(getArticleEditorPosition('a1', storage)?.selectionStart).toBe(3)
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor)
+    }
+  })
+
   it('keeps edit and read positions in separate slots', () => {
     const storage = new MemoryStorage()
 
