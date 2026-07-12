@@ -4,7 +4,7 @@
 
 ### The current Windows desktop preview for 活着为了讲述 / Living to Tell
 
-[![Version](https://img.shields.io/badge/version-0.1.47-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.48-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-preview-orange.svg)](#download)
@@ -32,13 +32,17 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 | :---: | :---: |
 | ![Article AI edit](docs/assets/screenshots/ai-workspace.png) | ![AI profile settings](docs/assets/screenshots/settings.png) |
 
-| Profile Setup Wizard | Article AI Chat |
+| Reference Specimen Picker | Profile Setup Wizard |
 | :---: | :---: |
-| ![AI profile setup wizard](docs/assets/screenshots/settings-wizard.png) | ![Article AI chat drawer](docs/assets/screenshots/article-ai-chat.png) |
+| ![Reference specimen picker](docs/assets/screenshots/ai-reference-picker.png) | ![AI profile setup wizard](docs/assets/screenshots/settings-wizard.png) |
 
-| First-Run Checklist | Export & Backup |
+| Article AI Chat | First-Run Checklist |
 | :---: | :---: |
-| ![First-run checklist](docs/assets/screenshots/dates-onboarding.png) | ![Export and backup center](docs/assets/screenshots/backup-center.png) |
+| ![Article AI chat drawer](docs/assets/screenshots/article-ai-chat.png) | ![First-run checklist](docs/assets/screenshots/dates-onboarding.png) |
+
+| Export & Backup | Collection Agent |
+| :---: | :---: |
+| ![Export and backup center](docs/assets/screenshots/backup-center.png) | ![Collection Agent](docs/assets/screenshots/collection-agent.png) |
 
 ## Features
 
@@ -88,6 +92,8 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 - Focused AI tools for polishing, rewriting, expanding, and continuing.
 - Per-tool personal presets.
 - AI Edit is bound to one real article or selection and never asks users to paste an unrelated text block.
+- Reference specimens are a first-class AI Edit step with search, usage filters, large selectable cards, full-text preview, and staged confirmation. They are never recommended or attached automatically.
+- Confirmed specimens are sent as method and style guidance with purpose, tags, personal notes, and text. All selected models receive the same run snapshot, with explicit rules against copying sentences or transplanting source facts and names.
 - AI results are reviewed as one readable result at a time, with a paragraph diff before explicit write-back and an `AI_BEFORE_APPLY` version snapshot.
 - Background article tasks show honest per-model waiting, success, and failure states; they continue after navigation and reconnect by status query without resending provider requests.
 - AI Edit runs exactly the explicitly selected provider profiles and compares latency, tokens, cost, and actual transport when available. Selecting more models may increase wait time, token use, and provider cost.
@@ -116,15 +122,15 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.47).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.48).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.47_x64-setup.exe`
+- `LivingToTell_0.1.48_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.47_x64_zh-CN.msi`
+- `LivingToTell_0.1.48_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 
@@ -158,7 +164,7 @@ OpenCode model fetching is live. On the current local OpenCode setup, the availa
 - `opencode/nemotron-3-ultra-free`
 - `opencode/north-mini-code-free`
 
-Long Gemini requests default to a 120 second wait. Advanced users can tune this with `WRITER_GEMINI_TIMEOUT_SECONDS` or `WRITER_GEMINI_CLI_TIMEOUT_SECONDS`.
+OpenAI-compatible, Gemini API, and Gemini CLI requests default to a 120 second local wait. Advanced users can tune these with `WRITER_OPENAI_TIMEOUT_SECONDS`, `WRITER_GEMINI_TIMEOUT_SECONDS`, or `WRITER_GEMINI_CLI_TIMEOUT_SECONDS`. OpenAI-compatible SDK retries are disabled so only an explicit new run can send another paid request.
 
 For status-code, local-login, relay, transport, timeout, and billing guidance, see [AI Setup Troubleshooting](../docs/ai-troubleshooting.md).
 

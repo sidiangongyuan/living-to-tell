@@ -23,6 +23,9 @@ from writer.services.ai.interfaces import (
 )
 from writer.services.ai.prompt_builder import PromptBuilder
 
+OPENAI_TIMEOUT_ENV = "WRITER_OPENAI_TIMEOUT_SECONDS"
+OPENAI_DEFAULT_TIMEOUT_SECONDS = 120
+
 
 class OpenAiProvider(AiProvider):
     """Adapter around the official ``openai`` Python SDK."""
@@ -37,12 +40,14 @@ class OpenAiProvider(AiProvider):
         client=None,
         codex_auth: Optional[CodexAuthResolver] = None,
         gemini_auth: Optional[GeminiAuthResolver] = None,
+        timeout_seconds: Optional[int] = None,
     ) -> None:
         self._config = config
         self._prompts = prompt_builder
         self._client = client  # injectable for tests
         self._codex_auth = codex_auth  # injectable for tests; lazy default
         self._gemini_auth = gemini_auth  # injectable for tests; lazy default
+        self._timeout_seconds = _resolve_timeout_seconds(timeout_seconds)
 
     def _resolve_api_key(self) -> str:
         if self._config.uses_codex_auth():
@@ -83,7 +88,13 @@ class OpenAiProvider(AiProvider):
             from openai import OpenAI
         except ImportError as exc:  # pragma: no cover
             raise AiError("openai package is not installed") from exc
-        kwargs = {"api_key": self._resolve_api_key()}
+        kwargs = {
+            "api_key": self._resolve_api_key(),
+            "timeout": self._timeout_seconds,
+            # A status reconnect must never become a hidden paid retry inside
+            # the SDK. The user can start a fresh run explicitly after failure.
+            "max_retries": 0,
+        }
         if self._config.base_url:
             kwargs["base_url"] = _normalize_openai_base_url_for_sdk(self._config.base_url)
         self._client = OpenAI(**kwargs)
@@ -200,6 +211,18 @@ def _safe_int(obj, name: str) -> Optional[int]:
     if isinstance(value, int):
         return value
     return None
+
+
+def _resolve_timeout_seconds(explicit: Optional[int]) -> int:
+    if explicit is not None:
+        return max(1, int(explicit))
+    raw = os.environ.get(OPENAI_TIMEOUT_ENV, "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    return OPENAI_DEFAULT_TIMEOUT_SECONDS
 
 
 def _safe_str(obj, name: str) -> Optional[str]:

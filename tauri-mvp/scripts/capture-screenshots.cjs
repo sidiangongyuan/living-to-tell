@@ -221,7 +221,7 @@ async function installDemoApi(page) {
     if (pathname === '/api/app/version') {
       return json(route, {
         app_name: 'Living to Tell',
-        version: '0.1.47',
+        version: '0.1.48',
         api_version: '2.0.0',
         capabilities: [
           'data_location',
@@ -267,8 +267,22 @@ async function installDemoApi(page) {
     if (pathname === '/api/library/stats') {
       return json(route, { total: references.length, by_usage_kind: { imagery: 1, style: 1 } })
     }
-    if (pathname === '/api/library/references') return json(route, references)
-    if (pathname === '/api/library/references/search') return json(route, references)
+    if (pathname === '/api/library/references' || pathname === '/api/library/references/search') {
+      const usageKind = url.searchParams.get('usage_kind')
+      const query = (url.searchParams.get('q') || '').trim().toLocaleLowerCase()
+      const matches = references.filter((reference) => {
+        if (usageKind && reference.usage_kind !== usageKind) return false
+        if (!query) return true
+        return [
+          reference.source_title,
+          reference.source_author,
+          reference.content,
+          reference.personal_note,
+          ...reference.tags,
+        ].join('\n').toLocaleLowerCase().includes(query)
+      })
+      return json(route, matches)
+    }
     if (pathname === '/api/ai-cards') return json(route, aiCards)
     if (pathname === '/api/ai-cards/presets/list') return json(route, aiCards)
     if (pathname === '/api/ai/task-presets') return json(route, {})
@@ -295,6 +309,12 @@ async function installDemoApi(page) {
         article_hash: 'demo-hash', original_text: articles[0].body, selection_start: null, selection_end: null,
         status: 'succeeded', stage: 'succeeded', stage_label: '已完成', error: '',
         profiles: selected.map((profile) => ({ profile_id: profile.id, profile_name: profile.name, provider: profile.provider_name, model: profile.model })),
+        attachment_snapshots: (request.attachments || []).map((attachment) => ({
+          kind: attachment.kind,
+          ref_id: attachment.ref_id,
+          name: attachment.name,
+          size_chars: Math.min((attachment.body || '').trim().length, 40000),
+        })),
         results, created_at: now, started_at: now, updated_at: now, completed_at: now, elapsed_ms: 2380,
         applied_profile_id: null, applied_at: null, applied_version_id: null,
       }
@@ -473,42 +493,58 @@ async function shot(page, route, filename, options = {}) {
 
 async function main() {
   fs.mkdirSync(outDir, { recursive: true })
+  const aiOnly = process.argv.includes('--ai-only')
   const browser = await chromium.launch({
     channel: 'msedge',
     headless: true,
   }).catch(() => chromium.launch({ headless: true }))
   const page = await browser.newPage({
-    viewport: { width: 1440, height: 920 },
+    viewport: { width: 1440, height: aiOnly ? 1150 : 920 },
     deviceScaleFactor: 1,
   })
   await installDemoApi(page)
 
-  await shot(page, '/articles?id=demo-article-1', 'article-writing.png')
-  await shot(page, '/articles?id=demo-article-1', 'focus-mode.png', {
-    before: async (page) => {
-      await page.keyboard.press('F11')
-    },
-  })
-  await shot(page, '/collections', 'collections.png')
-  await shot(page, '/library?ref=demo-reference-1&group=source', 'reference-library.png')
+  if (!aiOnly) {
+    await shot(page, '/articles?id=demo-article-1', 'article-writing.png')
+    await shot(page, '/articles?id=demo-article-1', 'focus-mode.png', {
+      before: async (page) => {
+        await page.keyboard.press('F11')
+      },
+    })
+    await shot(page, '/collections', 'collections.png')
+    await shot(page, '/library?ref=demo-reference-1&group=source', 'reference-library.png')
+  }
   await shot(page, '/ai?scope_kind=article&scope_id=demo-article-1', 'ai-workspace.png', {
     before: async (page) => {
-      await page.getByRole('button', { name: /已选择 1 个模型/ }).click()
-      await page.locator('label').filter({ hasText: 'Codex 本地登录' }).locator('input').check()
-      await page.getByRole('button', { name: '完成', exact: true }).click()
-      await page.getByRole('button', { name: '运行 AI 修改' }).click()
-      await page.getByText(/风越过堤岸/).waitFor({ timeout: 5000 })
-      await page.getByRole('button', { name: '与原文差异' }).click()
+      await page.getByRole('button', { name: /^改写/ }).click()
+      await page.getByRole('button', { name: '选择文脉标本' }).click()
+      const dialog = page.getByRole('dialog', { name: '选择文脉标本' })
+      for (const title of ['想象的书', '海边札记']) {
+        const card = dialog.getByTestId('article-ai-reference-card').filter({ hasText: title })
+        await card.getByRole('button', { name: new RegExp(`选择\\s+《${title}》`) }).click()
+      }
+      await dialog.getByRole('button', { name: '使用 2 条标本' }).click()
+      await page.getByRole('heading', { name: 'AI 修改' }).scrollIntoViewIfNeeded()
     },
   })
-  await shot(page, '/settings?section=ai_profiles', 'settings.png')
-  await shot(page, '/settings?section=ai_profiles', 'settings-wizard.png', {
+  await shot(page, '/ai?scope_kind=article&scope_id=demo-article-1', 'ai-reference-picker.png', {
     before: async (page) => {
-      await page.getByRole('button', { name: '新增档案' }).click()
-      await page.getByRole('button', { name: /中转站 \/ 兼容接口/ }).click()
+      await page.getByRole('button', { name: '选择文脉标本' }).click()
+      const dialog = page.getByRole('dialog', { name: '选择文脉标本' })
+      const card = dialog.getByTestId('article-ai-reference-card').filter({ hasText: '海边札记' })
+      await card.getByRole('button', { name: /选择\s+《海边札记》/ }).click()
     },
   })
-  await shot(page, '/articles?id=demo-article-1&chat=1', 'article-ai-chat.png')
+  if (!aiOnly) {
+    await shot(page, '/settings?section=ai_profiles', 'settings.png')
+    await shot(page, '/settings?section=ai_profiles', 'settings-wizard.png', {
+      before: async (page) => {
+        await page.getByRole('button', { name: '新增档案' }).click()
+        await page.getByRole('button', { name: /中转站 \/ 兼容接口/ }).click()
+      },
+    })
+    await shot(page, '/articles?id=demo-article-1&chat=1', 'article-ai-chat.png')
+  }
 
   await browser.close()
 }

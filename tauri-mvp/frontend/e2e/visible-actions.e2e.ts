@@ -62,10 +62,10 @@ const existingReference = {
   source_title: '测试书',
   content: '已有标本正文',
   source_author: '测试作者',
-  tags: [],
+  tags: ['节奏', '克制'],
   kind: 'excerpt',
   usage_kind: 'style',
-  personal_note: '',
+  personal_note: '借鉴短句与停顿，不借用人物或事实。',
   created_at: null,
   updated_at: null,
 }
@@ -76,7 +76,9 @@ const imageryReference = {
   source_title: '另一本书',
   content: '意象标本正文',
   source_author: '另一作者',
+  tags: ['月亮', '水面'],
   usage_kind: 'imagery',
+  personal_note: '只参考意象的出现方式。',
 }
 
 const openNote = {
@@ -641,11 +643,31 @@ async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
     await route.fulfill({ json: [collection] })
   })
 
+  const visibleReferences = [existingReference, imageryReference]
+  const matchingReferences = (url: URL) => {
+    const usageKind = url.searchParams.get('usage_kind')
+    const query = (url.searchParams.get('q') ?? '').trim().toLocaleLowerCase()
+    return visibleReferences.filter((item) => {
+      if (usageKind && item.usage_kind !== usageKind) return false
+      if (!query) return true
+      return [
+        item.source_title,
+        item.source_author,
+        item.content,
+        item.personal_note,
+        ...item.tags,
+      ].join('\n').toLocaleLowerCase().includes(query)
+    })
+  }
   await page.route('**/api/library/stats', async (route) => {
-    await route.fulfill({ json: { total: 1, by_usage_kind: { style: 1 } } })
+    await route.fulfill({ json: { total: 2, by_usage_kind: { style: 1, imagery: 1 } } })
   })
-  await page.route('**/api/library/references?**', async (route) => route.fulfill({ json: [existingReference] }))
-  await page.route('**/api/library/references/search?**', async (route) => route.fulfill({ json: [existingReference] }))
+  await page.route('**/api/library/references?**', async (route) => {
+    await route.fulfill({ json: matchingReferences(new URL(route.request().url())) })
+  })
+  await page.route('**/api/library/references/search?**', async (route) => {
+    await route.fulfill({ json: matchingReferences(new URL(route.request().url())) })
+  })
   await page.route('**/api/library/references', async (route) => {
     if (route.request().method() === 'POST') {
       const data = route.request().postDataJSON() as Partial<typeof reference>
@@ -656,6 +678,10 @@ async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
   })
   await page.route('**/api/library/references/*', async (route) => {
     const request = route.request()
+    if (new URL(request.url()).pathname === '/api/library/references/search') {
+      await route.fallback()
+      return
+    }
     if (request.method() === 'DELETE') {
       await route.fulfill({ status: 204 })
       return
@@ -799,13 +825,21 @@ async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
       return
     }
     if (url.pathname === '/api/ai/task-runs' && request.method() === 'POST') {
-      const body = request.postDataJSON() as { article_id: string; task_type: string; profile_ids: string[]; selection_start?: number | null; selection_end?: number | null }
+      const body = request.postDataJSON() as {
+        article_id: string
+        task_type: string
+        profile_ids: string[]
+        selection_start?: number | null
+        selection_end?: number | null
+        attachments?: Array<{ kind: string; ref_id: string; name: string; body: string }>
+      }
       articleTaskRunGetCount = 0
       currentArticleTaskRun = {
         run_id: 'article-run-1', article_id: body.article_id, article_title: article.title,
         task_type: body.task_type, article_hash: 'hash', original_text: article.body, selection_start: body.selection_start ?? null,
         selection_end: body.selection_end ?? null, status: 'queued', stage: 'queued', stage_label: '排队中', error: '',
         profiles: body.profile_ids.map((id) => ({ profile_id: id, profile_name: id === 'profile-gemini' ? 'Gemini 测试' : 'DeepSeek 测试', provider: id === 'profile-gemini' ? 'gemini' : 'openai', model: id === 'profile-gemini' ? 'gemini-test-model' : 'deepseek-test-model' })),
+        attachment_snapshots: (body.attachments ?? []).map((item) => ({ kind: item.kind, ref_id: item.ref_id, name: item.name, size_chars: Math.min(item.body.trim().length, 40_000) })),
         results: body.profile_ids.map((id) => ({ profile_id: id, profile_name: id === 'profile-gemini' ? 'Gemini 测试' : 'DeepSeek 测试', provider: id === 'profile-gemini' ? 'gemini' : 'openai', model: id === 'profile-gemini' ? 'gemini-test-model' : 'deepseek-test-model', transport: null, status: 'pending', result: '', error: '', elapsed_ms: 0, input_tokens: null, output_tokens: null, cost: null, finish_reason: null, stats: { input_chars: article.body.length, output_chars: 0, delta_chars: -article.body.length, output_ratio: 0, input_paragraphs: 1, output_paragraphs: 0 } })),
         created_at: '2026-01-01T00:00:00Z', started_at: null, updated_at: '2026-01-01T00:00:00Z', completed_at: null, elapsed_ms: 0,
         applied_profile_id: null, applied_at: null, applied_version_id: null,
@@ -2643,6 +2677,105 @@ test('library autosave failures show a visible unsaved-state error', async ({ pa
   await expect(page.getByText('保存失败：磁盘不可写')).toBeVisible()
 })
 
+test('article AI reference picker stages selections and sends only confirmed style specimens', async ({ page }) => {
+  test.setTimeout(90_000)
+  const runRequests: Array<Record<string, any>> = []
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/ai/task-runs') {
+      runRequests.push(request.postDataJSON() as Record<string, any>)
+    }
+  })
+
+  await page.goto('/ai?scope_kind=article&scope_id=article-a')
+  const section = page.getByTestId('article-ai-reference-section')
+  await expect(section).toBeVisible()
+  await expect(section.getByText('尚未选择文脉标本').first()).toBeVisible()
+
+  await section.getByRole('button', { name: '选择文脉标本' }).click()
+  let dialog = page.getByRole('dialog', { name: '选择文脉标本' })
+  await expect(dialog).toBeVisible()
+  let existingCard = dialog.getByTestId('article-ai-reference-card').filter({ hasText: '测试书' })
+  await existingCard.getByRole('button', { name: /选择\s+《测试书》/ }).click()
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await expect(section.getByText('尚未选择文脉标本').first()).toBeVisible()
+  await expect(section.getByText('测试书')).toHaveCount(0)
+
+  await section.getByRole('button', { name: '选择文脉标本' }).click()
+  dialog = page.getByRole('dialog', { name: '选择文脉标本' })
+  const search = dialog.getByPlaceholder('搜索标题、作者、正文、标签或个人备注')
+  await search.fill('只参考意象')
+  await expect(dialog.getByTestId('article-ai-reference-card')).toHaveCount(1)
+  await expect(dialog.getByText('另一本书')).toBeVisible()
+  await dialog.getByRole('button', { name: '清空搜索' }).click()
+  await dialog.getByRole('button', { name: '意象', exact: true }).click()
+  await expect(dialog.getByTestId('article-ai-reference-card')).toHaveCount(1)
+  const imageryCard = dialog.getByTestId('article-ai-reference-card').filter({ hasText: '另一本书' })
+  await imageryCard.getByRole('button', { name: /选择\s+《另一本书》/ }).click()
+  await dialog.getByRole('button', { name: '全部', exact: true }).click()
+  await expect(dialog.getByTestId('article-ai-reference-card')).toHaveCount(2)
+  existingCard = dialog.getByTestId('article-ai-reference-card').filter({ hasText: '测试书' })
+  await existingCard.getByRole('button', { name: /选择\s+《测试书》/ }).click()
+  await existingCard.getByRole('button', { name: '查看全文' }).click()
+  await expect(dialog.getByText('借鉴短句与停顿，不借用人物或事实。')).toBeVisible()
+  await expect(dialog.getByText('已有标本正文')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog.getByRole('button', { name: '返回标本列表' })).toHaveCount(0)
+  await expect(dialog.getByTestId('article-ai-reference-card')).toHaveCount(2)
+  await updatePublicScreenshot(page, 'ai-reference-picker.png')
+  await dialog.getByRole('button', { name: '使用 2 条标本' }).click()
+
+  await expect(section.getByText('已选 2 条')).toBeVisible()
+  await expect(section.getByText('《测试书》 · 测试作者')).toBeVisible()
+  await page.getByRole('combobox', { name: '处理对象' }).selectOption('article-b')
+  await page.getByRole('button', { name: /^改写/ }).click()
+  await page.getByText('已选择 1 个模型').click()
+  await page.getByRole('button', { name: '完成', exact: true }).click()
+  await expect(section.getByText('已选 2 条')).toBeVisible()
+
+  await section.getByRole('button', { name: /移除\s+《测试书》/ }).click()
+  await expect(section.getByText('已选 1 条')).toBeVisible()
+  await section.getByRole('button', { name: '清除参考' }).click()
+  await expect(section.getByText('尚未选择文脉标本').first()).toBeVisible()
+
+  await section.getByRole('button', { name: '选择文脉标本' }).click()
+  dialog = page.getByRole('dialog', { name: '选择文脉标本' })
+  for (const title of ['测试书', '另一本书']) {
+    const card = dialog.getByTestId('article-ai-reference-card').filter({ hasText: title })
+    await card.getByRole('button', { name: new RegExp(`选择\\s+《${title}》`) }).click()
+  }
+  await dialog.getByRole('button', { name: '使用 2 条标本' }).click()
+  await updatePublicScreenshot(page, 'ai-workspace.png')
+  await page.getByRole('button', { name: '运行 AI 修改' }).click()
+  await expect.poll(() => runRequests.length).toBe(1)
+
+  expect(runRequests[0].article_id).toBe('article-b')
+  expect(runRequests[0].task_type).toBe('rewrite')
+  expect(runRequests[0].attachments).toHaveLength(2)
+  expect(runRequests[0].attachments.map((item: Record<string, string>) => item.kind)).toEqual(['style_specimen', 'style_specimen'])
+  expect(runRequests[0].attachments[0]).toEqual(expect.objectContaining({
+    ref_id: 'ref-existing',
+    name: '《测试书》 · 测试作者',
+  }))
+  expect(runRequests[0].attachments[0].body).toContain('用途：风格')
+  expect(runRequests[0].attachments[0].body).toContain('标签：节奏、克制')
+  expect(runRequests[0].attachments[0].body).toContain('作者备注：借鉴短句与停顿，不借用人物或事实。')
+  expect(runRequests[0].attachments[0].body).toContain('标本正文：\n已有标本正文')
+
+  await expect(page.getByText('Gemini 增量结果')).toBeVisible({ timeout: 10000 })
+  await expect(section.getByText('已选 2 条')).toBeVisible()
+  const runReferences = page.getByTestId('article-ai-run-references')
+  await expect(runReferences.getByText('《测试书》 · 测试作者')).toBeVisible()
+  await expect(runReferences.getByText('《另一本书》 · 另一作者')).toBeVisible()
+
+  await page.goto('/dates')
+  await page.goto('/ai')
+  await expect(page.getByTestId('article-ai-reference-section').getByText('尚未选择文脉标本').first()).toBeVisible()
+  const recoveredReferences = page.getByTestId('article-ai-run-references')
+  await expect(recoveredReferences.getByText('《测试书》 · 测试作者')).toBeVisible()
+  await expect(recoveredReferences.getByText('《另一本书》 · 另一作者')).toBeVisible()
+})
+
 test('article AI runs only selected profiles, reveals incremental results, previews apply, and clears explicitly', async ({ page }) => {
   const runRequests: Array<Record<string, unknown>> = []
   page.on('request', (request) => {
@@ -2727,6 +2860,12 @@ test('primary settings, article, collection, AI, and backup surfaces have no ser
     const serious = results.violations.filter((item) => item.impact === 'serious' || item.impact === 'critical')
     expect(serious, `${path}: ${serious.map((item) => `${item.id} (${item.nodes.length})`).join(', ')}`).toEqual([])
   }
+
+  await page.goto('/ai?scope_kind=article&scope_id=article-a')
+  await page.getByTestId('article-ai-reference-section').getByRole('button', { name: '选择文脉标本' }).click()
+  const pickerResults = await new AxeBuilder({ page }).include('[data-testid="article-ai-reference-picker"]').analyze()
+  const pickerSerious = pickerResults.violations.filter((item) => item.impact === 'serious' || item.impact === 'critical')
+  expect(pickerSerious, `reference picker: ${pickerSerious.map((item) => `${item.id} (${item.nodes.length})`).join(', ')}`).toEqual([])
 })
 
 test('all primary surfaces avoid horizontal overflow at release viewports in both languages', async ({ browser }) => {
@@ -2767,6 +2906,25 @@ test('all primary surfaces avoid horizontal overflow at release viewports in bot
             Math.max(dimensions.html, dimensions.body),
             `${language} ${viewport.width}x${viewport.height} ${route}`,
           ).toBeLessThanOrEqual(dimensions.viewport + 1)
+          if (name === 'article-ai') {
+            await page.getByTestId('article-ai-reference-section').locator('button').last().click()
+            const picker = page.getByTestId('article-ai-reference-picker')
+            await expect(picker).toBeVisible()
+            const pickerDimensions = await page.evaluate(() => ({
+              viewport: window.innerWidth,
+              html: document.documentElement.scrollWidth,
+              body: document.body.scrollWidth,
+            }))
+            expect(
+              Math.max(pickerDimensions.html, pickerDimensions.body),
+              `${language} ${viewport.width}x${viewport.height} reference picker`,
+            ).toBeLessThanOrEqual(pickerDimensions.viewport + 1)
+            const dialogBox = await picker.getByRole('dialog').boundingBox()
+            expect(dialogBox).not.toBeNull()
+            expect(dialogBox!.width).toBeLessThanOrEqual(viewport.width)
+            expect(dialogBox!.height).toBeLessThanOrEqual(viewport.height)
+            await page.keyboard.press('Escape')
+          }
           if (process.env.CAPTURE_VISUAL_AUDIT === '1') {
             await page.screenshot({
               path: path.resolve(process.cwd(), 'test-results', 'visual-audit', `${language}-${viewport.width}x${viewport.height}-${name}.png`),

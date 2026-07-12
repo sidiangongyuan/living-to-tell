@@ -286,7 +286,12 @@ def test_specimen_constraint_injected_for_rewrite_tasks():
     from writer.services.ai.task_types import AiContextAttachment, AiTaskRequest
 
     builder = TaskPromptBuilder()
-    for task in (AiTaskType.POLISH, AiTaskType.EXPAND, AiTaskType.CONTINUE):
+    for task in (
+        AiTaskType.POLISH,
+        AiTaskType.STYLE_TRANSFER,
+        AiTaskType.EXPAND,
+        AiTaskType.CONTINUE,
+    ):
         request = AiTaskRequest(
             task_type=task,
             target_kind=AiTargetKind.PASTE,
@@ -309,6 +314,11 @@ def test_specimen_constraint_injected_for_rewrite_tasks():
         assert "not" in system.lower() or "不" in system, (
             f"No prohibitive language in system prompt for {task}"
         )
+        lowered = system.lower()
+        assert "purpose" in lowered or "用途" in system
+        assert "author note" in lowered or "作者备注" in system
+        assert "mechanically" in lowered or "机械" in system
+        assert "named entities" in lowered or "专有名词" in system
 
 
 def test_specimen_constraint_not_injected_for_non_rewrite_tasks():
@@ -342,23 +352,24 @@ def test_no_specimen_constraint_without_specimen_attachments():
     from writer.services.ai.task_types import AiContextAttachment, AiTaskRequest
 
     builder = TaskPromptBuilder()
-    request = AiTaskRequest(
-        task_type=AiTaskType.POLISH,
-        target_kind=AiTargetKind.PASTE,
-        text="Some text.",
-        attachments=[
-            AiContextAttachment(
-                kind="fragment",
-                ref_id="f1",
-                name="Fragment A",
-                body="Some fragment.",
-            ),
-        ],
-    )
-    msgs = builder.build_messages(request)
-    system = msgs[0]["content"]
-    assert "Style Specimen Usage Rules" not in system
-    assert "Do NOT copy sentences or passages" not in system
+    for kind in ("fragment", "reference", "ai_card", "writing_note"):
+        request = AiTaskRequest(
+            task_type=AiTaskType.POLISH,
+            target_kind=AiTargetKind.PASTE,
+            text="Some text.",
+            attachments=[
+                AiContextAttachment(
+                    kind=kind,
+                    ref_id=f"{kind}-1",
+                    name=f"{kind} context",
+                    body="Some context.",
+                ),
+            ],
+        )
+        msgs = builder.build_messages(request)
+        system = msgs[0]["content"]
+        assert "Style Specimen Usage Rules" not in system
+        assert "Do NOT copy sentences or passages" not in system
 
 
 # ---------------------------------------------------------------------------

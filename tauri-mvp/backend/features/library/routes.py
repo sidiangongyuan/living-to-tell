@@ -103,9 +103,14 @@ def list_references(
 def search_references(
     q: str,
     limit: int = 100,
+    usage_kind: Optional[str] = None,
     container: AppContainer = Depends(get_container),
 ) -> list[ReferenceOut]:
-    refs = container.reference_repository.search(q, limit=limit)
+    refs = container.reference_repository.search(
+        q,
+        limit=limit,
+        usage_kind=usage_kind,
+    )
     return [_reference_to_dto(r) for r in refs]
 
 

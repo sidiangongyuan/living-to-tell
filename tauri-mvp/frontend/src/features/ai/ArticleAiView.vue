@@ -4,12 +4,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { articlesApi, type Entry } from '../../api/articles'
 import { aiApi, type AiContextAttachment, type AiTaskCompareResult, type AiTaskPresetMap } from '../../api/ai'
 import { aiCardApi, type AiCard } from '../../api/aiCards'
-import { libraryApi, type Reference } from '../../api/library'
+import type { Reference } from '../../api/library'
 import { notesApi, type WritingNote } from '../../api/notes'
 import { errorMessage } from '../../api/base'
 import { settingsApi, type AiProfile } from '../../api/settings'
 import { useI18n } from '../../i18n'
 import { buildParagraphDiff } from '../articles/versionDiff'
+import ArticleAiReferencePicker from './ArticleAiReferencePicker.vue'
 import { buildTaskRequestOptions, createDefaultControls, mergeControls, type FocusTaskType } from './taskControls'
 import { useArticleTaskRunStore } from './articleTaskRunStore'
 import { toggleAiTaskProfileSelection } from './profileSelection'
@@ -41,10 +42,10 @@ const presets = ref<AiTaskPresetMap>({})
 const selectedPresetId = ref('')
 const aiCards = ref<AiCard[]>([])
 const notes = ref<WritingNote[]>([])
-const references = ref<Reference[]>([])
 const selectedCardIds = ref<string[]>([])
 const selectedNoteIds = ref<string[]>([])
-const selectedReferenceIds = ref<string[]>([])
+const selectedReferences = ref<Reference[]>([])
+const referencePickerOpen = ref(false)
 const contextLoading = ref(false)
 
 const tasks = computed(() => [
@@ -66,7 +67,10 @@ const selectedText = computed(() => {
 const hasSelection = computed(() => selectionStart.value !== null && selectionEnd.value !== null && selectionEnd.value > selectionStart.value)
 const enabledProfiles = computed(() => profiles.value.filter((item) => item.enabled))
 const selectedProfiles = computed(() => enabledProfiles.value.filter((item) => selectedProfileIds.value.includes(item.id)))
+const selectedReferenceIds = computed(() => selectedReferences.value.map((item) => item.id))
+const selectedReferenceChars = computed(() => selectedReferences.value.reduce((total, item) => total + item.content.length, 0))
 const currentRun = computed(() => taskRun.run)
+const runReferenceSnapshots = computed(() => currentRun.value?.attachment_snapshots?.filter((item) => item.kind === 'style_specimen') ?? [])
 const successfulResults = computed(() => currentRun.value?.results.filter((item) => item.status === 'success') ?? [])
 const selectedResult = computed<AiTaskCompareResult | null>(() => {
   return currentRun.value?.results.find((item) => item.profile_id === selectedResultProfileId.value) ?? successfulResults.value[0] ?? null
@@ -143,12 +147,8 @@ async function loadContext() {
   if (contextLoading.value) return
   contextLoading.value = true
   try {
-    const [cards, refs] = await Promise.all([
-      aiCards.value.length ? Promise.resolve(aiCards.value) : aiCardApi.listCards(),
-      references.value.length ? Promise.resolve(references.value) : libraryApi.listReferences(100),
-    ])
+    const cards = await (aiCards.value.length ? Promise.resolve(aiCards.value) : aiCardApi.listCards())
     aiCards.value = cards
-    references.value = refs
     await loadArticleContext()
   } catch (e) {
     error.value = errorMessage(e)
@@ -184,8 +184,56 @@ function attachments(): AiContextAttachment[] {
   return [
     ...aiCards.value.filter((item) => selectedCardIds.value.includes(item.id)).map((item) => ({ kind: 'ai_card', ref_id: item.id, name: item.title, body: item.content })),
     ...notes.value.filter((item) => selectedNoteIds.value.includes(item.id)).map((item) => ({ kind: 'writing_note', ref_id: item.id, name: t('articleAi.writingNote'), body: item.body })),
-    ...references.value.filter((item) => selectedReferenceIds.value.includes(item.id)).map((item) => ({ kind: 'reference', ref_id: item.id, name: item.source_title || t('articleAi.reference'), body: item.content })),
+    ...selectedReferences.value.map((item) => ({
+      kind: 'style_specimen',
+      ref_id: item.id,
+      name: referenceName(item),
+      body: referenceAttachmentBody(item),
+    })),
   ]
+}
+
+function referenceName(reference: Reference): string {
+  const title = reference.source_title.trim()
+    ? `《${reference.source_title.trim()}》`
+    : t('articleAi.referencePicker.untitled')
+  return reference.source_author.trim() ? `${title} · ${reference.source_author.trim()}` : title
+}
+
+function referenceUsageLabel(reference: Reference): string {
+  const key = `library.${reference.usage_kind || 'other'}`
+  const translated = t(key)
+  return translated === key ? t('library.other') : translated
+}
+
+function referenceAttachmentBody(reference: Reference): string {
+  const tags = reference.tags.length ? reference.tags.join('、') : t('articleAi.referenceMeta.none')
+  const note = reference.personal_note.trim() || t('articleAi.referenceMeta.none')
+  return [
+    `${t('articleAi.referenceMeta.usage')}：${referenceUsageLabel(reference)}`,
+    `${t('articleAi.referenceMeta.tags')}：${tags}`,
+    `${t('articleAi.referenceMeta.note')}：${note}`,
+    `${t('articleAi.referenceMeta.text')}：`,
+    reference.content,
+  ].join('\n')
+}
+
+function confirmReferences(references: Reference[]) {
+  selectedReferences.value = references
+  referencePickerOpen.value = false
+}
+
+function removeReference(referenceId: string) {
+  selectedReferences.value = selectedReferences.value.filter((item) => item.id !== referenceId)
+}
+
+function clearReferences() {
+  selectedReferences.value = []
+}
+
+function openReferenceLibrary() {
+  referencePickerOpen.value = false
+  void router.push({ name: 'library' })
 }
 
 async function runTask() {
@@ -273,6 +321,7 @@ function openArticle() {
 
 function onKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape') return
+  if (referencePickerOpen.value) return
   if (applyPreviewOpen.value) applyPreviewOpen.value = false
   else if (profilePickerOpen.value) profilePickerOpen.value = false
 }
@@ -329,16 +378,57 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               <template v-else><label class="text-sm text-stone-700">{{ t('articleAi.length') }}<select v-model="controls.continueLength" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2"><option value="short">{{ t('articleAi.short') }}</option><option value="medium">{{ t('articleAi.medium') }}</option><option value="long">{{ t('articleAi.long') }}</option></select></label><label class="text-sm text-stone-700">{{ t('articleAi.emotion') }}<input v-model="controls.emotionalDirection" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" /></label><label class="text-sm text-stone-700">{{ t('articleAi.pacing') }}<input v-model="controls.pacing" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" /></label></template>
             </div>
 
+            <section class="border-b border-stone-200 pb-5" data-testid="article-ai-reference-section">
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 class="text-sm font-semibold text-stone-900">{{ t('articleAi.referenceSection.title') }}</h2>
+                  <p class="mt-1 text-sm text-stone-600">
+                    {{ selectedReferenceIds.length
+                      ? t('articleAi.referenceSection.summary', { count: selectedReferenceIds.length, chars: selectedReferenceChars })
+                      : t('articleAi.referenceSection.empty') }}
+                  </p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button v-if="selectedReferenceIds.length" type="button" class="rounded-md border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50" @click="clearReferences">
+                    {{ t('articleAi.referenceSection.clear') }}
+                  </button>
+                  <button type="button" class="rounded-md bg-emerald-800 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700" @click="referencePickerOpen = true">
+                    {{ selectedReferenceIds.length ? t('articleAi.referenceSection.reselect') : t('articleAi.referenceSection.choose') }}
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="selectedReferences.length" class="mt-4 grid gap-2 md:grid-cols-2">
+                <article v-for="reference in selectedReferences" :key="reference.id" class="rounded-md border border-stone-200 bg-white p-3">
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <h3 class="truncate text-sm font-semibold text-stone-900">{{ referenceName(reference) }}</h3>
+                      <div class="mt-2 flex flex-wrap gap-1.5">
+                        <span class="rounded bg-emerald-50 px-2 py-1 text-sm font-medium text-emerald-800">{{ referenceUsageLabel(reference) }}</span>
+                        <span v-for="tag in reference.tags.slice(0, 4)" :key="tag" class="rounded bg-stone-100 px-2 py-1 text-sm text-stone-700">{{ tag }}</span>
+                      </div>
+                    </div>
+                    <button type="button" class="h-8 w-8 shrink-0 rounded-md text-lg text-stone-600 hover:bg-stone-100" :aria-label="t('articleAi.referenceSection.remove', { name: referenceName(reference) })" @click="removeReference(reference.id)">×</button>
+                  </div>
+                  <p v-if="reference.content.length > 40_000" class="mt-2 text-sm font-medium text-amber-800">{{ t('articleAi.referencePicker.itemTruncated') }}</p>
+                </article>
+              </div>
+
+              <div v-else class="mt-4 rounded-md border border-dashed border-stone-300 bg-white px-4 py-5 text-center text-sm text-stone-600">
+                {{ t('articleAi.referenceSection.empty') }}
+              </div>
+              <p v-if="selectedReferenceChars > 20_000" class="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">{{ t('articleAi.referencePicker.largeContext') }}</p>
+            </section>
+
             <details :open="moreOpen" @toggle="moreOpen = ($event.target as HTMLDetailsElement).open" class="border-b border-stone-200 pb-5">
               <summary class="cursor-pointer text-sm font-semibold text-stone-700">{{ t('articleAi.more') }}</summary>
               <div class="mt-4 space-y-4">
                 <label class="block text-sm text-stone-700">{{ t('articleAi.preset') }}<select :value="selectedPresetId" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" @change="applyPreset(($event.target as HTMLSelectElement).value)"><option value="">{{ t('articleAi.noPreset') }}</option><option v-for="preset in taskPresets" :key="preset.id" :value="preset.id">{{ preset.name }}</option></select></label>
                 <label class="block text-sm text-stone-700">{{ t('articleAi.extra') }}<textarea v-model="controls.extraInstructions" rows="3" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" /></label>
                 <div v-if="contextLoading" class="text-xs text-stone-500">{{ t('common.loading') }}</div>
-                <div v-else class="grid gap-4 md:grid-cols-3">
+                <div v-else class="grid gap-4 md:grid-cols-2">
                   <fieldset><legend class="text-xs font-semibold text-stone-600">AI Cards</legend><label v-for="item in aiCards.slice(0, 20)" :key="item.id" class="mt-2 flex gap-2 text-xs text-stone-600"><input v-model="selectedCardIds" :value="item.id" type="checkbox" />{{ item.title }}</label></fieldset>
                   <fieldset><legend class="text-xs font-semibold text-stone-600">{{ t('articleAi.notes') }}</legend><label v-for="item in notes.slice(0, 20)" :key="item.id" class="mt-2 flex gap-2 text-xs text-stone-600"><input v-model="selectedNoteIds" :value="item.id" type="checkbox" /><span class="line-clamp-2">{{ item.body }}</span></label></fieldset>
-                  <fieldset><legend class="text-xs font-semibold text-stone-600">{{ t('articleAi.references') }}</legend><label v-for="item in references.slice(0, 20)" :key="item.id" class="mt-2 flex gap-2 text-xs text-stone-600"><input v-model="selectedReferenceIds" :value="item.id" type="checkbox" /><span class="line-clamp-2">{{ item.source_title || item.content }}</span></label></fieldset>
                 </div>
               </div>
             </details>
@@ -367,6 +457,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             <h2 class="text-sm font-semibold text-stone-800">{{ t('articleAi.runFor', { title: currentRun.article_title }) }}</h2>
             <span class="text-xs text-stone-500">{{ currentRun.stage_label }} · {{ formatElapsed(currentRun.elapsed_ms) }}</span>
           </div>
+          <div v-if="runReferenceSnapshots.length" class="mb-4 flex flex-wrap items-center gap-2" data-testid="article-ai-run-references">
+            <span class="text-sm font-medium text-stone-700">{{ t('articleAi.referenceSection.runReferences') }}</span>
+            <span v-for="item in runReferenceSnapshots" :key="`${item.kind}:${item.ref_id}`" class="rounded bg-emerald-50 px-2 py-1 text-sm text-emerald-900">{{ item.name }}</span>
+          </div>
           <div class="grid min-h-[360px] gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
             <div class="space-y-2">
               <button v-for="result in currentRun.results" :key="result.profile_id" type="button" :disabled="result.status !== 'success'" :class="['w-full border p-3 text-left', selectedResult?.profile_id === result.profile_id ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-200 bg-white text-stone-700', result.status !== 'success' ? 'cursor-default opacity-75' : 'hover:border-stone-500']" @click="selectedResultProfileId = result.profile_id">
@@ -385,6 +479,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         </section>
       </div>
     </main>
+
+    <ArticleAiReferencePicker
+      :open="referencePickerOpen"
+      :selected="selectedReferences"
+      @close="referencePickerOpen = false"
+      @confirm="confirmReferences"
+      @open-library="openReferenceLibrary"
+    />
 
     <Teleport to="body">
       <div v-if="profilePickerOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="profilePickerOpen = false"><div role="dialog" aria-modal="true" aria-labelledby="article-ai-model-picker-title" class="max-h-[75vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-2xl"><div class="flex items-center justify-between"><h3 id="article-ai-model-picker-title" class="font-semibold text-stone-900">{{ t('articleAi.chooseModels') }}</h3><button class="h-8 w-8 rounded-md hover:bg-stone-100" :aria-label="t('common.close')" @click="profilePickerOpen = false">×</button></div><p class="mt-1 text-xs leading-5 text-stone-500">{{ t('articleAi.modelHint') }}</p><div class="mt-4 divide-y divide-stone-200"><label v-for="profile in enabledProfiles" :key="profile.id" class="flex cursor-pointer items-start gap-3 py-3"><input :checked="selectedProfileIds.includes(profile.id)" type="checkbox" class="mt-1 h-4 w-4" @change="toggleProfile(profile.id)" /><span><span class="text-sm font-semibold text-stone-800">{{ profile.name }}<span v-if="profile.id === defaultProfileId" class="ml-2 text-xs text-stone-400">{{ t('settings.profileHub.default') }}</span></span><span class="mt-1 block text-xs text-stone-500">{{ profile.model }}</span></span></label></div><div class="mt-4 flex justify-end"><button class="rounded-md bg-stone-900 px-4 py-2 text-sm font-semibold text-white" @click="profilePickerOpen = false">{{ t('common.done') }}</button></div></div></div>

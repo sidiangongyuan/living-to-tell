@@ -1,5 +1,28 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.48 - First-Class Reference Specimens in AI Edit (2026-07-13)
+
+### Added
+
+- Added a first-class **Reference Specimens** step to AI Edit between task controls and model selection, so style and technique references no longer hide inside More Requirements.
+- Added a large staged picker with search across title, author, text, tags, and personal notes; purpose filters; two-column selectable cards; full-text preview; and a fixed confirmation footer.
+- Added privacy-safe task snapshots that show which specimen names a completed background run used without returning specimen text.
+
+### Changed
+
+- AI Edit now sends confirmed reference passages as `style_specimen` attachments containing purpose, tags, author notes, and specimen text. AI Cards and article notes remain under More Requirements.
+- Specimen guidance now applies consistently to Polish, Rewrite, Expand, and Continue. The model may infer relevant style, structure, imagery, rhetoric, or technique, but must not mechanically blend every specimen.
+- Selected specimens remain stable while changing the article, task, or model selection and after a run completes. They reset when AI Edit is left or refreshed; the finished run still identifies its frozen references.
+- Search and purpose filtering preserve staged selections. Cancelling the picker discards unconfirmed changes, while only **Use N Specimens** changes the active run context.
+
+### Safety and verification
+
+- Reference specimens are never recommended, automatically selected, or silently attached. Every model in a run receives the same click-time snapshot.
+- Prompt rules prohibit copying or near-copying specimen sentences and transplanting specimen facts, plot, people, or named entities. The subject article's facts, point of view, and explicit author instructions take priority.
+- References above 20,000 characters show a token and cost warning. The existing 40,000-character per-attachment send limit is disclosed while the complete library record remains unchanged.
+- Bounded OpenAI-compatible provider waits to 120 seconds by default and disabled the SDK's hidden automatic retries. A timeout or transient provider failure now ends the local result safely; only the author can start another paid run. Advanced users can override the wait with `WRITER_OPENAI_TIMEOUT_SECONDS`.
+- Added backend prompt, metadata search, frozen multi-model context, truncation, and no-body snapshot regressions; added complete picker interaction, responsive viewport, recovery, and Axe coverage.
+
 ## 0.1.47 - Unified AI Profiles and Article AI Stability (2026-07-12)
 
 ### Added

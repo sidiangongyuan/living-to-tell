@@ -49,6 +49,7 @@ If authentication succeeds but the provider reports a group such as `model-name-
 
 - Leaving AI Edit does not stop the current task. Return to the page to query its status.
 - Reconnection never creates a new task or resends the provider request.
+- OpenAI-compatible calls stop local waiting after 120 seconds by default and disable the SDK's hidden automatic retries. Advanced users can set `WRITER_OPENAI_TIMEOUT_SECONDS`; changing it does not guarantee that a remote request stops generating or billing.
 - Local cancellation stops waiting for and adopting later results, but cannot guarantee that a request already sent to the provider stops generating or billing.
 - One failed model does not block successful results from other selected profiles.
 - If the article changes after a run starts, positional write-back is blocked. Copy the result or rerun against the current text.

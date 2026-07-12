@@ -1369,6 +1369,56 @@ def test_tauri_library_round_trips_frontend_usage_kinds(monkeypatch):
         assert updated.json()["usage_kind"] == usage_kind
 
 
+def test_tauri_library_search_filters_usage_and_indexes_reference_metadata(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    token = f"specimen{uuid.uuid4().hex[:10]}"
+    style = client.post(
+        "/api/library/references",
+        json={
+            "source_title": f"{token} title",
+            "content": "restrained synthetic prose",
+            "source_author": "Synthetic Author",
+            "tags": [f"tag{token}"],
+            "kind": "excerpt",
+            "usage_kind": "style",
+            "personal_note": f"note{token}",
+        },
+    ).json()
+    imagery = client.post(
+        "/api/library/references",
+        json={
+            "source_title": f"{token} imagery",
+            "content": "synthetic image description",
+            "source_author": "Synthetic Author",
+            "tags": [],
+            "kind": "excerpt",
+            "usage_kind": "imagery",
+            "personal_note": "",
+        },
+    ).json()
+
+    filtered = client.get(
+        "/api/library/references/search",
+        params={"q": token, "usage_kind": "imagery", "limit": 20},
+    )
+    assert filtered.status_code == 200, filtered.text
+    assert [item["id"] for item in filtered.json()] == [imagery["id"]]
+
+    by_tag = client.get(
+        "/api/library/references/search",
+        params={"q": f"tag{token}", "limit": 20},
+    )
+    assert by_tag.status_code == 200, by_tag.text
+    assert style["id"] in {item["id"] for item in by_tag.json()}
+
+    by_note = client.get(
+        "/api/library/references/search",
+        params={"q": f"note{token}", "limit": 20},
+    )
+    assert by_note.status_code == 200, by_note.text
+    assert style["id"] in {item["id"] for item in by_note.json()}
+
+
 def test_tauri_motifs_create_excerpt_and_graph(monkeypatch):
     client = _tauri_client(monkeypatch)
 
@@ -4415,6 +4465,115 @@ def test_tauri_article_ai_task_run_streams_applies_once_and_blocks_drift(monkeyp
     assert blocked_apply.status_code == 409
     assert "发生变化" in blocked_apply.json()["detail"]
     assert client.delete(f"/api/ai/task-runs/{drift_id}").status_code == 204
+
+
+def test_tauri_article_ai_task_run_freezes_safe_specimen_snapshots_for_all_profiles(
+    monkeypatch,
+):
+    client = _tauri_client(monkeypatch)
+    monkeypatch.setenv("WRITER_SPECIMEN_SNAPSHOT_KEY", "test-key")
+    from features.ai import routes as ai_routes
+    from writer.services.ai.interfaces import ChatResponse
+
+    profiles = []
+    for index in range(2):
+        created = client.post(
+            "/api/settings/ai/profiles",
+            json={
+                "name": f"Specimen profile {index}",
+                "provider_name": "openai",
+                "base_url": f"https://specimen-{index}.example/v1",
+                "wire_api": "chat_completions",
+                "model": f"specimen-model-{index}",
+                "api_key_source": "env:WRITER_SPECIMEN_SNAPSHOT_KEY",
+            },
+        )
+        assert created.status_code == 201, created.text
+        profiles.append(created.json())
+
+    calls = []
+
+    class CapturingProvider:
+        def __init__(self, config):
+            self.config = config
+
+        def chat(self, messages, *, model=None):
+            calls.append({"messages": messages, "model": model})
+            return ChatResponse(
+                content=f"{model or self.config.model} synthetic result",
+                model=model or self.config.model,
+                provider="fake",
+                transport="chat_completions",
+            )
+
+    monkeypatch.setattr(
+        ai_routes,
+        "provider_for_config",
+        lambda config, prompt_builder=None: CapturingProvider(config),
+    )
+    article = client.post(
+        "/api/articles",
+        json={"title": "Specimen snapshot", "body": "Synthetic subject text.", "tags": []},
+    ).json()
+    marker = "PRIVATE_SPECIMEN_MARKER"
+    attachment_body = (
+        "Usage: Style\nTags: restrained\nAuthor note: borrow cadence\nSpecimen text:\n"
+        + marker
+        + ("x" * 40_100)
+        + "TAIL_MUST_NOT_BE_SENT"
+    )
+    run_id = None
+    try:
+        created = client.post(
+            "/api/ai/task-runs",
+            json={
+                "article_id": article["id"],
+                "task_type": "rewrite",
+                "profile_ids": [item["id"] for item in profiles],
+                "attachments": [
+                    {
+                        "kind": "style_specimen",
+                        "ref_id": "synthetic-reference",
+                        "name": "Synthetic specimen",
+                        "body": attachment_body,
+                    }
+                ],
+            },
+        )
+        assert created.status_code == 202, created.text
+        payload = created.json()
+        run_id = payload["run_id"]
+        assert payload["attachment_snapshots"] == [
+            {
+                "kind": "style_specimen",
+                "ref_id": "synthetic-reference",
+                "name": "Synthetic specimen",
+                "size_chars": 40_000,
+            }
+        ]
+        assert marker not in created.text
+        assert "TAIL_MUST_NOT_BE_SENT" not in created.text
+
+        finished = None
+        for _ in range(100):
+            time.sleep(0.02)
+            snapshot = client.get(f"/api/ai/task-runs/{run_id}")
+            assert snapshot.status_code == 200, snapshot.text
+            if snapshot.json()["status"] == "succeeded":
+                finished = snapshot
+                break
+        assert finished is not None
+        assert len(calls) == 2
+        assert calls[0]["messages"] == calls[1]["messages"]
+        rendered_prompt = json.dumps(calls[0]["messages"], ensure_ascii=False)
+        assert marker in rendered_prompt
+        assert "TAIL_MUST_NOT_BE_SENT" not in rendered_prompt
+        assert marker not in finished.text
+        assert "TAIL_MUST_NOT_BE_SENT" not in finished.text
+    finally:
+        if run_id is not None:
+            response = client.delete(f"/api/ai/task-runs/{run_id}")
+            assert response.status_code == 204, response.text
 
 
 def test_tauri_collection_docx_export_cleans_temp_file_on_generation_failure(

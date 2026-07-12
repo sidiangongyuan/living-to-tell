@@ -92,6 +92,13 @@ export interface ArticleAiTaskRunCreate extends Omit<AiTaskRequest, 'text' | 'ta
   selection_end?: number | null
 }
 
+export interface AiTaskAttachmentSnapshot {
+  kind: string
+  ref_id: string
+  name: string
+  size_chars: number
+}
+
 export interface ArticleAiTaskRun {
   run_id: string
   article_id: string
@@ -106,6 +113,7 @@ export interface ArticleAiTaskRun {
   stage_label: string
   error: string
   profiles: AiTaskCompareProfileSnapshot[]
+  attachment_snapshots?: AiTaskAttachmentSnapshot[]
   results: AiTaskCompareResult[]
   created_at: string
   started_at?: string | null

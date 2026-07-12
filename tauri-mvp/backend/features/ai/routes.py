@@ -178,6 +178,13 @@ class ArticleTaskRunApply(BaseModel):
     profile_id: str
 
 
+class AiTaskAttachmentSnapshotOut(BaseModel):
+    kind: str
+    ref_id: str
+    name: str
+    size_chars: int
+
+
 class ArticleTaskRunOut(BaseModel):
     run_id: str
     article_id: str
@@ -192,6 +199,7 @@ class ArticleTaskRunOut(BaseModel):
     stage_label: str
     error: str = ""
     profiles: list[dict[str, Any]]
+    attachment_snapshots: list[AiTaskAttachmentSnapshotOut] = Field(default_factory=list)
     results: list[AiTaskCompareResult]
     created_at: str
     started_at: Optional[str] = None
@@ -616,6 +624,19 @@ def _job_snapshot(record: AiJobRecord) -> AiJobSnapshot:
 
 
 def _article_run_out(record: ArticleTaskRunRecord) -> ArticleTaskRunOut:
+    attachment_snapshots = []
+    for item in record.request.get("attachments", []):
+        if not isinstance(item, dict):
+            continue
+        body = str(item.get("body") or "").strip()
+        attachment_snapshots.append(
+            AiTaskAttachmentSnapshotOut(
+                kind=str(item.get("kind") or "context")[:80],
+                ref_id=str(item.get("ref_id") or "")[:120],
+                name=str(item.get("name") or item.get("kind") or "context")[:160],
+                size_chars=min(len(body), MAX_ATTACHMENT_CHARS),
+            )
+        )
     return ArticleTaskRunOut(
         run_id=record.run_id,
         article_id=record.article_id,
@@ -630,6 +651,7 @@ def _article_run_out(record: ArticleTaskRunRecord) -> ArticleTaskRunOut:
         stage_label=record.stage_label,
         error=record.error,
         profiles=record.profiles,
+        attachment_snapshots=attachment_snapshots,
         results=[AiTaskCompareResult(**item) for item in record.results],
         created_at=record.created_at,
         started_at=record.started_at,

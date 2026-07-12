@@ -374,7 +374,7 @@ async function installDemoApi(page) {
     if (pathname === '/api/app/version') {
       return json(route, {
         app_name: 'Living to Tell',
-        version: '0.1.47',
+        version: '0.1.48',
         api_version: '2.0.0',
         capabilities: [
           'data_location',

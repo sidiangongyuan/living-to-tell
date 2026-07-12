@@ -1116,6 +1116,13 @@ const translations = {
       intensity: '修改强度', goal: '润色目标', light: '轻', medium: '中', strong: '强', clarity: '清晰', rhythm: '节奏', literary: '文学质感', restrained: '克制', preserveVoice: '保留作者语气',
       direction: '改写方向', changeLevel: '句式变化', keepImagery: '保留关键意象', length: '生成长度', short: '短', long: '长', focus: '扩写重点', sensory: '加入必要感官细节', emotion: '情绪走向', pacing: '推进速度',
       more: '更多要求', preset: '预设', noPreset: '不使用预设', extra: '补充要求', writingNote: '文章便签', reference: '文脉标本', notes: '文章便签', references: '文脉标本',
+      referenceSection: {
+        title: '文脉参考', summary: '已选 {count} 条 · 共约 {chars} 字', empty: '尚未选择文脉标本', choose: '选择文脉标本', reselect: '重新选择', clear: '清除参考', remove: '移除 {name}', runReferences: '本轮参考',
+      },
+      referencePicker: {
+        title: '选择文脉标本', selectedSummary: '已选 {count} 条 · 共约 {chars} 字', search: '搜索标题、作者、正文、标签或个人备注', clearSearch: '清空搜索', clearSelection: '清空本次选择', usageFilter: '按用途筛选', untitled: '未标注出处', backToList: '返回标本列表', preview: '查看全文', select: '选择 {name}', deselect: '取消选择 {name}', noMatches: '没有匹配的文脉标本。', empty: '文脉库里还没有标本。', openLibrary: '前往文脉库', useSelected: '使用 {count} 条标本', largeContext: '参考正文超过 20,000 字。所有已选模型都会读取这份上下文，token、费用和风格混杂风险可能增加。', itemTruncated: '这条标本超过单个附件 40,000 字的发送上限。发送时会优先保留用途、标签和作者备注，正文发送到附件上限；完整内容仍保留在文脉库。',
+      },
+      referenceMeta: { usage: '用途', tags: '标签', note: '作者备注', text: '标本正文', none: '未填写' },
       modelsSelected: '已选择 {count} 个模型', run: '运行 AI 修改', models: '本轮模型', noModel: '请先选择至少一个 AI 配置档案。',
       reconnecting: '正在重连任务状态（第 {count} 次），不会重发模型请求。', cancel: '中断本地等待', clear: '清空本轮结果', cancelConfirm: '中断后本地不再采用后续结果；已发送的远端请求仍可能继续生成并计费。继续吗？', clearConfirm: '清空本轮模型状态和结果吗？文章不会改变。',
       status: { pending: '等待中', success: '已完成', error: '失败' }, result: '生成结果', diff: '与原文差异', copy: '复制', apply: '预览写回', waiting: '模型正在生成，先完成的结果会先出现。', noSuccess: '本轮没有成功结果。',
@@ -2587,6 +2594,13 @@ const translations = {
       intensity: 'Edit Strength', goal: 'Polish Goal', light: 'Light', medium: 'Medium', strong: 'Strong', clarity: 'Clarity', rhythm: 'Rhythm', literary: 'Literary', restrained: 'Restrained', preserveVoice: 'Preserve author voice',
       direction: 'Rewrite Direction', changeLevel: 'Sentence Change', keepImagery: 'Keep key imagery', length: 'Length', short: 'Short', long: 'Long', focus: 'Expansion Focus', sensory: 'Add necessary sensory detail', emotion: 'Emotional Direction', pacing: 'Pacing',
       more: 'More Requirements', preset: 'Preset', noPreset: 'No preset', extra: 'Additional Instructions', writingNote: 'Article Note', reference: 'Reference', notes: 'Article Notes', references: 'References',
+      referenceSection: {
+        title: 'Reference Specimens', summary: '{count} selected · about {chars} chars', empty: 'No reference specimens selected', choose: 'Choose Reference Specimens', reselect: 'Change Selection', clear: 'Clear References', remove: 'Remove {name}', runReferences: 'References for This Run',
+      },
+      referencePicker: {
+        title: 'Choose Reference Specimens', selectedSummary: '{count} selected · about {chars} chars', search: 'Search title, author, text, tags, or personal notes', clearSearch: 'Clear Search', clearSelection: 'Clear Draft Selection', usageFilter: 'Filter by usage', untitled: 'Untitled Source', backToList: 'Back to Specimens', preview: 'View Full Text', select: 'Select {name}', deselect: 'Deselect {name}', noMatches: 'No matching reference specimens.', empty: 'There are no specimens in the reference library yet.', openLibrary: 'Open Reference Library', useSelected: 'Use {count} Specimens', largeContext: 'The selected reference text exceeds 20,000 characters. Every selected model will read this context, which can increase tokens, cost, and mixed-style results.', itemTruncated: 'This specimen exceeds the 40,000-character limit for one attachment. Its purpose, tags, and author note are kept first, followed by as much specimen text as fits; the full text remains in the reference library.',
+      },
+      referenceMeta: { usage: 'Usage', tags: 'Tags', note: 'Author Note', text: 'Specimen Text', none: 'Not provided' },
       modelsSelected: '{count} models selected', run: 'Run AI Edit', models: 'Models This Run', noModel: 'Select at least one AI profile.',
       reconnecting: 'Reconnecting task status (attempt {count}); the model request will not be resent.', cancel: 'Stop Local Wait', clear: 'Clear This Run', cancelConfirm: 'Local waiting will stop, but requests already sent may continue and incur charges. Continue?', clearConfirm: 'Clear this run and all model results? The article will not change.',
       status: { pending: 'Waiting', success: 'Done', error: 'Failed' }, result: 'Result', diff: 'Diff from Original', copy: 'Copy', apply: 'Preview Apply', waiting: 'Models are running. Faster results appear first.', noSuccess: 'No model returned a successful result.',

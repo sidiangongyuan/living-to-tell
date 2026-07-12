@@ -48,13 +48,16 @@ export const libraryApi = {
     return handleResponse(res)
   },
 
-  async listReferences(limit = 500): Promise<Reference[]> {
-    const res = await apiFetch(`/api/library/references?limit=${limit}`)
+  async listReferences(limit = 500, usageKind?: string): Promise<Reference[]> {
+    const params = new URLSearchParams({ limit: String(limit) })
+    if (usageKind) params.set('usage_kind', usageKind)
+    const res = await apiFetch(`/api/library/references?${params}`)
     return handleResponse(res)
   },
 
-  async searchReferences(query: string, limit = 100): Promise<Reference[]> {
+  async searchReferences(query: string, limit = 100, usageKind?: string): Promise<Reference[]> {
     const params = new URLSearchParams({ q: query, limit: String(limit) })
+    if (usageKind) params.set('usage_kind', usageKind)
     const res = await apiFetch(`/api/library/references/search?${params}`)
     return handleResponse(res)
   },

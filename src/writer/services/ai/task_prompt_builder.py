@@ -27,6 +27,7 @@ _REWRITE_TASKS = {
     AiTaskType.EXPAND,
     AiTaskType.CONTINUE,
 }
+_SPECIMEN_GUIDED_TASKS = _REWRITE_TASKS | {AiTaskType.STYLE_TRANSFER}
 
 _VOICE_PRESERVE_TASKS = _REWRITE_TASKS | {AiTaskType.STYLE_TRANSFER}
 _STYLE_GUIDED_TASKS = {AiTaskType.POLISH, AiTaskType.STYLE_TRANSFER}
@@ -207,7 +208,7 @@ class TaskPromptBuilder:
             )
         # Add specimen constraints when style specimens are attached.
         has_specimens = any(a.kind == "style_specimen" for a in (request.attachments or []))
-        if has_specimens and request.task_type in _REWRITE_TASKS:
+        if has_specimens and request.task_type in _SPECIMEN_GUIDED_TASKS:
             system += _specimen_constraint(is_zh)
 
         user_parts: List[str] = []
@@ -480,7 +481,9 @@ def _specimen_constraint(is_zh: bool) -> str:
             "1. 不得照搬标本中的原句或原段，哪怕改动极小；\n"
             "2. 不得将标本中的具体事实、专有名词或人物移植到输出文本；\n"
             "3. 只借鉴标本的文风肌理、意象营造方式和叙述手法，将其化入你的输出；\n"
-            "4. 最终输出必须在事实层面忠实于待处理文本，而非标本。"
+            "4. 根据每条标本的用途、标签和作者备注，自行判断本轮真正相关的借鉴方向；\n"
+            "5. 多个标本不要机械混合；只吸收与本轮任务相关的部分；\n"
+            "6. 最终输出必须在事实、视角和作者明确要求上忠实于待处理文本，而非标本。"
         )
     return (
         "\n\n[Style Specimen Usage Rules] You have been provided with one or more style"
@@ -491,5 +494,10 @@ def _specimen_constraint(is_zh: bool) -> str:
         " into the output.\n"
         "3. Borrow ONLY the prose texture, imagery patterns, and narrative technique."
         " Absorb them into your output without direct quotation.\n"
-        "4. The output must remain factually faithful to the subject text, not the specimens."
+        "4. Use each specimen's purpose, tags, and author note to infer what is relevant"
+        " to this run.\n"
+        "5. Do not mechanically blend every specimen; use only the aspects relevant to"
+        " the current task.\n"
+        "6. The output must remain faithful to the subject text's facts, point of view,"
+        " and the author's explicit instructions, not the specimens."
     )

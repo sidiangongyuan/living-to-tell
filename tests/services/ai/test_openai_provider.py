@@ -1,3 +1,6 @@
+import sys
+from types import SimpleNamespace
+
 import pytest
 
 from writer.domain.models.ai_config import AiConfig
@@ -124,6 +127,48 @@ def test_missing_env_var_raises(monkeypatch):
     provider = OpenAiProvider(config, PromptBuilder())  # no injected client
     with pytest.raises(AiError):
         provider.rewrite(RewriteRequest(action=RewriteAction.POLISH, text="hi"))
+
+
+def test_sdk_client_uses_bounded_timeout_and_disables_hidden_retries(monkeypatch):
+    captured = {}
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setenv("WRITER_TEST_KEY", "test-key")
+    monkeypatch.delenv("WRITER_OPENAI_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
+    provider = OpenAiProvider(
+        AiConfig(api_key_source="env:WRITER_TEST_KEY"),
+        PromptBuilder(),
+    )
+
+    provider._ensure_client()
+
+    assert captured["timeout"] == 120
+    assert captured["max_retries"] == 0
+
+
+def test_sdk_timeout_can_be_configured_by_environment(monkeypatch):
+    captured = {}
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setenv("WRITER_TEST_KEY", "test-key")
+    monkeypatch.setenv("WRITER_OPENAI_TIMEOUT_SECONDS", "7")
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
+    provider = OpenAiProvider(
+        AiConfig(api_key_source="env:WRITER_TEST_KEY"),
+        PromptBuilder(),
+    )
+
+    provider._ensure_client()
+
+    assert captured["timeout"] == 7
+    assert captured["max_retries"] == 0
 
 
 def test_codex_source_routes_to_resolver(tmp_path):

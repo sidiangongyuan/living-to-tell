@@ -10,8 +10,8 @@ Use this to confirm where the app lives, where your writing lives, and what upgr
 
 Steps:
 
-1. Download the latest Windows preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.47).
-2. Run the recommended installer: `LivingToTell_0.1.47_x64-setup.exe`. The MSI asset is `LivingToTell_0.1.47_x64_zh-CN.msi`.
+1. Download the latest Windows preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.48).
+2. Run the recommended installer: `LivingToTell_0.1.48_x64-setup.exe`. The MSI asset is `LivingToTell_0.1.48_x64_zh-CN.msi`.
 3. Open **活着为了讲述** from the Start menu or desktop shortcut.
 4. Open **Settings → Data and Storage** to review the active SQLite database, backup folder, and checkpoint folder.
 5. Before major edits, open **Export & Backup** and create a backup or named checkpoint.
@@ -167,18 +167,22 @@ Steps:
 3. Run **Check All Locally** first. This checks local credential and login availability without contacting a model.
 4. Select only the profiles you want to verify, then send a minimal real test. Real tests can use tokens and incur provider cost; each profile keeps its last health state and test time.
 5. Open an article and choose **AI Edit**, or select text first and enter from the article toolbar. Direct entry to AI Edit asks you to choose an article; there is no arbitrary paste mode.
-6. Choose Polish, Rewrite, Expand, or Continue. Additional presets, cards, notes, references, and detailed controls stay under **More Requirements**.
-7. Select one or more profiles. Selecting a non-default profile replaces the sole default selection; the default returns only if you explicitly select it again.
-8. Run the task and read the first successful result immediately. A failed model stays local to its status row and does not block other models. Leaving the page does not restart the task.
-9. Switch between **Generated Result** and **Difference from Original**. Write-back always opens a preview, verifies that the article has not drifted, and creates an `AI_BEFORE_APPLY` version first.
-10. In Articles, open **AI Chat** for discussion. Closing the drawer keeps the draft, thread, and in-flight reply. Copying or saving a reply remains explicit.
-11. Open **AI Cards** to create style, character, or scene cards. Review generated card drafts before saving, and use **Copy as Prompt** when a card should become explicit context.
+6. Choose Polish, Rewrite, Expand, or Continue.
+7. If the edit should follow a particular style or technique, use the first-class **Reference Specimens** section. Search title, author, text, tags, or personal notes; filter by purpose; open a full-text preview; then confirm the staged selection with **Use N Specimens**.
+8. Additional presets, AI Cards, article notes, and detailed instructions remain under **More Requirements**. Reference specimens are not duplicated there.
+9. Select one or more profiles. Selecting a non-default profile replaces the sole default selection; the default returns only if you explicitly select it again.
+10. Run the task and read the first successful result immediately. A failed model stays local to its status row and does not block other models. Leaving the page does not restart the task.
+11. Switch between **Generated Result** and **Difference from Original**. Write-back always opens a preview, verifies that the article has not drifted, and creates an `AI_BEFORE_APPLY` version first.
+12. In Articles, open **AI Chat** for discussion. Closing the drawer keeps the draft, thread, and in-flight reply. Copying or saving a reply remains explicit.
+13. Open **AI Cards** to create style, character, or scene cards. Review generated card drafts before saving, and use **Copy as Prompt** when a card should become explicit context.
 
 Safety notes:
 
 - AI providers receive the article/selection and optional context shown for the task you explicitly run.
 - Local config checks are not remote availability proof. Only a successful real test request proves the model works.
 - Multi-model requests contain exactly the selected profile IDs; the default profile is never injected silently.
+- Reference specimens are attached only after you confirm the picker. Every model in that run receives the same frozen specimen set, including purpose, tags, personal note, and the allowed text range.
+- Specimens guide writing method, style, structure, imagery, or rhetoric; they are not fact sources. The prompt forbids copying or near-copying sentences and importing specimen people, facts, plot, or named entities.
 - Reconnection only checks task state. It never resends a provider request. Local cancellation cannot guarantee that a request already sent to a provider stops generating or billing.
 - Article drift blocks positional write-back. Copy the result or rerun against the current article instead of forcing an unsafe replacement.
 - Scene modules and other context are selected manually; unselected material is not sent to AI.
@@ -190,6 +194,7 @@ Common mistakes:
 - **Can I sign into ChatGPT inside the app?** No. Official OpenAI access uses an API key; local Codex access reuses an existing Codex login.
 - **Why did a provider charge tokens after a timeout?** A provider can keep processing after the local wait ends. The app does not automatically resend on reconnect, which avoids duplicate billing.
 - **Can AI overwrite my article automatically?** No. Write-back is always explicit.
+- **Why is only part of an extremely long specimen sent?** One attachment has a 40,000-character send limit. AI Edit keeps purpose, tags, and the author note first, then includes as much specimen text as fits; the full saved specimen is never changed.
 
 For actionable diagnostics by status code and access method, see [AI Setup Troubleshooting](ai-troubleshooting.md).
 

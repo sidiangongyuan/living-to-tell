@@ -1,6 +1,6 @@
 {
   "name": "living-to-tell-app",
-  "version": "0.1.47",
+  "version": "0.1.48",
   "type": "module",
   "scripts": {
     "dev": "vite",
