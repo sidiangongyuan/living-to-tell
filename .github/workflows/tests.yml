@@ -89,6 +89,15 @@ jobs:
         working-directory: tauri-mvp/frontend
         run: npm run test:e2e:real -- --project=msedge --workers=1
 
+      - name: Prepare ignored Tauri sidecar path
+        shell: pwsh
+        run: |
+          $sidecar = 'tauri-mvp/frontend/src-tauri/binaries/living-to-tell-backend-x86_64-pc-windows-msvc.exe'
+          New-Item -ItemType Directory -Path (Split-Path $sidecar) -Force | Out-Null
+          if (-not (Test-Path -LiteralPath $sidecar)) {
+            New-Item -ItemType File -Path $sidecar | Out-Null
+          }
+
       - name: Check Tauri Rust application
         run: cargo check --locked --manifest-path tauri-mvp/frontend/src-tauri/Cargo.toml
 
