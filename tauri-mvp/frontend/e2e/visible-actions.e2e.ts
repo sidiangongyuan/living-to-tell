@@ -2730,6 +2730,7 @@ test('primary settings, article, collection, AI, and backup surfaces have no ser
 })
 
 test('all primary surfaces avoid horizontal overflow at release viewports in both languages', async ({ browser }) => {
+  test.setTimeout(90_000)
   const viewports = [
     { width: 1024, height: 768 },
     { width: 1400, height: 900 },

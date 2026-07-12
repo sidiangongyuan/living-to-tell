@@ -2014,7 +2014,7 @@ watch(
           <button
             v-if="searchInput"
             @click="clearSearch"
-            class="absolute right-2 top-2 text-stone-400 hover:text-stone-600"
+            class="absolute right-2 top-2 text-stone-600 hover:text-stone-800"
           >
             ×
           </button>
@@ -2047,9 +2047,9 @@ watch(
       </div>
 
       <div class="flex-1 overflow-y-auto">
-        <div v-if="store.loading" class="p-4 text-sm text-stone-400">{{ t('common.loading') }}</div>
+        <div v-if="store.loading" class="p-4 text-sm text-stone-600">{{ t('common.loading') }}</div>
         <div v-else-if="store.error" class="p-4 text-sm text-red-500">{{ store.error }}</div>
-        <div v-else-if="!displayList.length" class="p-4 text-sm text-stone-400">
+        <div v-else-if="!displayList.length" class="p-4 text-sm text-stone-600">
           {{ emptyListLabel }}
         </div>
         <button
@@ -2106,7 +2106,7 @@ watch(
           class="min-w-[220px] flex-[1_1_240px] bg-transparent text-2xl font-bold focus:outline-none"
           :placeholder="t('articles.titlePlaceholder')"
         />
-        <div v-else class="min-w-[220px] flex-[1_1_240px] text-stone-400">{{ t('articles.noArticleSelected') }}</div>
+        <div v-else class="min-w-[220px] flex-[1_1_240px] text-stone-600">{{ t('articles.noArticleSelected') }}</div>
         <div class="flex min-w-0 flex-[1_1_520px] flex-wrap items-center justify-end gap-2">
           <button
             v-if="store.selectedEntry"
@@ -2135,7 +2135,7 @@ watch(
               {{ exportingFormat === format ? '...' : format }}
             </button>
           </div>
-          <span class="text-xs text-stone-400">{{ store.saving ? t('common.saving') : t('common.saved') }}</span>
+          <span class="text-xs text-stone-600">{{ store.saving ? t('common.saving') : t('common.saved') }}</span>
           <div v-if="store.selectedEntry" class="flex items-center gap-1 rounded-xl bg-stone-100 p-1">
             <button
               @click="openAiChatForArticle"
@@ -2268,7 +2268,7 @@ watch(
             :placeholder="t('articles.startWriting')"
           />
         </div>
-        <div v-else class="text-center text-stone-400 mt-20">
+        <div v-else class="text-center text-stone-600 mt-20">
           {{ t('articles.selectOrCreate') }}
         </div>
       </div>
@@ -2302,9 +2302,9 @@ watch(
         >
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.22em] text-teal-700">{{ t('motifs.attachTitle') }}</p>
-            <p class="mt-1 text-xs text-stone-400">{{ t('motifs.attachSourceArticle') }}</p>
+            <p class="mt-1 text-xs text-stone-600">{{ t('motifs.attachSourceArticle') }}</p>
           </div>
-          <button @pointerdown.stop @click="closeMotifAttach" class="rounded-full px-2 py-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700">×</button>
+          <button @pointerdown.stop @click="closeMotifAttach" class="rounded-full px-2 py-1 text-stone-600 hover:bg-stone-100 hover:text-stone-800">×</button>
         </div>
         <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
           <blockquote class="max-h-28 overflow-y-auto rounded-2xl bg-amber-50/70 px-3 py-2 text-sm leading-6 text-stone-700">
@@ -2425,10 +2425,10 @@ watch(
               <div v-if="motifSourceError" class="mb-2 rounded-lg bg-red-50 p-2 text-xs text-red-700">
                 {{ motifSourceError }}
               </div>
-              <div v-if="motifSourceLoading" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-400">
+              <div v-if="motifSourceLoading" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-600">
                 {{ t('common.loading') }}
               </div>
-              <div v-else-if="!articleMotifAnchorGroups.length" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-400">
+              <div v-else-if="!articleMotifAnchorGroups.length" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-600">
                 {{ t('motifs.noArticleSourceAnchors') }}
               </div>
               <div v-else class="space-y-2">
@@ -2522,7 +2522,7 @@ watch(
                 </div>
               </div>
             </div>
-            <p v-else class="text-sm text-stone-400">{{ t('articles.noCollections') }}</p>
+            <p v-else class="text-sm text-stone-600">{{ t('articles.noCollections') }}</p>
             </div>
           </section>
 
@@ -2562,8 +2562,8 @@ watch(
                 </button>
               </div>
 
-              <div v-if="notesLoading" class="text-sm text-stone-400">{{ t('common.loading') }}</div>
-              <div v-else-if="!openWritingNotes.length" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-400">
+              <div v-if="notesLoading" class="text-sm text-stone-600">{{ t('common.loading') }}</div>
+              <div v-else-if="!openWritingNotes.length" class="rounded-xl bg-stone-50 p-3 text-sm text-stone-600">
                 {{ t('articles.noWritingNotes') }}
               </div>
               <div v-else class="space-y-2">
@@ -2637,7 +2637,7 @@ watch(
           </section>
 
         </template>
-        <div v-else class="text-sm text-stone-400">{{ t('articles.noArticleSelected') }}</div>
+        <div v-else class="text-sm text-stone-600">{{ t('articles.noArticleSelected') }}</div>
       </div>
     </aside>
 
@@ -2657,7 +2657,7 @@ watch(
           <p class="mt-1 text-sm text-stone-500">{{ t('articles.collectionPickerHint') }}</p>
         </div>
         <div class="flex-1 overflow-y-auto p-4">
-          <div v-if="!allCollections.length" class="p-8 text-center text-stone-400">
+          <div v-if="!allCollections.length" class="p-8 text-center text-stone-600">
             {{ t('articles.noCollectionsToPick') }}
           </div>
           <button
