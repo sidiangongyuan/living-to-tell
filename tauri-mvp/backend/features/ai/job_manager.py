@@ -24,6 +24,7 @@ AI_JOB_STAGES = {
     "sending_request": "发送请求",
     "waiting_model": "已发送请求，等待模型返回",
     "parsing_response": "正在解析结构化结果",
+    "building_candidates": "正在整理候选",
     "succeeded": "已完成",
     "failed": "失败",
     "cancelled": "已中断",
@@ -32,6 +33,11 @@ AI_JOB_KIND_STAGE_LABELS = {
     "motif_enrichment": {
         "preparing_context": "整理当前意象资料",
         "parsing_response": "正在解析结构化草稿",
+    },
+    "motif_relation_discovery": {
+        "preparing_context": "整理当前意象与已有目录",
+        "parsing_response": "正在解析关系候选",
+        "building_candidates": "正在核对已有意象与新概念",
     },
     "ai_card_draft": {
         "preparing_context": "整理卡片材料",

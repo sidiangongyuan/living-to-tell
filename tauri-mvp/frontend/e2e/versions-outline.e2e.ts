@@ -315,6 +315,9 @@ test('collection outline creates a real outline item and article link', async ({
 
   await page.goto('/collections')
   await expect(page.getByRole('button', { name: '书稿' })).toBeVisible({ timeout: 20000 })
+  const tourInvitation = page.getByTestId('tour-invitation')
+  await expect(tourInvitation).toBeVisible()
+  await tourInvitation.getByRole('button', { name: '开始教程' }).click()
   await expect(page.getByTestId('guided-tour-overlay')).toBeVisible()
   await expect(page.getByText('作品集是一本文稿项目')).toBeVisible()
   await page.getByRole('button', { name: '跳过' }).click()

@@ -16,12 +16,18 @@ from writer.app.container import AppContainer
 from writer.domain.enums import AiCostTier
 from writer.domain.models.ai_config import AiConfig
 from writer.domain.models.motif import (
+    MOTIF_DIRECTED_RELATION_TYPES,
+    MOTIF_RELATION_A_TO_B,
+    MOTIF_RELATION_B_TO_A,
+    MOTIF_RELATION_TYPES,
+    MOTIF_RELATION_UNDIRECTED,
     MOTIF_SOURCE_ARTICLE,
     MOTIF_SOURCE_REFERENCE,
     MotifExcerpt,
     MotifGraphEdge,
     MotifGraphNode,
     MotifNode,
+    MotifRelation,
 )
 from writer.domain.models.reference_passage import (
     REFERENCE_KIND_EXCERPT,
@@ -39,6 +45,13 @@ DraftCostTier = Literal["balanced", "strong"]
 MAX_ENRICH_NOTE_CHARS = 6000
 MAX_ENRICH_EXCERPTS = 8
 MAX_ENRICH_EXCERPT_CHARS = 260
+MAX_RELATION_INDEX = 200
+MAX_EXISTING_RELATION_CANDIDATES = 8
+MAX_NEW_RELATION_CANDIDATES = 12
+
+RelationType = Literal["echo", "contrast", "transformation", "contains", "associated"]
+RelationDirection = Literal["undirected", "from_current", "to_current"]
+RelationCandidateKind = Literal["existing", "new"]
 
 
 class MotifNodeOut(BaseModel):
@@ -163,6 +176,15 @@ class MotifReferenceCandidateOut(BaseModel):
     reason: str = ""
 
 
+class MotifRelationCandidateOut(BaseModel):
+    kind: RelationCandidateKind
+    target_motif_id: Optional[str] = None
+    name: str
+    relation_type: RelationType = "associated"
+    direction: RelationDirection = "undirected"
+    reason: str = ""
+
+
 class MotifEnrichmentDraftOut(BaseModel):
     title: str
     concept: str
@@ -173,6 +195,8 @@ class MotifEnrichmentDraftOut(BaseModel):
     related_suggestions: list[str]
     source_hints: list[MotifSourceHintOut]
     reference_candidates: list[MotifReferenceCandidateOut] = Field(default_factory=list)
+    existing_relation_candidates: list[MotifRelationCandidateOut] = Field(default_factory=list)
+    new_concept_candidates: list[MotifRelationCandidateOut] = Field(default_factory=list)
     provider: Optional[str] = None
     model: Optional[str] = None
     transport: Optional[str] = None
@@ -211,6 +235,8 @@ class MotifGraphNodeOut(BaseModel):
     excerpt_count: int
     pinned: bool
     is_center: bool
+    relation_count: int = 0
+    needs_enrichment: bool = False
 
 
 class MotifGraphEdgeOut(BaseModel):
@@ -219,6 +245,72 @@ class MotifGraphEdgeOut(BaseModel):
     weight: int
     shared_excerpts: int
     shared_sources: int
+    relation_id: Optional[str] = None
+    relation_type: Optional[RelationType] = None
+    relation_direction: Optional[Literal["undirected", "a_to_b", "b_to_a"]] = None
+    relation_reason: str = ""
+
+
+class MotifRelationOut(BaseModel):
+    id: str
+    motif_id: str
+    motif_name: str
+    target_motif_id: str
+    target_motif_name: str
+    relation_type: RelationType
+    direction: RelationDirection
+    reason: str
+    created_at: Optional[str]
+    updated_at: Optional[str]
+
+
+class MotifRelationCreate(BaseModel):
+    target_motif_id: str
+    relation_type: RelationType = "associated"
+    direction: RelationDirection = "undirected"
+    reason: str = ""
+
+
+class MotifRelationUpdate(BaseModel):
+    relation_type: RelationType = "associated"
+    direction: RelationDirection = "undirected"
+    reason: str = ""
+
+
+class MotifRelationCandidateIn(BaseModel):
+    kind: RelationCandidateKind
+    target_motif_id: Optional[str] = None
+    name: str = ""
+    relation_type: RelationType = "associated"
+    direction: RelationDirection = "undirected"
+    reason: str = ""
+
+
+class MotifRelationCandidateApplyRequest(BaseModel):
+    candidates: list[MotifRelationCandidateIn] = Field(default_factory=list)
+
+
+class MotifRelationCandidateApplyOut(BaseModel):
+    relations: list[MotifRelationOut]
+    created_nodes: list[MotifNodeOut]
+    skipped: list[str] = Field(default_factory=list)
+
+
+class MotifRelationDiscoveryRequest(BaseModel):
+    motif_id: str
+    profile_id: str = "default"
+    cost_tier: DraftCostTier = "strong"
+
+
+class MotifRelationDiscoveryDraftOut(BaseModel):
+    motif_id: str
+    concept: str
+    existing_relation_candidates: list[MotifRelationCandidateOut] = Field(default_factory=list)
+    new_concept_candidates: list[MotifRelationCandidateOut] = Field(default_factory=list)
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    transport: Optional[str] = None
+    elapsed_ms: int = 0
 
 
 class MotifGraphOut(BaseModel):
@@ -278,6 +370,8 @@ def _graph_to_dto(
                 excerpt_count=node.excerpt_count,
                 pinned=node.pinned,
                 is_center=node.is_center,
+                relation_count=node.relation_count,
+                needs_enrichment=node.needs_enrichment,
             )
             for node in nodes
         ],
@@ -288,9 +382,51 @@ def _graph_to_dto(
                 weight=edge.weight,
                 shared_excerpts=edge.shared_excerpts,
                 shared_sources=edge.shared_sources,
+                relation_id=edge.relation_id,
+                relation_type=edge.relation_type,
+                relation_direction=edge.relation_direction,
+                relation_reason=edge.relation_reason,
             )
             for edge in edges
         ],
+    )
+
+
+def _relation_to_dto(relation: MotifRelation, current_id: str) -> MotifRelationOut:
+    current_is_a = relation.motif_a_id == current_id
+    if not current_is_a and relation.motif_b_id != current_id:
+        raise ValueError("关系不属于当前意象")
+    if current_is_a:
+        motif_name = relation.motif_a_name
+        target_id = relation.motif_b_id
+        target_name = relation.motif_b_name
+        if relation.direction == MOTIF_RELATION_A_TO_B:
+            direction = "from_current"
+        elif relation.direction == MOTIF_RELATION_B_TO_A:
+            direction = "to_current"
+        else:
+            direction = "undirected"
+    else:
+        motif_name = relation.motif_b_name
+        target_id = relation.motif_a_id
+        target_name = relation.motif_a_name
+        if relation.direction == MOTIF_RELATION_B_TO_A:
+            direction = "from_current"
+        elif relation.direction == MOTIF_RELATION_A_TO_B:
+            direction = "to_current"
+        else:
+            direction = "undirected"
+    return MotifRelationOut(
+        id=relation.id,
+        motif_id=current_id,
+        motif_name=motif_name,
+        target_motif_id=target_id,
+        target_motif_name=target_name,
+        relation_type=relation.relation_type,
+        direction=direction,
+        reason=relation.reason,
+        created_at=relation.created_at,
+        updated_at=relation.updated_at,
     )
 
 
@@ -739,6 +875,170 @@ def _reference_candidates_from(values: Any) -> list[MotifReferenceCandidateOut]:
     return candidates
 
 
+_RELATION_TYPE_ALIASES = {
+    "echo": "echo",
+    "呼应": "echo",
+    "contrast": "contrast",
+    "对照": "contrast",
+    "transformation": "transformation",
+    "transform": "transformation",
+    "转化": "transformation",
+    "contains": "contains",
+    "contain": "contains",
+    "包含": "contains",
+    "associated": "associated",
+    "related": "associated",
+    "一般关联": "associated",
+    "关联": "associated",
+}
+
+_RELATION_DIRECTION_ALIASES = {
+    "undirected": "undirected",
+    "none": "undirected",
+    "无方向": "undirected",
+    "from_current": "from_current",
+    "current_to_target": "from_current",
+    "当前到目标": "from_current",
+    "to_current": "to_current",
+    "target_to_current": "to_current",
+    "目标到当前": "to_current",
+}
+
+
+def _relation_candidates_from(
+    values: Any,
+    *,
+    expected_kind: RelationCandidateKind,
+    index_nodes: list[MotifNode],
+    current_motif_id: Optional[str],
+    limit: int,
+) -> list[MotifRelationCandidateOut]:
+    if not isinstance(values, list):
+        return []
+    by_id = {node.id: node for node in index_nodes}
+    by_name: dict[str, MotifNode] = {}
+    for node in index_nodes:
+        by_name[node.name.strip().casefold()] = node
+        for alias in node.aliases:
+            by_name.setdefault(alias.strip().casefold(), node)
+    result: list[MotifRelationCandidateOut] = []
+    seen: set[str] = set()
+    for raw in values:
+        if isinstance(raw, str) and expected_kind == "new":
+            raw = {"name": raw, "relation_type": "associated", "direction": "undirected"}
+        if not isinstance(raw, dict):
+            continue
+        target_id = str(raw.get("target_motif_id") or raw.get("motif_id") or "").strip()
+        name = str(raw.get("name") or raw.get("concept") or "").strip()
+        target = by_id.get(target_id) if target_id else by_name.get(name.casefold())
+        kind: RelationCandidateKind = expected_kind
+        if target is not None:
+            kind = "existing"
+            target_id = target.id
+            name = target.name
+        elif expected_kind == "existing":
+            continue
+        else:
+            target_id = ""
+        if not name or (target_id and target_id == current_motif_id):
+            continue
+        key = target_id or name.casefold()
+        if key in seen:
+            continue
+        relation_type = _RELATION_TYPE_ALIASES.get(
+            str(raw.get("relation_type") or raw.get("type") or "associated").strip().casefold(),
+            "associated",
+        )
+        direction = _RELATION_DIRECTION_ALIASES.get(
+            str(raw.get("direction") or "undirected").strip().casefold(),
+            "undirected",
+        )
+        if relation_type not in MOTIF_DIRECTED_RELATION_TYPES:
+            direction = "undirected"
+        elif direction == "undirected":
+            direction = "from_current"
+        reason = str(raw.get("reason") or "").strip()[:600]
+        result.append(
+            MotifRelationCandidateOut(
+                kind=kind,
+                target_motif_id=target_id or None,
+                name=name[:80],
+                relation_type=relation_type,
+                direction=direction,
+                reason=reason,
+            )
+        )
+        seen.add(key)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _relation_candidate_groups(
+    existing_values: Any,
+    new_values: Any,
+    *,
+    index_nodes: list[MotifNode],
+    current_motif_id: Optional[str],
+) -> tuple[list[MotifRelationCandidateOut], list[MotifRelationCandidateOut]]:
+    existing = _relation_candidates_from(
+        existing_values,
+        expected_kind="existing",
+        index_nodes=index_nodes,
+        current_motif_id=current_motif_id,
+        limit=MAX_EXISTING_RELATION_CANDIDATES,
+    )
+    parsed_new = _relation_candidates_from(
+        new_values,
+        expected_kind="new",
+        index_nodes=index_nodes,
+        current_motif_id=current_motif_id,
+        limit=MAX_NEW_RELATION_CANDIDATES,
+    )
+    seen = {
+        candidate.target_motif_id or candidate.name.strip().casefold()
+        for candidate in existing
+    }
+    new_concepts: list[MotifRelationCandidateOut] = []
+    for candidate in parsed_new:
+        key = candidate.target_motif_id or candidate.name.strip().casefold()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if candidate.kind == "existing":
+            if len(existing) < MAX_EXISTING_RELATION_CANDIDATES:
+                existing.append(candidate)
+            continue
+        new_concepts.append(candidate)
+        if len(new_concepts) >= MAX_NEW_RELATION_CANDIDATES:
+            break
+    return existing, new_concepts
+
+
+def _motif_relation_index(container: AppContainer, current_id: Optional[str]) -> list[MotifNode]:
+    return [
+        node
+        for node in container.motif_repository.list_nodes(limit=MAX_RELATION_INDEX + 1)
+        if node.id != current_id
+    ][:MAX_RELATION_INDEX]
+
+
+def _format_relation_index(nodes: list[MotifNode]) -> str:
+    if not nodes:
+        return "当前意象库没有其他意象。"
+    lines: list[str] = []
+    for node in nodes:
+        definition = ""
+        if isinstance(node.profile, dict):
+            definition = str(node.profile.get("definition") or "").strip()
+        aliases = "、".join(node.aliases[:5]) or "无"
+        tags = "、".join(node.tags[:6]) or "无"
+        lines.append(
+            f"- id={node.id} | 名称={node.name} | 别名={aliases} | 标签={tags} | 定义={definition[:160] or '无'}"
+        )
+    return "\n".join(lines)
+
+
 def _ensure_source_section(note: str, hints: list[MotifSourceHintOut], *, request_web_context: bool) -> str:
     heading = "【来源线索（需核对）】"
     if heading in note:
@@ -764,6 +1064,8 @@ def _coerce_enrichment_draft(
     model: Optional[str],
     transport: Optional[str],
     elapsed_ms: int,
+    index_nodes: Optional[list[MotifNode]] = None,
+    current_motif_id: Optional[str] = None,
 ) -> MotifEnrichmentDraftOut:
     title = str(payload.get("title") or concept).strip()
     note = str(payload.get("note") or "").strip()
@@ -785,6 +1087,19 @@ def _coerce_enrichment_draft(
         hints = _source_hints_from(profile.get("source_hints"), request_web_context=request_web_context)
     profile["source_hints"] = _source_hints_to_dicts(hints)
     note = _ensure_source_section(note[:MAX_ENRICH_NOTE_CHARS], hints, request_web_context=request_web_context)
+    relation_index = index_nodes or []
+    existing_relation_candidates, new_concept_candidates = _relation_candidate_groups(
+        payload.get("existing_relation_candidates"),
+        payload.get("new_concept_candidates") or payload.get("related_suggestions"),
+        index_nodes=relation_index,
+        current_motif_id=current_motif_id,
+    )
+    suggestion_names = _unique_clean(payload.get("related_suggestions"), limit=12)
+    if not suggestion_names:
+        suggestion_names = [
+            candidate.name
+            for candidate in [*existing_relation_candidates, *new_concept_candidates]
+        ][:12]
     return MotifEnrichmentDraftOut(
         title=title[:80],
         concept=concept[:80],
@@ -792,9 +1107,11 @@ def _coerce_enrichment_draft(
         tags=_unique_clean(payload.get("tags"), limit=10),
         note=note,
         profile=MotifProfileOut(**profile),
-        related_suggestions=_unique_clean(payload.get("related_suggestions"), limit=12),
+        related_suggestions=suggestion_names,
         source_hints=hints,
         reference_candidates=_reference_candidates_from(payload.get("reference_candidates")),
+        existing_relation_candidates=existing_relation_candidates,
+        new_concept_candidates=new_concept_candidates,
         provider=provider,
         model=model,
         transport=transport,
@@ -857,6 +1174,16 @@ def _enrichment_system_prompt() -> str:
         "\"reference_candidates\": [{"
         "\"text\": string, \"source_author\": string, \"source_title\": string, "
         "\"source_note\": string, \"reason\": string"
+        "}], "
+        "\"existing_relation_candidates\": [{"
+        "\"target_motif_id\": string, \"name\": string, "
+        "\"relation_type\": \"echo\"|\"contrast\"|\"transformation\"|\"contains\"|\"associated\", "
+        "\"direction\": \"undirected\"|\"from_current\"|\"to_current\", \"reason\": string"
+        "}], "
+        "\"new_concept_candidates\": [{"
+        "\"name\": string, "
+        "\"relation_type\": \"echo\"|\"contrast\"|\"transformation\"|\"contains\"|\"associated\", "
+        "\"direction\": \"undirected\"|\"from_current\"|\"to_current\", \"reason\": string"
         "}]"
         "}。"
     )
@@ -884,6 +1211,7 @@ def _enrichment_user_prompt(
     request_web_context: bool,
     node: Optional[MotifNode],
     excerpts: list[MotifExcerpt],
+    relation_index: list[MotifNode],
 ) -> str:
     web_policy = (
         "本次用户请求“联网补充”。如果当前模型/供应商具备联网或检索能力，请使用它核对概念线索，"
@@ -914,6 +1242,9 @@ def _enrichment_user_prompt(
 相关摘录：
 {_format_enrichment_excerpts(excerpts)}
 
+已有意象轻量目录：
+{_format_relation_index(relation_index)}
+
 生成要求：
 - note 必须控制在约 800-1200 中文字，不要写成百科长文。
 - profile 必须是可直接阅读的结构化档案；definition 和 core_tension 必须短而准确。
@@ -931,9 +1262,14 @@ def _enrichment_user_prompt(
 【微练习】
 【来源线索（需核对）】
 - 【短例子】写 3-5 句，展示概念如何变成一个场景、人物瞬间或叙事动作。
-- 【关联建议】列出可联想的概念/意象，但不要假设软件会自动建节点或连边。
+- 【关联建议】概括值得作者考虑的已有意象关系和新概念；所有候选都必须等待作者确认。
 - aliases 给出少量别名、译名、近义称呼；tags 给出少量分类标签。
 - related_suggestions 只给概念名，不写解释。
+- existing_relation_candidates 只允许使用“已有意象轻量目录”中真实存在的 id，最多 8 条。
+- new_concept_candidates 给目录中不存在、但确实值得建立的概念，最多 12 条。
+- 每条关系只使用 echo、contrast、transformation、contains、associated；转化和包含必须写清方向。
+- 不要把词面相近当作关系；reason 用一两句话说明叙事、结构或概念上的依据。
+- 软件不会自动建立任何关系或节点，作者未确认的候选不是事实。
 - reference_candidates 给 0-8 条外部相关句子候选；如果请求联网补充，可以给 4-10 条。
 - reference_candidates 可以来自原作者，也可以来自评论者、研究者、译者、后世文学/影视作品或明确文章中对该意象/概念的引用、转写、互文使用。
 - reference_candidates 不是你自己仿写的例句，而是你认为可追溯到具体作者和作品/文章的候选原句或短段；没有明确作者和书名/篇名时，宁可少给。
@@ -1000,6 +1336,7 @@ def generate_motif_enrichment_draft_core(
             node.id,
             limit=MAX_ENRICH_EXCERPTS,
         )
+    relation_index = _motif_relation_index(container, node.id if node else None)
 
     messages = [
         {"role": "system", "content": _enrichment_system_prompt()},
@@ -1011,6 +1348,7 @@ def generate_motif_enrichment_draft_core(
                 request_web_context=request.request_web_context,
                 node=node,
                 excerpts=excerpts,
+                relation_index=relation_index,
             ),
         },
     ]
@@ -1044,6 +1382,129 @@ def generate_motif_enrichment_draft_core(
         parsed,
         concept=concept,
         request_web_context=request.request_web_context,
+        provider=getattr(response, "provider", None) or config.provider_key(),
+        model=getattr(response, "model", None) or config.model,
+        transport=getattr(response, "transport", None),
+        elapsed_ms=elapsed_ms,
+        index_nodes=relation_index,
+        current_motif_id=node.id if node else None,
+    )
+
+
+def _relation_discovery_messages(
+    node: MotifNode,
+    relation_index: list[MotifNode],
+    existing_relations: list[MotifRelation],
+) -> list[dict[str, str]]:
+    profile = json.dumps(node.profile or {}, ensure_ascii=False)[:3000]
+    aliases = "、".join(node.aliases[:8]) or "无"
+    tags = "、".join(node.tags[:8]) or "无"
+    existing = "\n".join(
+        f"- {relation.motif_b_name if relation.motif_a_id == node.id else relation.motif_a_name}: {relation.relation_type}"
+        for relation in existing_relations[:40]
+    ) or "无"
+    system = (
+        "你是写作工具中的意象关系编辑助手。你的任务是发现值得作者审阅的概念关系，不是自动建图。"
+        "只依据给定的当前意象档案和已有意象轻量目录工作，不要假装读取了整本书。"
+        "不要把词面相似当作关系，不要生成置信度，不要编造用户资料。"
+        "只输出 JSON 对象，不要 Markdown。"
+    )
+    user = f"""请为当前意象发现关系候选。
+
+当前意象：
+- id={node.id}
+- 名称={node.name}
+- 别名={aliases}
+- 标签={tags}
+- 笔记={(node.note or '').strip()[:1600] or '无'}
+- 结构化档案={profile}
+
+已经确认的关系：
+{existing}
+
+已有意象轻量目录：
+{_format_relation_index(relation_index)}
+
+输出 schema：
+{{
+  "existing_relation_candidates": [{{
+    "target_motif_id": "目录中的真实 id",
+    "name": "目录中的名称",
+    "relation_type": "echo|contrast|transformation|contains|associated",
+    "direction": "undirected|from_current|to_current",
+    "reason": "一两句话"
+  }}],
+  "new_concept_candidates": [{{
+    "name": "目录中不存在的概念",
+    "relation_type": "echo|contrast|transformation|contains|associated",
+    "direction": "undirected|from_current|to_current",
+    "reason": "一两句话"
+  }}]
+}}
+
+规则：
+- 已有意象最多 {MAX_EXISTING_RELATION_CANDIDATES} 条，新概念最多 {MAX_NEW_RELATION_CANDIDATES} 条，宁缺毋滥。
+- echo、contrast、associated 必须 undirected。
+- transformation 表示当前意象与目标之间的转化方向；contains 表示包含方向。
+- 不重复已经确认的关系，除非现有关系明显值得改型；所有输出都只是候选，等待作者确认。
+"""
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+def generate_motif_relation_discovery_core(
+    request: MotifRelationDiscoveryRequest,
+    container: AppContainer,
+    *,
+    update_stage: Optional[Callable[[str], None]] = None,
+) -> MotifRelationDiscoveryDraftOut:
+    def stage(value: str) -> None:
+        if update_stage is not None:
+            update_stage(value)
+
+    stage("preparing_context")
+    node = container.motif_repository.get_node(request.motif_id)
+    if node is None:
+        raise HTTPException(404, "这个意象已经不存在，已刷新列表。")
+    relation_index = _motif_relation_index(container, node.id)
+    existing_relations = container.motif_repository.list_relations(node.id)
+    ai_request = MotifEnrichmentRequest(
+        motif_id=node.id,
+        concept=node.name,
+        include_excerpts=False,
+        request_web_context=False,
+        profile_id=request.profile_id,
+        cost_tier=request.cost_tier,
+    )
+    started = time.perf_counter()
+    stage("sending_request")
+    try:
+        stage("waiting_model")
+        response, config = _generate_with_profile(
+            _relation_discovery_messages(node, relation_index, existing_relations),
+            request=ai_request,
+            container=container,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(500, f"AI 发现关联失败：{_friendly_ai_error(exc)}") from exc
+    stage("parsing_response")
+    parsed = _parse_json_object(response.content)
+    if parsed is None:
+        raise HTTPException(502, "AI 没有返回可整理的关系候选，请换用更强模型后重试。")
+    stage("building_candidates")
+    existing_candidates, new_candidates = _relation_candidate_groups(
+        parsed.get("existing_relation_candidates"),
+        parsed.get("new_concept_candidates"),
+        index_nodes=relation_index,
+        current_motif_id=node.id,
+    )
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    return MotifRelationDiscoveryDraftOut(
+        motif_id=node.id,
+        concept=node.name,
+        existing_relation_candidates=existing_candidates,
+        new_concept_candidates=new_candidates,
         provider=getattr(response, "provider", None) or config.provider_key(),
         model=getattr(response, "model", None) or config.model,
         transport=getattr(response, "transport", None),
@@ -1275,6 +1736,93 @@ def apply_motif_reference_candidates(
             )
         )
     return MotifReferenceCandidateApplyOut(imported=imported, skipped=skipped)
+
+
+@router.get("/{motif_id}/relations", response_model=list[MotifRelationOut])
+def list_motif_relations(
+    motif_id: str,
+    container: AppContainer = Depends(get_container),
+) -> list[MotifRelationOut]:
+    if container.motif_repository.get_node(motif_id) is None:
+        raise HTTPException(404, "这个意象已经不存在，已刷新列表。")
+    return [
+        _relation_to_dto(relation, motif_id)
+        for relation in container.motif_repository.list_relations(motif_id)
+    ]
+
+
+@router.post("/{motif_id}/relations", response_model=MotifRelationOut)
+def create_motif_relation(
+    motif_id: str,
+    data: MotifRelationCreate,
+    container: AppContainer = Depends(get_container),
+) -> MotifRelationOut:
+    try:
+        relation = container.motif_repository.upsert_relation(
+            motif_id,
+            target_node_id=data.target_motif_id,
+            relation_type=data.relation_type,
+            direction_from_current=data.direction,
+            reason=data.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return _relation_to_dto(relation, motif_id)
+
+
+@router.put("/{motif_id}/relations/{relation_id}", response_model=MotifRelationOut)
+def update_motif_relation(
+    motif_id: str,
+    relation_id: str,
+    data: MotifRelationUpdate,
+    container: AppContainer = Depends(get_container),
+) -> MotifRelationOut:
+    try:
+        relation = container.motif_repository.update_relation(
+            motif_id,
+            relation_id,
+            relation_type=data.relation_type,
+            direction_from_current=data.direction,
+            reason=data.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if relation is None:
+        raise HTTPException(404, "这个意象关系已经不存在。")
+    return _relation_to_dto(relation, motif_id)
+
+
+@router.delete("/{motif_id}/relations/{relation_id}", status_code=204)
+def delete_motif_relation(
+    motif_id: str,
+    relation_id: str,
+    container: AppContainer = Depends(get_container),
+):
+    if not container.motif_repository.delete_relation(motif_id, relation_id):
+        raise HTTPException(404, "这个意象关系已经不存在。")
+
+
+@router.post(
+    "/{motif_id}/relations/apply-candidates",
+    response_model=MotifRelationCandidateApplyOut,
+)
+def apply_motif_relation_candidates(
+    motif_id: str,
+    data: MotifRelationCandidateApplyRequest,
+    container: AppContainer = Depends(get_container),
+) -> MotifRelationCandidateApplyOut:
+    try:
+        relations, created_nodes, skipped = container.motif_repository.apply_relation_candidates(
+            motif_id,
+            [candidate.model_dump() for candidate in data.candidates],
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return MotifRelationCandidateApplyOut(
+        relations=[_relation_to_dto(relation, motif_id) for relation in relations],
+        created_nodes=[_node_to_dto(node) for node in created_nodes],
+        skipped=skipped,
+    )
 
 
 @router.delete("/excerpts/{excerpt_id}/motifs/{motif_id}", status_code=204)

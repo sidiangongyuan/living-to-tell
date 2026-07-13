@@ -527,6 +527,30 @@ CREATE INDEX IF NOT EXISTS idx_motif_excerpt_links_motif
 CREATE INDEX IF NOT EXISTS idx_motif_excerpt_links_excerpt
     ON motif_excerpt_links (excerpt_id);
 
+-- Author-confirmed semantic relationships. AI suggestions never enter this
+-- table until the author explicitly applies them.
+CREATE TABLE IF NOT EXISTS motif_relations (
+    id            TEXT PRIMARY KEY,
+    motif_a_id    TEXT NOT NULL REFERENCES motif_nodes(id) ON DELETE CASCADE,
+    motif_b_id    TEXT NOT NULL REFERENCES motif_nodes(id) ON DELETE CASCADE,
+    relation_type TEXT NOT NULL CHECK (
+        relation_type IN ('echo', 'contrast', 'transformation', 'contains', 'associated')
+    ),
+    direction     TEXT NOT NULL DEFAULT 'undirected' CHECK (
+        direction IN ('undirected', 'a_to_b', 'b_to_a')
+    ),
+    reason        TEXT NOT NULL DEFAULT '',
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    CHECK (motif_a_id < motif_b_id),
+    UNIQUE(motif_a_id, motif_b_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_motif_relations_a
+    ON motif_relations (motif_a_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_motif_relations_b
+    ON motif_relations (motif_b_id, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS work_fragment_refs (
     id            TEXT PRIMARY KEY,
     work_id       TEXT NOT NULL REFERENCES works(id) ON DELETE CASCADE,

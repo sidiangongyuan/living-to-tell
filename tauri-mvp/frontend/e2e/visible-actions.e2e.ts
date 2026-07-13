@@ -296,9 +296,21 @@ async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
   })
 
   await page.addInitScript((initialLanguage) => {
+    const preserveTours = window.sessionStorage.getItem('__e2e_preserve_tour_state') === 'true'
+    const preservedTours = preserveTours
+      ? window.localStorage.getItem('living_to_tell_guided_tours_v2')
+      : null
     window.localStorage.clear()
     window.localStorage.setItem('language', initialLanguage)
-    window.localStorage.setItem('living_to_tell_collections_tour_dismissed', 'true')
+    window.localStorage.setItem(
+      'living_to_tell_guided_tours_v2',
+      preservedTours || JSON.stringify({
+        collections: 'dismissed',
+        'ai-edit': 'dismissed',
+        agent: 'dismissed',
+        motifs: 'dismissed',
+      }),
+    )
     ;(window as Window & {
       __WRITER_API_BASE__?: string
       __WRITER_DISABLE_AUTO_UPDATE__?: boolean
@@ -725,13 +737,17 @@ async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
     if (url.pathname === '/api/motifs/graph' || url.pathname === `/api/motifs/${visualMotif.id}/graph`) {
       await route.fulfill({
         json: {
-          nodes: [{ id: visualMotif.id, name: visualMotif.name, excerpt_count: 0, pinned: false, is_center: true }],
+          nodes: [{ id: visualMotif.id, name: visualMotif.name, excerpt_count: 0, pinned: false, is_center: true, relation_count: 0, needs_enrichment: true }],
           edges: [],
         },
       })
       return
     }
     if (url.pathname === `/api/motifs/${visualMotif.id}/excerpts`) {
+      await route.fulfill({ json: [] })
+      return
+    }
+    if (url.pathname === `/api/motifs/${visualMotif.id}/relations`) {
       await route.fulfill({ json: [] })
       return
     }
@@ -771,7 +787,8 @@ async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
       })
       return
     }
-    await route.fulfill({ json: cards })
+    const cardType = url.searchParams.get('card_type')
+    await route.fulfill({ json: cards.filter((card) => !cardType || card.card_type === cardType) })
   })
   await page.route('**/api/ai/task-presets', async (route) => route.fulfill({ json: {} }))
   await page.route('**/api/settings/ai/profiles', async (route) => {
@@ -2677,6 +2694,51 @@ test('library autosave failures show a visible unsaved-state error', async ({ pa
   await expect(page.getByText('保存失败：磁盘不可写')).toBeVisible()
 })
 
+test('library highlights search matches, preserves no-result queries, and supports reading keyboard navigation', async ({ page }) => {
+  const secondReference = {
+    ...imageryReference,
+    source_title: existingReference.source_title,
+    source_author: '另一作者',
+    content: '第二条同书标本正文',
+  }
+  const items = [existingReference, secondReference]
+  await page.route('**/api/library/stats', async (route) => {
+    await route.fulfill({ json: { total: 2, by_usage_kind: { style: 1, imagery: 1 } } })
+  })
+  await page.route('**/api/library/references?**', async (route) => {
+    await route.fulfill({ json: items })
+  })
+  await page.route('**/api/library/references/search?**', async (route) => {
+    const query = (new URL(route.request().url()).searchParams.get('q') || '').toLocaleLowerCase()
+    await route.fulfill({
+      json: items.filter((item) => [item.source_title, item.source_author, item.content, ...item.tags]
+        .join('\n').toLocaleLowerCase().includes(query)),
+    })
+  })
+
+  await page.goto('/library')
+  const content = page.getByTestId('library-reference-content')
+  await expect(content).toHaveValue('已有标本正文')
+  await page.keyboard.press('ArrowDown')
+  await expect(content).toHaveValue('第二条同书标本正文')
+  await page.keyboard.press('ArrowUp')
+  await expect(content).toHaveValue('已有标本正文')
+
+  await page.getByTestId('library-edit-reference').click()
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('library-edit-reference')).toHaveText('编辑')
+
+  const search = page.getByPlaceholder('搜索标本...')
+  await search.fill('测试作者')
+  await expect(page.locator('mark').filter({ hasText: '测试作者' })).toBeVisible()
+  await search.fill('没有这个标本')
+  await expect(page.getByText('没有匹配的标本。')).toBeVisible()
+  await expect(search).toHaveValue('没有这个标本')
+  await page.getByRole('button', { name: '清除' }).first().click()
+  await expect(search).toHaveValue('')
+  await expect(content).toBeVisible()
+})
+
 test('article AI reference picker stages selections and sends only confirmed style specimens', async ({ page }) => {
   test.setTimeout(90_000)
   const runRequests: Array<Record<string, any>> = []
@@ -2776,6 +2838,82 @@ test('article AI reference picker stages selections and sends only confirmed sty
   await expect(recoveredReferences.getByText('《另一本书》 · 另一作者')).toBeVisible()
 })
 
+test('article AI card and note pickers confirm drafts, filter clearly, and freeze only selected context', async ({ page }) => {
+  const noteOpen = {
+    id: 'note-open-picker', entry_id: 'article-a', body: '置顶任务\n保留门口的停顿。', status: 'open', pinned: true,
+    sort_order: 2, created_at: null, updated_at: null, completed_at: null,
+  }
+  const noteDone = {
+    id: 'note-done-picker', entry_id: 'article-a', body: '已完成提醒\n删去重复解释。', status: 'done', pinned: false,
+    sort_order: 1, created_at: null, updated_at: null, completed_at: '2026-01-01T00:00:00Z',
+  }
+  await page.route(/\/api\/articles\/[^/]+\/notes(?:\?.*)?$/, async (route) => {
+    await route.fulfill({ json: [noteDone, noteOpen] })
+  })
+  const runRequests: Array<Record<string, any>> = []
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/ai/task-runs') {
+      runRequests.push(request.postDataJSON() as Record<string, any>)
+    }
+  })
+
+  await page.goto('/ai?scope_kind=article&scope_id=article-a')
+  const cardSection = page.getByTestId('article-ai-card-section')
+  const noteSection = page.getByTestId('article-ai-note-section')
+
+  await cardSection.getByRole('button', { name: '选择 AI Cards' }).click()
+  let cardDialog = page.getByRole('dialog', { name: '选择 AI Cards' })
+  await expect(cardDialog).toBeVisible()
+  await cardDialog.getByRole('button', { name: '克制风格', exact: true }).click()
+  await cardDialog.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(cardSection.getByText('已选 0 条')).toBeVisible()
+
+  await cardSection.getByRole('button', { name: '选择 AI Cards' }).click()
+  cardDialog = page.getByRole('dialog', { name: '选择 AI Cards' })
+  await cardDialog.getByRole('button', { name: '场景', exact: true }).click()
+  await expect(cardDialog.getByRole('button', { name: '等待回应', exact: true })).toBeVisible()
+  const waitingCard = cardDialog.locator('article').filter({ hasText: '等待回应' })
+  await waitingCard.getByRole('button', { name: '等待回应', exact: true }).click()
+  await waitingCard.getByRole('button', { name: '查看全文' }).click()
+  await expect(cardDialog.getByText('【场景原型】')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await cardDialog.getByRole('button', { name: '使用 1 条' }).click()
+  await expect(cardSection.getByText('等待回应')).toBeVisible()
+
+  await noteSection.getByRole('button', { name: '选择文章便签' }).click()
+  let noteDialog = page.getByRole('dialog', { name: '选择文章便签' })
+  await expect(noteDialog).toBeVisible()
+  await expect(noteDialog.getByRole('button', { name: '置顶任务', exact: true })).toBeVisible()
+  await noteDialog.getByRole('button', { name: '已完成', exact: true }).click()
+  await expect(noteDialog.getByRole('button', { name: '已完成提醒', exact: true })).toBeVisible()
+  await noteDialog.getByRole('button', { name: '已完成提醒', exact: true }).click()
+  await noteDialog.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(noteSection.getByText('已选 0 条')).toBeVisible()
+
+  await noteSection.getByRole('button', { name: '选择文章便签' }).click()
+  noteDialog = page.getByRole('dialog', { name: '选择文章便签' })
+  await noteDialog.getByRole('button', { name: '进行中', exact: true }).click()
+  await noteDialog.getByRole('button', { name: '置顶任务', exact: true }).click()
+  await noteDialog.getByRole('button', { name: '使用 1 条' }).click()
+  await expect(noteSection.getByText('置顶任务')).toBeVisible()
+
+  await page.getByRole('button', { name: '运行 AI 修改' }).click()
+  await expect.poll(() => runRequests.length).toBe(1)
+  expect(runRequests[0].attachments.map((item: Record<string, string>) => item.kind)).toEqual(['ai_card', 'writing_note'])
+  expect(runRequests[0].attachments[0]).toEqual(expect.objectContaining({ ref_id: 'scene-a', name: '等待回应' }))
+  expect(runRequests[0].attachments[1]).toEqual(expect.objectContaining({ ref_id: 'note-open-picker', name: '置顶任务' }))
+
+  await expect(page.getByText('Gemini 增量结果')).toBeVisible({ timeout: 10000 })
+  const snapshots = page.getByTestId('article-ai-run-references')
+  await expect(snapshots.getByText('等待回应')).toBeVisible()
+  await expect(snapshots.getByText('置顶任务')).toBeVisible()
+
+  await page.getByRole('combobox', { name: '处理对象' }).selectOption('article-b')
+  await expect(cardSection.getByText('已选 1 条')).toBeVisible()
+  await expect(noteSection.getByText('已选 0 条')).toBeVisible()
+  await expect(noteSection.getByText('置顶任务')).toHaveCount(0)
+})
+
 test('article AI runs only selected profiles, reveals incremental results, previews apply, and clears explicitly', async ({ page }) => {
   const runRequests: Array<Record<string, unknown>> = []
   page.on('request', (request) => {
@@ -2851,8 +2989,84 @@ test('article chat drawer preserves its draft when closed and records the actual
   await expect(page.getByRole('dialog', { name: '预览并保存为文脉' })).toBeHidden()
 })
 
+test('unified tours invite lightly, persist status, force restart, and never send AI', async ({ page }) => {
+  test.setTimeout(90_000)
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem('__e2e_preserve_tour_state', 'true')
+    window.localStorage.removeItem('living_to_tell_collections_tour_dismissed')
+    const key = 'living_to_tell_guided_tours_v2'
+    const saved = window.sessionStorage.getItem('__e2e_tour_state')
+    window.localStorage.setItem(key, saved || JSON.stringify({
+        collections: 'unseen',
+        'ai-edit': 'unseen',
+        agent: 'unseen',
+        motifs: 'unseen',
+      }))
+    window.addEventListener('pagehide', () => {
+      window.sessionStorage.setItem('__e2e_tour_state', window.localStorage.getItem(key) || '{}')
+    })
+  })
+  let aiRequests = 0
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname
+    if (request.method() === 'POST' && (path.startsWith('/api/ai/jobs') || path === '/api/ai/task-runs')) aiRequests += 1
+  })
+
+  await page.goto('/ai?scope_kind=article&scope_id=article-a')
+  let invitation = page.getByTestId('tour-invitation')
+  await expect(invitation.getByText('了解 AI 修改工作流')).toBeVisible()
+  await invitation.getByRole('button', { name: '稍后' }).click()
+  await page.reload()
+  invitation = page.getByTestId('tour-invitation')
+  await expect(invitation.getByText('了解 AI 修改工作流')).toBeVisible()
+  await invitation.getByRole('button', { name: '不再提示' }).click()
+  await page.reload()
+  await expect(page.getByTestId('tour-invitation')).toBeHidden()
+
+  await page.goto('/motifs')
+  invitation = page.getByTestId('tour-invitation')
+  await expect(invitation.getByText('了解意象星图')).toBeVisible()
+  await invitation.getByRole('button', { name: '开始教程' }).click()
+  await expect(page.getByRole('heading', { name: '意象来自作者标记的文本' })).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  await page.goto('/collections?id=collection-a')
+  invitation = page.getByTestId('tour-invitation')
+  await expect(invitation).toBeVisible()
+  await invitation.getByRole('button', { name: '开始教程' }).click()
+  await expect(page.getByText(/步骤 1 \/ /)).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  await page.goto('/collections?id=collection-a&tab=agent')
+  invitation = page.getByTestId('tour-invitation')
+  await expect(invitation.getByText('了解作品集 Agent')).toBeVisible()
+  await invitation.getByRole('button', { name: '开始教程' }).click()
+  await expect(page.getByRole('heading', { name: '这是当前作品集的总编工作台' })).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  await page.goto('/settings?section=interface')
+  await expect(page.getByRole('heading', { name: '互动教程中心' })).toBeVisible()
+  const aiTutorialHeading = page.getByRole('heading', { name: 'AI 修改', exact: true })
+  const aiTutorialRow = aiTutorialHeading.locator('..').locator('..').locator('..')
+  await expect(aiTutorialRow.getByText('不再提示')).toBeVisible()
+  await aiTutorialRow.getByRole('button', { name: '启动教程' }).click()
+  await expect(page).toHaveURL(/\/ai(?:\?|$)/)
+  await expect(page.getByRole('heading', { name: '先明确处理哪段文字' })).toBeVisible()
+  await expect(page).not.toHaveURL(/tour=ai-edit/)
+  await page.keyboard.press('Escape')
+
+  expect(aiRequests).toBe(0)
+  const statuses = await page.evaluate(() => JSON.parse(window.localStorage.getItem('living_to_tell_guided_tours_v2') || '{}'))
+  expect(statuses).toEqual(expect.objectContaining({
+    collections: 'completed',
+    'ai-edit': 'completed',
+    agent: 'completed',
+    motifs: 'completed',
+  }))
+})
+
 test('primary settings, article, collection, AI, and backup surfaces have no serious accessibility violations', async ({ page }) => {
-  const routes = ['/settings', '/articles?id=article-a', '/collections?id=collection-a', '/ai?scope_kind=article&scope_id=article-a', '/backup']
+  const routes = ['/settings', '/articles?id=article-a', '/collections?id=collection-a', '/ai?scope_kind=article&scope_id=article-a', '/library', '/motifs', '/backup']
   for (const path of routes) {
     await page.goto(path)
     await page.waitForLoadState('domcontentloaded')
@@ -2866,6 +3080,22 @@ test('primary settings, article, collection, AI, and backup surfaces have no ser
   const pickerResults = await new AxeBuilder({ page }).include('[data-testid="article-ai-reference-picker"]').analyze()
   const pickerSerious = pickerResults.violations.filter((item) => item.impact === 'serious' || item.impact === 'critical')
   expect(pickerSerious, `reference picker: ${pickerSerious.map((item) => `${item.id} (${item.nodes.length})`).join(', ')}`).toEqual([])
+  await page.keyboard.press('Escape')
+
+  await page.getByTestId('article-ai-card-section').getByRole('button', { name: '选择 AI Cards' }).click()
+  const cardPickerResults = await new AxeBuilder({ page }).include('[data-testid="article-ai-card-picker"]').analyze()
+  expect(
+    cardPickerResults.violations.filter((item) => item.impact === 'serious' || item.impact === 'critical'),
+    'AI Card picker accessibility',
+  ).toEqual([])
+  await page.keyboard.press('Escape')
+
+  await page.getByTestId('article-ai-note-section').getByRole('button', { name: '选择文章便签' }).click()
+  const notePickerResults = await new AxeBuilder({ page }).include('[data-testid="article-ai-note-picker"]').analyze()
+  expect(
+    notePickerResults.violations.filter((item) => item.impact === 'serious' || item.impact === 'critical'),
+    'article note picker accessibility',
+  ).toEqual([])
 })
 
 test('all primary surfaces avoid horizontal overflow at release viewports in both languages', async ({ browser }) => {

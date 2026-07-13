@@ -7,6 +7,12 @@ import uuid
 from typing import Any, Iterable, Optional
 
 from writer.domain.models.motif import (
+    MOTIF_DIRECTED_RELATION_TYPES,
+    MOTIF_RELATION_A_TO_B,
+    MOTIF_RELATION_B_TO_A,
+    MOTIF_RELATION_DIRECTIONS,
+    MOTIF_RELATION_TYPES,
+    MOTIF_RELATION_UNDIRECTED,
     MOTIF_SOURCE_ARTICLE,
     MOTIF_SOURCE_KINDS,
     MOTIF_SOURCE_REFERENCE,
@@ -14,6 +20,7 @@ from writer.domain.models.motif import (
     MotifGraphEdge,
     MotifGraphNode,
     MotifNode,
+    MotifRelation,
 )
 
 
@@ -139,6 +146,58 @@ def _row_to_excerpt(
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
+
+
+def _row_to_relation(row: sqlite3.Row) -> MotifRelation:
+    return MotifRelation(
+        id=row["id"],
+        motif_a_id=row["motif_a_id"],
+        motif_a_name=row["motif_a_name"],
+        motif_b_id=row["motif_b_id"],
+        motif_b_name=row["motif_b_name"],
+        relation_type=row["relation_type"],
+        direction=row["direction"],
+        reason=row["reason"] or "",
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _node_needs_enrichment(node: MotifNode) -> bool:
+    profile = node.profile if isinstance(node.profile, dict) else {}
+    has_profile = any(
+        bool(value.strip()) if isinstance(value, str) else bool(value)
+        for value in profile.values()
+    )
+    return node.excerpt_count == 0 and not node.note.strip() and not has_profile
+
+
+def _normalise_relation(
+    motif_id: str,
+    target_motif_id: str,
+    relation_type: str,
+    direction_from_current: str,
+) -> tuple[str, str, str, str]:
+    if motif_id == target_motif_id:
+        raise ValueError("意象不能关联自身")
+    clean_type = relation_type.strip()
+    if clean_type not in MOTIF_RELATION_TYPES:
+        raise ValueError("不支持的意象关系类型")
+    if direction_from_current not in {"undirected", "from_current", "to_current"}:
+        raise ValueError("不支持的意象关系方向")
+    if clean_type not in MOTIF_DIRECTED_RELATION_TYPES:
+        direction_from_current = "undirected"
+    elif direction_from_current == "undirected":
+        raise ValueError("转化和包含关系必须选择方向")
+
+    motif_a_id, motif_b_id = sorted((motif_id, target_motif_id))
+    if direction_from_current == "undirected":
+        stored_direction = MOTIF_RELATION_UNDIRECTED
+    else:
+        current_points_to_target = direction_from_current == "from_current"
+        a_points_to_b = current_points_to_target == (motif_id == motif_a_id)
+        stored_direction = MOTIF_RELATION_A_TO_B if a_points_to_b else MOTIF_RELATION_B_TO_A
+    return motif_a_id, motif_b_id, clean_type, stored_direction
 
 
 class MotifRepository:
@@ -287,13 +346,20 @@ class MotifRepository:
         params.append(max(1, int(limit)))
         rows = self._conn.execute(
             f"""
-            SELECT m.*, COUNT(DISTINCT l.excerpt_id) AS excerpt_count
+            SELECT m.*,
+                   COUNT(DISTINCT l.excerpt_id) AS excerpt_count,
+                   (
+                       SELECT COUNT(*)
+                         FROM motif_relations r
+                        WHERE r.motif_a_id = m.id OR r.motif_b_id = m.id
+                   ) AS relation_count
               FROM motif_nodes m
               LEFT JOIN motif_excerpt_links l ON l.motif_id = m.id
               {where}
              GROUP BY m.id
              ORDER BY m.pinned DESC,
                       excerpt_count DESC,
+                      relation_count DESC,
                       m.updated_at DESC,
                       m.created_at DESC
              LIMIT ?
@@ -301,6 +367,189 @@ class MotifRepository:
             tuple(params),
         ).fetchall()
         return [_row_to_node(row) for row in rows]
+
+    # author-confirmed relations --------------------------------------
+    def list_relations(self, node_id: str) -> list[MotifRelation]:
+        rows = self._conn.execute(
+            """
+            SELECT r.*,
+                   a.name AS motif_a_name,
+                   b.name AS motif_b_name
+              FROM motif_relations r
+              JOIN motif_nodes a ON a.id = r.motif_a_id
+              JOIN motif_nodes b ON b.id = r.motif_b_id
+             WHERE r.motif_a_id = ? OR r.motif_b_id = ?
+             ORDER BY r.updated_at DESC, r.created_at DESC
+            """,
+            (node_id, node_id),
+        ).fetchall()
+        return [_row_to_relation(row) for row in rows]
+
+    def get_relation(self, relation_id: str) -> Optional[MotifRelation]:
+        row = self._conn.execute(
+            """
+            SELECT r.*,
+                   a.name AS motif_a_name,
+                   b.name AS motif_b_name
+              FROM motif_relations r
+              JOIN motif_nodes a ON a.id = r.motif_a_id
+              JOIN motif_nodes b ON b.id = r.motif_b_id
+             WHERE r.id = ?
+            """,
+            (relation_id,),
+        ).fetchone()
+        return _row_to_relation(row) if row else None
+
+    def upsert_relation(
+        self,
+        node_id: str,
+        *,
+        target_node_id: str,
+        relation_type: str,
+        direction_from_current: str = "undirected",
+        reason: str = "",
+    ) -> MotifRelation:
+        if self.get_node(node_id) is None or self.get_node(target_node_id) is None:
+            raise ValueError("关联的意象已经不存在")
+        motif_a_id, motif_b_id, clean_type, direction = _normalise_relation(
+            node_id,
+            target_node_id,
+            relation_type,
+            direction_from_current,
+        )
+        existing = self._conn.execute(
+            "SELECT id FROM motif_relations WHERE motif_a_id = ? AND motif_b_id = ?",
+            (motif_a_id, motif_b_id),
+        ).fetchone()
+        relation_id = existing["id"] if existing else str(uuid.uuid4())
+        self._conn.execute(
+            """
+            INSERT INTO motif_relations
+                (id, motif_a_id, motif_b_id, relation_type, direction, reason)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(motif_a_id, motif_b_id) DO UPDATE SET
+                relation_type = excluded.relation_type,
+                direction = excluded.direction,
+                reason = excluded.reason,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            """,
+            (
+                relation_id,
+                motif_a_id,
+                motif_b_id,
+                clean_type,
+                direction,
+                reason.strip()[:1200],
+            ),
+        )
+        self._touch_nodes([motif_a_id, motif_b_id])
+        loaded = self.get_relation(relation_id)
+        assert loaded is not None
+        return loaded
+
+    def update_relation(
+        self,
+        node_id: str,
+        relation_id: str,
+        *,
+        relation_type: str,
+        direction_from_current: str = "undirected",
+        reason: str = "",
+    ) -> Optional[MotifRelation]:
+        existing = self.get_relation(relation_id)
+        if existing is None:
+            return None
+        if node_id not in {existing.motif_a_id, existing.motif_b_id}:
+            return None
+        target_id = (
+            existing.motif_b_id
+            if node_id == existing.motif_a_id
+            else existing.motif_a_id
+        )
+        return self.upsert_relation(
+            node_id,
+            target_node_id=target_id,
+            relation_type=relation_type,
+            direction_from_current=direction_from_current,
+            reason=reason,
+        )
+
+    def delete_relation(self, node_id: str, relation_id: str) -> bool:
+        existing = self.get_relation(relation_id)
+        if existing is None or node_id not in {existing.motif_a_id, existing.motif_b_id}:
+            return False
+        cur = self._conn.execute(
+            "DELETE FROM motif_relations WHERE id = ?",
+            (relation_id,),
+        )
+        self._touch_nodes([existing.motif_a_id, existing.motif_b_id])
+        return cur.rowcount > 0
+
+    def find_node_by_name_or_alias(self, name: str) -> Optional[MotifNode]:
+        clean = name.strip().casefold()
+        if not clean:
+            return None
+        exact = self.find_node_by_name(name)
+        if exact is not None:
+            return exact
+        for node in self.list_nodes(limit=1000):
+            if any(alias.strip().casefold() == clean for alias in node.aliases):
+                return node
+        return None
+
+    def apply_relation_candidates(
+        self,
+        node_id: str,
+        candidates: list[dict[str, Any]],
+    ) -> tuple[list[MotifRelation], list[MotifNode], list[str]]:
+        if self.get_node(node_id) is None:
+            raise ValueError("这个意象已经不存在")
+        applied: list[MotifRelation] = []
+        created_nodes: list[MotifNode] = []
+        skipped: list[str] = []
+        started_transaction = not self._conn.in_transaction
+        if started_transaction:
+            self._conn.execute("BEGIN")
+        try:
+            for index, candidate in enumerate(candidates[:20], start=1):
+                kind = str(candidate.get("kind") or "existing").strip()
+                target: Optional[MotifNode] = None
+                if kind == "existing":
+                    target_id = str(candidate.get("target_motif_id") or "").strip()
+                    target = self.get_node(target_id) if target_id else None
+                    if target is None:
+                        skipped.append(f"第 {index} 个候选意象已经不存在。")
+                        continue
+                elif kind == "new":
+                    name = str(candidate.get("name") or "").strip()
+                    if not name:
+                        skipped.append(f"第 {index} 个新概念没有名称。")
+                        continue
+                    target = self.find_node_by_name_or_alias(name)
+                    if target is None:
+                        target = self.create_node(name=name)
+                        created_nodes.append(target)
+                else:
+                    skipped.append(f"第 {index} 个候选类型无法识别。")
+                    continue
+                if target.id == node_id:
+                    skipped.append(f"第 {index} 个候选与当前意象相同。")
+                    continue
+                relation = self.upsert_relation(
+                    node_id,
+                    target_node_id=target.id,
+                    relation_type=str(candidate.get("relation_type") or "associated"),
+                    direction_from_current=str(candidate.get("direction") or "undirected"),
+                    reason=str(candidate.get("reason") or ""),
+                )
+                applied.append(relation)
+            if started_transaction:
+                self._conn.execute("COMMIT")
+        except Exception:
+            if started_transaction:
+                self._conn.execute("ROLLBACK")
+            raise
+        return applied, created_nodes, skipped
 
     # excerpts ----------------------------------------------------------
     def create_excerpt(
@@ -964,81 +1213,43 @@ class MotifRepository:
         center = self.get_node(node_id)
         if center is None:
             return [], []
-        related_rows = self._conn.execute(
-            """
-            WITH center_excerpts AS (
-                SELECT excerpt_id FROM motif_excerpt_links WHERE motif_id = ?
-            ),
-            center_sources AS (
-                SELECT DISTINCT e.source_kind, e.source_id
-                  FROM motif_excerpts e
-                  JOIN center_excerpts ce ON ce.excerpt_id = e.id
-            ),
-            shared_excerpts AS (
-                SELECT l.motif_id, COUNT(DISTINCT l.excerpt_id) AS n
-                  FROM motif_excerpt_links l
-                  JOIN center_excerpts ce ON ce.excerpt_id = l.excerpt_id
-                 WHERE l.motif_id != ?
-                 GROUP BY l.motif_id
-            ),
-            shared_sources AS (
-                SELECT l.motif_id,
-                       COUNT(DISTINCT e.source_kind || ':' || e.source_id) AS n
-                  FROM motif_excerpt_links l
-                  JOIN motif_excerpts e ON e.id = l.excerpt_id
-                  JOIN center_sources cs
-                    ON cs.source_kind = e.source_kind AND cs.source_id = e.source_id
-                 WHERE l.motif_id != ?
-                 GROUP BY l.motif_id
-            )
-            SELECT m.*,
-                   COUNT(DISTINCT all_l.excerpt_id) AS excerpt_count,
-                   COALESCE(se.n, 0) AS shared_excerpts,
-                   COALESCE(ss.n, 0) AS shared_sources,
-                   COALESCE(se.n, 0) * 2 + COALESCE(ss.n, 0) AS weight
-              FROM motif_nodes m
-              LEFT JOIN motif_excerpt_links all_l ON all_l.motif_id = m.id
-              LEFT JOIN shared_excerpts se ON se.motif_id = m.id
-              LEFT JOIN shared_sources ss ON ss.motif_id = m.id
-             WHERE m.id != ?
-               AND (COALESCE(se.n, 0) > 0 OR COALESCE(ss.n, 0) > 0)
-             GROUP BY m.id
-             ORDER BY weight DESC, excerpt_count DESC, m.updated_at DESC
-             LIMIT ?
-            """,
-            (node_id, node_id, node_id, node_id, max(1, int(limit))),
-        ).fetchall()
-        related = [_row_to_node(row) for row in related_rows]
-        graph_nodes = [
-            MotifGraphNode(
-                id=center.id,
-                name=center.name,
-                excerpt_count=center.excerpt_count,
-                pinned=center.pinned,
-                is_center=True,
-            )
+        all_nodes = self.list_nodes(limit=1000)
+        if not any(node.id == node_id for node in all_nodes):
+            all_nodes.append(center)
+        graph_nodes, graph_edges = self._graph_for_node_set(all_nodes)
+        adjacent = [
+            edge
+            for edge in graph_edges
+            if node_id in {edge.source_id, edge.target_id}
         ]
-        graph_nodes.extend(
+        adjacent.sort(
+            key=lambda edge: (
+                edge.relation_id is not None,
+                edge.weight,
+                edge.shared_excerpts,
+            ),
+            reverse=True,
+        )
+        adjacent = adjacent[: max(1, int(limit))]
+        related_ids = {
+            edge.target_id if edge.source_id == node_id else edge.source_id
+            for edge in adjacent
+        }
+        selected_nodes = [
             MotifGraphNode(
                 id=node.id,
                 name=node.name,
                 excerpt_count=node.excerpt_count,
                 pinned=node.pinned,
-                is_center=False,
+                is_center=node.id == node_id,
+                relation_count=node.relation_count,
+                needs_enrichment=node.needs_enrichment,
             )
-            for node in related
-        )
-        edges = [
-            MotifGraphEdge(
-                source_id=center.id,
-                target_id=row["id"],
-                weight=int(row["weight"]),
-                shared_excerpts=int(row["shared_excerpts"]),
-                shared_sources=int(row["shared_sources"]),
-            )
-            for row in related_rows
+            for node in graph_nodes
+            if node.id == node_id or node.id in related_ids
         ]
-        return graph_nodes, edges
+        selected_nodes.sort(key=lambda node: (not node.is_center, -node.relation_count, node.name))
+        return selected_nodes, adjacent
 
     # internals ---------------------------------------------------------
     def _resolve_nodes(
@@ -1388,19 +1599,58 @@ class MotifRepository:
         ).fetchall():
             shared_sources[(row["source_id"], row["target_id"])] = int(row["n"])
 
-        keys = set(shared_excerpts) | set(shared_sources)
+        relation_rows: dict[tuple[str, str], sqlite3.Row] = {}
+        for row in self._conn.execute(
+            f"""
+            SELECT *
+              FROM motif_relations
+             WHERE motif_a_id IN ({placeholders})
+               AND motif_b_id IN ({placeholders})
+            """,
+            tuple(node_ids + node_ids),
+        ).fetchall():
+            relation_rows[(row["motif_a_id"], row["motif_b_id"])] = row
+
+        keys = set(shared_excerpts) | set(shared_sources) | set(relation_rows)
         edges = [
             MotifGraphEdge(
                 source_id=source_id,
                 target_id=target_id,
-                weight=shared_excerpts.get((source_id, target_id), 0) * 2
-                + shared_sources.get((source_id, target_id), 0),
+                weight=max(
+                    1,
+                    shared_excerpts.get((source_id, target_id), 0) * 2
+                    + shared_sources.get((source_id, target_id), 0),
+                ),
                 shared_excerpts=shared_excerpts.get((source_id, target_id), 0),
                 shared_sources=shared_sources.get((source_id, target_id), 0),
+                relation_id=(
+                    relation_rows[(source_id, target_id)]["id"]
+                    if (source_id, target_id) in relation_rows
+                    else None
+                ),
+                relation_type=(
+                    relation_rows[(source_id, target_id)]["relation_type"]
+                    if (source_id, target_id) in relation_rows
+                    else None
+                ),
+                relation_direction=(
+                    relation_rows[(source_id, target_id)]["direction"]
+                    if (source_id, target_id) in relation_rows
+                    else None
+                ),
+                relation_reason=(
+                    (relation_rows[(source_id, target_id)]["reason"] or "")
+                    if (source_id, target_id) in relation_rows
+                    else ""
+                ),
             )
             for source_id, target_id in keys
         ]
-        edges.sort(key=lambda edge: edge.weight, reverse=True)
+        edges.sort(key=lambda edge: (edge.relation_id is not None, edge.weight), reverse=True)
+        relation_counts: dict[str, int] = {node_id: 0 for node_id in node_ids}
+        for row in relation_rows.values():
+            relation_counts[row["motif_a_id"]] += 1
+            relation_counts[row["motif_b_id"]] += 1
         graph_nodes = [
             MotifGraphNode(
                 id=node.id,
@@ -1408,6 +1658,8 @@ class MotifRepository:
                 excerpt_count=node.excerpt_count,
                 pinned=node.pinned,
                 is_center=False,
+                relation_count=relation_counts.get(node.id, 0),
+                needs_enrichment=_node_needs_enrichment(node),
             )
             for node in nodes
         ]

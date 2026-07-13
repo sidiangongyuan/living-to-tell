@@ -25,6 +25,7 @@ import type {
 } from '../../api/collections'
 import ContextMenu from '../../components/ContextMenu.vue'
 import GuidedTourOverlay from '../../components/GuidedTourOverlay.vue'
+import TourInvitation from '../../components/TourInvitation.vue'
 import PaneResizeHandle from '../../components/PaneResizeHandle.vue'
 import { useResizablePane } from '../../composables/useResizablePane'
 import { useI18n } from '../../i18n'
@@ -59,6 +60,7 @@ const AGENT_LONG_ANSWER_THRESHOLD = 700
 const ROUTE_HIGHLIGHT_MS = 2600
 
 type AgentQuickTaskKind = 'init' | 'health' | 'continuity' | 'next' | 'memory'
+type CollectionViewMode = 'structure' | 'board' | 'export' | 'agent'
 type AgentSlashCommand = {
   command: string
   title: string
@@ -77,7 +79,7 @@ const allArticles = ref<Entry[]>([])
 const articlePickerOpen = ref(false)
 const createDialogOpen = ref(false)
 const selectedArticleIds = ref<string[]>([])
-const viewMode = ref<'structure' | 'board' | 'export' | 'agent'>('structure')
+const viewMode = ref<CollectionViewMode>('structure')
 const collectionSearch = ref('')
 const collectionMetaEditing = ref(false)
 const collectionActionsOpen = ref(false)
@@ -186,6 +188,10 @@ const outlineFilterStatus = ref<OutlineFilters['status']>('all')
 const outlineFilterUnlinkedOnly = ref(false)
 const tourOpen = ref(false)
 const tourStepIndex = ref(0)
+const tourInviteOpen = ref(false)
+const activeTourId = ref<'collections' | 'agent'>('collections')
+const tourViewSnapshot = ref<{ viewMode: CollectionViewMode; outlineEditing: boolean } | null>(null)
+const deferredTourInvites = new Set<'collections' | 'agent'>()
 
 const collectionListPane = useResizablePane({
   key: 'collections:list',
@@ -613,7 +619,7 @@ const collectionTourSteps = computed<CollectionTourStep[]>(() => {
       id: 'agent',
       title: t('collectionsTour.agentTitle'),
       body: t('collectionsTour.agentBody'),
-      target: '[data-tour="collection-agent-panel"]',
+    target: '[data-tour="agent-workspace"]',
     },
     {
       id: 'done',
@@ -624,10 +630,22 @@ const collectionTourSteps = computed<CollectionTourStep[]>(() => {
   ]
 })
 
+const agentTourSteps = computed<CollectionTourStep[]>(() => [
+  { id: 'role', title: t('collectionAgentTour.roleTitle'), body: t('collectionAgentTour.roleBody'), target: '[data-tour="agent-workspace"]' },
+  { id: 'quick', title: t('collectionAgentTour.quickTitle'), body: t('collectionAgentTour.quickBody'), target: '[data-tour="agent-quick-tasks"]' },
+  { id: 'references', title: t('collectionAgentTour.referencesTitle'), body: t('collectionAgentTour.referencesBody'), target: '[data-tour="agent-composer"]' },
+  { id: 'runs', title: t('collectionAgentTour.runsTitle'), body: t('collectionAgentTour.runsBody'), target: '[data-tour="agent-prompt-index"]' },
+  { id: 'proposals', title: t('collectionAgentTour.proposalsTitle'), body: t('collectionAgentTour.proposalsBody'), target: '[data-tour="agent-proposals"]' },
+  { id: 'memory', title: t('collectionAgentTour.memoryTitle'), body: t('collectionAgentTour.memoryBody'), target: '[data-tour="agent-memory"]' },
+  { id: 'clear', title: t('collectionAgentTour.clearTitle'), body: t('collectionAgentTour.clearBody'), target: '[data-tour="agent-prompt-index"]' },
+])
+
+const activeTourSteps = computed(() => activeTourId.value === 'agent' ? agentTourSteps.value : collectionTourSteps.value)
+
 const currentTourProgressLabel = computed(() =>
-  t('collectionsTour.progress', {
-    current: Math.min(tourStepIndex.value + 1, collectionTourSteps.value.length),
-    total: collectionTourSteps.value.length,
+  t('guidedTours.progress', {
+    current: Math.min(tourStepIndex.value + 1, activeTourSteps.value.length),
+    total: activeTourSteps.value.length,
   })
 )
 
@@ -643,12 +661,14 @@ onMounted(async () => {
   }
   allArticles.value = await articlesApi.listArticles(500)
   await applyCollectionRouteContext()
-  if (route.query.tour === 'collection' || !settings.collectionsTourDismissed) {
-    startCollectionTour()
-    if (route.query.tour === 'collection') {
-      void clearCollectionTourQuery()
-    }
+  const requestedTour = String(route.query.tour || '')
+  if (requestedTour === 'agent') startTour('agent')
+  else if (requestedTour === 'collection' || requestedTour === 'collections') startTour('collections')
+  else {
+    activeTourId.value = viewMode.value === 'agent' ? 'agent' : 'collections'
+    if (settings.tourStatus(activeTourId.value) === 'unseen') tourInviteOpen.value = true
   }
+  if (requestedTour) void clearCollectionTourQuery()
 })
 
 watch(
@@ -699,8 +719,11 @@ watch(
 watch(
   () => route.query.tour,
   (value) => {
-    if (value === 'collection') {
-      startCollectionTour()
+    if (value === 'collection' || value === 'collections') {
+      startTour('collections')
+      void clearCollectionTourQuery()
+    } else if (value === 'agent') {
+      startTour('agent')
       void clearCollectionTourQuery()
     }
   }
@@ -728,6 +751,11 @@ watch(
     if (mode === 'agent' && collectionId) {
       void loadAgentState()
     }
+    const id = mode === 'agent' ? 'agent' : 'collections'
+    if (!tourOpen.value && !route.query.tour && settings.tourStatus(id) === 'unseen' && !deferredTourInvites.has(id)) {
+      activeTourId.value = id
+      tourInviteOpen.value = true
+    }
   }
 )
 
@@ -749,8 +777,15 @@ function handleWindowResize() {
 }
 
 function prepareCollectionTourStep(index = tourStepIndex.value) {
-  const step = collectionTourSteps.value[index]
-  if (!step || !store.selectedCollection) return
+  const step = activeTourSteps.value[index]
+  if (!step) return
+  if (activeTourId.value === 'agent') {
+    viewMode.value = 'agent'
+    agentLeftPanelOpen.value = ['runs', 'clear'].includes(step.id)
+    agentRightPanelOpen.value = ['proposals', 'memory'].includes(step.id)
+    return
+  }
+  if (!store.selectedCollection) return
   outlineEditing.value = ['node-types', 'linked-article', 'fields'].includes(step.id)
   if (step.id === 'board') {
     viewMode.value = 'board'
@@ -763,25 +798,41 @@ function prepareCollectionTourStep(index = tourStepIndex.value) {
   }
 }
 
-function startCollectionTour() {
+function startTour(id: 'collections' | 'agent') {
+  activeTourId.value = id
+  tourViewSnapshot.value = { viewMode: viewMode.value, outlineEditing: outlineEditing.value }
+  tourInviteOpen.value = false
   tourStepIndex.value = 0
   tourOpen.value = true
   prepareCollectionTourStep(0)
 }
 
-function closeCollectionTour() {
+function closeActiveTour() {
   tourOpen.value = false
-  outlineEditing.value = false
-  settings.dismissCollectionsTour()
+  settings.completeTour(activeTourId.value)
+  const snapshot = tourViewSnapshot.value
+  if (snapshot) {
+    viewMode.value = snapshot.viewMode
+    outlineEditing.value = snapshot.outlineEditing
+  } else {
+    outlineEditing.value = false
+  }
+  tourViewSnapshot.value = null
   void clearCollectionTourQuery()
 }
 
-function finishCollectionTour() {
-  closeCollectionTour()
+function dismissTourInvitation() {
+  tourInviteOpen.value = false
+  settings.dismissTour(activeTourId.value)
+}
+
+function laterTourInvitation() {
+  deferredTourInvites.add(activeTourId.value)
+  tourInviteOpen.value = false
 }
 
 async function clearCollectionTourQuery() {
-  if (route.query.tour !== 'collection') return
+  if (!route.query.tour) return
   const query = { ...route.query }
   delete query.tour
   await router.replace({ name: 'collections', query })
@@ -855,7 +906,7 @@ function scrollToOutlineItem(itemId: string) {
 }
 
 async function nextCollectionTourStep() {
-  tourStepIndex.value = Math.min(tourStepIndex.value + 1, collectionTourSteps.value.length - 1)
+  tourStepIndex.value = Math.min(tourStepIndex.value + 1, activeTourSteps.value.length - 1)
   prepareCollectionTourStep()
   await nextTick()
 }
@@ -2600,7 +2651,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
         <div v-else class="flex items-center justify-between">
           <div>
             <h1 class="text-3xl font-semibold">{{ t('collections.selectCollection') }}</h1>
-            <p class="mt-2 text-sm text-stone-500">{{ t('collections.selectHint') }}</p>
+            <p class="mt-2 text-sm text-stone-600">{{ t('collections.selectHint') }}</p>
           </div>
           <button
             class="rounded-xl bg-stone-900 px-4 py-2 text-sm font-semibold text-white"
@@ -3043,7 +3094,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
         </template>
 
         <template v-else-if="viewMode === 'agent'">
-          <section class="relative flex min-h-0 flex-1 overflow-hidden bg-[#f5f7f6]" data-testid="collection-agent-panel" data-tour="collection-agent-panel">
+          <section class="relative flex min-h-0 flex-1 overflow-hidden bg-[#f5f7f6]" data-testid="collection-agent-panel" data-tour="agent-workspace">
             <button v-if="agentLeftPanelOpen" class="absolute inset-0 z-20 bg-black/15 xl:hidden" :aria-label="agentCopy.close" @click="agentLeftPanelOpen = false"></button>
             <aside
               data-testid="agent-left-panel"
@@ -3089,7 +3140,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                   </button>
                 </div>
 
-                <div class="mt-5 border-t border-stone-100 pt-4">
+                <div class="mt-5 border-t border-stone-100 pt-4" data-tour="agent-prompt-index">
                   <div class="flex items-center justify-between px-2">
                     <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">{{ agentCopy.currentPrompts }}</p>
                     <button class="text-[10px] text-stone-400 hover:text-stone-700 disabled:opacity-40" :disabled="Boolean(activeAgentRun)" @click="requestAgentClear">{{ agentCopy.clear }}</button>
@@ -3158,7 +3209,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                       @click="changeAgentMode(mode.value)"
                     >{{ mode.label }}</button>
                   </div>
-                  <div class="flex min-w-0 items-center gap-1 overflow-x-auto" data-testid="agent-quick-task-strip">
+                  <div class="flex min-w-0 items-center gap-1 overflow-x-auto" data-testid="agent-quick-task-strip" data-tour="agent-quick-tasks">
                     <button v-for="task in agentQuickTasks.slice(1)" :key="task.kind" class="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] text-stone-500 hover:bg-stone-100 hover:text-stone-900" @click="runQuickAgentTask(task.kind)">{{ task.title }}</button>
                   </div>
                 </div>
@@ -3226,7 +3277,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                 </div>
               </div>
 
-              <footer class="shrink-0 border-t border-stone-200 bg-white px-4 py-3 sm:px-5">
+              <footer class="shrink-0 border-t border-stone-200 bg-white px-4 py-3 sm:px-5" data-tour="agent-composer">
                 <div class="mx-auto max-w-4xl">
                   <div v-if="pendingQuickTask" class="mb-3 flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
                     <div class="min-w-0"><p class="text-xs font-semibold text-amber-950">{{ agentCopy.prepare }}：{{ pendingQuickTask.title }}</p><p class="mt-1 line-clamp-2 text-[11px] leading-5 text-amber-700">{{ agentCopy.uses }} {{ selectedAgentProfileName }}。</p></div>
@@ -3296,7 +3347,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                     <button class="mt-4 w-full rounded-lg border border-dashed border-stone-300 px-3 py-2.5 text-xs font-semibold text-stone-600 hover:border-teal-400 hover:text-teal-800" @click="openAgentReferencePicker()">+ {{ agentCopy.addRunRef }}</button>
                   </section>
 
-                  <section class="mt-6 border-t border-stone-100 pt-5">
+                  <section class="mt-6 border-t border-stone-100 pt-5" data-tour="agent-proposals">
                     <div class="flex items-center justify-between"><h4 class="text-sm font-semibold text-stone-900">{{ agentCopy.proposals }}</h4><span class="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-800">{{ pendingAgentActions.length }}</span></div>
                     <p v-if="!pendingAgentActions.length" class="mt-3 text-xs leading-5 text-stone-400">{{ agentCopy.noProposals }}</p>
                     <div v-else class="mt-3 space-y-2"><article v-for="action in pendingAgentActions" :key="action.id" class="rounded-lg border border-stone-200 p-3"><p class="text-[10px] text-stone-400">{{ agentActionTypeLabel(action.action_type) }}<span v-if="action.status === 'deferred'"> · {{ agentCopy.deferred }}</span></p><h5 class="mt-1 text-xs font-semibold text-stone-800">{{ action.title }}</h5><p class="mt-1 line-clamp-3 text-[11px] leading-5 text-stone-500">{{ action.summary || action.reason }}</p><details class="mt-2"><summary class="cursor-pointer text-[10px] text-stone-400">{{ agentCopy.viewChange }}</summary><pre class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-stone-50 p-2 text-[10px] leading-4 text-stone-600">{{ formatAgentPreview(action.preview) }}</pre></details><div class="mt-3 flex gap-2"><button class="rounded-md bg-stone-900 px-2.5 py-1.5 text-[11px] font-semibold text-white" @click="applyAgentAction(action)">{{ agentCopy.apply }}</button><button v-if="action.status === 'pending'" class="rounded-md bg-stone-100 px-2.5 py-1.5 text-[11px] text-stone-600" @click="deferAgentAction(action)">{{ agentCopy.defer }}</button><button class="rounded-md bg-stone-100 px-2.5 py-1.5 text-[11px] text-stone-600" @click="rejectAgentAction(action)">{{ agentCopy.reject }}</button></div></article></div>
@@ -3334,7 +3385,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                     <div v-else class="mt-3 flex gap-2"><select v-model="agentStyleEntryId" class="min-w-0 flex-1 rounded-lg border border-stone-200 px-2 py-2 text-xs outline-none"><option value="">{{ agentCopy.chooseArticle }}</option><option v-for="article in store.articles" :key="article.id" :value="article.id">{{ article.title }}</option></select><button class="shrink-0 rounded-lg bg-sky-800 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40" :disabled="!agentStyleEntryId" @click="startAgentStyleCycle">{{ agentCopy.start }}</button></div>
                   </section>
 
-                  <section class="mt-6 border-t border-stone-100 pt-5">
+                  <section class="mt-6 border-t border-stone-100 pt-5" data-tour="agent-memory">
                     <div class="flex items-center justify-between"><div><h4 class="text-sm font-semibold text-stone-900">{{ agentCopy.projectBible }}</h4><p class="mt-1 text-[11px] text-stone-500">{{ locale === 'en' ? 'Author-confirmed canon shared by every session in this collection.' : '当前作品集所有会话共享的 canon。' }}</p></div><button class="rounded-md bg-teal-700 px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40" :disabled="agentMemorySaving" @click="saveAgentMemory">{{ agentMemorySaving ? agentCopy.saving : agentCopy.save }}</button></div>
                     <div v-if="agentState" class="mt-3 space-y-2"><details v-for="section in agentState.memory.sections" :key="section.id" class="rounded-lg border border-stone-200 bg-white px-3 py-2"><summary class="cursor-pointer text-xs font-semibold text-stone-700">{{ agentMemorySectionCopy(section).title }} <span v-if="agentMemoryDraft[section.id]" class="ml-1 text-teal-600">·</span></summary><p class="mt-2 text-[10px] leading-4 text-stone-400">{{ agentMemorySectionCopy(section).help }}</p><textarea v-model="agentMemoryDraft[section.id]" rows="4" class="mt-2 w-full resize-y rounded-md border border-stone-200 px-2.5 py-2 text-[11px] leading-5 outline-none focus:border-teal-400" /></details></div>
                     <p class="mt-3 text-[10px] leading-5 text-stone-400">{{ agentCopy.memoryRule }}</p>
@@ -3581,19 +3632,31 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
       </div>
     </div>
 
+    <TourInvitation
+      :open="tourInviteOpen"
+      :title="t(activeTourId === 'agent' ? 'collectionAgentTour.inviteTitle' : 'collectionsTour.inviteTitle')"
+      :body="t(activeTourId === 'agent' ? 'collectionAgentTour.inviteBody' : 'collectionsTour.inviteBody')"
+      :start-label="t('guidedTours.start')"
+      :later-label="t('guidedTours.later')"
+      :dismiss-label="t('guidedTours.dismiss')"
+      @start="startTour(activeTourId)"
+      @later="laterTourInvitation"
+      @dismiss="dismissTourInvitation"
+    />
     <GuidedTourOverlay
       :open="tourOpen"
-      :steps="collectionTourSteps"
+      :steps="activeTourSteps"
       :step-index="tourStepIndex"
       :previous-label="t('collectionsTour.previous')"
       :next-label="t('collectionsTour.next')"
       :skip-label="t('collectionsTour.skip')"
       :finish-label="t('collectionsTour.finish')"
       :progress-label="currentTourProgressLabel"
+      :close-label="t('common.close')"
       @previous="previousCollectionTourStep"
       @next="nextCollectionTourStep"
-      @close="closeCollectionTour"
-      @finish="finishCollectionTour"
+      @close="closeActiveTour"
+      @finish="closeActiveTour"
     />
   </div>
 </template>

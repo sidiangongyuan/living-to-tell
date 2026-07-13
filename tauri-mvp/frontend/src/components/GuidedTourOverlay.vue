@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { trapFocus } from '../utils/focusTrap'
 
 export interface GuidedTourStep {
   id: string
   title: string
   body: string
   target?: string
+  onEnter?: () => void | Promise<void>
 }
 
 const props = defineProps<{
@@ -17,6 +19,7 @@ const props = defineProps<{
   skipLabel: string
   finishLabel: string
   progressLabel: string
+  closeLabel?: string
 }>()
 
 const emit = defineEmits<{
@@ -27,6 +30,10 @@ const emit = defineEmits<{
 }>()
 
 const targetRect = ref<DOMRect | null>(null)
+const dialog = ref<HTMLElement | null>(null)
+let lastEnteredStep = ''
+let lastOpen = false
+let returnFocus: HTMLElement | null = null
 
 const currentStep = computed(() => props.steps[props.stepIndex] ?? null)
 const isFirstStep = computed(() => props.stepIndex <= 0)
@@ -37,6 +44,13 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 async function updateTargetRect() {
+  const stepKey = props.open ? `${props.stepIndex}:${currentStep.value?.id || ''}` : ''
+  if (stepKey && stepKey !== lastEnteredStep) {
+    lastEnteredStep = stepKey
+    await currentStep.value?.onEnter?.()
+  } else if (!stepKey) {
+    lastEnteredStep = ''
+  }
   await nextTick()
   const selector = currentStep.value?.target
   if (!props.open || !selector) {
@@ -101,20 +115,41 @@ function handleViewportChange() {
   void updateTargetRect()
 }
 
+function handleKeydown(event: KeyboardEvent) {
+  if (!props.open) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    emit('close')
+    return
+  }
+  trapFocus(event, dialog.value)
+}
+
 onMounted(() => {
   window.addEventListener('resize', handleViewportChange)
   window.addEventListener('scroll', handleViewportChange, true)
+  window.addEventListener('keydown', handleKeydown, true)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleViewportChange)
   window.removeEventListener('scroll', handleViewportChange, true)
+  window.removeEventListener('keydown', handleKeydown, true)
 })
 
 watch(
   () => [props.open, props.stepIndex, props.steps.length],
   () => {
+    if (props.open && !lastOpen) {
+      returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    } else if (!props.open && lastOpen) {
+      const target = returnFocus
+      returnFocus = null
+      void nextTick(() => target?.focus())
+    }
+    lastOpen = props.open
     void updateTargetRect()
+    if (props.open) void nextTick(() => dialog.value?.focus())
   },
   { immediate: true }
 )
@@ -134,9 +169,13 @@ watch(
         :style="spotlightStyle"
       />
       <section
+        ref="dialog"
+        tabindex="-1"
         class="pointer-events-auto fixed rounded-2xl border border-stone-200 bg-white p-4 text-stone-900 shadow-2xl"
         :style="popoverStyle"
         role="dialog"
+        aria-modal="true"
+        aria-labelledby="guided-tour-step-title"
         aria-live="polite"
       >
         <div class="flex items-start justify-between gap-3">
@@ -144,13 +183,13 @@ watch(
             <div class="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-600">
               {{ progressLabel }}
             </div>
-            <h3 class="mt-1 text-base font-semibold leading-6">{{ currentStep.title }}</h3>
+            <h3 id="guided-tour-step-title" class="mt-1 text-base font-semibold leading-6">{{ currentStep.title }}</h3>
           </div>
           <button
             type="button"
-            class="rounded-lg px-2 py-1 text-sm font-semibold text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+            class="rounded-lg px-2 py-1 text-sm font-semibold text-stone-600 hover:bg-stone-100 hover:text-stone-800"
             @click="emit('close')"
-            aria-label="Close"
+            :aria-label="closeLabel || skipLabel"
           >
             ×
           </button>

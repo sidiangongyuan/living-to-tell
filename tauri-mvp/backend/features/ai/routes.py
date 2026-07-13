@@ -34,7 +34,10 @@ from features.ai_cards.routes import (
 from features.motifs.routes import (
     MotifEnrichmentDraftOut,
     MotifEnrichmentRequest,
+    MotifRelationDiscoveryDraftOut,
+    MotifRelationDiscoveryRequest,
     generate_motif_enrichment_draft_core,
+    generate_motif_relation_discovery_core,
 )
 from writer.app.settings import SUPPORTED_AI_PROVIDERS, SUPPORTED_WIRE_APIS
 from writer.app.container import AppContainer
@@ -850,6 +853,28 @@ def create_motif_enrichment_job(
         motif_id=request.motif_id,
         profile_id=(request.profile_id or "default").strip() or "default",
         worker=lambda update_stage: generate_motif_enrichment_draft_core(
+            request,
+            container,
+            update_stage=update_stage,
+        ),
+    )
+    return _job_snapshot(record)
+
+
+@router.post("/jobs/motif-relation-discovery", response_model=AiJobSnapshot)
+def create_motif_relation_discovery_job(
+    request: MotifRelationDiscoveryRequest,
+    container: AppContainer = Depends(get_container),
+) -> AiJobSnapshot:
+    node = container.motif_repository.get_node(request.motif_id)
+    if node is None:
+        raise HTTPException(404, "这个意象已经不存在，已刷新列表。")
+    record = ai_job_manager.create(
+        kind="motif_relation_discovery",
+        concept=node.name,
+        motif_id=node.id,
+        profile_id=(request.profile_id or "default").strip() or "default",
+        worker=lambda update_stage: generate_motif_relation_discovery_core(
             request,
             container,
             update_stage=update_stage,

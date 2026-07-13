@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 
 from writer.storage.database import initialize_schema
@@ -529,4 +531,205 @@ def test_motif_schema_initialization_is_idempotent(tmp_path):
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'motif_%'"
         ).fetchall()
     }
-    assert {"motif_nodes", "motif_excerpts", "motif_excerpt_links"}.issubset(table_names)
+    assert {
+        "motif_nodes",
+        "motif_excerpts",
+        "motif_excerpt_links",
+        "motif_relations",
+    }.issubset(table_names)
+
+
+def test_motif_relation_crud_normalizes_direction_and_cascades(tmp_path):
+    conn = open_and_initialize(tmp_path / "writer.db")
+    motifs = MotifRepository(conn)
+    rain = motifs.create_node(name="雨")
+    river = motifs.create_node(name="河流")
+
+    created = motifs.upsert_relation(
+        rain.id,
+        target_node_id=river.id,
+        relation_type="transformation",
+        direction_from_current="from_current",
+        reason="雨汇入河流。",
+    )
+    expected_direction = "a_to_b" if created.motif_a_id == rain.id else "b_to_a"
+    assert created.direction == expected_direction
+    assert created.reason == "雨汇入河流。"
+
+    updated = motifs.update_relation(
+        river.id,
+        created.id,
+        relation_type="contains",
+        direction_from_current="from_current",
+        reason="河流包含雨水。",
+    )
+    assert updated is not None
+    assert updated.id == created.id
+    assert updated.relation_type == "contains"
+    expected_reverse = "a_to_b" if updated.motif_a_id == river.id else "b_to_a"
+    assert updated.direction == expected_reverse
+
+    undirected = motifs.upsert_relation(
+        rain.id,
+        target_node_id=river.id,
+        relation_type="contrast",
+        direction_from_current="from_current",
+    )
+    assert undirected.id == created.id
+    assert undirected.direction == "undirected"
+    assert len(motifs.list_relations(rain.id)) == 1
+
+    assert motifs.delete_node(river.id) is True
+    assert motifs.list_relations(rain.id) == []
+    assert conn.execute("SELECT COUNT(*) AS n FROM motif_relations").fetchone()["n"] == 0
+
+
+def test_motif_graph_merges_cooccurrence_and_authored_relationship_sources(tmp_path):
+    conn = open_and_initialize(tmp_path / "writer.db")
+    entries = EntryRepository(conn)
+    motifs = MotifRepository(conn)
+    entry = entries.create(title="夜雨", body="雨敲在窗上。")
+    excerpt = motifs.create_excerpt(
+        source_kind="article",
+        source_id=entry.id,
+        excerpt_text="雨敲在窗上。",
+        motif_names=["雨", "窗"],
+    )
+    rain = motifs.find_node_by_name("雨")
+    window = motifs.find_node_by_name("窗")
+    dawn = motifs.create_node(name="黎明")
+    assert rain is not None and window is not None
+
+    cooccurrence_relation = motifs.upsert_relation(
+        rain.id,
+        target_node_id=window.id,
+        relation_type="echo",
+        reason="声音彼此呼应。",
+    )
+    authored_only = motifs.upsert_relation(
+        rain.id,
+        target_node_id=dawn.id,
+        relation_type="contrast",
+    )
+
+    graph_nodes, graph_edges = motifs.graph(limit=20)
+    by_pair = {frozenset((edge.source_id, edge.target_id)): edge for edge in graph_edges}
+    rain_window = by_pair[frozenset((rain.id, window.id))]
+    assert rain_window.shared_excerpts == 1
+    assert rain_window.shared_sources == 1
+    assert rain_window.relation_id == cooccurrence_relation.id
+    assert rain_window.relation_type == "echo"
+    assert by_pair[frozenset((rain.id, dawn.id))].relation_id == authored_only.id
+    assert by_pair[frozenset((rain.id, dawn.id))].shared_excerpts == 0
+    assert {node.name: node.relation_count for node in graph_nodes}["雨"] == 2
+
+    assert motifs.delete_relation(rain.id, cooccurrence_relation.id) is True
+    _, after_relation_delete = motifs.graph(limit=20)
+    remaining_pair = {
+        frozenset((edge.source_id, edge.target_id)): edge
+        for edge in after_relation_delete
+    }[frozenset((rain.id, window.id))]
+    assert remaining_pair.relation_id is None
+    assert remaining_pair.shared_excerpts == 1
+
+    assert motifs.delete_excerpt(excerpt.id) is True
+    _, after_excerpt_delete = motifs.graph(limit=20)
+    final_pairs = {frozenset((edge.source_id, edge.target_id)) for edge in after_excerpt_delete}
+    assert frozenset((rain.id, window.id)) not in final_pairs
+    assert frozenset((rain.id, dawn.id)) in final_pairs
+
+
+def test_apply_motif_relation_candidates_is_idempotent_and_reuses_alias(tmp_path):
+    conn = open_and_initialize(tmp_path / "writer.db")
+    motifs = MotifRepository(conn)
+    current = motifs.create_node(name="夜")
+    existing = motifs.create_node(name="黎明", aliases=["晨光"])
+    candidates = [
+        {
+            "kind": "new",
+            "name": "晨光",
+            "relation_type": "contrast",
+            "direction": "undirected",
+            "reason": "夜与晨光相对。",
+        },
+        {
+            "kind": "new",
+            "name": "门槛",
+            "relation_type": "associated",
+            "direction": "undirected",
+            "reason": "都指向过渡。",
+        },
+    ]
+
+    first_relations, first_created, first_skipped = motifs.apply_relation_candidates(
+        current.id, candidates
+    )
+    second_relations, second_created, second_skipped = motifs.apply_relation_candidates(
+        current.id, candidates
+    )
+
+    assert first_skipped == second_skipped == []
+    assert [node.name for node in first_created] == ["门槛"]
+    assert second_created == []
+    assert {relation.id for relation in first_relations} == {
+        relation.id for relation in second_relations
+    }
+    assert motifs.find_node_by_name_or_alias("晨光").id == existing.id
+    assert len(motifs.list_relations(current.id)) == 2
+    assert conn.execute(
+        "SELECT COUNT(*) AS n FROM motif_nodes WHERE lower(name) = lower(?)",
+        ("门槛",),
+    ).fetchone()["n"] == 1
+
+
+def test_apply_motif_relation_candidates_rolls_back_new_nodes_on_invalid_batch(tmp_path):
+    conn = open_and_initialize(tmp_path / "writer.db")
+    motifs = MotifRepository(conn)
+    current = motifs.create_node(name="火")
+
+    with pytest.raises(ValueError, match="必须选择方向"):
+        motifs.apply_relation_candidates(
+            current.id,
+            [
+                {
+                    "kind": "new",
+                    "name": "灰烬",
+                    "relation_type": "transformation",
+                    "direction": "undirected",
+                }
+            ],
+        )
+
+    assert motifs.find_node_by_name("灰烬") is None
+    assert motifs.list_relations(current.id) == []
+
+
+def test_legacy_database_initialization_adds_motif_relations_without_losing_nodes(tmp_path):
+    database_path = tmp_path / "legacy.db"
+    legacy = sqlite3.connect(database_path)
+    legacy.executescript(
+        """
+        CREATE TABLE motif_nodes (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            aliases_text TEXT NOT NULL DEFAULT '',
+            note TEXT NOT NULL DEFAULT '',
+            profile_json TEXT NOT NULL DEFAULT '{}',
+            tags_text TEXT NOT NULL DEFAULT '',
+            pinned INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z',
+            updated_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z'
+        );
+        INSERT INTO motif_nodes (id, name) VALUES ('legacy-motif', '旧意象');
+        """
+    )
+    legacy.commit()
+    legacy.close()
+
+    conn = open_and_initialize(database_path)
+    motifs = MotifRepository(conn)
+
+    assert motifs.get_node("legacy-motif").name == "旧意象"
+    assert conn.execute(
+        "SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'motif_relations'"
+    ).fetchone()["n"] == 1

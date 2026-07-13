@@ -4,7 +4,7 @@
 
 ### The current Windows desktop preview for 活着为了讲述 / Living to Tell
 
-[![Version](https://img.shields.io/badge/version-0.1.48-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.49-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-preview-orange.svg)](#download)
@@ -44,6 +44,10 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 | :---: | :---: |
 | ![Export and backup center](docs/assets/screenshots/backup-center.png) | ![Collection Agent](docs/assets/screenshots/collection-agent.png) |
 
+| Motif Relationship Map |
+| :---: |
+| ![Motif relationship star map](docs/assets/screenshots/motif-star-map.png) |
+
 ## Features
 
 ### Writing
@@ -67,7 +71,7 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 - Keep added-but-unplaced drafts in **Unplanned Articles** until they are placed into the tree.
 - Switch to the board to review the same structure grouped by idea, draft, revision, done, and parked status.
 - Export the manuscript to Markdown, TXT, or DOCX from the structure tree, and export a separate planning file when needed.
-- Use the built-in collection tutorial to walk through Manuscript Structure, Project Type, Unplanned Articles, Linked Article, Board, and Export; restart it from Settings.
+- Use the lightweight tutorial invitation to walk through Manuscript Structure, Project Type, Unplanned Articles, Linked Article, Board, and Export; restart any tutorial from the Settings tutorial center.
 - Use the collection-bound Agent as a coauthoring workspace with named sessions, Discuss / Plan / Draft / Review modes, visible context summaries, persistent unapplied scene drafts, shared project canon, author-style evidence cycles, background runs, and reviewable proposals.
 
 ### Reference Library
@@ -75,6 +79,7 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 - Save reference passages with source title, author, usage type, and personal notes.
 - Read the passage and citation metadata first, then enter edit mode only when changes are needed.
 - Browse by source book or usage.
+- Highlight search matches across title, author, tags, and passage text; use Arrow Up/Down and Enter to navigate the list without stealing keystrokes from the editor.
 - Jump from the daily quote card to the matching reference passage.
 - Copy just the passage body, or copy a complete citation with title and author.
 
@@ -83,7 +88,9 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 - Save selected article or reference text into one or more motifs from a right-click menu.
 - Reopen existing selections without creating duplicate excerpts, even when the saved range has drifted after editing.
 - Use bidirectional source anchors to return from the article or motif archive to the marked source location.
-- Explore motif co-occurrence through a visual star map with weighted nodes and links.
+- Explore real co-occurrence and author-confirmed formal relationships through a D3 force/zoom star map with fit, center, density, focus, and responsive details.
+- Add, edit, or remove one formal relationship per motif pair using Echo, Contrast, Transformation, Contains, or General Association.
+- Ask AI to discover existing relationships and related new concepts, then review an unchecked candidate list. Nothing is linked or created until the author applies selected candidates; new concepts start as empty nodes marked for enrichment.
 - Enrich a selected or newly typed concept with AI into a compact concept archive, then append or overwrite the motif note after review.
 - Unlink an excerpt from the current motif without deleting the same excerpt from other motifs.
 
@@ -92,7 +99,7 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 - Focused AI tools for polishing, rewriting, expanding, and continuing.
 - Per-tool personal presets.
 - AI Edit is bound to one real article or selection and never asks users to paste an unrelated text block.
-- Reference specimens are a first-class AI Edit step with search, usage filters, large selectable cards, full-text preview, and staged confirmation. They are never recommended or attached automatically.
+- Reference specimens, AI Cards, and current-article notes are equal first-class AI Edit context sources. Each has a large searchable picker, readable cards, full-content preview, staged multi-selection, and no automatic attachment.
 - Confirmed specimens are sent as method and style guidance with purpose, tags, personal notes, and text. All selected models receive the same run snapshot, with explicit rules against copying sentences or transplanting source facts and names.
 - AI results are reviewed as one readable result at a time, with a paragraph diff before explicit write-back and an `AI_BEFORE_APPLY` version snapshot.
 - Background article tasks show honest per-model waiting, success, and failure states; they continue after navigation and reconnect by status query without resending provider requests.
@@ -122,15 +129,15 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.48).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.49).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.48_x64-setup.exe`
+- `LivingToTell_0.1.49_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.48_x64_zh-CN.msi`
+- `LivingToTell_0.1.49_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 

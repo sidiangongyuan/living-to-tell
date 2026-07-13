@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 export type Theme = 'light' | 'dark'
 export type Language = 'zh' | 'en'
@@ -9,6 +9,38 @@ export const WELCOME_CHECKLIST_DISMISSED_KEY = 'living_to_tell_welcome_checklist
 export const ONBOARDING_AI_REVIEWED_KEY = 'living_to_tell_onboarding_ai_reviewed'
 export const ONBOARDING_STORAGE_REVIEWED_KEY = 'living_to_tell_onboarding_storage_reviewed'
 export const COLLECTIONS_TOUR_DISMISSED_KEY = 'living_to_tell_collections_tour_dismissed'
+export const APP_TOUR_STATE_KEY = 'living_to_tell_guided_tours_v2'
+export type AppTourId = 'collections' | 'ai-edit' | 'agent' | 'motifs'
+export type AppTourStatus = 'unseen' | 'completed' | 'dismissed'
+
+const DEFAULT_TOUR_STATUSES: Record<AppTourId, AppTourStatus> = {
+  collections: 'unseen',
+  'ai-edit': 'unseen',
+  agent: 'unseen',
+  motifs: 'unseen',
+}
+
+export function readAppTourStatuses(
+  storage: Pick<Storage, 'getItem'>,
+): Record<AppTourId, AppTourStatus> {
+  const next = { ...DEFAULT_TOUR_STATUSES }
+  try {
+    const parsed = JSON.parse(storage.getItem(APP_TOUR_STATE_KEY) || '{}') as Partial<Record<AppTourId, AppTourStatus>>
+    for (const id of Object.keys(next) as AppTourId[]) {
+      if (['unseen', 'completed', 'dismissed'].includes(parsed[id] || '')) next[id] = parsed[id] as AppTourStatus
+    }
+  } catch {
+    // Invalid local preferences fall back to the unobtrusive first-run invite.
+  }
+  if (storage.getItem(COLLECTIONS_TOUR_DISMISSED_KEY) === 'true' && next.collections === 'unseen') {
+    next.collections = 'dismissed'
+  }
+  return next
+}
+
+function loadTourStatuses(): Record<AppTourId, AppTourStatus> {
+  return readAppTourStatuses(localStorage)
+}
 
 export const useSettingsStore = defineStore('settings', () => {
   // 从 localStorage 读取保存的设置
@@ -22,7 +54,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const welcomeChecklistDismissed = ref(localStorage.getItem(WELCOME_CHECKLIST_DISMISSED_KEY) === 'true')
   const onboardingAiReviewed = ref(localStorage.getItem(ONBOARDING_AI_REVIEWED_KEY) === 'true')
   const onboardingStorageReviewed = ref(localStorage.getItem(ONBOARDING_STORAGE_REVIEWED_KEY) === 'true')
-  const collectionsTourDismissed = ref(localStorage.getItem(COLLECTIONS_TOUR_DISMISSED_KEY) === 'true')
+  const tourStatuses = ref<Record<AppTourId, AppTourStatus>>(loadTourStatuses())
+  const collectionsTourDismissed = computed(() => tourStatuses.value.collections !== 'unseen')
 
   function toggleTheme() {
     theme.value = 'light'
@@ -85,13 +118,36 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   function dismissCollectionsTour() {
-    collectionsTourDismissed.value = true
-    localStorage.setItem(COLLECTIONS_TOUR_DISMISSED_KEY, 'true')
+    dismissTour('collections')
   }
 
   function resetCollectionsTour() {
-    collectionsTourDismissed.value = false
-    localStorage.removeItem(COLLECTIONS_TOUR_DISMISSED_KEY)
+    resetTour('collections')
+  }
+
+  function tourStatus(id: AppTourId): AppTourStatus {
+    return tourStatuses.value[id]
+  }
+
+  function setTourStatus(id: AppTourId, status: AppTourStatus) {
+    tourStatuses.value = { ...tourStatuses.value, [id]: status }
+    localStorage.setItem(APP_TOUR_STATE_KEY, JSON.stringify(tourStatuses.value))
+    if (id === 'collections') {
+      if (status === 'unseen') localStorage.removeItem(COLLECTIONS_TOUR_DISMISSED_KEY)
+      else localStorage.setItem(COLLECTIONS_TOUR_DISMISSED_KEY, 'true')
+    }
+  }
+
+  function completeTour(id: AppTourId) {
+    setTourStatus(id, 'completed')
+  }
+
+  function dismissTour(id: AppTourId) {
+    setTourStatus(id, 'dismissed')
+  }
+
+  function resetTour(id: AppTourId) {
+    setTourStatus(id, 'unseen')
   }
 
   function markOnboardingAiReviewed() {
@@ -137,6 +193,7 @@ export const useSettingsStore = defineStore('settings', () => {
     onboardingAiReviewed,
     onboardingStorageReviewed,
     collectionsTourDismissed,
+    tourStatuses,
     toggleTheme,
     toggleLanguage,
     toggleFocusMode,
@@ -147,6 +204,10 @@ export const useSettingsStore = defineStore('settings', () => {
     resetWelcomeChecklist,
     dismissCollectionsTour,
     resetCollectionsTour,
+    tourStatus,
+    completeTour,
+    dismissTour,
+    resetTour,
     markOnboardingAiReviewed,
     markOnboardingStorageReviewed,
   }

@@ -75,6 +75,15 @@ interface MotifExcerpt {
   updated_at: string | null
 }
 
+interface StoredMotifRelation {
+  id: string
+  motif_a_id: string
+  motif_b_id: string
+  relation_type: 'echo' | 'contrast' | 'transformation' | 'contains' | 'associated'
+  direction: 'undirected' | 'a_to_b' | 'b_to_a'
+  reason: string
+}
+
 type SourceKind = 'article' | 'reference'
 
 function normalizeMotifName(name: string): string {
@@ -107,15 +116,17 @@ function uniqueNames(names: string[]): string[] {
   return result
 }
 
-function graphFrom(motifs: MotifNode[], excerpts: MotifExcerpt[]) {
+function graphFrom(motifs: MotifNode[], excerpts: MotifExcerpt[], relations: StoredMotifRelation[] = []) {
   const nodes = motifs.map((motif) => ({
     id: motif.id,
     name: motif.name,
     excerpt_count: excerpts.filter((excerpt) => excerpt.motif_ids.includes(motif.id)).length,
     pinned: motif.pinned,
     is_center: false,
+    relation_count: relations.filter((relation) => relation.motif_a_id === motif.id || relation.motif_b_id === motif.id).length,
+    needs_enrichment: motif.excerpt_count === 0 && !motif.note.trim() && !motif.profile.definition,
   }))
-  const edges = []
+  const edges: Array<Record<string, any>> = []
   for (let i = 0; i < motifs.length; i += 1) {
     for (let j = i + 1; j < motifs.length; j += 1) {
       const a = motifs[i]
@@ -132,13 +143,21 @@ function graphFrom(motifs: MotifNode[], excerpts: MotifExcerpt[]) {
         .filter((excerpt) => excerpt.motif_ids.includes(b.id))
         .filter((excerpt) => sourceKeys.has(`${excerpt.source_kind}:${excerpt.source_id}`))
         .length
-      if (sharedExcerpts || sharedSources) {
+      const relation = relations.find((item) =>
+        (item.motif_a_id === a.id && item.motif_b_id === b.id) ||
+        (item.motif_a_id === b.id && item.motif_b_id === a.id)
+      )
+      if (sharedExcerpts || sharedSources || relation) {
         edges.push({
           source_id: a.id,
           target_id: b.id,
-          weight: sharedExcerpts * 2 + sharedSources,
+          weight: Math.max(1, sharedExcerpts * 2 + sharedSources),
           shared_excerpts: sharedExcerpts,
           shared_sources: sharedSources,
+          relation_id: relation?.id ?? null,
+          relation_type: relation?.relation_type ?? null,
+          relation_direction: relation?.direction ?? null,
+          relation_reason: relation?.reason ?? '',
         })
       }
     }
@@ -156,8 +175,67 @@ async function mockMotifFlowApi(page: Page) {
   }
   let motifs: MotifNode[] = []
   let excerpts: MotifExcerpt[] = []
+  let relations: StoredMotifRelation[] = []
   let enrichmentDraftCalls = 0
+  let relationDiscoveryCalls = 0
   const enrichmentJobs = new Map<string, Record<string, unknown> & { polls_remaining?: number }>()
+
+  function relationDto(relation: StoredMotifRelation, currentId: string) {
+    const currentIsA = relation.motif_a_id === currentId
+    const targetId = currentIsA ? relation.motif_b_id : relation.motif_a_id
+    const target = motifs.find((motif) => motif.id === targetId)
+    let direction: 'undirected' | 'from_current' | 'to_current' = 'undirected'
+    if (relation.direction !== 'undirected') {
+      const currentPointsToTarget = currentIsA
+        ? relation.direction === 'a_to_b'
+        : relation.direction === 'b_to_a'
+      direction = currentPointsToTarget ? 'from_current' : 'to_current'
+    }
+    return {
+      id: relation.id,
+      motif_id: currentId,
+      motif_name: motifs.find((motif) => motif.id === currentId)?.name ?? '',
+      target_motif_id: targetId,
+      target_motif_name: target?.name ?? '',
+      relation_type: relation.relation_type,
+      direction,
+      reason: relation.reason,
+      created_at: null,
+      updated_at: null,
+    }
+  }
+
+  function upsertRelation(
+    currentId: string,
+    targetId: string,
+    relationType: StoredMotifRelation['relation_type'],
+    directionFromCurrent: 'undirected' | 'from_current' | 'to_current',
+    reason = '',
+  ) {
+    const [motifAId, motifBId] = [currentId, targetId].sort()
+    const directed = relationType === 'transformation' || relationType === 'contains'
+    let direction: StoredMotifRelation['direction'] = 'undirected'
+    if (directed) {
+      const currentPointsToTarget = directionFromCurrent === 'from_current'
+      const aPointsToB = currentPointsToTarget === (currentId === motifAId)
+      direction = aPointsToB ? 'a_to_b' : 'b_to_a'
+    }
+    const existing = relations.find((item) => item.motif_a_id === motifAId && item.motif_b_id === motifBId)
+    if (existing) {
+      Object.assign(existing, { relation_type: relationType, direction, reason })
+      return existing
+    }
+    const created: StoredMotifRelation = {
+      id: `relation-${relations.length + 1}`,
+      motif_a_id: motifAId,
+      motif_b_id: motifBId,
+      relation_type: relationType,
+      direction,
+      reason,
+    }
+    relations.push(created)
+    return created
+  }
 
   await page.route('**/api/app/version', async (route) => {
     await route.fulfill({
@@ -422,6 +500,12 @@ async function mockMotifFlowApi(page: Page) {
 
   await page.addInitScript(() => {
     window.localStorage.clear()
+    window.localStorage.setItem('living_to_tell_guided_tours_v2', JSON.stringify({
+      collections: 'dismissed',
+      'ai-edit': 'dismissed',
+      agent: 'dismissed',
+      motifs: 'dismissed',
+    }))
     ;(window as Window & { __WRITER_DISABLE_AUTO_UPDATE__?: boolean }).__WRITER_DISABLE_AUTO_UPDATE__ = true
   })
 
@@ -431,7 +515,7 @@ async function mockMotifFlowApi(page: Page) {
         app_name: 'Living to Tell',
         version: '0.1.13',
         api_version: '2.0.0',
-        capabilities: ['motif_star_map', 'ai_jobs', 'motif_ai_enrichment_jobs'],
+        capabilities: ['motif_star_map', 'ai_jobs', 'motif_ai_enrichment_jobs', 'motif_authored_relations', 'motif_relation_discovery', 'guided_tours_v2'],
       },
     })
   })
@@ -458,6 +542,8 @@ async function mockMotifFlowApi(page: Page) {
         source_hints: [{ title: '测试来源线索', url: null, note: '需核对。' }],
       },
       related_suggestions: ['建议一', '建议二'],
+      existing_relation_candidates: [],
+      new_concept_candidates: [],
       source_hints: [{ title: '测试来源线索', url: null, note: '需核对。' }],
       reference_candidates: Array.from({ length: 18 }, (_, index) => ({
         text: `第 ${index + 1} 条候选句：这是一段很长的相关句子，用来验证小窗口中候选卡片是否能换行、滚动，并且不会遮挡底部操作按钮。`,
@@ -505,6 +591,45 @@ async function mockMotifFlowApi(page: Page) {
     const request = route.request()
     const url = new URL(request.url())
     const path = url.pathname
+
+    if (path === '/api/ai/jobs/motif-relation-discovery' && request.method() === 'POST') {
+      relationDiscoveryCalls += 1
+      const body = request.postDataJSON() as { motif_id: string; profile_id?: string }
+      const current = motifs.find((motif) => motif.id === body.motif_id)
+      const target = motifs.find((motif) => motif.id !== body.motif_id)
+      const result = {
+        motif_id: body.motif_id,
+        concept: current?.name ?? '测试意象',
+        existing_relation_candidates: target ? [{ kind: 'existing', target_motif_id: target.id, name: target.name, relation_type: 'contrast', direction: 'undirected', reason: '两者形成清晰对照。' }] : [],
+        new_concept_candidates: [{ kind: 'new', target_motif_id: null, name: '门槛', relation_type: 'associated', direction: 'undirected', reason: '都是过渡性的概念。' }],
+        provider: 'fake',
+        model: 'fake-model',
+        transport: 'fake',
+        elapsed_ms: 180,
+      }
+      const now = new Date().toISOString()
+      const job = {
+        job_id: `relation-job-${relationDiscoveryCalls}`,
+        kind: 'motif_relation_discovery',
+        status: 'succeeded',
+        stage: 'succeeded',
+        stage_label: '已完成',
+        concept: current?.name ?? '测试意象',
+        motif_id: body.motif_id,
+        profile_id: body.profile_id ?? 'default',
+        started_at: now,
+        updated_at: now,
+        elapsed_ms: 180,
+        result,
+        error: '',
+        provider: 'fake',
+        model: 'fake-model',
+        transport: 'fake',
+      }
+      enrichmentJobs.set(job.job_id, job)
+      await route.fulfill({ json: job })
+      return
+    }
 
     if (path === '/api/ai/jobs/motif-enrichment' && request.method() === 'POST') {
       enrichmentDraftCalls += 1
@@ -714,7 +839,7 @@ async function mockMotifFlowApi(page: Page) {
     }
 
     if (path === '/api/motifs/graph') {
-      await route.fulfill({ json: graphFrom(motifs, excerpts) })
+      await route.fulfill({ json: graphFrom(motifs, excerpts, relations) })
       return
     }
 
@@ -746,6 +871,8 @@ async function mockMotifFlowApi(page: Page) {
             source_hints: [{ title: '测试来源线索', url: null, note: '需核对。' }],
           },
           related_suggestions: ['建议一', '建议二'],
+          existing_relation_candidates: [],
+          new_concept_candidates: [],
           source_hints: [{ title: '测试来源线索', url: null, note: '需核对。' }],
           reference_candidates: Array.from({ length: 18 }, (_, index) => ({
             text: `第 ${index + 1} 条候选句：这是一段很长的相关句子，用来验证小窗口中候选卡片是否能换行、滚动，并且不会遮挡底部操作按钮。`,
@@ -761,6 +888,87 @@ async function mockMotifFlowApi(page: Page) {
         },
       })
       return
+    }
+
+    const applyRelationsMatch = path.match(/^\/api\/motifs\/([^/]+)\/relations\/apply-candidates$/)
+    if (applyRelationsMatch && request.method() === 'POST') {
+      const currentId = applyRelationsMatch[1]
+      const body = request.postDataJSON() as { candidates?: Array<Record<string, any>> }
+      const createdNodes: MotifNode[] = []
+      const applied: StoredMotifRelation[] = []
+      const skipped: string[] = []
+      for (const [index, candidate] of (body.candidates ?? []).entries()) {
+        let target = candidate.kind === 'existing'
+          ? motifs.find((motif) => motif.id === candidate.target_motif_id)
+          : motifs.find((motif) =>
+              normalizeMotifName(motif.name) === normalizeMotifName(candidate.name ?? '') ||
+              motif.aliases.some((alias) => normalizeMotifName(alias) === normalizeMotifName(candidate.name ?? ''))
+            )
+        if (!target && candidate.kind === 'new' && String(candidate.name || '').trim()) {
+          target = ensureMotif(String(candidate.name))
+          createdNodes.push(target)
+        }
+        if (!target || target.id === currentId) {
+          skipped.push(`第 ${index + 1} 个候选无法应用。`)
+          continue
+        }
+        applied.push(upsertRelation(
+          currentId,
+          target.id,
+          candidate.relation_type ?? 'associated',
+          candidate.direction ?? 'undirected',
+          candidate.reason ?? '',
+        ))
+      }
+      await route.fulfill({
+        json: {
+          relations: applied.map((relation) => relationDto(relation, currentId)),
+          created_nodes: createdNodes,
+          skipped,
+        },
+      })
+      return
+    }
+
+    const relationItemMatch = path.match(/^\/api\/motifs\/([^/]+)\/relations\/([^/]+)$/)
+    if (relationItemMatch) {
+      const [, currentId, relationId] = relationItemMatch
+      const relation = relations.find((item) => item.id === relationId)
+      if (!relation) {
+        await route.fulfill({ status: 404, json: { detail: '这个意象关系已经不存在。' } })
+        return
+      }
+      if (request.method() === 'DELETE') {
+        relations = relations.filter((item) => item.id !== relationId)
+        await route.fulfill({ status: 204, body: '' })
+        return
+      }
+      if (request.method() === 'PUT') {
+        const body = request.postDataJSON() as Record<string, any>
+        const targetId = relation.motif_a_id === currentId ? relation.motif_b_id : relation.motif_a_id
+        const updated = upsertRelation(currentId, targetId, body.relation_type ?? 'associated', body.direction ?? 'undirected', body.reason ?? '')
+        await route.fulfill({ json: relationDto(updated, currentId) })
+        return
+      }
+    }
+
+    const relationsMatch = path.match(/^\/api\/motifs\/([^/]+)\/relations$/)
+    if (relationsMatch) {
+      const currentId = relationsMatch[1]
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          json: relations
+            .filter((relation) => relation.motif_a_id === currentId || relation.motif_b_id === currentId)
+            .map((relation) => relationDto(relation, currentId)),
+        })
+        return
+      }
+      if (request.method() === 'POST') {
+        const body = request.postDataJSON() as Record<string, any>
+        const relation = upsertRelation(currentId, body.target_motif_id, body.relation_type ?? 'associated', body.direction ?? 'undirected', body.reason ?? '')
+        await route.fulfill({ json: relationDto(relation, currentId) })
+        return
+      }
     }
 
     const motifNodeMatch = path.match(/^\/api\/motifs\/([^/]+)$/)
@@ -794,6 +1002,13 @@ async function mockMotifFlowApi(page: Page) {
         pinned: body.pinned ?? motif.pinned,
       })
       await route.fulfill({ json: motif })
+      return
+    }
+
+    if (motifNodeMatch && request.method() === 'DELETE') {
+      motifs = motifs.filter((motif) => motif.id !== motifNodeMatch[1])
+      relations = relations.filter((relation) => relation.motif_a_id !== motifNodeMatch[1] && relation.motif_b_id !== motifNodeMatch[1])
+      await route.fulfill({ status: 204, body: '' })
       return
     }
 
@@ -944,7 +1159,7 @@ async function mockMotifFlowApi(page: Page) {
     const localGraphMatch = path.match(/^\/api\/motifs\/([^/]+)\/graph$/)
     if (localGraphMatch) {
       const motifId = localGraphMatch[1]
-      const graph = graphFrom(motifs, excerpts)
+      const graph = graphFrom(motifs, excerpts, relations)
       await route.fulfill({
         json: {
           nodes: graph.nodes.map((node) => ({ ...node, is_center: node.id === motifId })),
@@ -1008,7 +1223,7 @@ test('article selection can be saved to multiple motifs and reopened from the st
   await page.goto('/motifs')
   await expect(page.getByText('玫瑰花').first()).toBeVisible()
   await expect(page.getByText('血').first()).toBeVisible()
-  await expect(page.getByText('1 条共同出现关系')).toBeVisible()
+  await expect(page.getByText('1 条意象关系')).toBeVisible()
 
   await page.getByRole('button', { name: /玫瑰花/ }).first().click()
   await expect(page.getByText('花园')).toBeVisible()
@@ -1445,6 +1660,7 @@ test('AI enrichment dialog keeps footer actions visible and candidate list scrol
   })
 
   await page.goto('/motifs')
+  await page.getByTestId('motifs-list-pane').getByText('尼采的道德奴隶', { exact: true }).click()
   await page.getByTestId('motifs-detail-pane').getByRole('button', { name: 'AI 丰富' }).click()
   await page.getByRole('button', { name: '生成短卡草稿' }).click()
   await expect(page.getByText('尼采的道德奴隶短卡 A')).toBeVisible()
@@ -1492,4 +1708,73 @@ test('AI enrichment dialog keeps footer actions visible and candidate list scrol
   expect(scrollState.scrollHeight).toBeGreaterThan(scrollState.clientHeight)
   expect(scrollState.afterScrollTop).toBeGreaterThan(0)
   await expect(page.getByText(/第 18 条候选句/)).toBeVisible()
+})
+
+test('formal motif relationships and AI discovery remain author-confirmed and graph controls stay usable', async ({ page }) => {
+  await page.goto('/motifs')
+  await page.evaluate(async () => {
+    for (const name of ['关系测试｜夜', '关系测试｜黎明']) {
+      await fetch('/api/motifs', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+    }
+  })
+  await page.goto('/motifs')
+  const list = page.getByTestId('motifs-list-pane')
+  await list.getByText('关系测试｜夜', { exact: true }).click()
+  const detail = page.getByTestId('motifs-detail-pane')
+  const relationshipSection = detail.getByTestId('motif-relations-section')
+
+  await relationshipSection.getByRole('button', { name: '新增关系' }).click()
+  await relationshipSection.getByPlaceholder('搜索名称、别名或标签').fill('黎明')
+  await relationshipSection.getByRole('button', { name: '关系测试｜黎明', exact: true }).click()
+  await relationshipSection.locator('select').first().selectOption('contrast')
+  await relationshipSection.getByPlaceholder('为什么这两个意象值得建立关系，可选').fill('夜与黎明形成对照。')
+  await relationshipSection.getByRole('button', { name: '保存', exact: true }).click()
+
+  await expect(relationshipSection.getByText('关系测试｜黎明')).toBeVisible()
+  await expect(relationshipSection.getByText('对照', { exact: true }).first()).toBeVisible()
+  await expect(page.getByTestId('motif-graph-canvas').locator('line')).toHaveCount(1)
+
+  page.once('dialog', async (dialog) => dialog.accept())
+  await relationshipSection.getByRole('button', { name: '删除' }).click()
+  await expect(relationshipSection.getByText('还没有作者确认的正式关系。')).toBeVisible()
+  await expect(page.getByTestId('motif-graph-canvas').locator('line')).toHaveCount(0)
+
+  await relationshipSection.getByRole('button', { name: '发现关联' }).click()
+  const discovery = page.getByRole('dialog', { name: '发现意象关联' })
+  await expect(discovery).toBeVisible()
+  await discovery.getByRole('button', { name: '确认并开始发现' }).click()
+  await expect(discovery.getByText('关系与新概念候选')).toBeVisible()
+  await expect(discovery.locator('input[type="checkbox"]')).toHaveCount(2)
+  await expect(discovery.locator('input[type="checkbox"]:checked')).toHaveCount(0)
+  await expect(relationshipSection.getByText('还没有作者确认的正式关系。')).toBeVisible()
+  await expect(discovery.getByRole('button', { name: '重新发现' })).toBeVisible()
+
+  for (const checkbox of await discovery.locator('input[type="checkbox"]').all()) {
+    await checkbox.check()
+  }
+  await discovery.getByRole('button', { name: '应用 2 个候选' }).click()
+  await expect(relationshipSection.getByText('关系测试｜黎明')).toBeVisible()
+  await expect(relationshipSection.getByText('门槛')).toBeVisible()
+  await expect(list.getByText('门槛', { exact: true })).toBeVisible()
+  await page.getByTestId('motifs-list-pane').locator('input[type="range"]').fill('100')
+  await expect(page.getByTestId('motif-graph-canvas').locator('line')).toHaveCount(2)
+  await expect(page.getByTestId('motif-graph-canvas').getByRole('button', { name: '门槛', exact: true }).getByText('待丰富')).toBeVisible()
+
+  const graph = page.getByTestId('motif-graph-canvas')
+  const viewport = graph.locator('svg > g')
+  const beforeZoom = await viewport.getAttribute('transform')
+  await graph.getByRole('button', { name: '放大星图' }).click()
+  await expect.poll(() => viewport.getAttribute('transform')).not.toBe(beforeZoom)
+  await graph.getByRole('button', { name: '适配', exact: true }).click()
+  await graph.getByRole('button', { name: '居中', exact: true }).click()
+
+  await page.setViewportSize({ width: 1024, height: 768 })
+  await list.getByText('关系测试｜夜', { exact: true }).click()
+  await expect(page.getByTestId('motifs-detail-pane')).toBeVisible()
+  await page.getByTestId('motifs-detail-pane').getByRole('button', { name: '关闭详情' }).click()
+  await expect(page.getByTestId('motifs-detail-pane')).toBeHidden()
 })

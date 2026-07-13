@@ -4609,3 +4609,176 @@ def test_tauri_collection_docx_export_cleans_temp_file_on_generation_failure(
         raise AssertionError("collection docx export failure was not raised")
 
     assert not list(tmp_path.glob("*.docx"))
+
+
+def test_tauri_motif_relation_crud_preserves_current_motif_direction(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    rain = client.post("/api/motifs", json={"name": "关系测试｜雨"}).json()
+    river = client.post("/api/motifs", json={"name": "关系测试｜河流"}).json()
+
+    created = client.post(
+        f"/api/motifs/{rain['id']}/relations",
+        json={
+            "target_motif_id": river["id"],
+            "relation_type": "transformation",
+            "direction": "from_current",
+            "reason": "雨汇入河流。",
+        },
+    )
+    assert created.status_code == 200, created.text
+    relation = created.json()
+    assert relation["motif_id"] == rain["id"]
+    assert relation["target_motif_id"] == river["id"]
+    assert relation["direction"] == "from_current"
+
+    from_other_side = client.get(f"/api/motifs/{river['id']}/relations")
+    assert from_other_side.status_code == 200, from_other_side.text
+    assert from_other_side.json()[0]["direction"] == "to_current"
+
+    updated = client.put(
+        f"/api/motifs/{river['id']}/relations/{relation['id']}",
+        json={
+            "relation_type": "contains",
+            "direction": "from_current",
+            "reason": "河流包含雨水。",
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["direction"] == "from_current"
+    from_rain = client.get(f"/api/motifs/{rain['id']}/relations").json()[0]
+    assert from_rain["direction"] == "to_current"
+    assert from_rain["relation_type"] == "contains"
+
+    deleted = client.delete(
+        f"/api/motifs/{rain['id']}/relations/{relation['id']}"
+    )
+    assert deleted.status_code == 204, deleted.text
+    assert client.get(f"/api/motifs/{river['id']}/relations").json() == []
+
+
+def test_tauri_motif_relation_discovery_is_lightweight_review_first_and_idempotent(
+    monkeypatch,
+):
+    client = _tauri_client(monkeypatch)
+    from deps import get_container
+
+    repository = get_container().motif_repository
+    current = repository.create_node(
+        name="关系发现测试｜夜",
+        note="只测试轻量目录。",
+        profile={"definition": "光线退去后的时间。"},
+    )
+    target = repository.create_node(
+        name="关系发现测试｜黎明",
+        aliases=["关系发现测试｜晨光"],
+        pinned=True,
+    )
+    for index in range(205):
+        repository.create_node(name=f"关系发现目录｜{index:03d}")
+
+    private_body = f"不应进入意象关系目录的正文-{uuid.uuid4().hex}"
+    article = client.post(
+        "/api/articles",
+        json={"title": "关系发现隐私测试", "body": private_body, "tags": []},
+    )
+    assert article.status_code == 201, article.text
+    seen_messages = []
+
+    class FakeRelationDiscoveryService:
+        def generate_from_messages(self, messages, *, cost_tier, model_override=None):
+            seen_messages.extend(messages)
+            return SimpleNamespace(
+                content=json.dumps(
+                    {
+                        "existing_relation_candidates": [
+                            {
+                                "target_motif_id": target.id,
+                                "name": target.name,
+                                "relation_type": "contrast",
+                                "direction": "undirected",
+                                "reason": "夜与黎明形成时间对照。",
+                            },
+                            {
+                                "target_motif_id": "not-in-catalog",
+                                "name": "伪造目录项",
+                                "relation_type": "associated",
+                                "direction": "undirected",
+                            },
+                        ],
+                        "new_concept_candidates": [
+                            {
+                                "name": "关系发现测试｜晨光",
+                                "relation_type": "contrast",
+                                "direction": "undirected",
+                            },
+                            {
+                                "name": "关系发现测试｜门槛",
+                                "relation_type": "associated",
+                                "direction": "undirected",
+                                "reason": "都是过渡状态。",
+                            },
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                provider="fake",
+                model="fake-relation-model",
+                transport="fake",
+            )
+
+    get_container().ai_task_service = FakeRelationDiscoveryService()
+    created = client.post(
+        "/api/ai/jobs/motif-relation-discovery",
+        json={"motif_id": current.id, "profile_id": "default"},
+    )
+    assert created.status_code == 200, created.text
+    job_id = created.json()["job_id"]
+
+    final = None
+    for _ in range(100):
+        snapshot = client.get(f"/api/ai/jobs/{job_id}")
+        assert snapshot.status_code == 200, snapshot.text
+        final = snapshot.json()
+        if final["status"] in {"succeeded", "failed", "cancelled"}:
+            break
+        time.sleep(0.02)
+
+    assert final is not None and final["status"] == "succeeded", final
+    prompt = seen_messages[-1]["content"]
+    catalog = prompt.split("已有意象轻量目录：", 1)[1].split("输出 schema：", 1)[0]
+    assert len([line for line in catalog.splitlines() if line.startswith("- id=")]) == 200
+    assert private_body not in prompt
+    result = final["result"]
+    assert [item["target_motif_id"] for item in result["existing_relation_candidates"]] == [target.id]
+    assert [item["name"] for item in result["new_concept_candidates"]] == [
+        "关系发现测试｜门槛"
+    ]
+    assert client.get(f"/api/motifs/{current.id}/relations").json() == []
+    assert repository.find_node_by_name("关系发现测试｜门槛") is None
+
+    selected = [
+        result["existing_relation_candidates"][0],
+        result["new_concept_candidates"][0],
+    ]
+    first_apply = client.post(
+        f"/api/motifs/{current.id}/relations/apply-candidates",
+        json={"candidates": selected},
+    )
+    assert first_apply.status_code == 200, first_apply.text
+    assert len(first_apply.json()["relations"]) == 2
+    assert [item["name"] for item in first_apply.json()["created_nodes"]] == [
+        "关系发现测试｜门槛"
+    ]
+
+    second_apply = client.post(
+        f"/api/motifs/{current.id}/relations/apply-candidates",
+        json={"candidates": selected},
+    )
+    assert second_apply.status_code == 200, second_apply.text
+    assert second_apply.json()["created_nodes"] == []
+    assert len(client.get(f"/api/motifs/{current.id}/relations").json()) == 2
+    created_concept = repository.find_node_by_name("关系发现测试｜门槛")
+    assert created_concept is not None
+    assert created_concept.note == ""
+    assert created_concept.profile == {}
+    assert created_concept.excerpt_count == 0

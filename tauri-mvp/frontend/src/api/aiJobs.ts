@@ -1,6 +1,6 @@
 import { apiFetch, handleResponse } from './base'
 import type { AiCardDraftRequest } from './aiCards'
-import type { MotifEnrichmentRequest } from './motifs'
+import type { MotifEnrichmentRequest, MotifRelationDiscoveryRequest } from './motifs'
 
 export type AiJobStatus =
   | 'queued'
@@ -8,6 +8,7 @@ export type AiJobStatus =
   | 'sending_request'
   | 'waiting_model'
   | 'parsing_response'
+  | 'building_candidates'
   | 'succeeded'
   | 'failed'
   | 'cancelled'
@@ -16,7 +17,7 @@ export type AiJobStage = AiJobStatus
 
 export interface AiJobSnapshot {
   job_id: string
-  kind: 'motif_enrichment' | 'ai_card_draft'
+  kind: 'motif_enrichment' | 'motif_relation_discovery' | 'ai_card_draft'
   status: AiJobStatus
   stage: AiJobStage
   stage_label: string
@@ -49,6 +50,15 @@ export const aiJobsApi = {
 
   async createAiCardDraftJob(data: AiCardDraftJobRequest): Promise<AiJobSnapshot> {
     const res = await apiFetch('/api/ai/jobs/ai-card-draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async createMotifRelationDiscoveryJob(data: MotifRelationDiscoveryRequest): Promise<AiJobSnapshot> {
+    const res = await apiFetch('/api/ai/jobs/motif-relation-discovery', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),

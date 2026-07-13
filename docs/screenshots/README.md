@@ -16,6 +16,7 @@ GitHub-facing screenshots live in `tauri-mvp/docs/assets/screenshots/`. They are
 - `focus-mode.png`
 - `collections.png`
 - `reference-library.png`
+- `motif-star-map.png`
 - `ai-workspace.png`
 - `settings.png`
 - `settings-wizard.png`

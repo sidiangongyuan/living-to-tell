@@ -297,6 +297,90 @@ const aiProfiles = [
   },
 ]
 
+const motifRelations = [
+  {
+    id: 'demo-relation-1',
+    motif_id: 'motif-wind',
+    motif_name: '风',
+    target_motif_id: 'motif-letter',
+    target_motif_name: '信',
+    relation_type: 'echo',
+    direction: 'undirected',
+    reason: '风带来消息，信把迟到的消息固定成可以反复阅读的痕迹。',
+    created_at: now,
+    updated_at: now,
+  },
+]
+
+const agentAction = {
+  id: 'demo-agent-action-1',
+  collection_id: 'demo-collection-1',
+  run_id: 'demo-agent-run-1',
+  action_type: 'update_memory',
+  status: 'pending',
+  title: '记录叙事承诺',
+  summary: '把“讲述使记忆逐渐清晰”加入项目核心，等待作者确认。',
+  payload: { section_id: 'project_core', content: '讲述使记忆逐渐清晰。' },
+  preview: { section: '项目核心', append: '讲述使记忆逐渐清晰。' },
+  reason: '这个命题已经在书稿结构和两篇文章中重复出现。',
+  risk: '确认前不会写入项目圣经。',
+  applied_ref_id: null,
+  created_at: now,
+  updated_at: now,
+  applied_at: null,
+}
+
+const agentState = {
+  settings: { collection_id: 'demo-collection-1', profile_id: 'demo-profile-opencode', enabled: true, active_session_id: 'demo-agent-session-1', updated_at: now },
+  memory: {
+    collection_id: 'demo-collection-1',
+    sections: [
+      { id: 'project_core', title: '项目核心', help: '题材、核心命题、主要冲突与叙事承诺。', content: '一组关于日常、远方与自我确认的短篇。' },
+      { id: 'characters', title: '人物与关系', help: '主要人物的欲望、矛盾和关系变化。', content: '叙述者试图通过讲述确认自己经历过什么。' },
+      { id: 'themes_style', title: '主题与风格', help: '口吻、审美约束与禁用方向。', content: '克制、清晰，以可感知细节代替直接说理。' },
+      { id: 'open_questions', title: '未解决问题', help: '尚未确认的结构或设定问题。', content: '远方来信是否应成为全书结尾。' },
+    ],
+    updated_at: now,
+  },
+  thread_id: 'demo-agent-thread-1',
+  messages: [],
+  runs: [
+    {
+      id: 'demo-agent-run-1',
+      collection_id: 'demo-collection-1',
+      thread_id: 'demo-agent-thread-1',
+      status: 'succeeded',
+      stage: 'succeeded',
+      stage_label: '已完成',
+      request: { message: '请体检当前作品集，指出最值得先解决的结构问题。', task_type: 'diagnose_collection' },
+      result: { answer: '目前最清楚的是“讲述如何改变记忆”这一主线。下一步先处理两篇文章之间的递进关系：第一篇建立感官与命题，第二篇让“远方”变成一次具体行动。建议先确认结尾是否回收来信，再调整篇章顺序。' },
+      error: '',
+      profile_id: 'demo-profile-opencode',
+      provider: 'opencode',
+      model: 'opencode/deepseek-v4-flash-free',
+      transport: 'opencode_cli',
+      session_id: 'demo-agent-session-1',
+      mode: 'review',
+      draft_id: null,
+      created_at: now,
+      started_at: now,
+      updated_at: now,
+      completed_at: now,
+      actions: [agentAction],
+    },
+  ],
+  actions: [agentAction],
+  profiles: aiProfiles.map((profile) => ({ id: profile.id, name: profile.name })),
+  sessions: [
+    { id: 'demo-agent-session-1', collection_id: 'demo-collection-1', thread_id: 'demo-agent-thread-1', title: '结构体检', mode: 'review', summary: '已确认主题主线，正在处理篇章递进与结尾回收。', archived: false, message_count: 2, run_count: 1, draft_count: 0, created_at: now, updated_at: now, last_message_at: now },
+  ],
+  active_session_id: 'demo-agent-session-1',
+  drafts: [],
+  author_portrait: null,
+  style_samples: [],
+  active_run: null,
+}
+
 const backups = [
   { path: 'D:\\LivingToTellDemo\\Data\\backups\\auto-2026-06-28.sqlite3', name: 'auto-2026-06-28', size: 2480000, created: '2026-06-28T08:50:00' },
   { path: 'D:\\LivingToTellDemo\\Data\\backups\\auto-2026-06-27.sqlite3', name: 'auto-2026-06-27', size: 2380000, created: '2026-06-27T18:12:00' },
@@ -339,11 +423,14 @@ function graph(centerId = '') {
       excerpt_count: motif.excerpt_count,
       pinned: motif.pinned,
       is_center: motif.id === centerId,
+      relation_count: motifRelations.filter((relation) => relation.motif_id === motif.id || relation.target_motif_id === motif.id).length,
+      needs_enrichment: motif.excerpt_count === 0 && !motif.note,
     })),
     edges: [
       { source_id: 'motif-wind', target_id: 'motif-sea', weight: 3, shared_excerpts: 2, shared_sources: 1 },
       { source_id: 'motif-wind', target_id: 'motif-memory', weight: 2, shared_excerpts: 1, shared_sources: 1 },
       { source_id: 'motif-letter', target_id: 'motif-memory', weight: 1, shared_excerpts: 1, shared_sources: 1 },
+      { source_id: 'motif-wind', target_id: 'motif-letter', weight: 1, shared_excerpts: 0, shared_sources: 0, relation_id: 'demo-relation-1', relation_type: 'echo', relation_direction: 'undirected', relation_reason: motifRelations[0].reason },
     ],
   }
 }
@@ -357,6 +444,7 @@ async function installDemoApi(page) {
     localStorage.setItem('living_to_tell_last_selected_entry_id', 'demo-article-1')
     localStorage.setItem('living_to_tell_last_selected_collection_id', 'demo-collection-1')
     localStorage.setItem('living_to_tell_collections_tour_dismissed', 'true')
+    localStorage.setItem('living_to_tell_guided_tours_v2', JSON.stringify({ 'ai-edit': 'dismissed', collections: 'dismissed', agent: 'dismissed', motifs: 'dismissed' }))
     localStorage.removeItem('living_to_tell_welcome_checklist_dismissed')
   })
 
@@ -374,7 +462,7 @@ async function installDemoApi(page) {
     if (pathname === '/api/app/version') {
       return json(route, {
         app_name: 'Living to Tell',
-        version: '0.1.48',
+        version: '0.1.49',
         api_version: '2.0.0',
         capabilities: [
           'data_location',
@@ -387,8 +475,17 @@ async function installDemoApi(page) {
           'article_ai_task_runs',
           'article_ai_chat_drawer',
           'motif_star_map',
+          'motif_authored_relations',
+          'motif_relation_discovery',
+          'guided_tours_v2',
           'article_versions',
           'collection_outline',
+          'collection_manuscript_structure',
+          'collection_agent',
+          'collection_agent_sessions',
+          'collection_agent_drafts',
+          'collection_agent_compaction',
+          'author_portrait',
           'sample_project',
         ],
       })
@@ -486,6 +583,14 @@ async function installDemoApi(page) {
     if (pathname === '/api/collections/demo-collection-1/outline') return json(route, outlineItems)
     if (pathname === '/api/collections/demo-collection-1/outline/order') return json(route, outlineItems)
     if (pathname.startsWith('/api/collections/demo-collection-1/outline/')) return json(route, outlineItems[0])
+    if (pathname === '/api/collections/demo-collection-1/agent') return json(route, agentState)
+    if (pathname === '/api/collections/demo-collection-1/agent/references') {
+      return json(route, [
+        { kind: 'outline', ref_id: 'outline-2', name: '场景：潮湿的堤岸', body_preview: outlineItems[1].summary, meta: { status: 'drafting' } },
+        { kind: 'article', ref_id: 'demo-article-1', name: articles[0].title, body_preview: articles[0].body.slice(0, 72), meta: {} },
+        { kind: 'ai_card', ref_id: 'demo-card-style', name: aiCards[0].title, body_preview: aiCards[0].content.slice(0, 72), meta: {} },
+      ])
+    }
     if (pathname.startsWith('/api/collections/for-entry/')) return json(route, collections)
 
     if (pathname === '/api/library/stats') return json(route, { total: references.length, by_usage_kind: { imagery: 1, style: 1 } })
@@ -497,6 +602,8 @@ async function installDemoApi(page) {
     if (pathname === '/api/motifs/graph') return json(route, graph())
     if (pathname === '/api/motifs/motif-wind/excerpts') return json(route, motifExcerpts.filter((excerpt) => excerpt.motif_ids.includes('motif-wind')))
     if (pathname === '/api/motifs/motif-wind/graph') return json(route, graph('motif-wind'))
+    if (pathname === '/api/motifs/motif-wind/relations') return json(route, motifRelations)
+    if (/^\/api\/motifs\/[^/]+\/relations$/.test(pathname)) return json(route, [])
     if (pathname.startsWith('/api/motifs/') && pathname.endsWith('/excerpts')) return json(route, motifExcerpts)
     if (pathname.startsWith('/api/motifs/') && pathname.endsWith('/graph')) return json(route, graph())
     if (pathname.startsWith('/api/motifs/excerpts/source/')) return json(route, motifExcerpts)
@@ -542,6 +649,12 @@ async function installDemoApi(page) {
         selection_start: null, selection_end: null, status: 'succeeded', stage: 'succeeded', stage_label: '已完成', error: '',
         profiles: requestedProfiles.map((profile) => ({ profile_id: profile.id, profile_name: profile.name, provider: profile.provider_name, model: profile.model })),
         results, created_at: now, started_at: now, updated_at: now, completed_at: now, elapsed_ms: 2380,
+        attachment_snapshots: (body.attachments || []).map((attachment) => ({
+          kind: attachment.kind,
+          ref_id: attachment.ref_id || '',
+          name: attachment.name || '',
+          size_chars: String(attachment.content || '').length,
+        })),
         applied_profile_id: null, applied_at: null, applied_version_id: null,
       }
       return json(route, articleTaskRun, 202)
@@ -825,32 +938,58 @@ async function main() {
 
     await recordFlow(browser, '04-reference-motif.gif', async (page, frames, dir) => {
       await goto(page, '/library?ref=demo-reference-1&group=source')
-      await capture(page, frames, dir, 'Step 1：文脉库保存摘录、出处、用途和个人笔记。')
+      await capture(page, frames, dir, 'Step 1：文脉库以阅读为主，保存摘录、出处、用途、标签和个人笔记。')
       await goto(page, '/articles?id=demo-article-1')
       await capture(page, frames, dir, 'Step 2：在文章或文脉中选中文字，右键加入一个或多个意象。')
       await goto(page, '/motifs?id=motif-wind')
-      await capture(page, frames, dir, 'Step 3：意象星图用节点、颜色和连线呈现反复出现的意象关系。')
-      await clickText(page, '风', true).catch(() => {})
-      await capture(page, frames, dir, 'Step 4：意象详情保留来源摘录，可回到文章或文脉原位置。')
+      await capture(page, frames, dir, 'Step 3：星图支持缩放、平移和聚焦，并合并真实共现与作者确认关系。')
+      const detailButton = page.getByRole('button', { name: '查看详情' })
+      if (await detailButton.isVisible().catch(() => false)) {
+        await detailButton.click()
+      }
+      await page.getByRole('button', { name: '发现关联' }).click()
+      await capture(page, frames, dir, 'Step 4：AI 只提出关系和新概念候选；作者确认前不会建立关系或创建节点。')
     })
 
-    await recordFlow(browser, '05-ai-cards.gif', async (page, frames, dir) => {
+    await recordFlow(browser, '05-ai-settings-edit.gif', async (page, frames, dir) => {
       await goto(page, '/settings?section=ai_profiles')
       await capture(page, frames, dir, 'Step 1：AI 设置只保留配置档案和一个默认档案；本地检查与真实请求分开。')
       await goto(page, '/ai?scope_kind=article&scope_id=demo-article-1')
+      await page.getByRole('button', { name: '选择文脉标本' }).click()
+      await page.getByRole('dialog', { name: '选择文脉标本' }).getByTestId('article-ai-reference-card').filter({ hasText: '海边札记' }).getByRole('button', { name: /选择\s+《海边札记》/ }).click()
+      await page.getByRole('dialog', { name: '选择文脉标本' }).getByRole('button', { name: '使用 1 条标本' }).click()
+      await page.getByRole('button', { name: '选择 AI Cards' }).click()
+      await page.getByRole('dialog', { name: '选择 AI Cards' }).getByRole('button', { name: '克制而有画面感' }).click()
+      await page.getByRole('dialog', { name: '选择 AI Cards' }).getByRole('button', { name: '使用 1 条' }).click()
+      await page.getByRole('button', { name: '选择文章便签' }).click()
+      await page.getByRole('dialog', { name: '选择文章便签' }).getByRole('button', { name: /结尾可以回到/ }).click()
+      await page.getByRole('dialog', { name: '选择文章便签' }).getByRole('button', { name: '使用 1 条' }).click()
+      await page.getByTestId('article-ai-context-section').scrollIntoViewIfNeeded()
+      await capture(page, frames, dir, 'Step 2：文脉标本、AI Cards 和文章便签是三个同级入口，整卡阅读后再明确选择。')
       await page.getByRole('button', { name: /已选择 1 个模型/ }).click()
       await page.locator('label').filter({ hasText: 'Gemini 中转' }).locator('input').check()
       await page.getByRole('button', { name: '完成', exact: true }).click()
-      await capture(page, frames, dir, 'Step 2：AI 修改围绕当前文章工作，只运行作者明确勾选的档案。')
+      await capture(page, frames, dir, 'Step 3：同一份上下文快照发送给作者明确勾选的模型，不隐性加入默认档案。')
       await page.getByRole('button', { name: '运行 AI 修改' }).click()
       await page.getByText(/风越过堤岸/).waitFor({ timeout: 6000 })
       await page.getByRole('button', { name: '与原文差异' }).click()
-      await capture(page, frames, dir, 'Step 3：模型先完成先出现；切换结果并查看差异，确认后才写回文章。')
-      await goto(page, '/ai-cards?id=demo-card-scene')
-      await capture(page, frames, dir, 'Step 4：AI Card 用风格、人物、场景模板沉淀可复用写作上下文。')
+      await capture(page, frames, dir, 'Step 4：模型先完成先出现；查看差异和本轮参考，确认后才写回文章。')
     })
 
-    await recordFlow(browser, '06-export-backup.gif', async (page, frames, dir) => {
+    await recordFlow(browser, '06-collection-agent.gif', async (page, frames, dir) => {
+      await goto(page, '/collections?id=demo-collection-1&tab=agent')
+      await capture(page, frames, dir, 'Step 1：作品集 Agent 绑定当前书稿，会话索引只列作者输入，长回答可折叠。')
+      await page.getByRole('button', { name: /^@ 引用$/ }).click()
+      await capture(page, frames, dir, 'Step 2：按 @ 或“添加引用”选择结构节点、文章、卡片、意象或文脉，不默认读取整本全文。')
+      await page.getByRole('button', { name: '收起' }).click()
+      await page.getByTestId('agent-right-toggle').click()
+      await capture(page, frames, dir, 'Step 3：项目圣经、上下文范围和待确认提案集中在资源栏；普通对话不会自动进入长期记忆。')
+      await page.getByTestId('agent-right-panel').getByRole('button', { name: '关闭' }).click()
+      await page.getByRole('button', { name: '体检作品集' }).click()
+      await capture(page, frames, dir, 'Step 4：快捷任务先显示模型与上下文确认，只有“确认运行”才发送请求。')
+    })
+
+    await recordFlow(browser, '07-export-backup.gif', async (page, frames, dir) => {
       await goto(page, '/backup')
       await capture(page, frames, dir, 'Step 1：备份中心先回答“我现在能不能恢复”。')
       await clickText(page, '创建检查点')

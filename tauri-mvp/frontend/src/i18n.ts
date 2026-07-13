@@ -325,6 +325,7 @@ const translations = {
       statusParked: '暂停',
     },
     collectionsTour: {
+      inviteTitle: '第一次使用作品集？', inviteBody: '用几分钟了解书稿结构、文章关联、看板和导出。教程只高亮真实界面，不会创建或修改数据。',
       introTitle: '作品集是一本文稿项目',
       introBody: '作品集现在围绕一棵书稿结构工作：它保存层级、顺序、规划状态、关联文章和导出关系；正文仍保存在文章库里。',
       createTitle: '先新建或打开一个作品集',
@@ -369,6 +370,10 @@ const translations = {
       finish: '完成，不再自动显示',
       progress: '步骤 {current} / {total}',
     },
+    guidedTours: { start: '开始教程', later: '稍后', dismiss: '不再提示', progress: '步骤 {current} / {total}' },
+    collectionAgentTour: {
+      inviteTitle: '了解作品集 Agent', inviteBody: '看看如何讨论、添加引用、维护项目圣经和确认提案。教程不会发送模型请求。', roleTitle: '这是当前作品集的总编工作台', roleBody: 'Agent 围绕当前作品集讨论结构、连续性和下一步，也可以起草场景，但不会自动改正文。', quickTitle: '快捷任务先确认再运行', quickBody: '体检、连续性和整理记忆都是专门任务。点击后会先显示模型与上下文，确认后才发送请求。', referencesTitle: '用 @ 添加明确上下文', referencesBody: '输入 @ 或点击添加引用，可以选择结构节点、文章、卡片、意象和文脉。芯片代表本轮上下文，不是正文。', runsTitle: 'Prompt 索引快速返回历史', runsBody: '左侧只列你的输入和快捷任务。点击一项可定位到对应回答；长回答可以收起。', proposalsTitle: '提案必须由作者决定', proposalsBody: '结构、便签和记忆更新都先成为提案。应用才写入，拒绝不会进入项目记忆。', memoryTitle: '项目圣经才是长期记忆', memoryBody: '这里保存作者确认的设定、人物、时间线、风格和决策。普通聊天不会自动写进来。', clearTitle: '清空会话不清空作品', clearBody: '/clear 或清空按钮只整理工作记录，项目圣经、已应用数据和待确认提案仍会保留。',
+    },
     // 文脉库
     library: {
       title: '文脉标本库',
@@ -379,6 +384,8 @@ const translations = {
       countSummary: '共 {count} 条',
       noReferences: '暂无标本。点击"新建"添加。',
       search: '搜索标本...',
+      clearSearch: '清除',
+      noSearchResults: '没有匹配的标本。',
       usageKind: '用途',
       statsByUsage: '按用途统计',
       groupBySource: '按书籍',
@@ -442,17 +449,23 @@ const translations = {
       add: '添加',
       empty: '还没有意象。选中文章或标本中的句子，右键加入第一个意象。',
       emptyGraph: '暂无意象星点',
-      graphAria: '意象共同出现星图',
-      relationCount: '{count} 条共同出现关系',
+      graphAria: '意象关系星图',
+      relationCount: '{count} 条意象关系',
+      graphEvidence: '共享摘录 {excerpts} · 共享来源 {sources}',
+      zoomIn: '放大星图', zoomOut: '缩小星图', fitView: '适配全部节点', centerSelected: '回到选中意象', fit: '适配', center: '居中', needsEnrichmentShort: '待丰富', relationWeight: '关联强度 {count}',
       viewGraph: '共现图',
       localRelationCount: '局部关系 {count}',
       index: '意象索引',
+      showIndex: '显示索引',
+      hideIndex: '收起索引',
+      openDetails: '查看详情',
+      closeDetails: '关闭详情',
       excerptCount: '{count} 条摘录',
       archive: '意象档案',
       pinned: '收藏',
       localGraph: '局部星图',
-      localGraphHint: '只显示与当前意象真实共现的关系。',
-      noRelations: '还没有共同出现关系',
+      localGraphHint: '按资料共现和作者确认关系汇总邻近意象。',
+      noRelations: '还没有邻近意象',
       name: '名称',
       aliases: '别名',
       tags: '标签',
@@ -604,8 +617,16 @@ const translations = {
       enrichDraftTargetChanged: '这个草稿属于另一个已选意象。请回到原意象或重新生成后再应用，避免写入错误目标。',
       enrichApplied: 'AI 丰富结果已应用',
       enrichAppliedWithReferences: 'AI 丰富结果已应用，并录入 {count} 条相关句子',
+      enrichAppliedWithRelations: 'AI 丰富已应用：相关句子 {references} 条、关系 {relations} 条、新概念 {concepts} 个',
       enrichUnknownModel: '未知模型',
+      relations: {
+        title: '正式关系', help: '这里保存作者确认的概念关系；共现事实仍由真实摘录自动计算。', add: '新增关系', discover: '发现关联', running: '发现中', empty: '还没有作者确认的正式关系。', target: '目标意象', searchTarget: '搜索名称、别名或标签', noTarget: '没有匹配的意象', type: '关系类型', direction: '方向', fromCurrent: '当前意象 → 目标意象', toCurrent: '目标意象 → 当前意象', reason: '关系理由', reasonPlaceholder: '为什么这两个意象值得建立关系，可选', saved: '意象关系已保存。', deleteConfirm: '解除与“{name}”的正式关系吗？真实共现关系不会受影响。', containsTarget: '包含目标意象', containedByTarget: '被目标意象包含', transformsToTarget: '转化为目标意象', transformedFromTarget: '由目标意象转化',
+        types: { echo: '呼应', contrast: '对照', transformation: '转化', contains: '包含', associated: '一般关联' },
+        discoveryTitle: '发现意象关联', discoveryHelp: 'AI 只生成候选，勾选并确认后才会写入。', costHint: '这会发送一次模型请求，可能产生 token 和费用。软件只发送当前意象档案和已有意象轻量目录，不发送整篇文章。', confirmDiscover: '确认并开始发现', discoverAgain: '重新发现', candidates: '关系与新概念候选', reviewHint: '默认不选中。新概念确认后只创建空节点，不会自动继续 AI 丰富。', newConcept: '新概念', noCandidates: '本次没有返回值得建立的关系候选。', notAutomatic: '未勾选的候选不会保存。', applySelected: '应用 {count} 个候选', applied: '已建立 {count} 条关系，并创建 {concepts} 个待丰富概念。', targetChanged: '这些候选属于另一个意象，请回到原意象后再应用。', jobMissing: '关系发现任务已不存在，可能是应用重启或任务已过期。', unsupported: '当前后台不支持关系发现，请退出应用并安装最新版本。', enrichmentCandidates: '关系与新概念候选',
+        stages: { preparing_context: '整理当前意象与已有目录', sending_request: '发送请求', waiting_model: '等待模型返回', parsing_response: '解析结构化结果', building_candidates: '核对已有意象与新概念' },
+      },
     },
+    motifsTour: { inviteTitle: '了解意象星图', inviteBody: '快速看看锚点、星图、AI 丰富和作者确认关系如何配合。教程不会发送 AI 或创建意象。', anchorTitle: '意象来自作者标记的文本', anchorBody: '在文章或文脉中选中句子并加入意象，才会形成可返回原文的锚点。意象索引本身不会替作者调用素材。', graphTitle: '星图合并两类正式联系', graphBody: '共享真实摘录或来源会产生共现；作者确认的概念关系也会显示。同一对意象始终只画一条线。', navigateTitle: '缩放、平移和聚焦邻域', navigateBody: '滚轮缩放、拖动画布；悬停节点突出一跳邻域。适配和居中按钮可以随时找回视图。', enrichTitle: 'AI 丰富先生成草稿', enrichBody: '档案、句子和关系都先预览。关闭窗口后任务仍在本次应用运行，重新打开只查状态，不会重发请求。', relationsTitle: '发现关联不等于自动关联', relationsBody: 'AI 可以提出已有意象和新概念候选，但默认不勾选。确认后才成为正式关系；新概念只创建待丰富空节点。', sourcesTitle: '来源锚点把星图带回原文', sourcesBody: '按文章或文脉分组查看锚点。单处直接跳转，多处先选择位置；原文漂移时使用现有定位回退。' },
     // AI 模块
     ai: {
       title: 'AI 写作助手',
@@ -1119,6 +1140,16 @@ const translations = {
       referenceSection: {
         title: '文脉参考', summary: '已选 {count} 条 · 共约 {chars} 字', empty: '尚未选择文脉标本', choose: '选择文脉标本', reselect: '重新选择', clear: '清除参考', remove: '移除 {name}', runReferences: '本轮参考',
       },
+      contextSources: {
+        title: '参考上下文', help: '只把你明确选择的资料发送给本轮所有模型。', references: '文脉标本', chooseCards: '选择 AI Cards', chooseNotes: '选择文章便签', referenceEmpty: '选择可借鉴的文风、结构或手法。', cardEmpty: '选择人物、场景或风格卡。', noteEmpty: '选择当前文章的写作便签。',
+      },
+      contextPicker: { summary: '已选 {count} 条 · 共约 {chars} 字', useSelected: '使用 {count} 条' },
+      cardPicker: {
+        title: '选择 AI Cards', search: '搜索卡片标题、正文或标签', all: '全部', style: '风格', character: '人物', scene: '场景', empty: '还没有 AI Card。', noMatches: '没有匹配的 AI Card。', openCards: '前往 AI Cards',
+      },
+      notePicker: {
+        title: '选择文章便签', search: '搜索当前文章便签', all: '全部', open: '进行中', done: '已完成', pinned: '已置顶', empty: '当前文章还没有便签。', noMatches: '没有匹配的文章便签。', openArticle: '返回文章添加便签', untitled: '未命名便签',
+      },
       referencePicker: {
         title: '选择文脉标本', selectedSummary: '已选 {count} 条 · 共约 {chars} 字', search: '搜索标题、作者、正文、标签或个人备注', clearSearch: '清空搜索', clearSelection: '清空本次选择', usageFilter: '按用途筛选', untitled: '未标注出处', backToList: '返回标本列表', preview: '查看全文', select: '选择 {name}', deselect: '取消选择 {name}', noMatches: '没有匹配的文脉标本。', empty: '文脉库里还没有标本。', openLibrary: '前往文脉库', useSelected: '使用 {count} 条标本', largeContext: '参考正文超过 20,000 字。所有已选模型都会读取这份上下文，token、费用和风格混杂风险可能增加。', itemTruncated: '这条标本超过单个附件 40,000 字的发送上限。发送时会优先保留用途、标签和作者备注，正文发送到附件上限；完整内容仍保留在文脉库。',
       },
@@ -1129,6 +1160,7 @@ const translations = {
       chooseModels: '选择 AI 配置档案', modelHint: '运行数量不设上限。选择越多，等待时间、token 和费用可能越高；不会隐性加入默认档案。', copied: '已复制当前模型结果。',
       applyPreview: '确认写回文章', applySafety: '写回前会创建 AI_BEFORE_APPLY 版本；文章运行后发生变化时会阻止覆盖。', before: '原文 / 原选区', after: '生成结果', confirmApply: '创建版本并写回', applied: '已写回文章，并创建写回前版本。', alreadyApplied: '这轮结果此前已经写回，没有重复修改文章。',
     },
+    articleAiTour: { inviteTitle: '了解 AI 修改工作流', inviteBody: '快速看看如何选择文章、参考资料和模型，再安全预览写回。教程不会发送 AI 请求。', targetTitle: '先明确处理哪段文字', targetBody: '从文章进入时会带入文章和选区；直接打开时先选文章。运行使用点击瞬间的文字快照。', taskTitle: '四种任务对应不同写回方式', taskBody: '润色、改写和扩写用于替换；续写插入到选区后或文末。参数只控制当前任务。', contextTitle: '参考上下文由作者明确选择', contextBody: '文脉标本、AI Cards 和文章便签分别选择。所有模型读取同一份冻结快照，不会偷偷加入其他资料。', pickerTitle: '选择弹窗只负责查找、阅读和勾选', pickerBody: '整张卡片都可以选择，也能先查看全文。取消会丢弃本次草稿选择，只有确认按钮才会更新 AI 修改上下文。', modelsTitle: '勾选哪些模型就运行哪些', modelsBody: '默认档案只是初始选择。多模型先完成的先显示，增加模型会增加等待、token 和费用。', resultsTitle: '结果和差异不会自动消失', resultsBody: '每个模型独立显示成功或失败；选择结果后阅读正文或段落差异，不使用额外 AI 评委。', applyTitle: '写回必须经过预览', applyBody: '确认写回前会创建 AI_BEFORE_APPLY 版本。文章在运行后发生变化时，软件会阻止错误覆盖。' },
     // 设置
     settings: {
       title: '设置',
@@ -1351,6 +1383,7 @@ const translations = {
       collectionsTutorialHelp: '重新打开作品集页面的手把手教程，解释书稿结构、作品类型、未编排文章、关联文章、看板和导出。',
       showCollectionsTutorial: '重新显示教程',
       collectionsTutorialReset: '作品集教程会重新打开。',
+      tutorials: { title: '互动教程中心', help: '教程只高亮和解释真实界面，不会创建数据或发送 AI 请求。', collections: '作品集规划', collectionsHelp: '书稿结构、文章关联、看板和导出。', aiEdit: 'AI 修改', aiEditHelp: '文章、参考上下文、多模型结果和安全写回。', agent: '作品集 Agent', agentHelp: '讨论、引用、Prompt 索引、项目圣经和提案。', motifs: '意象星图', motifsHelp: '锚点、图谱导航、AI 丰富和正式关系。', restart: '启动教程', status: { unseen: '未看', completed: '已完成', dismissed: '不再提示' } },
     },
     updates: {
       bannerEyebrow: '版本更新',
@@ -1803,6 +1836,7 @@ const translations = {
       statusParked: 'Parked',
     },
     collectionsTour: {
+      inviteTitle: 'New to Collections?', inviteBody: 'Take a short tour of manuscript structure, article links, the board, and export. It highlights the real interface without creating or changing data.',
       introTitle: 'A collection is a manuscript project',
       introBody: 'Collections now revolve around one manuscript structure tree: hierarchy, order, planning status, linked articles, and export relationships. Article text still lives in Articles.',
       createTitle: 'Create or open a collection first',
@@ -1847,6 +1881,10 @@ const translations = {
       finish: 'Finish and do not auto-show',
       progress: 'Step {current} / {total}',
     },
+    guidedTours: { start: 'Start Tour', later: 'Later', dismiss: 'Do Not Prompt Again', progress: 'Step {current} / {total}' },
+    collectionAgentTour: {
+      inviteTitle: 'Meet Collection Agent', inviteBody: 'Learn how to discuss the book, add references, maintain the project bible, and review proposals. The tour never sends a model request.', roleTitle: 'Your editorial workspace for this collection', roleBody: 'Agent discusses structure, continuity, and next steps for the current collection. It can draft scenes, but never edits article text automatically.', quickTitle: 'Quick tasks ask before running', quickBody: 'Health checks, continuity, and memory organization are dedicated tasks. They show model and context before any request is sent.', referencesTitle: 'Use @ for explicit context', referencesBody: 'Type @ or choose Add Reference to select outline nodes, articles, cards, motifs, or references. Chips are context for this turn, not prose.', runsTitle: 'Prompt index returns to earlier work', runsBody: 'The left side lists only your prompts and quick tasks. Select one to jump to its response; long answers can be collapsed.', proposalsTitle: 'The author decides every proposal', proposalsBody: 'Structure, notes, and memory updates remain proposals until you apply them. Rejected proposals never enter memory.', memoryTitle: 'The project bible is long-term memory', memoryBody: 'Confirmed setting, characters, timeline, style, and decisions live here. Ordinary chat never enters it automatically.', clearTitle: 'Clearing chat does not clear the book', clearBody: '/clear or Clear removes work history while keeping the project bible, applied data, and pending proposals.',
+    },
     // Library module
     library: {
       title: 'Reference Library',
@@ -1857,6 +1895,8 @@ const translations = {
       countSummary: '{count} specimens',
       noReferences: 'No references yet. Click "New" to add.',
       search: 'Search references...',
+      clearSearch: 'Clear',
+      noSearchResults: 'No matching references.',
       usageKind: 'Usage',
       statsByUsage: 'Stats by Usage',
       groupBySource: 'By Source',
@@ -1920,17 +1960,23 @@ const translations = {
       add: 'Add',
       empty: 'No motifs yet. Select a sentence in an article or reference, then right-click to add the first one.',
       emptyGraph: 'No motif stars yet',
-      graphAria: 'Motif co-occurrence star map',
-      relationCount: '{count} co-occurrence links',
+      graphAria: 'Motif relationship star map',
+      relationCount: '{count} motif links',
+      graphEvidence: '{excerpts} shared excerpts · {sources} shared sources',
+      zoomIn: 'Zoom in', zoomOut: 'Zoom out', fitView: 'Fit all nodes', centerSelected: 'Center selected motif', fit: 'Fit', center: 'Center', needsEnrichmentShort: 'Enrich', relationWeight: 'Strength {count}',
       viewGraph: 'Co-occurrence',
       localRelationCount: 'Local links {count}',
       index: 'Motif index',
+      showIndex: 'Show Index',
+      hideIndex: 'Hide Index',
+      openDetails: 'Open Details',
+      closeDetails: 'Close Details',
       excerptCount: '{count} excerpts',
       archive: 'Motif archive',
       pinned: 'Pinned',
       localGraph: 'Local star map',
-      localGraphHint: 'Only real co-occurrence links around this motif are shown.',
-      noRelations: 'No co-occurrence links yet',
+      localGraphHint: 'Nearby motifs combine real co-occurrence and author-confirmed relationships.',
+      noRelations: 'No nearby motifs yet',
       name: 'Name',
       aliases: 'Aliases',
       tags: 'Tags',
@@ -2082,8 +2128,16 @@ const translations = {
       enrichDraftTargetChanged: 'This draft belongs to another selected motif. Return to that motif or generate again before applying it.',
       enrichApplied: 'AI enrichment applied',
       enrichAppliedWithReferences: 'AI enrichment applied and {count} related sentence(s) imported',
+      enrichAppliedWithRelations: 'AI enrichment applied: {references} sentence(s), {relations} relationship(s), and {concepts} new concept(s)',
       enrichUnknownModel: 'Unknown model',
+      relations: {
+        title: 'Confirmed Relationships', help: 'These are author-confirmed concept relationships. Co-occurrence still comes only from real excerpts.', add: 'Add Relationship', discover: 'Discover Links', running: 'Discovering', empty: 'No author-confirmed relationships yet.', target: 'Target motif', searchTarget: 'Search name, alias, or tag', noTarget: 'No matching motif', type: 'Relationship type', direction: 'Direction', fromCurrent: 'Current motif → target motif', toCurrent: 'Target motif → current motif', reason: 'Reason', reasonPlaceholder: 'Why these motifs belong together, optional', saved: 'Motif relationship saved.', deleteConfirm: 'Remove the confirmed relationship with “{name}”? Real co-occurrence will remain.', containsTarget: 'Contains target motif', containedByTarget: 'Contained by target motif', transformsToTarget: 'Transforms into target motif', transformedFromTarget: 'Transformed from target motif',
+        types: { echo: 'Echo', contrast: 'Contrast', transformation: 'Transformation', contains: 'Contains', associated: 'Associated' },
+        discoveryTitle: 'Discover Motif Relationships', discoveryHelp: 'AI only proposes candidates. Nothing is written until you select and apply it.', costHint: 'This sends one model request and may use tokens. Only the current motif profile and a lightweight motif index are sent, never full articles.', confirmDiscover: 'Confirm and Start', discoverAgain: 'Discover Again', candidates: 'Relationship and New Concept Candidates', reviewHint: 'Nothing is preselected. Confirmed new concepts create empty nodes and are never enriched automatically.', newConcept: 'New concept', noCandidates: 'No worthwhile relationship candidates were returned.', notAutomatic: 'Unselected candidates are never saved.', applySelected: 'Apply {count} Candidates', applied: 'Created {count} relationship(s) and {concepts} concept(s) awaiting enrichment.', targetChanged: 'These candidates belong to another motif. Return to it before applying.', jobMissing: 'The discovery job no longer exists. The app may have restarted or the job expired.', unsupported: 'This backend does not support relationship discovery. Exit and install the latest version.', enrichmentCandidates: 'Relationship and New Concept Candidates',
+        stages: { preparing_context: 'Preparing motif and index', sending_request: 'Sending request', waiting_model: 'Waiting for model', parsing_response: 'Parsing structured result', building_candidates: 'Checking motifs and new concepts' },
+      },
     },
+    motifsTour: { inviteTitle: 'Learn the Motif Star Map', inviteBody: 'See how anchors, the graph, AI enrichment, and author-confirmed relationships work together. The tour never sends AI or creates motifs.', anchorTitle: 'Motifs begin with author-marked text', anchorBody: 'Select a sentence in an article or reference and add it to a motif to create an anchor back to the source. The index never calls material into prose for you.', graphTitle: 'The map combines two formal connections', graphBody: 'Shared real excerpts or sources create co-occurrence. Author-confirmed concept relationships also appear. A motif pair is always drawn as one edge.', navigateTitle: 'Zoom, pan, and focus a neighborhood', navigateBody: 'Use the wheel to zoom and drag the canvas. Hover highlights one-hop neighbors. Fit and Center recover the view at any time.', enrichTitle: 'AI enrichment starts as a draft', enrichBody: 'Profiles, sentence candidates, and relationship candidates are reviewed first. Closing the panel keeps the in-session job alive; reopening only checks status.', relationsTitle: 'Discovery is not automatic linking', relationsBody: 'AI can propose existing motifs and new concepts, but nothing is preselected. Confirmation creates a formal relationship; new concepts are empty nodes awaiting enrichment.', sourcesTitle: 'Source anchors return to the text', sourcesBody: 'Anchors are grouped by article or reference. One opens directly; several ask you to choose. Existing drift recovery handles edited source text.' },
     // AI module
     ai: {
       title: 'AI Writing Assistant',
@@ -2597,6 +2651,16 @@ const translations = {
       referenceSection: {
         title: 'Reference Specimens', summary: '{count} selected · about {chars} chars', empty: 'No reference specimens selected', choose: 'Choose Reference Specimens', reselect: 'Change Selection', clear: 'Clear References', remove: 'Remove {name}', runReferences: 'References for This Run',
       },
+      contextSources: {
+        title: 'Reference Context', help: 'Only material you explicitly choose is sent to every model in this run.', references: 'Reference Specimens', chooseCards: 'Choose AI Cards', chooseNotes: 'Choose Article Notes', referenceEmpty: 'Choose style, structure, or technique to learn from.', cardEmpty: 'Choose character, scene, or style cards.', noteEmpty: 'Choose writing notes from the current article.',
+      },
+      contextPicker: { summary: '{count} selected · about {chars} chars', useSelected: 'Use {count} Items' },
+      cardPicker: {
+        title: 'Choose AI Cards', search: 'Search card title, content, or tags', all: 'All', style: 'Style', character: 'Character', scene: 'Scene', empty: 'There are no AI Cards yet.', noMatches: 'No matching AI Cards.', openCards: 'Open AI Cards',
+      },
+      notePicker: {
+        title: 'Choose Article Notes', search: 'Search notes on this article', all: 'All', open: 'Open', done: 'Done', pinned: 'Pinned', empty: 'This article has no writing notes yet.', noMatches: 'No matching article notes.', openArticle: 'Return to Article and Add a Note', untitled: 'Untitled Note',
+      },
       referencePicker: {
         title: 'Choose Reference Specimens', selectedSummary: '{count} selected · about {chars} chars', search: 'Search title, author, text, tags, or personal notes', clearSearch: 'Clear Search', clearSelection: 'Clear Draft Selection', usageFilter: 'Filter by usage', untitled: 'Untitled Source', backToList: 'Back to Specimens', preview: 'View Full Text', select: 'Select {name}', deselect: 'Deselect {name}', noMatches: 'No matching reference specimens.', empty: 'There are no specimens in the reference library yet.', openLibrary: 'Open Reference Library', useSelected: 'Use {count} Specimens', largeContext: 'The selected reference text exceeds 20,000 characters. Every selected model will read this context, which can increase tokens, cost, and mixed-style results.', itemTruncated: 'This specimen exceeds the 40,000-character limit for one attachment. Its purpose, tags, and author note are kept first, followed by as much specimen text as fits; the full text remains in the reference library.',
       },
@@ -2607,6 +2671,7 @@ const translations = {
       chooseModels: 'Choose AI Profiles', modelHint: 'There is no fixed limit. More models can increase waiting time, tokens, and cost. The default profile is never added implicitly.', copied: 'Copied the selected model result.',
       applyPreview: 'Confirm Article Write-back', applySafety: 'An AI_BEFORE_APPLY version is created first. Write-back is blocked if the article changed after the run started.', before: 'Original / Selection', after: 'Generated Result', confirmApply: 'Create Version and Apply', applied: 'Applied to the article and created a pre-apply version.', alreadyApplied: 'This result was already applied; the article was not modified twice.',
     },
+    articleAiTour: { inviteTitle: 'Learn the AI Edit Workflow', inviteBody: 'See how to choose an article, references, and models, then preview a safe write-back. The tour never sends an AI request.', targetTitle: 'Start with the exact text to edit', targetBody: 'Entering from Articles carries the article and selection. Opening AI Edit directly asks you to choose an article. A run freezes the text at click time.', taskTitle: 'Each task has its own write-back meaning', taskBody: 'Polish, Rewrite, and Expand replace text. Continue inserts after the selection or at the end. Controls apply only to the current task.', contextTitle: 'The author chooses every reference', contextBody: 'Reference specimens, AI Cards, and article notes have separate pickers. Every model reads the same frozen snapshot; no hidden material is added.', pickerTitle: 'Pickers are for finding, reading, and selecting', pickerBody: 'Select anywhere on a card or preview its full text first. Cancel discards the draft selection; only the confirmation button updates AI Edit context.', modelsTitle: 'Only selected models run', modelsBody: 'The default profile is just the initial selection. Faster models appear first. More models can increase time, tokens, and cost.', resultsTitle: 'Results and diffs remain available', resultsBody: 'Each model succeeds or fails independently. Read the selected result or paragraph diff; no extra AI judge chooses a winner.', applyTitle: 'Write-back always has a preview', applyBody: 'AI_BEFORE_APPLY is created first. If the article changed after the run began, write-back is blocked instead of overwriting the wrong text.' },
     // Settings
     settings: {
       title: 'Settings',
@@ -2829,6 +2894,7 @@ const translations = {
       collectionsTutorialHelp: 'Reopen the guided collection tutorial for manuscript structure, project type, unplanned articles, linked articles, board, and export.',
       showCollectionsTutorial: 'Show Tutorial Again',
       collectionsTutorialReset: 'The collection tutorial will reopen.',
+      tutorials: { title: 'Interactive Tutorial Center', help: 'Tours only highlight and explain the real interface. They never create data or send AI requests.', collections: 'Collection Planning', collectionsHelp: 'Manuscript structure, article links, board, and export.', aiEdit: 'AI Edit', aiEditHelp: 'Articles, reference context, multi-model results, and safe write-back.', agent: 'Collection Agent', agentHelp: 'Discussion, references, prompt index, project bible, and proposals.', motifs: 'Motif Star Map', motifsHelp: 'Anchors, graph navigation, AI enrichment, and confirmed relationships.', restart: 'Start Tour', status: { unseen: 'Not Viewed', completed: 'Completed', dismissed: 'Do Not Prompt' } },
     },
     updates: {
       bannerEyebrow: 'Update',

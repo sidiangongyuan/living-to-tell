@@ -6,7 +6,7 @@ import { errorMessage, isHttpStatus } from '../../api/base'
 import { settingsApi, type DataLocationInfo } from '../../api/settings'
 import { useI18n } from '../../i18n'
 import { useAppUpdateStore } from '../../stores/appUpdate'
-import { useSettingsStore } from '../../stores/settings'
+import { useSettingsStore, type AppTourId } from '../../stores/settings'
 import AiProfilesSettings from './AiProfilesSettings.vue'
 
 interface DataDirectoryOverrideState {
@@ -28,6 +28,12 @@ const settingsCategories = computed(() => [
   { id: 'data' as const, label: t('settings.categories.data') },
   { id: 'interface' as const, label: t('settings.categories.interface') },
   { id: 'about' as const, label: t('settings.categories.about') },
+])
+const tutorialEntries = computed(() => [
+  { id: 'collections' as const, title: t('settings.tutorials.collections'), help: t('settings.tutorials.collectionsHelp') },
+  { id: 'ai-edit' as const, title: t('settings.tutorials.aiEdit'), help: t('settings.tutorials.aiEditHelp') },
+  { id: 'agent' as const, title: t('settings.tutorials.agent'), help: t('settings.tutorials.agentHelp') },
+  { id: 'motifs' as const, title: t('settings.tutorials.motifs'), help: t('settings.tutorials.motifsHelp') },
 ])
 
 const savingSettings = ref(false)
@@ -84,9 +90,16 @@ function resetWelcomeChecklist() {
   saveError.value = ''
 }
 
-async function showCollectionsTutorial() {
-  settings.resetCollectionsTour()
-  await router.push({ name: 'collections', query: { tour: 'collection' } })
+async function showTutorial(id: AppTourId) {
+  settings.resetTour(id)
+  if (id === 'collections') await router.push({ name: 'collections', query: { tour: 'collections' } })
+  else if (id === 'agent') await router.push({ name: 'collections', query: { tab: 'agent', tour: 'agent' } })
+  else if (id === 'ai-edit') await router.push({ name: 'ai', query: { tour: 'ai-edit' } })
+  else await router.push({ name: 'motifs', query: { tour: 'motifs' } })
+}
+
+function tutorialStatusLabel(id: AppTourId): string {
+  return t(`settings.tutorials.status.${settings.tourStatus(id)}`)
 }
 
 async function invokeNative<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -443,18 +456,13 @@ async function openReleasePage() {
             </div>
           </div>
 
-          <div class="rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <div class="flex items-center justify-between gap-3">
-              <div>
-                <div class="text-sm font-semibold text-gray-800">{{ t('settings.collectionsTutorial') }}</div>
-                <p class="mt-1 text-xs leading-5 text-gray-500">{{ t('settings.collectionsTutorialHelp') }}</p>
+          <div class="border-t border-gray-200 pt-4">
+            <div><h3 class="text-sm font-semibold text-gray-900">{{ t('settings.tutorials.title') }}</h3><p class="mt-1 text-xs leading-5 text-gray-500">{{ t('settings.tutorials.help') }}</p></div>
+            <div class="mt-3 divide-y divide-gray-200 rounded-lg border border-gray-200 bg-white">
+              <div v-for="tutorial in tutorialEntries" :key="tutorial.id" class="flex flex-wrap items-center justify-between gap-3 p-3">
+                <div class="min-w-0"><div class="flex items-center gap-2"><h4 class="text-sm font-semibold text-gray-800">{{ tutorial.title }}</h4><span class="rounded bg-gray-100 px-2 py-1 text-xs text-gray-500">{{ tutorialStatusLabel(tutorial.id) }}</span></div><p class="mt-1 text-xs leading-5 text-gray-500">{{ tutorial.help }}</p></div>
+                <button type="button" class="shrink-0 rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-700" @click="showTutorial(tutorial.id)">{{ t('settings.tutorials.restart') }}</button>
               </div>
-              <button
-                @click="showCollectionsTutorial"
-                class="shrink-0 rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-700"
-              >
-                {{ t('settings.showCollectionsTutorial') }}
-              </button>
             </div>
           </div>
         </div>

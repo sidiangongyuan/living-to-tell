@@ -10,8 +10,8 @@ Use this to confirm where the app lives, where your writing lives, and what upgr
 
 Steps:
 
-1. Download the latest Windows preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.48).
-2. Run the recommended installer: `LivingToTell_0.1.48_x64-setup.exe`. The MSI asset is `LivingToTell_0.1.48_x64_zh-CN.msi`.
+1. Download the latest Windows preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.49).
+2. Run the recommended installer: `LivingToTell_0.1.49_x64-setup.exe`. The MSI asset is `LivingToTell_0.1.49_x64_zh-CN.msi`.
 3. Open **活着为了讲述** from the Start menu or desktop shortcut.
 4. Open **Settings → Data and Storage** to review the active SQLite database, backup folder, and checkpoint folder.
 5. Before major edits, open **Export & Backup** and create a backup or named checkpoint.
@@ -86,7 +86,7 @@ Use Collections to organize multiple articles into a book project. Collections n
 Steps:
 
 1. Open **Collections**.
-2. Follow the interactive tutorial the first time it appears; if it was dismissed, restart it from **Settings > Interface Settings > Collection tutorial**.
+2. The first visit shows a small tutorial invitation. Choose **Start Tutorial** to begin spotlight steps, **Later** to postpone, or **Do Not Show Again** to dismiss it. Restart Collections or any other workspace tour from **Settings > Interface & Tutorials > Tutorial Center**.
 3. Create a collection with a title, description, and project type: General, Novel, Essay Collection, or Nonfiction. Use **Edit Info** when you later need to change the title or description.
 4. In **Manuscript**, add top-level nodes such as parts, chapters, sections, essays, or scenes. Labels change by project type.
 5. To put several articles under one chapter, select that chapter and click **New Child**, or place **Unplanned Articles** under the selected node.
@@ -137,19 +137,23 @@ Steps:
 
 1. Open **Reference Library**.
 2. Create a reference with content, source title, author, usage kind, and personal note. Existing references open in reading mode; click **Edit** to reveal editable fields.
-3. Jump from the daily reference card back to the matching reference.
-4. Select text in an article or reference, right-click, and choose **加入意象星图**.
-5. Search existing motifs or create new ones, then save the excerpt.
-6. Open **Motif Star Map** to inspect node size, color, and co-occurrence links.
-7. Click **AI Enrich** in the motif detail pane to turn concepts such as mythic pattern, slave morality, or das Man into compact writing cards. Review the draft before appending or overwriting the note.
-8. Removing an excerpt from a motif only unlinks the current motif; the same excerpt remains under other motifs.
+3. Search across title, author, tags, notes, and passage text. Matching text is highlighted; outside the editor, use Arrow Up/Down to move, Enter to open, and Escape to leave edit mode.
+4. Jump from the daily reference card back to the matching reference.
+5. Select text in an article or reference, right-click, and choose **加入意象星图**.
+6. Search existing motifs or create new ones, then save the excerpt.
+7. Open **Motif Star Map**. Scroll to zoom, drag the canvas to pan, use Fit or Center, change display density, and click a node to focus its one-hop neighborhood.
+8. In **Confirmed Relationships**, manually connect two existing motifs as Echo, Contrast, Transformation, Contains, or General Association. One pair stores one editable formal relationship.
+9. Choose **Discover Links** when you want AI suggestions. The AI sees only the current motif archive and a lightweight index of up to 200 motifs. Existing-link and new-concept candidates start unchecked; only selected candidates are applied. New concepts become name-only empty nodes marked for enrichment.
+10. Click **AI Enrich** in the motif detail pane to create a compact concept profile. Review the draft before saving; enrichment and discovery candidates never write automatically.
+11. Removing an excerpt from a motif only unlinks the current motif; the same excerpt remains under other motifs.
 
 Safety notes:
 
 - References keep source context; motifs capture recurring image/idea relationships.
 - The same source and selection reuses one excerpt instead of creating duplicates.
 - If article edits shift the selection, the app resolves by text and context and merges duplicates within the same source.
-- AI Enrich does not create related nodes or semantic edges automatically. Suggested relations are prompts for your review; star-map links still come from real excerpt co-occurrence.
+- Formal relationships are author-confirmed and appear alongside real excerpt co-occurrence. AI candidates are not stored until selected and applied, and confirmed relationships are never labeled as AI edges.
+- If co-occurrence and a formal relationship exist for the same pair, the map draws one merged edge. Removing either source preserves the edge while the other still exists.
 
 Common mistakes:
 
@@ -168,20 +172,21 @@ Steps:
 4. Select only the profiles you want to verify, then send a minimal real test. Real tests can use tokens and incur provider cost; each profile keeps its last health state and test time.
 5. Open an article and choose **AI Edit**, or select text first and enter from the article toolbar. Direct entry to AI Edit asks you to choose an article; there is no arbitrary paste mode.
 6. Choose Polish, Rewrite, Expand, or Continue.
-7. If the edit should follow a particular style or technique, use the first-class **Reference Specimens** section. Search title, author, text, tags, or personal notes; filter by purpose; open a full-text preview; then confirm the staged selection with **Use N Specimens**.
-8. Additional presets, AI Cards, article notes, and detailed instructions remain under **More Requirements**. Reference specimens are not duplicated there.
-9. Select one or more profiles. Selecting a non-default profile replaces the sole default selection; the default returns only if you explicitly select it again.
-10. Run the task and read the first successful result immediately. A failed model stays local to its status row and does not block other models. Leaving the page does not restart the task.
-11. Switch between **Generated Result** and **Difference from Original**. Write-back always opens a preview, verifies that the article has not drifted, and creates an `AI_BEFORE_APPLY` version first.
-12. In Articles, open **AI Chat** for discussion. Closing the drawer keeps the draft, thread, and in-flight reply. Copying or saving a reply remains explicit.
-13. Open **AI Cards** to create style, character, or scene cards. Review generated card drafts before saving, and use **Copy as Prompt** when a card should become explicit context.
+7. Use the first-class **Reference Context** area to choose any combination of **Reference Specimens**, **AI Cards**, and **Article Notes**. Each source opens a large searchable picker with readable cards, full-content preview, staged multi-selection, and a fixed confirmation bar.
+8. Reference specimens can be filtered by purpose; AI Cards by style, character, or scene; article notes by active or completed state, with pinned notes first. Changing articles clears note selections so notes cannot leak into the wrong draft, while specimens and cards stay selected for the current AI Edit page session.
+9. **More Requirements** now contains only presets, additional instructions, and advanced task parameters. None of the three context sources is hidden there.
+10. Select one or more profiles. Selecting a non-default profile replaces the sole default selection; the default returns only if you explicitly select it again.
+11. Run the task and read the first successful result immediately. A failed model stays local to its status row and does not block other models. Leaving the page does not restart the task.
+12. Switch between **Generated Result** and **Difference from Original**. The result records names and sizes from the frozen context snapshot without returning attachment bodies. Write-back always opens a preview, verifies that the article has not drifted, and creates an `AI_BEFORE_APPLY` version first.
+13. In Articles, open **AI Chat** for discussion. Closing the drawer keeps the draft, thread, and in-flight reply. Copying or saving a reply remains explicit.
+14. Open **AI Cards** to create style, character, or scene cards. Review generated card drafts before saving; choose cards directly from the AI Edit picker when they should guide a run.
 
 Safety notes:
 
 - AI providers receive the article/selection and optional context shown for the task you explicitly run.
 - Local config checks are not remote availability proof. Only a successful real test request proves the model works.
 - Multi-model requests contain exactly the selected profile IDs; the default profile is never injected silently.
-- Reference specimens are attached only after you confirm the picker. Every model in that run receives the same frozen specimen set, including purpose, tags, personal note, and the allowed text range.
+- Reference specimens, AI Cards, and article notes are attached only after you confirm their pickers. Every model in that run receives the same frozen selection; attachment bodies are not echoed back in run metadata.
 - Specimens guide writing method, style, structure, imagery, or rhetoric; they are not fact sources. The prompt forbids copying or near-copying sentences and importing specimen people, facts, plot, or named entities.
 - Reconnection only checks task state. It never resends a provider request. Local cancellation cannot guarantee that a request already sent to a provider stops generating or billing.
 - Article drift blocks positional write-back. Copy the result or rerun against the current article instead of forcing an unsafe replacement.

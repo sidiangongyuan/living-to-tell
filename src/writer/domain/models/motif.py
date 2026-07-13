@@ -9,6 +9,32 @@ MOTIF_SOURCE_ARTICLE = "article"
 MOTIF_SOURCE_REFERENCE = "reference"
 MOTIF_SOURCE_KINDS = {MOTIF_SOURCE_ARTICLE, MOTIF_SOURCE_REFERENCE}
 
+MOTIF_RELATION_ECHO = "echo"
+MOTIF_RELATION_CONTRAST = "contrast"
+MOTIF_RELATION_TRANSFORMATION = "transformation"
+MOTIF_RELATION_CONTAINS = "contains"
+MOTIF_RELATION_ASSOCIATED = "associated"
+MOTIF_RELATION_TYPES = {
+    MOTIF_RELATION_ECHO,
+    MOTIF_RELATION_CONTRAST,
+    MOTIF_RELATION_TRANSFORMATION,
+    MOTIF_RELATION_CONTAINS,
+    MOTIF_RELATION_ASSOCIATED,
+}
+MOTIF_DIRECTED_RELATION_TYPES = {
+    MOTIF_RELATION_TRANSFORMATION,
+    MOTIF_RELATION_CONTAINS,
+}
+
+MOTIF_RELATION_UNDIRECTED = "undirected"
+MOTIF_RELATION_A_TO_B = "a_to_b"
+MOTIF_RELATION_B_TO_A = "b_to_a"
+MOTIF_RELATION_DIRECTIONS = {
+    MOTIF_RELATION_UNDIRECTED,
+    MOTIF_RELATION_A_TO_B,
+    MOTIF_RELATION_B_TO_A,
+}
+
 
 @dataclass(frozen=True)
 class MotifNode:
@@ -20,6 +46,20 @@ class MotifNode:
     tags: list[str] = field(default_factory=list)
     pinned: bool = False
     excerpt_count: int = 0
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class MotifRelation:
+    id: str
+    motif_a_id: str
+    motif_a_name: str
+    motif_b_id: str
+    motif_b_name: str
+    relation_type: str
+    direction: str
+    reason: str = ""
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -51,6 +91,8 @@ class MotifGraphNode:
     excerpt_count: int
     pinned: bool = False
     is_center: bool = False
+    relation_count: int = 0
+    needs_enrichment: bool = False
 
 
 @dataclass(frozen=True)
@@ -60,3 +102,7 @@ class MotifGraphEdge:
     weight: int
     shared_excerpts: int = 0
     shared_sources: int = 0
+    relation_id: Optional[str] = None
+    relation_type: Optional[str] = None
+    relation_direction: Optional[str] = None
+    relation_reason: str = ""

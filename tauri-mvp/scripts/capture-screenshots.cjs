@@ -98,6 +98,30 @@ const references = [
   },
 ]
 
+const motifs = [
+  {
+    id: 'motif-wind', name: '风', aliases: ['海风'], note: '移动、消息和未说出口的话。', tags: ['自然', '消息'], pinned: true, excerpt_count: 2,
+    profile: { definition: '穿过空间并带来变化的无形力量。', core_tension: '自由与失控', writing_functions: ['转场', '消息预兆'], scene_triggers: [], character_signals: [], imagery_translations: [], short_examples: [], misuse_warnings: [], micro_exercises: [], source_hints: [] },
+    created_at: now, updated_at: now,
+  },
+  {
+    id: 'motif-sea', name: '海边', aliases: [], note: '开放空间与回声。', tags: ['空间'], pinned: false, excerpt_count: 2,
+    profile: { definition: '边界不断变化的开放空间。', core_tension: '靠近与退却', writing_functions: ['空间底色'], scene_triggers: [], character_signals: [], imagery_translations: [], short_examples: [], misuse_warnings: [], micro_exercises: [], source_hints: [] },
+    created_at: now, updated_at: now,
+  },
+  {
+    id: 'motif-letter', name: '信', aliases: [], note: '迟到的表达。', tags: ['关系'], pinned: false, excerpt_count: 1,
+    profile: { definition: '被延迟但可以反复阅读的表达。', core_tension: '抵达与错过', writing_functions: ['关系转折'], scene_triggers: [], character_signals: [], imagery_translations: [], short_examples: [], misuse_warnings: [], micro_exercises: [], source_hints: [] },
+    created_at: now, updated_at: now,
+  },
+  { id: 'motif-lamp', name: '旧灯', aliases: [], note: '', tags: [], pinned: false, excerpt_count: 0, profile: { definition: '', core_tension: '', writing_functions: [], scene_triggers: [], character_signals: [], imagery_translations: [], short_examples: [], misuse_warnings: [], micro_exercises: [], source_hints: [] }, created_at: now, updated_at: now },
+]
+
+const motifRelations = [
+  { id: 'demo-relation-1', motif_id: 'motif-wind', motif_name: '风', target_motif_id: 'motif-letter', target_motif_name: '信', relation_type: 'echo', direction: 'undirected', reason: '风带来消息，信把消息固定成可以反复阅读的痕迹。', created_at: now, updated_at: now },
+  { id: 'demo-relation-2', motif_id: 'motif-wind', motif_name: '风', target_motif_id: 'motif-sea', target_motif_name: '海边', relation_type: 'associated', direction: 'undirected', reason: '海边让风获得盐、湿度和距离感。', created_at: now, updated_at: now },
+]
+
 const aiCards = [
   {
     id: 'demo-card-1',
@@ -201,12 +225,32 @@ function json(route, data, status = 200) {
   })
 }
 
+function motifGraph(centerId = '') {
+  return {
+    nodes: motifs.map((motif) => ({
+      id: motif.id,
+      name: motif.name,
+      excerpt_count: motif.excerpt_count,
+      pinned: motif.pinned,
+      is_center: motif.id === centerId,
+      relation_count: motifRelations.filter((relation) => relation.motif_id === motif.id || relation.target_motif_id === motif.id).length,
+      needs_enrichment: motif.excerpt_count === 0 && !motif.note && !motif.profile.definition,
+    })),
+    edges: [
+      { source_id: 'motif-wind', target_id: 'motif-letter', weight: 1, shared_excerpts: 0, shared_sources: 0, relation_id: 'demo-relation-1', relation_type: 'echo', relation_direction: 'undirected', relation_reason: motifRelations[0].reason },
+      { source_id: 'motif-wind', target_id: 'motif-sea', weight: 3, shared_excerpts: 2, shared_sources: 1, relation_id: 'demo-relation-2', relation_type: 'associated', relation_direction: 'undirected', relation_reason: motifRelations[1].reason },
+    ],
+  }
+}
+
 async function installDemoApi(page) {
   await page.addInitScript(() => {
     window.__WRITER_API_BASE__ = 'http://127.0.0.1:8000'
     localStorage.setItem('language', 'zh')
     localStorage.setItem('theme', 'light')
     localStorage.setItem('right_context_pane_collapsed', 'false')
+    localStorage.setItem('living_to_tell_welcome_checklist_dismissed', 'true')
+    localStorage.setItem('living_to_tell_guided_tours_v2', JSON.stringify({ 'ai-edit': 'dismissed', collections: 'dismissed', agent: 'dismissed', motifs: 'dismissed' }))
   })
 
   await page.route('**/*', async (route) => {
@@ -221,7 +265,7 @@ async function installDemoApi(page) {
     if (pathname === '/api/app/version') {
       return json(route, {
         app_name: 'Living to Tell',
-        version: '0.1.48',
+        version: '0.1.49',
         api_version: '2.0.0',
         capabilities: [
           'data_location',
@@ -234,6 +278,9 @@ async function installDemoApi(page) {
           'article_ai_task_runs',
           'article_ai_chat_drawer',
           'motif_star_map',
+          'motif_authored_relations',
+          'motif_relation_discovery',
+          'guided_tours_v2',
           'update_check',
           'article_versions',
           'collection_outline',
@@ -284,6 +331,14 @@ async function installDemoApi(page) {
       return json(route, matches)
     }
     if (pathname === '/api/ai-cards') return json(route, aiCards)
+    if (pathname === '/api/ai-cards/search') {
+      const cardType = url.searchParams.get('card_type')
+      const query = (url.searchParams.get('q') || '').trim().toLocaleLowerCase()
+      return json(route, aiCards.filter((card) => {
+        if (cardType && card.card_type !== cardType) return false
+        return !query || [card.title, card.content, ...card.tags].join('\n').toLocaleLowerCase().includes(query)
+      }))
+    }
     if (pathname === '/api/ai-cards/presets/list') return json(route, aiCards)
     if (pathname === '/api/ai/task-presets') return json(route, {})
     if (pathname === '/api/ai/task-runs/active' && method === 'GET') return json(route, articleTaskRun)
@@ -313,7 +368,7 @@ async function installDemoApi(page) {
           kind: attachment.kind,
           ref_id: attachment.ref_id,
           name: attachment.name,
-          size_chars: Math.min((attachment.body || '').trim().length, 40000),
+          size_chars: Math.min((attachment.content || '').trim().length, 40000),
         })),
         results, created_at: now, started_at: now, updated_at: now, completed_at: now, elapsed_ms: 2380,
         applied_profile_id: null, applied_at: null, applied_version_id: null,
@@ -467,6 +522,12 @@ async function installDemoApi(page) {
     if (pathname === '/api/backup/stats') return json(route, { total_size: 0 })
     if (pathname === '/api/backup/backups') return json(route, [])
     if (pathname === '/api/backup/checkpoints') return json(route, [])
+    if (pathname === '/api/motifs') return json(route, motifs)
+    if (pathname === '/api/motifs/graph') return json(route, motifGraph())
+    if (pathname === '/api/motifs/motif-wind/graph') return json(route, motifGraph('motif-wind'))
+    if (pathname === '/api/motifs/motif-wind/relations') return json(route, motifRelations)
+    if (/^\/api\/motifs\/[^/]+\/relations$/.test(pathname)) return json(route, [])
+    if (/^\/api\/motifs\/[^/]+\/excerpts$/.test(pathname)) return json(route, [])
     if (pathname.startsWith('/api/motifs/excerpts/source/')) return json(route, [])
 
     return json(route, { detail: `Demo route not mocked: ${method} ${pathname}` }, 404)
@@ -519,12 +580,18 @@ async function main() {
       await page.getByRole('button', { name: /^改写/ }).click()
       await page.getByRole('button', { name: '选择文脉标本' }).click()
       const dialog = page.getByRole('dialog', { name: '选择文脉标本' })
-      for (const title of ['想象的书', '海边札记']) {
-        const card = dialog.getByTestId('article-ai-reference-card').filter({ hasText: title })
-        await card.getByRole('button', { name: new RegExp(`选择\\s+《${title}》`) }).click()
-      }
-      await dialog.getByRole('button', { name: '使用 2 条标本' }).click()
-      await page.getByRole('heading', { name: 'AI 修改' }).scrollIntoViewIfNeeded()
+      const referenceCard = dialog.getByTestId('article-ai-reference-card').filter({ hasText: '海边札记' })
+      await referenceCard.getByRole('button', { name: /选择\s+《海边札记》/ }).click()
+      await dialog.getByRole('button', { name: '使用 1 条标本' }).click()
+      await page.getByRole('button', { name: '选择 AI Cards' }).click()
+      const cardDialog = page.getByRole('dialog', { name: '选择 AI Cards' })
+      await cardDialog.getByRole('button', { name: '克制而有画面感' }).click()
+      await cardDialog.getByRole('button', { name: '使用 1 条' }).click()
+      await page.getByRole('button', { name: '选择文章便签' }).click()
+      const noteDialog = page.getByRole('dialog', { name: '选择文章便签' })
+      await noteDialog.getByRole('button', { name: /结尾可以回到/ }).click()
+      await noteDialog.getByRole('button', { name: '使用 1 条' }).click()
+      await page.getByTestId('article-ai-context-section').scrollIntoViewIfNeeded()
     },
   })
   await shot(page, '/ai?scope_kind=article&scope_id=demo-article-1', 'ai-reference-picker.png', {
@@ -544,6 +611,7 @@ async function main() {
       },
     })
     await shot(page, '/articles?id=demo-article-1&chat=1', 'article-ai-chat.png')
+    await shot(page, '/motifs?id=motif-wind', 'motif-star-map.png')
   }
 
   await browser.close()

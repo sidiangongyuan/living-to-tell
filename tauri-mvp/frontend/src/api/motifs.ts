@@ -115,6 +115,62 @@ export interface MotifReferenceCandidate {
   reason: string
 }
 
+export type MotifRelationType = 'echo' | 'contrast' | 'transformation' | 'contains' | 'associated'
+export type MotifRelationDirection = 'undirected' | 'from_current' | 'to_current'
+export type MotifStoredRelationDirection = 'undirected' | 'a_to_b' | 'b_to_a'
+
+export interface MotifRelationCandidate {
+  kind: 'existing' | 'new'
+  target_motif_id?: string | null
+  name: string
+  relation_type: MotifRelationType
+  direction: MotifRelationDirection
+  reason: string
+}
+
+export interface MotifRelation {
+  id: string
+  motif_id: string
+  motif_name: string
+  target_motif_id: string
+  target_motif_name: string
+  relation_type: MotifRelationType
+  direction: MotifRelationDirection
+  reason: string
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface MotifRelationInput {
+  target_motif_id: string
+  relation_type: MotifRelationType
+  direction: MotifRelationDirection
+  reason?: string
+}
+
+export interface ApplyMotifRelationCandidatesResult {
+  relations: MotifRelation[]
+  created_nodes: MotifNode[]
+  skipped: string[]
+}
+
+export interface MotifRelationDiscoveryRequest {
+  motif_id: string
+  profile_id?: string
+  cost_tier?: 'balanced' | 'strong'
+}
+
+export interface MotifRelationDiscoveryDraft {
+  motif_id: string
+  concept: string
+  existing_relation_candidates: MotifRelationCandidate[]
+  new_concept_candidates: MotifRelationCandidate[]
+  provider?: string | null
+  model?: string | null
+  transport?: string | null
+  elapsed_ms: number
+}
+
 export interface MotifEnrichmentDraft {
   title: string
   concept: string
@@ -125,6 +181,8 @@ export interface MotifEnrichmentDraft {
   related_suggestions: string[]
   source_hints: MotifSourceHint[]
   reference_candidates: MotifReferenceCandidate[]
+  existing_relation_candidates: MotifRelationCandidate[]
+  new_concept_candidates: MotifRelationCandidate[]
   provider?: string | null
   model?: string | null
   transport?: string | null
@@ -149,6 +207,8 @@ export interface MotifGraphNode {
   excerpt_count: number
   pinned: boolean
   is_center: boolean
+  relation_count?: number
+  needs_enrichment?: boolean
 }
 
 export interface MotifGraphEdge {
@@ -157,6 +217,10 @@ export interface MotifGraphEdge {
   weight: number
   shared_excerpts: number
   shared_sources: number
+  relation_id?: string | null
+  relation_type?: MotifRelationType | null
+  relation_direction?: MotifStoredRelationDirection | null
+  relation_reason?: string
 }
 
 export interface MotifGraph {
@@ -216,6 +280,43 @@ export const motifsApi = {
 
   async applyReferenceCandidates(id: string, candidates: MotifReferenceCandidate[]): Promise<ApplyMotifReferenceCandidatesResult> {
     const res = await apiFetch(`/api/motifs/${id}/reference-candidates`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ candidates }),
+    })
+    return handleResponse(res)
+  },
+
+  async listRelations(id: string): Promise<MotifRelation[]> {
+    const res = await apiFetch(`/api/motifs/${id}/relations`)
+    return handleResponse(res)
+  },
+
+  async createRelation(id: string, data: MotifRelationInput): Promise<MotifRelation> {
+    const res = await apiFetch(`/api/motifs/${id}/relations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async updateRelation(id: string, relationId: string, data: Omit<MotifRelationInput, 'target_motif_id'>): Promise<MotifRelation> {
+    const res = await apiFetch(`/api/motifs/${id}/relations/${relationId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async deleteRelation(id: string, relationId: string): Promise<void> {
+    const res = await apiFetch(`/api/motifs/${id}/relations/${relationId}`, { method: 'DELETE' })
+    return handleResponse(res)
+  },
+
+  async applyRelationCandidates(id: string, candidates: MotifRelationCandidate[]): Promise<ApplyMotifRelationCandidatesResult> {
+    const res = await apiFetch(`/api/motifs/${id}/relations/apply-candidates`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ candidates }),

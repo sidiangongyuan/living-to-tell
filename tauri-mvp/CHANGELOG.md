@@ -1,5 +1,30 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.49 - Context Pickers, Guided Workspaces, and Motif Relationships (2026-07-13)
+
+### Added
+
+- Promoted **Reference Specimens**, **AI Cards**, and current-article **Writing Notes** into three equal first-class AI Edit context sources. Each uses a large searchable picker with readable cards, filters, full-content preview, staged multi-selection, and a fixed confirmation footer.
+- Added a unified tutorial system for Collections, AI Edit, Collection Agent, and Motif Star Map. First visits show a lightweight invitation; Settings now reports each tour state and can restart any tour without creating data or sending AI.
+- Added author-confirmed motif relationships with Echo, Contrast, Transformation, Contains, and General Association types; one editable relationship is stored per motif pair.
+- Added review-first AI relationship discovery. Existing-motif and related-new-concept candidates start unchecked, and selected new concepts create name-only empty nodes without tags, excerpts, profiles, or follow-up AI calls.
+- Added D3 force/zoom graph navigation with pan, wheel zoom, density control, fit, center, selected-node focus, one-hop hover emphasis, merged co-occurrence/formal edges, and a responsive detail drawer.
+
+### Changed
+
+- Reworked the Reference Library into a calmer reading-first stone/teal/amber surface with clearer source hierarchy, controlled line width, stable actions, highlighted search matches, honest no-result recovery, and Arrow Up/Down, Enter, and Escape navigation outside the editor.
+- AI Edit freezes all three context types into one click-time snapshot for every selected model. Result metadata shows attachment type, name, ID, and character count without returning attachment bodies; switching articles clears only note selections.
+- More Requirements now contains presets, additional instructions, and advanced task parameters only. AI Cards and writing notes no longer hide as small checkboxes.
+- Motif details now use an ordered neighbor list instead of a duplicate mini graph, show only nodes with real edges, and keep formal relationship management beside source anchors and the concept archive.
+- Re-recorded all public tutorial GIFs as seven synthetic workflows and refreshed privacy-safe screenshots for AI context, the Reference Library, and the relationship star map.
+
+### Safety and verification
+
+- AI candidates never persist automatically. Candidate application is transactional and idempotent, reuses names and aliases that appeared while the dialog was open, and never labels confirmed relationships as AI edges.
+- Relationship discovery sends the current motif archive plus at most 200 lightweight motif index records and never includes article bodies by default. Closing the dialog reconnects to the in-process job instead of resending the provider request.
+- Added migration, uniqueness, direction, cascade, rollback, graph-merge, edge-survival, deduplication, no-body snapshot, picker, tutorial, responsive, accessibility, and keyboard-navigation regressions.
+- Real provider smoke test: `deepseek-v4-pro` completed one synthetic motif relationship discovery through OpenAI Chat Completions in 40.350s, returned reviewable candidates, and left formal relationship counts unchanged before author confirmation. GLM was not called or retried.
+
 ## 0.1.48 - First-Class Reference Specimens in AI Edit (2026-07-13)
 
 ### Added

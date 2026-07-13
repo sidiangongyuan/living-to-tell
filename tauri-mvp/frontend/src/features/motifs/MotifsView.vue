@@ -6,11 +6,14 @@ import {
   type MotifExcerpt,
   type MotifEnrichmentDraft,
   type MotifGraph,
-  type MotifGraphEdge,
-  type MotifGraphNode,
   type MotifNode,
   type MotifProfile,
   type MotifReferenceCandidate,
+  type MotifRelation,
+  type MotifRelationCandidate,
+  type MotifRelationDirection,
+  type MotifRelationDiscoveryDraft,
+  type MotifRelationType,
 } from '../../api/motifs'
 import { errorMessage, isHttpStatus } from '../../api/base'
 import { aiJobsApi, type AiJobSnapshot } from '../../api/aiJobs'
@@ -19,15 +22,21 @@ import { useI18n } from '../../i18n'
 import ContextMenu from '../../components/ContextMenu.vue'
 import PaneResizeHandle from '../../components/PaneResizeHandle.vue'
 import { useResizablePane } from '../../composables/useResizablePane'
-import { densityToLimit, filterMotifGraphByLimit, layoutMotifGraph } from './graphLayout'
+import { densityToLimit, filterMotifGraphByLimit } from './graphLayout'
+import MotifGraphCanvas from './MotifGraphCanvas.vue'
+import GuidedTourOverlay, { type GuidedTourStep } from '../../components/GuidedTourOverlay.vue'
+import TourInvitation from '../../components/TourInvitation.vue'
+import { useSettingsStore } from '../../stores/settings'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const settings = useSettingsStore()
 
 const motifs = ref<MotifNode[]>([])
 const homeGraph = ref<MotifGraph>({ nodes: [], edges: [] })
 const localGraph = ref<MotifGraph>({ nodes: [], edges: [] })
+const relations = ref<MotifRelation[]>([])
 const selectedMotifId = ref<string | null>(null)
 const excerpts = ref<MotifExcerpt[]>([])
 const query = ref('')
@@ -67,12 +76,39 @@ const enrichmentProfileMode = ref<'merge' | 'overwrite' | 'none'>('merge')
 const enrichmentApplyAliases = ref(true)
 const enrichmentApplyTags = ref(true)
 const enrichmentApplyReferenceKeys = ref<string[]>([])
+const enrichmentApplyRelationKeys = ref<string[]>([])
 const enrichmentDraftTargetKey = ref<string | null>(null)
 const activeEnrichmentJobId = ref<string | null>(null)
 const activeEnrichmentJob = ref<AiJobSnapshot | null>(null)
 const enrichmentReconnectCount = ref(0)
 const enrichmentReconnectMessage = ref('')
 let enrichmentPollingTimer: number | null = null
+const relationEditorOpen = ref(false)
+const relationEditingId = ref<string | null>(null)
+const relationTargetId = ref('')
+const relationTargetQuery = ref('')
+const relationType = ref<MotifRelationType>('associated')
+const relationDirection = ref<MotifRelationDirection>('undirected')
+const relationReason = ref('')
+const relationSaving = ref(false)
+const relationError = ref('')
+const relationDiscoveryOpen = ref(false)
+const relationDiscoveryJobId = ref<string | null>(null)
+const relationDiscoveryJob = ref<AiJobSnapshot | null>(null)
+const relationDiscoveryDraft = ref<MotifRelationDiscoveryDraft | null>(null)
+const relationDiscoveryError = ref('')
+const relationDiscoverySelectedKeys = ref<string[]>([])
+const relationDiscoveryApplying = ref(false)
+let relationDiscoveryPollingTimer: number | null = null
+const tourInviteOpen = ref(false)
+const tourOpen = ref(false)
+const tourStepIndex = ref(0)
+const motifWorkspaceRef = ref<HTMLElement | null>(null)
+const motifWorkspaceWidth = ref(1400)
+const motifListCollapsed = ref(false)
+const detailDrawerOpen = ref(false)
+const motifTourInitialUi = ref({ listCollapsed: false, detailOpen: false })
+let motifWorkspaceObserver: ResizeObserver | null = null
 const motifListPane = useResizablePane({
   key: 'motifs:list',
   defaultSize: 260,
@@ -113,13 +149,12 @@ interface MotifSourceAnchorGroup {
 const selectedMotif = computed(() =>
   motifs.value.find((motif) => motif.id === selectedMotifId.value) ?? null
 )
+const compactMotifLayout = computed(() => motifWorkspaceWidth.value < 1120)
 
 const homeLimit = computed(() => densityToLimit(density.value, motifs.value.length))
 const visibleHomeGraph = computed(() =>
   filterMotifGraphByLimit(homeGraph.value, homeLimit.value, selectedMotifId.value)
 )
-const positionedHomeGraph = computed(() => layoutMotifGraph(visibleHomeGraph.value, { width: 1080, height: 620 }))
-const positionedLocalGraph = computed(() => layoutMotifGraph(localGraph.value, { width: 620, height: 300 }))
 const graphCountLabel = computed(() =>
   motifs.value.length
     ? t('motifs.graphShowing', { visible: visibleHomeGraph.value.nodes.length, total: motifs.value.length })
@@ -166,9 +201,21 @@ const localRelatedNodes = computed(() =>
         .filter((edge) => edge.source_id === node.id || edge.target_id === node.id)
         .reduce((total, edge) => total + edge.weight, 0),
     }))
+    .filter((item) => item.weight > 0)
     .sort((a, b) => b.weight - a.weight || b.node.excerpt_count - a.node.excerpt_count || a.node.name.localeCompare(b.node.name))
     .slice(0, 10)
 )
+const relationTargetOptions = computed(() => {
+  const clean = relationTargetQuery.value.trim().toLocaleLowerCase()
+  return motifs.value
+    .filter((motif) => motif.id !== selectedMotifId.value)
+    .filter((motif) => !clean || [motif.name, ...motif.aliases, ...motif.tags].some((value) => value.toLocaleLowerCase().includes(clean)))
+    .slice(0, 30)
+})
+const relationDiscoveryRunning = computed(() => Boolean(relationDiscoveryJob.value && !ENRICHMENT_JOB_TERMINAL.has(relationDiscoveryJob.value.status)))
+const relationDiscoveryCanRestart = computed(() => Boolean(
+  relationDiscoveryJob.value && ENRICHMENT_JOB_TERMINAL.has(relationDiscoveryJob.value.status),
+))
 const formAliasChips = computed(() => linesFrom(formAliases.value).slice(0, 8))
 const formTagChips = computed(() => linesFrom(formTags.value).slice(0, 8))
 const profileHasContent = computed(() => hasProfileContent(formProfile.value))
@@ -207,6 +254,12 @@ const enrichmentApplyDisabled = computed(() =>
 const enrichmentWillApplyToExisting = computed(() =>
   Boolean(enrichmentMotifId.value || findMotifByName(enrichmentConcept.value))
 )
+const enrichmentRelationCandidates = computed(() => enrichmentDraft.value
+  ? [...enrichmentDraft.value.existing_relation_candidates, ...enrichmentDraft.value.new_concept_candidates]
+  : [])
+const relationDiscoveryCandidates = computed(() => relationDiscoveryDraft.value
+  ? [...relationDiscoveryDraft.value.existing_relation_candidates, ...relationDiscoveryDraft.value.new_concept_candidates]
+  : [])
 const activeEnrichmentJobIsRunning = computed(() =>
   Boolean(activeEnrichmentJob.value && !ENRICHMENT_JOB_TERMINAL.has(activeEnrichmentJob.value.status))
 )
@@ -233,17 +286,15 @@ const deleteContextMenuItems = computed(() => [{
   label: deleteContextTarget.value?.kind === 'excerpt' ? t('motifs.removeFromMotif') : t('common.delete'),
   danger: true,
 }])
-
-const motifPalette = [
-  { fill: '#f5d7b8', stroke: '#c4774e', halo: '#f7b47b', text: '#633018' },
-  { fill: '#cfe6dd', stroke: '#2f7f72', halo: '#88d4c7', text: '#16463f' },
-  { fill: '#d9ddf2', stroke: '#6874b8', halo: '#aeb8ee', text: '#2f376d' },
-  { fill: '#f2c9d0', stroke: '#b05269', halo: '#ef9faf', text: '#642737' },
-  { fill: '#e6dfbb', stroke: '#9a7c28', halo: '#e6c76d', text: '#514114' },
-  { fill: '#d8d2ea', stroke: '#7f619e', halo: '#c3a8e5', text: '#49325f' },
-  { fill: '#cddfe8', stroke: '#45758b', halo: '#93cadc', text: '#234657' },
-  { fill: '#ded7ce', stroke: '#8a7160', halo: '#d2b39d', text: '#4f3b31' },
-]
+const motifTourSteps = computed<GuidedTourStep[]>(() => [
+  { id: 'anchors', title: t('motifsTour.anchorTitle'), body: t('motifsTour.anchorBody'), target: '[data-testid="motifs-list-pane"]', onEnter: () => { motifListCollapsed.value = false; detailDrawerOpen.value = false } },
+  { id: 'graph', title: t('motifsTour.graphTitle'), body: t('motifsTour.graphBody'), target: '[data-tour="motif-graph"]', onEnter: () => { detailDrawerOpen.value = false } },
+  { id: 'navigate', title: t('motifsTour.navigateTitle'), body: t('motifsTour.navigateBody'), target: '[data-tour="motif-graph-controls"]', onEnter: () => { detailDrawerOpen.value = false } },
+  { id: 'enrich', title: t('motifsTour.enrichTitle'), body: t('motifsTour.enrichBody'), target: '[data-tour="motif-enrich"]', onEnter: () => { detailDrawerOpen.value = true } },
+  { id: 'relations', title: t('motifsTour.relationsTitle'), body: t('motifsTour.relationsBody'), target: '[data-tour="motif-relations"]', onEnter: () => { detailDrawerOpen.value = true } },
+  { id: 'sources', title: t('motifsTour.sourcesTitle'), body: t('motifsTour.sourcesBody'), target: '[data-tour="motif-source-anchors"]', onEnter: () => { detailDrawerOpen.value = true } },
+])
+const motifTourProgress = computed(() => t('guidedTours.progress', { current: tourStepIndex.value + 1, total: motifTourSteps.value.length }))
 
 type MotifProfileListField =
   | 'writing_functions'
@@ -257,13 +308,25 @@ type MotifProfileListField =
 const ENRICHMENT_JOB_TERMINAL = new Set(['succeeded', 'failed', 'cancelled'])
 
 onMounted(async () => {
+  motifWorkspaceObserver = new ResizeObserver(([entry]) => {
+    if (entry) motifWorkspaceWidth.value = Math.round(entry.contentRect.width)
+  })
+  if (motifWorkspaceRef.value) motifWorkspaceObserver.observe(motifWorkspaceRef.value)
   void loadAiProfiles()
   await loadMotifs()
   applyRouteMotif()
+  if (route.query.tour === 'motifs') {
+    startMotifsTour()
+    void clearMotifsTourQuery()
+  } else if (settings.tourStatus('motifs') === 'unseen') {
+    tourInviteOpen.value = true
+  }
 })
 
 onUnmounted(() => {
+  motifWorkspaceObserver?.disconnect()
   stopEnrichmentPolling()
+  stopRelationDiscoveryPolling()
 })
 
 watch(
@@ -272,6 +335,46 @@ watch(
     applyRouteMotif()
   }
 )
+
+watch(() => route.query.tour, (value) => {
+  if (value === 'motifs') {
+    startMotifsTour()
+    void clearMotifsTourQuery()
+  }
+})
+
+function startMotifsTour() {
+  motifTourInitialUi.value = {
+    listCollapsed: motifListCollapsed.value,
+    detailOpen: detailDrawerOpen.value,
+  }
+  enrichmentOpen.value = false
+  relationDiscoveryOpen.value = false
+  relationEditorOpen.value = false
+  tourInviteOpen.value = false
+  tourStepIndex.value = 0
+  tourOpen.value = true
+}
+
+function finishMotifsTour() {
+  tourOpen.value = false
+  motifListCollapsed.value = motifTourInitialUi.value.listCollapsed
+  detailDrawerOpen.value = motifTourInitialUi.value.detailOpen
+  settings.completeTour('motifs')
+  void clearMotifsTourQuery()
+}
+
+function dismissMotifsTour() {
+  tourInviteOpen.value = false
+  settings.dismissTour('motifs')
+}
+
+async function clearMotifsTourQuery() {
+  if (!route.query.tour) return
+  const next = { ...route.query }
+  delete next.tour
+  await router.replace({ name: 'motifs', query: next })
+}
 
 watch(query, () => {
   if (searchTimer) window.clearTimeout(searchTimer)
@@ -285,33 +388,13 @@ watch(selectedMotifId, async () => {
   await loadSelectedMotifDetail()
 })
 
+watch(relationType, ensureRelationDirection)
+
 function applyRouteMotif() {
   const motifId = typeof route.query.id === 'string' ? route.query.id : ''
   if (motifId && motifs.value.some((motif) => motif.id === motifId)) {
     selectedMotifId.value = motifId
   }
-}
-
-function hashText(text: string): number {
-  let hash = 0
-  for (const char of text) {
-    hash = (hash * 31 + char.charCodeAt(0)) >>> 0
-  }
-  return hash
-}
-
-function motifForNode(node: MotifGraphNode): MotifNode | undefined {
-  return motifs.value.find((motif) => motif.id === node.id)
-}
-
-function paletteForNode(node: MotifGraphNode) {
-  const motif = motifForNode(node)
-  const key = motif?.tags[0] || motif?.aliases[0] || node.name
-  return motifPalette[hashText(key) % motifPalette.length]
-}
-
-function edgeTouchesSelected(edge: MotifGraphEdge): boolean {
-  return Boolean(selectedMotifId.value && (edge.source_id === selectedMotifId.value || edge.target_id === selectedMotifId.value))
 }
 
 function friendlyMotifError(e: unknown): string {
@@ -363,22 +446,27 @@ async function loadSelectedMotifDetail() {
   if (!motifId) {
     excerpts.value = []
     localGraph.value = { nodes: [], edges: [] }
+    relations.value = []
     detailLoading.value = false
     return
   }
   detailLoading.value = true
   detailError.value = ''
   try {
-    const nextExcerpts = await motifsApi.listExcerpts(motifId)
-    if (token !== motifDetailToken || selectedMotifId.value !== motifId) return
-    const nextGraph = await motifsApi.localGraph(motifId)
+    const [nextExcerpts, nextGraph, nextRelations] = await Promise.all([
+      motifsApi.listExcerpts(motifId),
+      motifsApi.localGraph(motifId),
+      motifsApi.listRelations(motifId),
+    ])
     if (token !== motifDetailToken || selectedMotifId.value !== motifId) return
     excerpts.value = nextExcerpts
     localGraph.value = nextGraph
+    relations.value = nextRelations
   } catch (e) {
     if (token !== motifDetailToken || selectedMotifId.value !== motifId) return
     excerpts.value = []
     localGraph.value = { nodes: [], edges: [] }
+    relations.value = []
     if (isHttpStatus(e, 404)) {
       if (selectedMotifId.value === motifId) {
         selectedMotifId.value = motifs.value.find((motif) => motif.id !== motifId)?.id ?? null
@@ -407,6 +495,9 @@ function syncFormFromSelected() {
   formPinned.value = motif?.pinned ?? false
   profileDrawerOpen.value = false
   profileEditorOpen.value = false
+  relationEditorOpen.value = false
+  relationEditingId.value = null
+  relationError.value = ''
 }
 
 function linesFrom(text: string): string[] {
@@ -603,6 +694,221 @@ function candidateCanImport(candidate: MotifReferenceCandidate): boolean {
   return Boolean(candidate.text.trim() && candidate.source_author.trim() && candidate.source_title.trim())
 }
 
+function relationCandidateKey(candidate: MotifRelationCandidate, index: number): string {
+  return `${candidate.kind}:${candidate.target_motif_id || candidate.name}:${index}`.toLocaleLowerCase()
+}
+
+function relationTypeLabel(value: MotifRelationType): string {
+  return t(`motifs.relations.types.${value}`)
+}
+
+function relationDirectionLabel(relation: MotifRelation): string {
+  if (relation.direction === 'undirected') return relationTypeLabel(relation.relation_type)
+  if (relation.relation_type === 'contains') {
+    return relation.direction === 'from_current' ? t('motifs.relations.containsTarget') : t('motifs.relations.containedByTarget')
+  }
+  return relation.direction === 'from_current' ? t('motifs.relations.transformsToTarget') : t('motifs.relations.transformedFromTarget')
+}
+
+function resetRelationEditor() {
+  relationEditingId.value = null
+  relationTargetId.value = ''
+  relationTargetQuery.value = ''
+  relationType.value = 'associated'
+  relationDirection.value = 'undirected'
+  relationReason.value = ''
+  relationError.value = ''
+}
+
+function openNewRelationEditor() {
+  resetRelationEditor()
+  relationEditorOpen.value = true
+}
+
+function editRelation(relation: MotifRelation) {
+  relationEditingId.value = relation.id
+  relationTargetId.value = relation.target_motif_id
+  relationTargetQuery.value = relation.target_motif_name
+  relationType.value = relation.relation_type
+  relationDirection.value = relation.direction
+  relationReason.value = relation.reason
+  relationError.value = ''
+  relationEditorOpen.value = true
+}
+
+function chooseRelationTarget(motif: MotifNode) {
+  relationTargetId.value = motif.id
+  relationTargetQuery.value = motif.name
+}
+
+function ensureRelationDirection() {
+  if (!['transformation', 'contains'].includes(relationType.value)) relationDirection.value = 'undirected'
+  else if (relationDirection.value === 'undirected') relationDirection.value = 'from_current'
+}
+
+async function saveRelation() {
+  const motifId = selectedMotifId.value
+  if (!motifId || (!relationEditingId.value && !relationTargetId.value)) return
+  relationSaving.value = true
+  relationError.value = ''
+  try {
+    if (relationEditingId.value) {
+      await motifsApi.updateRelation(motifId, relationEditingId.value, {
+        relation_type: relationType.value,
+        direction: relationDirection.value,
+        reason: relationReason.value,
+      })
+    } else {
+      await motifsApi.createRelation(motifId, {
+        target_motif_id: relationTargetId.value,
+        relation_type: relationType.value,
+        direction: relationDirection.value,
+        reason: relationReason.value,
+      })
+    }
+    relationEditorOpen.value = false
+    resetRelationEditor()
+    await Promise.all([loadHomeGraph(), loadSelectedMotifDetail()])
+    notice.value = t('motifs.relations.saved')
+  } catch (e) {
+    relationError.value = friendlyMotifError(e)
+  } finally {
+    relationSaving.value = false
+  }
+}
+
+async function removeRelation(relation: MotifRelation) {
+  const motifId = selectedMotifId.value
+  if (!motifId || !window.confirm(t('motifs.relations.deleteConfirm', { name: relation.target_motif_name }))) return
+  try {
+    await motifsApi.deleteRelation(motifId, relation.id)
+    await Promise.all([loadHomeGraph(), loadSelectedMotifDetail()])
+  } catch (e) {
+    detailError.value = friendlyMotifError(e)
+  }
+}
+
+function stopRelationDiscoveryPolling() {
+  if (relationDiscoveryPollingTimer) {
+    window.clearTimeout(relationDiscoveryPollingTimer)
+    relationDiscoveryPollingTimer = null
+  }
+}
+
+function scheduleRelationDiscoveryPolling(delay = 1500) {
+  stopRelationDiscoveryPolling()
+  relationDiscoveryPollingTimer = window.setTimeout(() => void pollRelationDiscovery(), delay)
+}
+
+function handleRelationDiscoveryJob(job: AiJobSnapshot) {
+  relationDiscoveryJobId.value = job.job_id
+  relationDiscoveryJob.value = job
+  if (!ENRICHMENT_JOB_TERMINAL.has(job.status)) return
+  stopRelationDiscoveryPolling()
+  if (job.status === 'succeeded' && job.result) {
+    relationDiscoveryDraft.value = job.result as MotifRelationDiscoveryDraft
+    relationDiscoverySelectedKeys.value = []
+    relationDiscoveryError.value = ''
+  } else {
+    relationDiscoveryError.value = job.error
+  }
+}
+
+async function pollRelationDiscovery() {
+  const jobId = relationDiscoveryJobId.value
+  if (!jobId) return
+  try {
+    const job = await aiJobsApi.getJob(jobId)
+    if (jobId !== relationDiscoveryJobId.value) return
+    handleRelationDiscoveryJob(job)
+    if (!ENRICHMENT_JOB_TERMINAL.has(job.status)) scheduleRelationDiscoveryPolling()
+  } catch (e) {
+    if (jobId !== relationDiscoveryJobId.value) return
+    relationDiscoveryError.value = isHttpStatus(e, 404) ? t('motifs.relations.jobMissing') : friendlyMotifError(e)
+    stopRelationDiscoveryPolling()
+  }
+}
+
+async function startRelationDiscovery() {
+  const motifId = selectedMotifId.value
+  if (!motifId || !enrichmentProfileId.value || relationDiscoveryRunning.value) return
+  relationDiscoveryOpen.value = true
+  relationDiscoveryDraft.value = null
+  relationDiscoverySelectedKeys.value = []
+  relationDiscoveryError.value = ''
+  try {
+    const job = await aiJobsApi.createMotifRelationDiscoveryJob({
+      motif_id: motifId,
+      profile_id: enrichmentProfileId.value,
+      cost_tier: 'strong',
+    })
+    handleRelationDiscoveryJob(job)
+    scheduleRelationDiscoveryPolling(300)
+  } catch (e) {
+    relationDiscoveryError.value = isHttpStatus(e, 404) ? t('motifs.relations.unsupported') : friendlyMotifError(e)
+  }
+}
+
+function openRelationDiscovery() {
+  relationDiscoveryOpen.value = true
+  if (relationDiscoveryRunning.value) scheduleRelationDiscoveryPolling(300)
+  void loadAiProfiles()
+}
+
+function prepareNewRelationDiscovery() {
+  if (relationDiscoveryRunning.value) return
+  stopRelationDiscoveryPolling()
+  relationDiscoveryJobId.value = null
+  relationDiscoveryJob.value = null
+  relationDiscoveryDraft.value = null
+  relationDiscoverySelectedKeys.value = []
+  relationDiscoveryError.value = ''
+}
+
+async function cancelRelationDiscovery() {
+  if (!relationDiscoveryJobId.value) return
+  try {
+    handleRelationDiscoveryJob(await aiJobsApi.cancelJob(relationDiscoveryJobId.value))
+  } catch (e) {
+    relationDiscoveryError.value = friendlyMotifError(e)
+  }
+}
+
+function selectedRelationCandidates(
+  draft: MotifRelationDiscoveryDraft | MotifEnrichmentDraft,
+  selectedKeys: string[],
+): MotifRelationCandidate[] {
+  return [...draft.existing_relation_candidates, ...draft.new_concept_candidates].filter((candidate, index) =>
+    selectedKeys.includes(relationCandidateKey(candidate, index))
+  )
+}
+
+async function applyDiscoveredRelations() {
+  const motifId = selectedMotifId.value
+  const draft = relationDiscoveryDraft.value
+  if (!motifId || !draft) return
+  if (draft.motif_id !== motifId) {
+    relationDiscoveryError.value = t('motifs.relations.targetChanged')
+    return
+  }
+  const candidates = selectedRelationCandidates(draft, relationDiscoverySelectedKeys.value)
+  if (!candidates.length) return
+  relationDiscoveryApplying.value = true
+  relationDiscoveryError.value = ''
+  try {
+    const result = await motifsApi.applyRelationCandidates(motifId, candidates)
+    relationDiscoveryOpen.value = false
+    prepareNewRelationDiscovery()
+    await loadMotifs()
+    notice.value = t('motifs.relations.applied', { count: result.relations.length, concepts: result.created_nodes.length })
+    if (result.skipped.length) detailError.value = result.skipped.join('\n')
+  } catch (e) {
+    relationDiscoveryError.value = friendlyMotifError(e)
+  } finally {
+    relationDiscoveryApplying.value = false
+  }
+}
+
 function mergeUniqueValues(current: string[], next: string[]): string[] {
   const result: string[] = []
   const seen = new Set<string>()
@@ -639,6 +945,7 @@ function resetEnrichmentDraft() {
   enrichmentApplyAliases.value = true
   enrichmentApplyTags.value = true
   enrichmentApplyReferenceKeys.value = []
+  enrichmentApplyRelationKeys.value = []
 }
 
 function formatElapsed(ms: number): string {
@@ -673,6 +980,7 @@ function handleEnrichmentJobSnapshot(job: AiJobSnapshot) {
   if (job.status === 'succeeded' && job.result) {
     enrichmentDraft.value = job.result
     enrichmentApplyReferenceKeys.value = []
+    enrichmentApplyRelationKeys.value = []
     enrichmentError.value = ''
   } else if (job.status === 'failed' || job.status === 'cancelled') {
     enrichmentError.value = job.error
@@ -724,6 +1032,7 @@ function viewActiveEnrichmentJob() {
   enrichmentDraftTargetKey.value = enrichmentTargetKey(job.motif_id ?? null)
   if (job.status === 'succeeded' && job.result) {
     enrichmentDraft.value = job.result
+    enrichmentApplyRelationKeys.value = []
     enrichmentError.value = ''
   } else if (job.status === 'failed' || job.status === 'cancelled') {
     enrichmentError.value = job.error
@@ -936,12 +1245,26 @@ async function applyEnrichmentDraft() {
       }
     }
 
-    notice.value = importedCount
-      ? t('motifs.enrichAppliedWithReferences', { count: importedCount })
-      : t('motifs.enrichApplied')
+    const selectedRelations = selectedRelationCandidates(draft, enrichmentApplyRelationKeys.value)
+    let relationCount = 0
+    let createdConceptCount = 0
+    if (appliedMotifId && selectedRelations.length) {
+      const result = await motifsApi.applyRelationCandidates(appliedMotifId, selectedRelations)
+      relationCount = result.relations.length
+      createdConceptCount = result.created_nodes.length
+      if (result.skipped.length) {
+        enrichmentError.value = [enrichmentError.value, ...result.skipped].filter(Boolean).join('\n')
+      }
+    }
+
+    notice.value = relationCount
+      ? t('motifs.enrichAppliedWithRelations', { references: importedCount, relations: relationCount, concepts: createdConceptCount })
+      : importedCount
+        ? t('motifs.enrichAppliedWithReferences', { count: importedCount })
+        : t('motifs.enrichApplied')
     enrichmentOpen.value = false
-    await loadHomeGraph()
-    await loadSelectedMotifDetail()
+    if (createdConceptCount) await loadMotifs()
+    else await Promise.all([loadHomeGraph(), loadSelectedMotifDetail()])
   } catch (e) {
     enrichmentError.value = friendlyMotifError(e)
   } finally {
@@ -1046,6 +1369,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
 
 function selectMotif(id: string) {
   selectedMotifId.value = id
+  if (compactMotifLayout.value) detailDrawerOpen.value = true
 }
 
 function sourceLabel(excerpt: MotifExcerpt): string {
@@ -1130,9 +1454,10 @@ async function removeSourceAnchorFromPicker(excerpt: MotifExcerpt) {
 </script>
 
 <template>
-  <div class="flex h-full overflow-hidden bg-[#f6f2ea] text-stone-900">
+  <div ref="motifWorkspaceRef" class="relative flex h-full overflow-hidden bg-stone-100 text-stone-900">
     <aside
-      class="flex shrink-0 flex-col border-r border-stone-200 bg-[#fffdf8]"
+      v-if="!motifListCollapsed"
+      class="flex shrink-0 flex-col border-r border-stone-200 bg-white"
       :style="motifListPane.paneStyle.value"
       data-testid="motifs-list-pane"
     >
@@ -1157,6 +1482,7 @@ async function removeSourceAnchorFromPicker(excerpt: MotifExcerpt) {
             min="0"
             max="100"
             class="w-full accent-teal-700"
+            :aria-label="t('motifs.density')"
           />
         </div>
         <div class="mt-4 flex gap-2">
@@ -1217,147 +1543,67 @@ async function removeSourceAnchorFromPicker(excerpt: MotifExcerpt) {
         </button>
       </div>
     </aside>
-    <PaneResizeHandle data-testid="motifs-list-resizer" @pointerdown="motifListPane.startResize" />
+    <PaneResizeHandle v-if="!motifListCollapsed" data-testid="motifs-list-resizer" @pointerdown="motifListPane.startResize" />
 
     <main class="flex min-w-0 flex-1 flex-col overflow-hidden">
-      <div class="border-b border-stone-200 bg-[#fffdf8]/90 px-6 py-4">
+      <div class="border-b border-stone-200 bg-white px-6 py-4">
         <div class="flex items-center justify-between gap-4">
           <div>
             <p class="text-sm text-stone-500">{{ t('motifs.subtitle') }}</p>
             <p class="mt-1 text-xs text-stone-400">{{ relationLabel(visibleHomeGraph.edges.length) }}</p>
           </div>
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-50"
+              :aria-pressed="!motifListCollapsed"
+              @click="motifListCollapsed = !motifListCollapsed"
+            >
+              {{ motifListCollapsed ? t('motifs.showIndex') : t('motifs.hideIndex') }}
+            </button>
+            <button
+              v-if="compactMotifLayout && selectedMotif"
+              type="button"
+              class="rounded-md bg-stone-900 px-3 py-2 text-xs font-semibold text-white hover:bg-stone-700"
+              @click="detailDrawerOpen = true"
+            >
+              {{ t('motifs.openDetails') }}
+            </button>
             <span v-if="notice" class="text-sm text-teal-700">{{ notice }}</span>
             <span v-if="error" class="text-sm text-red-600">{{ error }}</span>
           </div>
         </div>
       </div>
 
-      <div class="flex min-h-0 flex-1 overflow-hidden">
-        <section class="min-w-0 flex-1 overflow-hidden p-5">
-          <div class="h-full rounded-[1.75rem] border border-amber-100 bg-[#fff9ed] p-3 shadow-sm" data-testid="motifs-cooccurrence-graph">
-            <svg viewBox="0 0 1080 620" class="h-full min-h-[520px] w-full overflow-visible" role="img" :aria-label="t('motifs.graphAria')">
-              <defs>
-                <linearGradient id="motif-paper-bg" x1="0" x2="1" y1="0" y2="1">
-                  <stop offset="0%" stop-color="#fffaf0" />
-                  <stop offset="58%" stop-color="#f6efdf" />
-                  <stop offset="100%" stop-color="#efe5d3" />
-                </linearGradient>
-                <filter id="motif-soft-shadow" x="-30%" y="-30%" width="160%" height="160%">
-                  <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#3f3427" flood-opacity="0.14" />
-                </filter>
-              </defs>
-              <rect width="1080" height="620" fill="url(#motif-paper-bg)" rx="26" />
-              <g opacity="0.34">
-                <circle cx="130" cy="96" r="1.5" fill="#b78257" />
-                <circle cx="246" cy="168" r="1" fill="#5b8f84" />
-                <circle cx="892" cy="112" r="1.6" fill="#b86c78" />
-                <circle cx="808" cy="478" r="1.3" fill="#987bb2" />
-                <circle cx="178" cy="505" r="1.1" fill="#557b93" />
-                <circle cx="520" cy="80" r="1" fill="#9b7c29" />
-                <circle cx="975" cy="332" r="1.1" fill="#557b93" />
-              </g>
-              <g opacity="0.18">
-                <path d="M95 350 C265 230 388 420 538 300 S790 174 996 268" fill="none" stroke="#a9854e" stroke-width="1" />
-                <path d="M118 190 C320 106 440 154 578 214 S770 378 966 168" fill="none" stroke="#6e938a" stroke-width="0.8" />
-              </g>
-              <line
-                v-for="edge in positionedHomeGraph.edges"
-                :key="`${edge.source_id}:${edge.target_id}`"
-                :x1="edge.x1"
-                :y1="edge.y1"
-                :x2="edge.x2"
-                :y2="edge.y2"
-                :stroke-width="Math.min(6, 0.9 + edge.weight * 0.45)"
-                :stroke="edgeTouchesSelected(edge) ? '#25756b' : '#b79b5f'"
-                :stroke-opacity="edgeTouchesSelected(edge) ? 0.58 : 0.28"
-                stroke-linecap="round"
-              />
-              <g
-                v-for="node in positionedHomeGraph.nodes"
-                :key="node.id"
-                class="cursor-pointer"
-                @click="selectMotif(node.id)"
-              >
-                <line
-                  :x1="node.labelConnectorX1"
-                  :y1="node.labelConnectorY1"
-                  :x2="node.labelConnectorX2"
-                  :y2="node.labelConnectorY2"
-                  :stroke="selectedMotifId === node.id ? paletteForNode(node).stroke : '#cdbf9f'"
-                  :stroke-opacity="selectedMotifId === node.id ? 0.55 : 0.28"
-                  stroke-width="1"
-                />
-                <circle
-                  :cx="node.x"
-                  :cy="node.y"
-                  :r="node.radius + 13"
-                  :fill="paletteForNode(node).halo"
-                  :opacity="selectedMotifId === node.id ? 0.28 : 0.08"
-                />
-                <circle
-                  :cx="node.x"
-                  :cy="node.y"
-                  :r="node.radius"
-                  :fill="paletteForNode(node).fill"
-                  :stroke="selectedMotifId === node.id ? '#1d5c55' : paletteForNode(node).stroke"
-                  :stroke-width="selectedMotifId === node.id ? 3 : 1.5"
-                  filter="url(#motif-soft-shadow)"
-                />
-                <circle
-                  :cx="node.x - node.radius * 0.25"
-                  :cy="node.y - node.radius * 0.28"
-                  :r="Math.max(4, node.radius * 0.22)"
-                  fill="#fffdf8"
-                  opacity="0.42"
-                />
-                <rect
-                  :x="node.labelBoxX"
-                  :y="node.labelBoxY"
-                  :width="node.labelBoxWidth"
-                  :height="node.labelBoxHeight"
-                  rx="10"
-                  fill="#fffdf8"
-                  :fill-opacity="selectedMotifId === node.id ? 0.96 : 0.84"
-                  :stroke="selectedMotifId === node.id ? paletteForNode(node).stroke : '#eadfcb'"
-                  :stroke-opacity="selectedMotifId === node.id ? 0.8 : 0.55"
-                />
-                <text
-                  :x="node.labelTextX"
-                  :y="node.labelFirstLineY"
-                  text-anchor="middle"
-                  class="select-none text-[12px] font-semibold"
-                  :fill="paletteForNode(node).text"
-                >
-                  <tspan
-                    v-for="(line, index) in node.labelLines"
-                    :key="`${node.id}-label-${index}`"
-                    :x="node.labelTextX"
-                    :dy="index === 0 ? 0 : 16"
-                  >
-                    {{ line }}
-                  </tspan>
-                </text>
-              </g>
-              <text
-                v-if="!positionedHomeGraph.nodes.length"
-                x="540"
-                y="310"
-                text-anchor="middle"
-                class="fill-stone-400 text-sm"
-              >
-                {{ t('motifs.emptyGraph') }}
-              </text>
-            </svg>
+      <div class="relative flex min-h-0 flex-1 overflow-hidden">
+        <section class="min-w-0 flex-1 overflow-hidden p-3" data-tour="motif-graph">
+          <div class="h-full overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm" data-testid="motifs-cooccurrence-graph">
+            <MotifGraphCanvas :graph="visibleHomeGraph" :selected-id="selectedMotifId" @select="selectMotif" />
           </div>
         </section>
 
-        <PaneResizeHandle data-testid="motifs-detail-resizer" @pointerdown="motifDetailPane.startResize" />
+        <button
+          v-if="compactMotifLayout && detailDrawerOpen"
+          type="button"
+          class="absolute inset-0 z-20 cursor-default bg-stone-950/20"
+          :aria-label="t('motifs.closeDetails')"
+          @click="detailDrawerOpen = false"
+        />
+        <PaneResizeHandle v-if="!compactMotifLayout" data-testid="motifs-detail-resizer" @pointerdown="motifDetailPane.startResize" />
         <aside
-          class="min-w-0 shrink-0 overflow-y-auto border-l border-stone-200 bg-[#fffdf8]"
-          :style="motifDetailPane.paneStyle.value"
+          v-if="!compactMotifLayout || detailDrawerOpen"
+          :class="[
+            'min-w-0 shrink-0 overflow-y-auto border-l border-stone-200 bg-[#fffdf8]',
+            compactMotifLayout ? 'absolute inset-y-0 right-0 z-30 shadow-2xl' : '',
+          ]"
+          :style="compactMotifLayout ? { width: 'min(440px, calc(100% - 24px))' } : motifDetailPane.paneStyle.value"
           data-testid="motifs-detail-pane"
         >
+          <div v-if="compactMotifLayout" class="sticky top-0 z-20 flex justify-end border-b border-stone-200 bg-[#fffdf8]/95 px-3 py-2 backdrop-blur">
+            <button type="button" class="rounded-md px-3 py-1.5 text-sm font-semibold text-stone-600 hover:bg-stone-100" @click="detailDrawerOpen = false">
+              {{ t('motifs.closeDetails') }}
+            </button>
+          </div>
           <div
             v-if="activeEnrichmentJob"
             class="m-4 rounded-2xl border p-3 shadow-sm"
@@ -1424,6 +1670,7 @@ async function removeSourceAnchorFromPicker(excerpt: MotifExcerpt) {
                   </label>
                   <button
                     @click="openEnrichmentForSelected"
+                    data-tour="motif-enrich"
                     class="rounded-xl bg-teal-700 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-teal-800"
                   >
                     {{ t('motifs.enrichAction') }}
@@ -1432,7 +1679,7 @@ async function removeSourceAnchorFromPicker(excerpt: MotifExcerpt) {
               </div>
             </div>
 
-            <div class="mb-5 rounded-2xl border border-amber-100 bg-[#fffaf0] p-4" data-testid="motifs-local-graph-card">
+            <div class="mb-5 border-y border-stone-200 py-4" data-testid="motifs-local-graph-card">
               <div class="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <h3 class="text-sm font-semibold text-stone-900">{{ t('motifs.localGraph') }}</h3>
@@ -1440,101 +1687,43 @@ async function removeSourceAnchorFromPicker(excerpt: MotifExcerpt) {
                 </div>
                 <span class="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-xs text-stone-500">{{ localRelatedNodes.length }}</span>
               </div>
-              <svg viewBox="0 0 620 300" class="h-[260px] w-full">
-                <rect width="620" height="300" fill="#f8f1e4" rx="14" />
-                <line
-                  v-for="edge in positionedLocalGraph.edges"
-                  :key="`local-${edge.source_id}:${edge.target_id}`"
-                  :x1="edge.x1"
-                  :y1="edge.y1"
-                  :x2="edge.x2"
-                  :y2="edge.y2"
-                  :stroke-width="Math.min(4, 0.8 + edge.weight * 0.35)"
-                  :stroke="edgeTouchesSelected(edge) ? '#25756b' : '#b79b5f'"
-                  :stroke-opacity="edgeTouchesSelected(edge) ? 0.5 : 0.25"
-                  stroke-linecap="round"
-                />
-                <g
-                  v-for="node in positionedLocalGraph.nodes"
-                  :key="`local-node-${node.id}`"
-                  class="cursor-pointer"
-                  @click="selectMotif(node.id)"
-                >
-                  <line
-                    :x1="node.labelConnectorX1"
-                    :y1="node.labelConnectorY1"
-                    :x2="node.labelConnectorX2"
-                    :y2="node.labelConnectorY2"
-                    :stroke="node.is_center ? '#2f7f72' : '#cdbf9f'"
-                    :stroke-opacity="node.is_center ? 0.5 : 0.32"
-                    stroke-width="1"
-                  />
-                  <circle
-                    :cx="node.x"
-                    :cy="node.y"
-                    :r="node.radius + 8"
-                    :fill="paletteForNode(node).halo"
-                    :opacity="node.is_center ? 0.24 : 0.1"
-                  />
-                  <circle
-                    :cx="node.x"
-                    :cy="node.y"
-                    :r="node.radius"
-                    :fill="node.is_center ? '#24625c' : paletteForNode(node).fill"
-                    :stroke="node.is_center ? '#174b45' : paletteForNode(node).stroke"
-                    :stroke-width="node.is_center ? 2.2 : 1.4"
-                  />
-                  <rect
-                    :x="node.labelBoxX"
-                    :y="node.labelBoxY"
-                    :width="node.labelBoxWidth"
-                    :height="node.labelBoxHeight"
-                    rx="9"
-                    fill="#fffdf8"
-                    fill-opacity="0.88"
-                    :stroke="node.is_center ? '#8ec9be' : '#eadfcb'"
-                    stroke-opacity="0.7"
-                  />
-                  <text
-                    :x="node.labelTextX"
-                    :y="node.labelFirstLineY"
-                    text-anchor="middle"
-                    class="select-none text-[11px] font-semibold"
-                    :fill="node.is_center ? '#174b45' : paletteForNode(node).text"
-                  >
-                    <tspan
-                      v-for="(line, index) in node.labelLines"
-                      :key="`local-label-${node.id}-${index}`"
-                      :x="node.labelTextX"
-                      :dy="index === 0 ? 0 : 15"
-                    >
-                      {{ line }}
-                    </tspan>
-                  </text>
-                </g>
-                <text
-                  v-if="positionedLocalGraph.nodes.length <= 1"
-                  x="310"
-                  y="250"
-                  text-anchor="middle"
-                  class="fill-stone-400 text-xs"
-                >
-                  {{ t('motifs.noRelations') }}
-                </text>
-              </svg>
-              <div v-if="localRelatedNodes.length" class="mt-3 flex flex-wrap gap-2">
+              <div v-if="localRelatedNodes.length" class="mt-3 divide-y divide-stone-100">
                 <button
                   v-for="item in localRelatedNodes"
                   :key="`local-chip-${item.node.id}`"
                   type="button"
                   @click="selectMotif(item.node.id)"
-                  class="max-w-full rounded-full bg-white px-3 py-1.5 text-left text-xs font-medium text-stone-700 ring-1 ring-amber-100 transition hover:bg-teal-50 hover:text-teal-800"
+                  class="flex w-full items-center justify-between gap-3 px-1 py-2.5 text-left text-sm font-medium text-stone-700 transition hover:bg-stone-50 hover:text-teal-800"
                 >
-                  <span class="break-all">{{ item.node.name }}</span>
-                  <span class="ml-1 text-stone-400">×{{ item.weight || 1 }}</span>
+                  <span class="break-all">{{ item.node.name }}</span><span class="text-xs font-normal text-stone-400">{{ t('motifs.relationWeight', { count: item.weight }) }}</span>
                 </button>
               </div>
+              <p v-else class="mt-3 text-sm text-stone-500">{{ t('motifs.noRelations') }}</p>
             </div>
+
+            <section class="mb-5 border-b border-stone-200 pb-5" data-testid="motif-relations-section" data-tour="motif-relations">
+              <div>
+                <h3 class="text-sm font-semibold text-stone-900">{{ t('motifs.relations.title') }}</h3>
+                <p class="mt-1 text-xs leading-5 text-stone-500">{{ t('motifs.relations.help') }}</p>
+                <div class="mt-3 flex flex-wrap justify-end gap-2">
+                  <button type="button" class="rounded-md border border-stone-300 px-2.5 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-50" @click="openNewRelationEditor">{{ t('motifs.relations.add') }}</button>
+                  <button type="button" class="rounded-md bg-teal-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-teal-800" @click="openRelationDiscovery">{{ relationDiscoveryRunning ? t('motifs.relations.running') : t('motifs.relations.discover') }}</button>
+                </div>
+              </div>
+              <div v-if="relations.length" class="mt-3 divide-y divide-stone-100">
+                <article v-for="relation in relations" :key="relation.id" class="py-3"><div class="flex items-start justify-between gap-3"><button type="button" class="min-w-0 text-left" @click="selectMotif(relation.target_motif_id)"><span class="block truncate text-sm font-semibold text-stone-900">{{ relation.target_motif_name }}</span><span class="mt-1 block text-xs font-medium text-teal-700">{{ relationDirectionLabel(relation) }}</span></button><div class="flex shrink-0 gap-1"><button type="button" class="rounded px-2 py-1 text-xs text-stone-600 hover:bg-stone-100" @click="editRelation(relation)">{{ t('common.edit') }}</button><button type="button" class="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50" @click="removeRelation(relation)">{{ t('common.delete') }}</button></div></div><p v-if="relation.reason" class="mt-2 text-xs leading-5 text-stone-600">{{ relation.reason }}</p></article>
+              </div>
+              <p v-else class="mt-3 text-sm text-stone-500">{{ t('motifs.relations.empty') }}</p>
+
+              <div v-if="relationEditorOpen" class="mt-4 rounded-lg border border-stone-200 bg-stone-50 p-3">
+                <div v-if="!relationEditingId"><label class="block text-xs font-semibold text-stone-600">{{ t('motifs.relations.target') }}<input v-model="relationTargetQuery" class="mt-1 w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm" :placeholder="t('motifs.relations.searchTarget')" /></label><div v-if="relationTargetQuery && !relationTargetId" class="mt-2 max-h-40 overflow-y-auto rounded-md border border-stone-200 bg-white"><button v-for="motif in relationTargetOptions" :key="motif.id" type="button" class="block w-full border-b border-stone-100 px-3 py-2 text-left text-sm hover:bg-stone-50" @click="chooseRelationTarget(motif)">{{ motif.name }}</button><p v-if="!relationTargetOptions.length" class="p-3 text-xs text-stone-500">{{ t('motifs.relations.noTarget') }}</p></div></div>
+                <p v-else class="text-sm font-semibold text-stone-800">{{ relationTargetQuery }}</p>
+                <div class="mt-3 grid gap-3 sm:grid-cols-2"><label class="text-xs font-semibold text-stone-600">{{ t('motifs.relations.type') }}<select v-model="relationType" class="mt-1 w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm"><option value="echo">{{ relationTypeLabel('echo') }}</option><option value="contrast">{{ relationTypeLabel('contrast') }}</option><option value="transformation">{{ relationTypeLabel('transformation') }}</option><option value="contains">{{ relationTypeLabel('contains') }}</option><option value="associated">{{ relationTypeLabel('associated') }}</option></select></label><label v-if="relationType === 'transformation' || relationType === 'contains'" class="text-xs font-semibold text-stone-600">{{ t('motifs.relations.direction') }}<select v-model="relationDirection" class="mt-1 w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm"><option value="from_current">{{ t('motifs.relations.fromCurrent') }}</option><option value="to_current">{{ t('motifs.relations.toCurrent') }}</option></select></label></div>
+                <label class="mt-3 block text-xs font-semibold text-stone-600">{{ t('motifs.relations.reason') }}<textarea v-model="relationReason" rows="3" class="mt-1 w-full resize-y rounded-md border border-stone-300 bg-white px-3 py-2 text-sm" :placeholder="t('motifs.relations.reasonPlaceholder')" /></label>
+                <p v-if="relationError" class="mt-2 text-xs text-red-700">{{ relationError }}</p>
+                <div class="mt-3 flex justify-end gap-2"><button type="button" class="rounded-md border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold" @click="relationEditorOpen = false">{{ t('common.cancel') }}</button><button type="button" :disabled="relationSaving || (!relationEditingId && !relationTargetId)" class="rounded-md bg-stone-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40" @click="saveRelation">{{ relationSaving ? t('common.saving') : t('common.save') }}</button></div>
+              </div>
+            </section>
 
             <div class="mb-5 rounded-2xl border border-stone-200 bg-white p-5" data-testid="motifs-detail-form">
               <label class="block text-sm font-medium text-stone-700">
@@ -1644,7 +1833,7 @@ async function removeSourceAnchorFromPicker(excerpt: MotifExcerpt) {
               </div>
             </div>
 
-            <section>
+            <section data-tour="motif-source-anchors">
               <div class="mb-3 flex items-start justify-between gap-3">
                 <div>
                   <h3 class="text-lg font-semibold">{{ t('motifs.sourceAnchorGroups') }}</h3>
@@ -1955,6 +2144,19 @@ async function removeSourceAnchorFromPicker(excerpt: MotifExcerpt) {
         </footer>
       </aside>
     </div>
+    <div v-if="relationDiscoveryOpen" class="fixed inset-0 z-[55] flex items-center justify-center bg-stone-950/40 p-3 sm:p-6" @click.self="relationDiscoveryOpen = false">
+      <section role="dialog" aria-modal="true" aria-labelledby="motif-relation-discovery-title" class="flex max-h-[88vh] w-full max-w-[920px] flex-col overflow-hidden rounded-lg bg-white shadow-2xl" data-testid="motif-relation-discovery-modal">
+        <header class="shrink-0 border-b border-stone-200 px-5 py-4"><div class="flex items-start justify-between gap-4"><div><h2 id="motif-relation-discovery-title" class="text-lg font-semibold text-stone-950">{{ t('motifs.relations.discoveryTitle') }}</h2><p class="mt-1 text-sm text-stone-600">{{ selectedMotif?.name }} · {{ t('motifs.relations.discoveryHelp') }}</p></div><button type="button" class="h-9 w-9 rounded-md text-xl text-stone-600 hover:bg-stone-100" :aria-label="t('common.close')" @click="relationDiscoveryOpen = false">×</button></div></header>
+        <div class="min-h-0 flex-1 overflow-y-auto p-5">
+          <div v-if="!relationDiscoveryJob && !relationDiscoveryDraft" class="mx-auto max-w-xl py-8"><label class="block text-sm font-medium text-stone-700">{{ t('motifs.enrichProfile') }}<select v-model="enrichmentProfileId" class="mt-2 w-full rounded-md border border-stone-300 bg-white px-3 py-2"><option v-for="profile in aiProfileOptions" :key="profile.id" :value="profile.id">{{ profile.name }}{{ profile.model ? ` · ${profile.model}` : '' }}</option></select></label><p class="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-900">{{ t('motifs.relations.costHint') }}</p><button type="button" :disabled="!enrichmentProfileId" class="mt-5 w-full rounded-md bg-stone-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40" @click="startRelationDiscovery">{{ t('motifs.relations.confirmDiscover') }}</button></div>
+          <div v-else-if="relationDiscoveryRunning" class="mx-auto max-w-xl py-10"><p class="text-sm font-semibold text-stone-900">{{ relationDiscoveryJob?.stage_label }}</p><div class="mt-4 h-2 overflow-hidden rounded-full bg-stone-100"><div class="ai-pending-bar h-full w-1/3 rounded-full bg-teal-600" /></div><ol class="mt-5 grid gap-2 text-sm text-stone-600"><li v-for="stage in ['preparing_context', 'sending_request', 'waiting_model', 'parsing_response', 'building_candidates']" :key="stage" class="flex items-center gap-2"><span :class="['h-2 w-2 rounded-full', relationDiscoveryJob?.stage === stage ? 'bg-teal-600' : 'bg-stone-300']" />{{ t(`motifs.relations.stages.${stage}`) }}</li></ol><p class="mt-5 text-sm leading-6 text-stone-500">{{ t('motifs.enrichCancelCostHint') }}</p></div>
+          <div v-else-if="relationDiscoveryDraft"><div class="mb-4 flex items-center justify-between gap-3"><div><h3 class="text-sm font-semibold text-stone-900">{{ t('motifs.relations.candidates') }}</h3><p class="mt-1 text-sm text-stone-600">{{ t('motifs.relations.reviewHint') }}</p></div><span class="text-sm text-stone-500">{{ relationDiscoverySelectedKeys.length }}/{{ relationDiscoveryCandidates.length }}</span></div><div v-if="relationDiscoveryCandidates.length" class="grid gap-3 md:grid-cols-2"><label v-for="(candidate, index) in relationDiscoveryCandidates" :key="relationCandidateKey(candidate, index)" :class="['flex cursor-pointer items-start gap-3 rounded-md border p-4', relationDiscoverySelectedKeys.includes(relationCandidateKey(candidate, index)) ? 'border-teal-500 bg-teal-50/70' : 'border-stone-200 hover:border-teal-300']"><input v-model="relationDiscoverySelectedKeys" type="checkbox" :value="relationCandidateKey(candidate, index)" class="mt-1 h-4 w-4 rounded border-stone-300 text-teal-700" /><span class="min-w-0"><span class="flex flex-wrap items-center gap-2"><strong class="text-stone-950">{{ candidate.name }}</strong><span class="rounded bg-stone-100 px-2 py-1 text-xs text-stone-600">{{ relationTypeLabel(candidate.relation_type) }}</span><span v-if="candidate.kind === 'new'" class="rounded bg-amber-100 px-2 py-1 text-xs text-amber-900">{{ t('motifs.relations.newConcept') }}</span></span><span v-if="candidate.reason" class="mt-2 block text-sm leading-6 text-stone-600">{{ candidate.reason }}</span></span></label></div><p v-else class="py-12 text-center text-sm text-stone-500">{{ t('motifs.relations.noCandidates') }}</p></div>
+          <div v-if="relationDiscoveryError" class="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{{ relationDiscoveryError }}</div>
+        </div>
+        <footer class="shrink-0 border-t border-stone-200 bg-stone-50 px-5 py-3"><div class="flex flex-wrap items-center justify-between gap-3"><button v-if="relationDiscoveryRunning" type="button" class="text-sm font-medium text-red-700 underline" @click="cancelRelationDiscovery">{{ t('motifs.enrichCancelJob') }}</button><span v-else class="text-sm text-stone-500">{{ t('motifs.relations.notAutomatic') }}</span><div class="flex flex-wrap justify-end gap-2"><button v-if="relationDiscoveryCanRestart" type="button" class="rounded-md border border-teal-300 bg-white px-4 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-50" @click="prepareNewRelationDiscovery">{{ t('motifs.relations.discoverAgain') }}</button><button type="button" class="rounded-md border border-stone-300 bg-white px-4 py-2 text-sm font-medium" @click="relationDiscoveryOpen = false">{{ relationDiscoveryRunning ? t('motifs.enrichClosePanel') : t('common.close') }}</button><button v-if="relationDiscoveryDraft" type="button" :disabled="relationDiscoveryApplying || !relationDiscoverySelectedKeys.length" class="rounded-md bg-stone-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40" @click="applyDiscoveredRelations">{{ relationDiscoveryApplying ? t('common.saving') : t('motifs.relations.applySelected', { count: relationDiscoverySelectedKeys.length }) }}</button></div></div></footer>
+      </section>
+    </div>
+
     <div
       v-if="enrichmentOpen"
       class="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/30 p-2 sm:p-4 lg:p-6"
@@ -2161,12 +2363,14 @@ async function removeSourceAnchorFromPicker(excerpt: MotifExcerpt) {
                       </div>
                     </div>
                   </div>
-                  <div v-if="enrichmentDraft.related_suggestions.length" class="mt-4">
-                    <div class="mb-1 text-xs font-semibold text-stone-500">{{ t('motifs.enrichRelatedSuggestions') }}</div>
-                    <div class="flex flex-wrap gap-1.5">
-                      <span v-for="item in enrichmentDraft.related_suggestions" :key="`related-${item}`" class="rounded-full bg-stone-100 px-2 py-1 text-xs text-stone-600">{{ item }}</span>
+                  <div v-if="enrichmentRelationCandidates.length" class="mt-4 rounded-lg border border-stone-200 bg-white p-3" data-tour="motif-relation-candidates">
+                    <div class="mb-2 flex items-center justify-between gap-3"><div><div class="text-xs font-semibold text-stone-700">{{ t('motifs.relations.enrichmentCandidates') }}</div><p class="mt-1 text-xs text-stone-500">{{ t('motifs.relations.reviewHint') }}</p></div><span class="text-xs text-stone-400">{{ enrichmentApplyRelationKeys.length }}/{{ enrichmentRelationCandidates.length }}</span></div>
+                    <div class="grid gap-2 md:grid-cols-2">
+                      <label v-for="(candidate, index) in enrichmentRelationCandidates" :key="relationCandidateKey(candidate, index)" class="flex cursor-pointer items-start gap-2 rounded-md border border-stone-200 p-3 text-sm hover:border-teal-300">
+                        <input v-model="enrichmentApplyRelationKeys" type="checkbox" :value="relationCandidateKey(candidate, index)" class="mt-1 h-4 w-4 rounded border-stone-300 text-teal-700" />
+                        <span class="min-w-0"><span class="flex flex-wrap items-center gap-2"><strong class="text-stone-900">{{ candidate.name }}</strong><span class="rounded bg-stone-100 px-1.5 py-0.5 text-xs text-stone-600">{{ candidate.kind === 'new' ? t('motifs.relations.newConcept') : relationTypeLabel(candidate.relation_type) }}</span></span><span v-if="candidate.reason" class="mt-1 block text-xs leading-5 text-stone-600">{{ candidate.reason }}</span></span>
+                      </label>
                     </div>
-                    <p class="mt-2 text-xs leading-5 text-stone-400">{{ t('motifs.enrichRelatedHint') }}</p>
                   </div>
                   <div v-if="enrichmentDraft.source_hints.length" class="mt-4 rounded-xl bg-stone-50 p-3">
                     <div class="mb-2 text-xs font-semibold text-stone-500">{{ t('motifs.enrichSourceHints') }}</div>
@@ -2229,6 +2433,8 @@ async function removeSourceAnchorFromPicker(excerpt: MotifExcerpt) {
         </footer>
       </section>
     </div>
+    <TourInvitation :open="tourInviteOpen" :title="t('motifsTour.inviteTitle')" :body="t('motifsTour.inviteBody')" :start-label="t('guidedTours.start')" :later-label="t('guidedTours.later')" :dismiss-label="t('guidedTours.dismiss')" @start="startMotifsTour" @later="tourInviteOpen = false" @dismiss="dismissMotifsTour" />
+    <GuidedTourOverlay :open="tourOpen" :steps="motifTourSteps" :step-index="tourStepIndex" :previous-label="t('collectionsTour.previous')" :next-label="t('collectionsTour.next')" :skip-label="t('collectionsTour.skip')" :finish-label="t('collectionsTour.finish')" :progress-label="motifTourProgress" :close-label="t('common.close')" @previous="tourStepIndex = Math.max(0, tourStepIndex - 1)" @next="tourStepIndex = Math.min(motifTourSteps.length - 1, tourStepIndex + 1)" @close="finishMotifsTour" @finish="finishMotifsTour" />
   </div>
 </template>
 

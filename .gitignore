@@ -11,6 +11,10 @@ build/
 htmlcov/
 *.log
 *.zip
+tauri-mvp/frontend/.playwright-cli/
+tauri-mvp/frontend/output/
+tauri-mvp/frontend/playwright-report/
+tauri-mvp/frontend/test-results/
 
 # Local credential and profile files
 .env

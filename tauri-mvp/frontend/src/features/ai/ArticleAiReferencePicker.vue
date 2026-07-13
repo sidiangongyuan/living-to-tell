@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { errorMessage } from '../../api/base'
 import { libraryApi, type Reference } from '../../api/library'
 import { useI18n } from '../../i18n'
+import { trapFocus } from '../../utils/focusTrap'
 
 const props = defineProps<{
   open: boolean
@@ -26,8 +27,10 @@ const results = ref<Reference[]>([])
 const knownReferences = ref(new Map<string, Reference>())
 const draftReferenceIds = ref<string[]>([])
 const previewReference = ref<Reference | null>(null)
+const dialogRef = ref<HTMLElement | null>(null)
 let requestToken = 0
 let searchTimer: ReturnType<typeof setTimeout> | null = null
+let returnFocus: HTMLElement | null = null
 
 const usageOptions = computed(() => [
   { value: 'all' as const, label: t('library.filterAll') },
@@ -47,7 +50,13 @@ const draftChars = computed(() => draftReferences.value.reduce((total, item) => 
 const contextLarge = computed(() => draftChars.value > 20_000)
 
 watch(() => props.open, (open) => {
-  if (!open) return
+  if (!open) {
+    const target = returnFocus
+    returnFocus = null
+    void nextTick(() => target?.focus())
+    return
+  }
+  returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
   query.value = ''
   usageFilter.value = 'all'
   error.value = ''
@@ -121,7 +130,12 @@ function usageLabel(reference: Reference): string {
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (!props.open || event.key !== 'Escape') return
+  if (!props.open) return
+  if (event.key === 'Tab') {
+    trapFocus(event, dialogRef.value)
+    return
+  }
+  if (event.key !== 'Escape') return
   event.preventDefault()
   event.stopPropagation()
   if (previewReference.value) {
@@ -147,6 +161,8 @@ onBeforeUnmount(() => {
       @click.self="cancelSelection"
     >
       <section
+        ref="dialogRef"
+        tabindex="-1"
         role="dialog"
         aria-modal="true"
         aria-labelledby="article-ai-reference-picker-title"
