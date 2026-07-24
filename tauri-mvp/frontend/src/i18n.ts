@@ -145,6 +145,7 @@ const translations = {
       notesDeleteConfirm: '确定删除这条文章便签吗？',
       articleMissingRefreshed: '这篇文章已不存在，已刷新文章列表。',
       articleActionUnavailable: '当前文章操作暂时失败，请稍后重试。',
+      aiSelectionChanged: '文章在保存时发生变化，未打开 AI 修改。请重新选择原文后再试。',
       writingNoteMissing: '这条便签已不存在，已刷新便签列表。',
     },
     articleVersions: {
@@ -1656,6 +1657,7 @@ const translations = {
       notesDeleteConfirm: 'Delete this article note?',
       articleMissingRefreshed: 'This article no longer exists. The article list has been refreshed.',
       articleActionUnavailable: 'The current article action failed temporarily. Please retry.',
+      aiSelectionChanged: 'The article changed while saving, so AI Edit was not opened. Select the text again and retry.',
       writingNoteMissing: 'This note no longer exists. The notes list has been refreshed.',
     },
     articleVersions: {

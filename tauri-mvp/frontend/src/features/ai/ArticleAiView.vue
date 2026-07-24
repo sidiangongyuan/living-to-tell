@@ -449,7 +449,7 @@ watch(() => route.query.tour, (value) => {
               </select>
               <div v-if="selectedArticle" class="mt-3 bg-white p-3 ring-1 ring-stone-200">
                 <div class="flex items-center justify-between gap-3"><span class="text-sm font-medium text-stone-800">{{ hasSelection ? t('articleAi.selection') : t('articleAi.fullArticle') }}</span><span class="text-xs text-stone-600">{{ selectedText.length }} {{ t('articleAi.characters') }}</span></div>
-                <p class="mt-2 line-clamp-4 whitespace-pre-wrap text-sm leading-6 text-stone-600">{{ selectedText || t('articleAi.emptyArticle') }}</p>
+                <p data-testid="article-ai-target-preview" class="mt-2 line-clamp-4 whitespace-pre-wrap text-sm leading-6 text-stone-600">{{ selectedText || t('articleAi.emptyArticle') }}</p>
               </div>
             </div>
 

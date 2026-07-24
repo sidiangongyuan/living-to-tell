@@ -1497,6 +1497,54 @@ test('article list filters, context pane, save, AI navigation, archive, and coll
   await expect(page).toHaveURL(/article=article-a/)
 })
 
+test('AI Edit preserves the exact editor selection when an epigraph is hidden from the body editor', async ({ page }) => {
+  const editorBody = [
+    '母亲把通知书重新装回信封里。',
+    '',
+    '父亲不再灵敏，以前他还是会留一些头发的。',
+    '我仍然沉默，手机跳转到买票的界面。',
+  ].join('\n')
+  const fullBody = `抽屉合上的时候发出一声轻响。\n——《测试书》 测试作者\n\n${editorBody}`
+  const epigraphArticle = {
+    ...article,
+    id: 'article-epigraph',
+    title: '带题记的文章',
+    body: fullBody,
+  }
+
+  await page.route('**/api/articles?**', async (route) => {
+    await route.fulfill({ json: [epigraphArticle] })
+  })
+  await page.route('**/api/articles/article-epigraph', async (route) => {
+    if (route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      await route.fulfill({ json: { ...epigraphArticle, ...body } })
+      return
+    }
+    await route.fulfill({ json: epigraphArticle })
+  })
+
+  await page.goto('/articles?id=article-epigraph')
+  const editor = page.getByTestId('article-body-editor')
+  await expect(editor).toHaveValue(editorBody, { timeout: 20000 })
+
+  const selectedText = editorBody.slice(editorBody.indexOf('父亲'))
+  await editor.evaluate((node, start) => {
+    const textarea = node as HTMLTextAreaElement
+    textarea.focus()
+    textarea.setSelectionRange(start, textarea.value.length)
+    textarea.dispatchEvent(new Event('select', { bubbles: true }))
+  }, editorBody.indexOf('父亲'))
+
+  await page.getByRole('main').getByRole('button', { name: 'AI 修改' }).click()
+
+  const expectedStart = fullBody.indexOf('父亲')
+  await expect(page).toHaveURL(new RegExp(`selection_start=${expectedStart}`))
+  await expect(page).toHaveURL(new RegExp(`selection_end=${fullBody.length}`))
+  await expect(page.getByTestId('article-ai-target-preview')).toHaveText(selectedText)
+  await expect(page.getByTestId('article-ai-target-preview')).not.toContainText('母亲把通知书')
+})
+
 test('dates calendar buttons, daily quote, welcome close, and start writing actions work', async ({ page }) => {
   const statsQueries: Array<{ year: string | null; month: string | null }> = []
   const createdArticles: Array<Record<string, unknown>> = []

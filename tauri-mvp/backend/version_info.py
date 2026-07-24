@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 
 APP_DISPLAY_NAME = "Living to Tell"
-APP_VERSION = os.environ.get("LIVING_TO_TELL_APP_VERSION", "0.1.49")
+APP_VERSION = os.environ.get("LIVING_TO_TELL_APP_VERSION", "0.1.50")
 API_VERSION = "2.0.0"
 API_CAPABILITIES = [
     "data_location",

@@ -31,6 +31,7 @@ import { saveBlobWithDialog } from '../../utils/exportFile'
 import { collectArticleTags, countParagraphs, filterArticlesByTag } from './articleList'
 import { useResizablePane } from '../../composables/useResizablePane'
 import { composeArticleBody, detectEpigraph, type EpigraphParts } from './epigraph'
+import { mapEditorSelectionToArticleBody } from './articleSelection'
 import {
   type ArticleEditorInteraction,
   COMFORT_ANCHOR_RATIO,
@@ -1159,13 +1160,32 @@ async function handleChatArticleCreated(entry: Entry) {
 }
 
 async function openAiToolsForArticle() {
-  if (!store.selectedEntry) return
-  const saved = await saveNow()
-  if (!saved) return
-  const entryId = store.selectedEntry.id
+  const entry = store.selectedEntry
+  if (!entry) return
+  articleSideNotice.value = ''
+  const entryId = entry.id
+  const editorBody = bodyDraft.value
+  const articleBody = composeCurrentBody()
   const start = bodyRef.value?.selectionStart ?? 0
   const end = bodyRef.value?.selectionEnd ?? 0
-  const hasSelection = end > start
+  const hadSelection = end > start
+  const selection = hadSelection
+    ? mapEditorSelectionToArticleBody(editorBody, articleBody, start, end)
+    : null
+  if (hadSelection && !selection) {
+    articleSideNotice.value = t('articles.aiSelectionChanged')
+    return
+  }
+
+  const saved = await saveNow()
+  if (!saved) return
+  const savedEntry = store.selectedEntry
+  if (!savedEntry || savedEntry.id !== entryId) return
+  if (selection && savedEntry.body.slice(selection.start, selection.end) !== selection.text) {
+    articleSideNotice.value = t('articles.aiSelectionChanged')
+    return
+  }
+
   router.push({
     name: 'ai',
     query: {
@@ -1173,10 +1193,10 @@ async function openAiToolsForArticle() {
       task: 'polish',
       scope_kind: 'article',
       scope_id: entryId,
-      ...(hasSelection
+      ...(selection
         ? {
-            selection_start: String(start),
-            selection_end: String(end),
+            selection_start: String(selection.start),
+            selection_end: String(selection.end),
           }
         : {}),
     },

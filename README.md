@@ -6,12 +6,12 @@
 
 A local-first Windows writing studio for long-form projects, traceable references, and reviewable AI.
 
-[![Latest release](https://img.shields.io/badge/preview-0.1.49-2563eb?style=flat-square)](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.49)
+[![Latest release](https://img.shields.io/badge/preview-0.1.50-2563eb?style=flat-square)](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.50)
 [![Windows](https://img.shields.io/badge/Windows-x64-111827?style=flat-square&logo=windows11)](https://github.com/sidiangongyuan/living-to-tell/releases/latest)
 [![Local first](https://img.shields.io/badge/data-local--first-15803d?style=flat-square)](#data-and-privacy)
 [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](LICENSE)
 
-[**Download for Windows**](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.49/LivingToTell_0.1.49_x64-setup.exe)
+[**Download for Windows**](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.50/LivingToTell_0.1.50_x64-setup.exe)
  · [中文说明](README.zh-CN.md)
  · [User guide](docs/user-guide.md)
  · [Visual tutorials](docs/tutorials.md)
@@ -115,6 +115,7 @@ AI is optional. The writing, collection, reference, motif, export, and backup wo
 - Use OpenAI-compatible endpoints, Codex local auth, Gemini API or Gemini CLI/OAuth, and OpenCode local auth.
 - Keep several independent AI profiles, each with its own provider, model, endpoint, local credential source, and visible health state; choose exactly one default profile for single-model features.
 - Run one or many explicitly selected profiles in AI Edit; selecting a non-default profile replaces the sole default selection, and the default is never silently added back.
+- Open AI Edit from an exact article selection, including articles with an epigraph; the preview and write-back range stay aligned with the text selected in the editor.
 - Choose reference specimens, AI Cards, and current-article notes through three large searchable pickers. Only confirmed material is attached, every model receives the same frozen set, and specimen prompts forbid copying sentences or importing specimen facts and names.
 - Create profiles through the three-step setup wizard, run free local checks first, and send a minimal real request only for the profiles you select. Real tests may use tokens and incur provider cost.
 - Long-running jobs remain visible when you leave and return to the feature. Reconnection checks task state and does not resend the provider request.
@@ -128,8 +129,8 @@ See the [user guide](docs/user-guide.md) for provider-specific AI setup instruct
 
 The current public preview supports Windows x64.
 
-- Recommended: [`LivingToTell_0.1.49_x64-setup.exe`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.49/LivingToTell_0.1.49_x64-setup.exe)
-- MSI package: [`LivingToTell_0.1.49_x64_zh-CN.msi`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.49/LivingToTell_0.1.49_x64_zh-CN.msi)
+- Recommended: [`LivingToTell_0.1.50_x64-setup.exe`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.50/LivingToTell_0.1.50_x64-setup.exe)
+- MSI package: [`LivingToTell_0.1.50_x64_zh-CN.msi`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.50/LivingToTell_0.1.50_x64_zh-CN.msi)
 - Release notes and older builds: [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases)
 
 Preview installers are currently unsigned, so Windows SmartScreen may show a warning. Only run installers downloaded from this repository's Release page.

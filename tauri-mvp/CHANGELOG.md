@@ -1,5 +1,18 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.50 - Exact AI Edit Selections (2026-07-24)
+
+### Fixed
+
+- Fixed AI Edit including text above the author's selection when an article has an epigraph. The article editor hides the epigraph from its body field, while AI Edit reads the complete saved article; selection offsets are now translated between those two views before navigation.
+- Captured the editor selection before asynchronous saving so a focus or render change cannot silently replace the intended range.
+- Added a final saved-text check. If the article changes while saving, AI Edit stays closed and asks the author to select the passage again instead of opening an incorrect range.
+
+### Verification
+
+- Added unit coverage for ordinary articles, hidden epigraph prefixes, UTF-16 text, collapsed selections, and changed-body rejection.
+- Added a browser regression that selects a passage below an epigraph, opens AI Edit, and verifies the preview contains exactly the selected passage without the preceding paragraph.
+
 ## 0.1.49 - Context Pickers, Guided Workspaces, and Motif Relationships (2026-07-13)
 
 ### Added
