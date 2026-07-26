@@ -368,8 +368,8 @@ def test_tauri_collection_outline_crud(monkeypatch):
     created = client.post(
         f"/api/collections/{collection_id}/outline",
         json={
-            "title": "雨夜来信",
-            "item_type": "scene",
+            "title": "规划标题",
+            "item_type": "chapter",
             "status": "drafting",
             "summary": "一封信推动关系。",
             "entry_id": article["id"],
@@ -381,6 +381,7 @@ def test_tauri_collection_outline_crud(monkeypatch):
     item = created.json()
     assert item["tags"] == ["爱情", "等待"]
     assert item["entry_id"] == article["id"]
+    assert item["display_title"] == "雨夜来信"
 
     listed = client.get(f"/api/collections/{collection_id}/outline")
     assert listed.status_code == 200, listed.text
@@ -400,6 +401,35 @@ def test_tauri_collection_outline_crud(monkeypatch):
     assert updated.json()["title"] == "雨夜来信修订"
     assert updated.json()["item_type"] == "chapter"
 
+    renamed = client.put(
+        f"/api/articles/{article['id']}",
+        json={"title": "雨夜来信（终稿）", "body": "正文", "tags": []},
+    )
+    assert renamed.status_code == 200, renamed.text
+    listed_after_rename = client.get(f"/api/collections/{collection_id}/outline").json()
+    assert listed_after_rename[0]["display_title"] == "雨夜来信（终稿）"
+
+    status = client.patch(
+        f"/api/collections/{collection_id}/outline/{item['id']}/status",
+        json={"status": "done"},
+    )
+    assert status.status_code == 200, status.text
+    assert status.json()["status"] == "done"
+
+    converted = client.post(
+        f"/api/collections/{collection_id}/outline/{item['id']}/make-container",
+    )
+    assert converted.status_code == 200, converted.text
+    converted_payload = converted.json()
+    assert converted_payload["changed"] is True
+    assert converted_payload["parent"]["entry_id"] is None
+    assert converted_payload["created_child"]["display_title"] == "雨夜来信（终稿）"
+
+    child_id = converted_payload["created_child"]["id"]
+    delete_child = client.delete(
+        f"/api/collections/{collection_id}/outline/{child_id}"
+    )
+    assert delete_child.status_code == 204, delete_child.text
     delete = client.delete(f"/api/collections/{collection_id}/outline/{item['id']}")
     assert delete.status_code == 204, delete.text
     assert client.get(f"/api/collections/{collection_id}/outline").json() == []

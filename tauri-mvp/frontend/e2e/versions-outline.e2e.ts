@@ -34,6 +34,7 @@ interface MockOutlineItem {
   parent_id: string | null
   entry_id: string | null
   title: string
+  display_title: string
   item_type: 'part' | 'chapter' | 'scene' | 'note'
   status: 'idea' | 'drafting' | 'revising' | 'done' | 'parked'
   summary: string
@@ -259,6 +260,7 @@ test('collection outline creates a real outline item and article link', async ({
         parent_id: null,
         entry_id: body.entry_id ?? null,
         title: body.title || '新场景',
+        display_title: body.title || '新场景',
         item_type: body.item_type ?? 'scene',
         status: body.status ?? 'idea',
         summary: body.summary ?? '',
@@ -288,6 +290,9 @@ test('collection outline creates a real outline item and article link', async ({
     }
     if (route.request().method() === 'PUT') {
       Object.assign(item, route.request().postDataJSON())
+      item.display_title = item.entry_id
+        ? articles.find((article) => article.id === item.entry_id)?.title || item.title
+        : item.title
       await route.fulfill({ json: item })
       return
     }
@@ -324,7 +329,7 @@ test('collection outline creates a real outline item and article link', async ({
   await expect(page.getByTestId('guided-tour-overlay')).toHaveCount(0)
 
   await page.getByRole('button', { name: '选择节点类型' }).click()
-  await page.getByRole('button', { name: '+ 场景' }).click()
+  await page.getByRole('button', { name: '+ 章节' }).click()
   await expect(page.getByTestId('collection-outline-detail')).toContainText('编辑详情')
 
   await page.getByLabel('标题').fill('雨夜来信')

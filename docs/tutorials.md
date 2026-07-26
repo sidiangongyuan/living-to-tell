@@ -48,14 +48,14 @@ Goal: organize multiple articles into one book project with a single structure t
 Steps:
 
 1. Open **Collections** and create or open a manuscript project.
-2. If the interactive tutorial appears, use **Next** to walk through Manuscript Structure, Project Type, Unplanned Articles, Linked Article, Board, and Export; restart it later from Settings if needed.
-3. In **Manuscript**, add top-level nodes such as parts, chapters, sections, essays, or scenes.
-4. Select a chapter or group, then click **New Child**, or place **Unplanned Articles** under the selected node.
-5. Select a structure node and edit title, type, parent, status, summary, target words, and linked article.
-6. Switch to **Board** to scan idea, draft, revision, done, and parked items across the same tree.
+2. If the interactive tutorial appears, use **Next** to learn containers and draft leaves, Unplanned Articles, live titles, chapter splitting, board dragging, and Export; restart it later from Settings if needed.
+3. In **Manuscript**, first add a top-level group/part/section or chapter, then place articles, scenes, or subsections below chapters.
+4. Select a chapter and click **New Child**, or place **Unplanned Articles** below it. If the chapter already links a draft, confirm the split so that draft moves to the first child.
+5. Unlinked nodes keep planning titles; linked nodes consistently show the current article title. Detail editing still manages type, parent, status, summary, and target words.
+6. Switch to **Board** and drag a card to idea, draft, revision, done, or parked. Dragging does not change child status or manuscript order.
 7. Switch to **Export** to export the manuscript, or export a separate planning file for your own review.
 
-Expected result: Collections use one clear manuscript structure tree; articles not yet in the tree stay in Unplanned Articles.
+Expected result: Collections use one clear container-to-draft manuscript tree; a chapter can hold several articles, while articles not yet in the tree stay in Unplanned Articles.
 
 Safety note: removing an article from a collection does not delete the article. Linked Article only connects a structure node to a draft; it does not copy or move text. Once the tree has linked draft nodes, unplanned articles are not included automatically in manuscript export.
 

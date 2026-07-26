@@ -11,6 +11,7 @@ from writer.storage.repositories.entry_repository import serialize_tags
 
 VALID_OUTLINE_TYPES = {"part", "chapter", "scene", "note"}
 VALID_OUTLINE_STATUSES = {"idea", "drafting", "revising", "done", "parked"}
+CONTAINER_TYPES = {"part", "chapter"}
 
 
 def _row_to_outline_item(row: sqlite3.Row) -> CollectionOutlineItem:
@@ -58,9 +59,14 @@ class CollectionOutlineRepository:
     ) -> Optional[CollectionOutlineItem]:
         if not self._collection_exists(collection_id):
             return None
-        self._validate_item(collection_id, parent_id=parent_id, entry_id=entry_id)
         clean_type = self._normalize_type(item_type)
         clean_status = self._normalize_status(status)
+        self._validate_item(
+            collection_id,
+            item_type=clean_type,
+            parent_id=parent_id,
+            entry_id=entry_id,
+        )
         next_order = self._next_order(collection_id)
         new_id = str(uuid.uuid4())
         self._conn.execute(
@@ -112,11 +118,20 @@ class CollectionOutlineRepository:
         existing = self.get(item_id)
         if existing is None:
             return None
+        clean_type = self._normalize_type(item_type)
+        clean_status = self._normalize_status(status)
+        structural_change = (
+            clean_type != existing.item_type
+            or parent_id != existing.parent_id
+            or entry_id != existing.entry_id
+        )
         self._validate_item(
             existing.collection_id,
+            item_type=clean_type,
             parent_id=parent_id,
             entry_id=entry_id,
             current_id=item_id,
+            enforce_structure=structural_change,
         )
         self._conn.execute(
             """
@@ -140,8 +155,8 @@ class CollectionOutlineRepository:
                 parent_id,
                 entry_id,
                 title.strip() or "未命名大纲",
-                self._normalize_type(item_type),
-                self._normalize_status(status),
+                clean_type,
+                clean_status,
                 summary,
                 notes,
                 pov,
@@ -155,12 +170,133 @@ class CollectionOutlineRepository:
         self._touch_collection(existing.collection_id)
         return self.get(item_id)
 
+    def update_status(
+        self,
+        item_id: str,
+        status: str,
+        *,
+        collection_id: Optional[str] = None,
+    ) -> Optional[CollectionOutlineItem]:
+        existing = self.get(item_id)
+        if existing is None or (
+            collection_id is not None and existing.collection_id != collection_id
+        ):
+            return None
+        self._conn.execute(
+            """
+            UPDATE collection_outline_items
+               SET status = ?,
+                   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE id = ?
+            """,
+            (self._normalize_status(status), item_id),
+        )
+        self._touch_collection(existing.collection_id)
+        return self.get(item_id)
+
+    def make_container(
+        self,
+        item_id: str,
+        *,
+        collection_id: Optional[str] = None,
+    ) -> tuple[Optional[CollectionOutlineItem], Optional[CollectionOutlineItem], bool]:
+        """Turn a linked chapter into a container without losing its article.
+
+        The linked article moves to a new first content child. Calling this on an
+        already-unlinked chapter is idempotent.
+        """
+        existing = self.get(item_id)
+        if existing is None or (
+            collection_id is not None and existing.collection_id != collection_id
+        ):
+            return None, None, False
+        if existing.item_type != "chapter":
+            raise ValueError("只有章节可以拆成子项。")
+        if existing.entry_id is None:
+            return existing, None, False
+
+        entry = self._conn.execute(
+            "SELECT title FROM entries WHERE id = ?",
+            (existing.entry_id,),
+        ).fetchone()
+        if entry is None:
+            raise ValueError("关联的文章已不存在，请先整理这个结构节点。")
+
+        started_transaction = not self._conn.in_transaction
+        savepoint = f"outline_make_container_{uuid.uuid4().hex}"
+        try:
+            if started_transaction:
+                self._conn.execute("BEGIN IMMEDIATE")
+            else:
+                self._conn.execute(f"SAVEPOINT {savepoint}")
+
+            self._conn.execute(
+                """
+                UPDATE collection_outline_items
+                   SET sort_order = sort_order + 1
+                 WHERE collection_id = ? AND sort_order > ?
+                """,
+                (existing.collection_id, existing.sort_order),
+            )
+            self._conn.execute(
+                """
+                UPDATE collection_outline_items
+                   SET entry_id = NULL,
+                       target_word_count = NULL,
+                       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                 WHERE id = ?
+                """,
+                (existing.id,),
+            )
+            child_id = str(uuid.uuid4())
+            self._conn.execute(
+                """
+                INSERT INTO collection_outline_items (
+                    id, collection_id, parent_id, entry_id, title, item_type,
+                    status, summary, notes, pov, setting, timeline, tags_text,
+                    target_word_count, sort_order
+                ) VALUES (?, ?, ?, ?, ?, 'scene', ?, '', '', ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    child_id,
+                    existing.collection_id,
+                    existing.id,
+                    existing.entry_id,
+                    str(entry["title"] or existing.title or "未命名文章"),
+                    existing.status,
+                    existing.pov,
+                    existing.setting,
+                    existing.timeline,
+                    existing.tags_text,
+                    existing.target_word_count,
+                    existing.sort_order + 1,
+                ),
+            )
+            self._touch_collection(existing.collection_id)
+            if started_transaction:
+                self._conn.execute("COMMIT")
+            else:
+                self._conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        except BaseException:
+            if started_transaction and self._conn.in_transaction:
+                self._conn.execute("ROLLBACK")
+            elif not started_transaction:
+                self._conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                self._conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+            raise
+
+        return self.get(existing.id), self.get(child_id), True
+
     def delete(self, item_id: str, *, collection_id: Optional[str] = None) -> bool:
         existing = self.get(item_id)
         if existing is None:
             return False
         if collection_id is not None and existing.collection_id != collection_id:
             return False
+        children = self._children(item_id)
+        for child in children:
+            if not self._is_valid_parent_pair(child.item_type, existing.parent_id):
+                raise ValueError("这个节点仍有子项。请先移动或删除子项，再删除该节点。")
         # Keep children visible instead of deleting the user's planning notes.
         self._conn.execute(
             "UPDATE collection_outline_items SET parent_id = NULL WHERE parent_id = ?",
@@ -237,28 +373,93 @@ class CollectionOutlineRepository:
         self,
         collection_id: str,
         *,
+        item_type: str,
         parent_id: Optional[str],
         entry_id: Optional[str],
         current_id: Optional[str] = None,
+        enforce_structure: bool = True,
     ) -> None:
+        parent: Optional[CollectionOutlineItem] = None
         if parent_id is not None:
             if parent_id == current_id:
-                raise ValueError("Outline item cannot be its own parent")
+                raise ValueError("结构节点不能把自己设为上级。")
             parent = self.get(parent_id)
             if parent is None or parent.collection_id != collection_id:
-                raise ValueError("Parent outline item is not in this collection")
+                raise ValueError("所选上级节点不属于当前作品集。")
             if current_id is not None and self._is_descendant(
                 parent_id,
                 descendant_of=current_id,
             ):
-                raise ValueError("Outline item cannot be moved below its own child")
+                raise ValueError("结构节点不能移动到自己的子项下面。")
         if entry_id is not None:
             entry = self._conn.execute(
                 "SELECT 1 FROM entries WHERE id = ?",
                 (entry_id,),
             ).fetchone()
             if entry is None:
-                raise ValueError("Linked article not found")
+                raise ValueError("关联的文章不存在，请重新选择。")
+            duplicate = self._conn.execute(
+                """
+                SELECT id FROM collection_outline_items
+                 WHERE collection_id = ? AND entry_id = ?
+                   AND (? IS NULL OR id != ?)
+                 LIMIT 1
+                """,
+                (collection_id, entry_id, current_id, current_id),
+            ).fetchone()
+            if duplicate is not None:
+                raise ValueError("这篇文章已经放在当前作品集的其他结构位置。")
+
+        if not enforce_structure:
+            return
+        if not self._is_valid_parent_pair(item_type, parent_id, parent):
+            if parent_id is None:
+                raise ValueError("顶层只能放分部或章节。")
+            raise ValueError("这个父子层级不成立，请按分部 → 章节 → 正文子项组织。")
+        if item_type in {"part", "note"} and entry_id is not None:
+            raise ValueError("分部和笔记不能关联正文。")
+        if parent is not None and parent.entry_id is not None:
+            raise ValueError("这个章节已直接关联正文；请先将它拆成子项。")
+
+        children = self._children(current_id) if current_id else []
+        if children and item_type not in CONTAINER_TYPES:
+            raise ValueError("正文子项和笔记不能继续包含子项。")
+        if children and entry_id is not None:
+            raise ValueError("作为容器的章节不能同时直接关联正文。")
+        if children:
+            allowed_children = {"chapter", "note"} if item_type == "part" else {"scene", "note"}
+            if any(child.item_type not in allowed_children for child in children):
+                raise ValueError("现有子项与目标类型不兼容，请先整理子项。")
+
+    def _children(self, item_id: Optional[str]) -> list[CollectionOutlineItem]:
+        if not item_id:
+            return []
+        rows = self._conn.execute(
+            """
+            SELECT * FROM collection_outline_items
+             WHERE parent_id = ?
+             ORDER BY sort_order ASC, created_at ASC
+            """,
+            (item_id,),
+        ).fetchall()
+        return [_row_to_outline_item(row) for row in rows]
+
+    def _is_valid_parent_pair(
+        self,
+        item_type: str,
+        parent_id: Optional[str],
+        parent: Optional[CollectionOutlineItem] = None,
+    ) -> bool:
+        if parent_id is None:
+            return item_type in {"part", "chapter"}
+        resolved = parent or self.get(parent_id)
+        if resolved is None:
+            return False
+        if resolved.item_type == "part":
+            return item_type in {"chapter", "note"}
+        if resolved.item_type == "chapter":
+            return item_type in {"scene", "note"}
+        return False
 
     def _next_order(self, collection_id: str) -> int:
         row = self._conn.execute(
@@ -312,12 +513,12 @@ class CollectionOutlineRepository:
     def _normalize_type(value: str) -> str:
         clean = (value or "scene").strip()
         if clean not in VALID_OUTLINE_TYPES:
-            raise ValueError(f"Unsupported outline item type: {value}")
+            raise ValueError("不支持这个结构节点类型。")
         return clean
 
     @staticmethod
     def _normalize_status(value: str) -> str:
         clean = (value or "idea").strip()
         if clean not in VALID_OUTLINE_STATUSES:
-            raise ValueError(f"Unsupported outline status: {value}")
+            raise ValueError("不支持这个结构状态。")
         return clean

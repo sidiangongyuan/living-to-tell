@@ -9,6 +9,7 @@ export interface OutlineFilters {
 export interface OutlineProgressSummary {
   totalItems: number
   linkedItems: number
+  totalArticles: number
   unlinkedItems: number
   targetWordTotal: number
   linkedArticleWordCount: number
@@ -41,7 +42,8 @@ export function buildOutlineProgressSummary(
 
   return {
     totalItems: outline.length,
-    linkedItems: outline.filter((item) => Boolean(item.entry_id)).length,
+    linkedItems: linkedIds.size,
+    totalArticles: articles.length,
     unlinkedItems: outline.filter((item) => !item.entry_id).length,
     targetWordTotal,
     linkedArticleWordCount,
@@ -87,7 +89,7 @@ export function buildOutlineMarkdown(options: {
       options.statusLabel(item.status),
       item.target_word_count ? `目标 ${item.target_word_count} 字` : '',
     ]
-    lines.push('', `### ${index + 1}. ${item.title || '未命名节点'}`)
+    lines.push('', `### ${index + 1}. ${item.display_title || item.title || '未命名节点'}`)
     lines.push(`- 状态：${joinInline(headerParts) || '未设置'}`)
     if (item.entry_id) {
       const articleTitle = options.articleTitleForId?.(item.entry_id) || item.entry_id

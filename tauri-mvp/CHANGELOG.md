@@ -1,5 +1,28 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.51 - Coherent Collection Structure and Draggable Board (2026-07-26)
+
+### Added
+
+- Added one consistent container-to-draft manuscript model across General, Novel, Essay Collection, and Nonfiction projects.
+- Added a safe chapter split action. A leaf chapter may link one draft directly; when it becomes a container, the linked draft moves transactionally to its first child.
+- Added drag-and-drop status changes on the planning board, with a status menu retained for keyboard and non-drag workflows.
+- Added chapter-content summaries that list descendant drafts, progress, word counts, and direct article navigation.
+
+### Changed
+
+- Linked structure nodes now use the article's current title everywhere: manuscript tree, detail view, board, planning export, manuscript export, and Collection Agent context.
+- The four project hierarchies are now explicit: Group / Chapter / Article, Part / Chapter / Scene, Section / Chapter / Article, and Part / Chapter / Subsection.
+- The manuscript header now separates structure-node count from the clearer `Drafts arranged N/N` progress.
+- Board drag changes only the current card's status. It never changes child status or manuscript order.
+- Collection tutorials and documentation now teach chapter containers, leaf chapters, article-title following, safe splitting, and board dragging.
+
+### Safety and compatibility
+
+- New edits prevent containers from linking drafts, leaves from gaining children, and the same article from appearing twice in one collection manuscript.
+- Startup migration changes only the unambiguous legacy case of an unlinked content node that already owns children; ambiguous legacy structures remain intact and receive a visible cleanup prompt.
+- No article body, collection, outline item, or link is deleted by migration.
+
 ## 0.1.50 - Exact AI Edit Selections (2026-07-24)
 
 ### Fixed

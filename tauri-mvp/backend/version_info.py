@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 
 APP_DISPLAY_NAME = "Living to Tell"
-APP_VERSION = os.environ.get("LIVING_TO_TELL_APP_VERSION", "0.1.50")
+APP_VERSION = os.environ.get("LIVING_TO_TELL_APP_VERSION", "0.1.51")
 API_VERSION = "2.0.0"
 API_CAPABILITIES = [
     "data_location",
@@ -29,6 +29,8 @@ API_CAPABILITIES = [
     "article_versions",
     "collection_outline",
     "collection_manuscript_structure",
+    "collection_structure_rules_v2",
+    "collection_board_drag",
     "collection_agent",
     "collection_agent_sessions",
     "collection_agent_drafts",

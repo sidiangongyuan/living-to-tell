@@ -178,9 +178,7 @@ def _outline_content_lines(
     for item, depth in _walk_outline(outline):
         if item.item_type == "note":
             continue
-        title = item.title or entry_map.get(item.entry_id or "") or "Untitled"
-        if not isinstance(title, str):
-            title = title.title or "Untitled"
+        title = _outline_display_title(item, entry_map)
         words = ""
         if item.entry_id and item.entry_id in entry_map:
             words = f"  ({_word_count(entry_map[item.entry_id].body or '')} words)"
@@ -215,7 +213,7 @@ def _render_outline_text(
         if item.item_type == "note" and not item.entry_id:
             continue
         entry = entry_map.get(item.entry_id or "")
-        title = item.title or entry.title if entry else item.title or "Untitled"
+        title = _outline_display_title(item, entry_map)
         underline = "=" if depth == 0 else "-"
         body = _render_entry_body_text(entry) if entry is not None else ""
         section = f"{title}\n{underline * max(1, len(title))}"
@@ -234,7 +232,7 @@ def _render_outline_markdown(
         if item.item_type == "note" and not item.entry_id:
             continue
         entry = entry_map.get(item.entry_id or "")
-        title = item.title or entry.title if entry else item.title or "Untitled"
+        title = _outline_display_title(item, entry_map)
         heading_level = max(2, min(5, depth + 2))
         rendered.append("")
         rendered.append(f"{'#' * heading_level} {title}")
@@ -255,11 +253,21 @@ def _write_outline_docx(
         if item.item_type == "note" and not item.entry_id:
             continue
         entry = entry_map.get(item.entry_id or "")
-        title = item.title or entry.title if entry else item.title or "Untitled"
+        title = _outline_display_title(item, entry_map)
         heading_level = max(1, min(4, depth + 1))
         document.add_heading(title, level=heading_level)
         if entry is not None:
             _write_entry_body_docx(document, entry)
+
+
+def _outline_display_title(
+    item: CollectionOutlineItem,
+    entry_map: dict[str, Entry],
+) -> str:
+    entry = entry_map.get(item.entry_id or "")
+    if entry is not None and entry.title.strip():
+        return entry.title.strip()
+    return item.title.strip() or "Untitled"
 
 
 def _render_article_markdown(entry: Entry, *, heading_level: int) -> str:

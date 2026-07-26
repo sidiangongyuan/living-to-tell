@@ -20,17 +20,23 @@ export interface TypeLabels {
   note: string
 }
 
+export interface StructureIssue {
+  itemId: string
+  kind: 'duplicate_article' | 'linked_container' | 'invalid_parent' | 'children_on_leaf'
+  entryId?: string
+}
+
 const ZH_TYPE_LABELS: Record<CollectionProjectType, TypeLabels> = {
   general: { part: '分组', chapter: '章节', scene: '文章', note: '笔记' },
   novel: { part: '分部', chapter: '章节', scene: '场景', note: '笔记' },
-  essay: { part: '辑', chapter: '篇组', scene: '篇章', note: '笔记' },
+  essay: { part: '辑', chapter: '章节', scene: '文章', note: '笔记' },
   nonfiction: { part: '部分', chapter: '章节', scene: '小节', note: '笔记' },
 }
 
 const EN_TYPE_LABELS: Record<CollectionProjectType, TypeLabels> = {
   general: { part: 'Group', chapter: 'Chapter', scene: 'Article', note: 'Note' },
   novel: { part: 'Part', chapter: 'Chapter', scene: 'Scene', note: 'Note' },
-  essay: { part: 'Section', chapter: 'Essay Group', scene: 'Essay', note: 'Note' },
+  essay: { part: 'Section', chapter: 'Chapter', scene: 'Article', note: 'Note' },
   nonfiction: { part: 'Part', chapter: 'Chapter', scene: 'Section', note: 'Note' },
 }
 
@@ -78,7 +84,7 @@ export function exportTabLabel(locale: string): string {
 }
 
 export function defaultChildType(parentType: OutlineItemType | null, projectType: CollectionProjectType): OutlineItemType {
-  if (!parentType) return projectType === 'essay' ? 'part' : 'chapter'
+  if (!parentType) return 'chapter'
   if (parentType === 'part') return 'chapter'
   if (parentType === 'chapter') return projectType === 'novel' || projectType === 'nonfiction' ? 'scene' : 'scene'
   return 'note'
@@ -86,6 +92,105 @@ export function defaultChildType(parentType: OutlineItemType | null, projectType
 
 export function articleTypeForProject(_projectType: CollectionProjectType): OutlineItemType {
   return 'scene'
+}
+
+export function displayTitleForItem(item: CollectionOutlineItem): string {
+  return item.display_title || item.title
+}
+
+export function allowedChildTypes(parentType: OutlineItemType | null): OutlineItemType[] {
+  if (parentType === null) return ['part', 'chapter']
+  if (parentType === 'part') return ['chapter', 'note']
+  if (parentType === 'chapter') return ['scene', 'note']
+  return []
+}
+
+export function canLinkArticle(
+  item: Pick<CollectionOutlineItem, 'item_type' | 'id'>,
+  outline: CollectionOutlineItem[],
+): boolean {
+  if (item.item_type === 'part' || item.item_type === 'note') return false
+  if (item.item_type === 'scene') return true
+  return !outline.some((candidate) => candidate.parent_id === item.id)
+}
+
+export function canUseStructureParent(
+  outline: CollectionOutlineItem[],
+  item: Pick<CollectionOutlineItem, 'id' | 'item_type'>,
+  parentId: string | null,
+): boolean {
+  if (!canUseParent(outline, item.id, parentId)) return false
+  const parent = parentId
+    ? outline.find((candidate) => candidate.id === parentId) ?? null
+    : null
+  return allowedChildTypes(parent?.item_type ?? null).includes(item.item_type)
+    && !parent?.entry_id
+}
+
+export function descendantArticleProgress(
+  itemId: string,
+  outline: CollectionOutlineItem[],
+): { total: number; done: number } {
+  const children = new Map<string, CollectionOutlineItem[]>()
+  for (const item of outline) {
+    if (!item.parent_id) continue
+    children.set(item.parent_id, [...(children.get(item.parent_id) ?? []), item])
+  }
+  let total = 0
+  let done = 0
+  const visit = (parentId: string) => {
+    for (const child of children.get(parentId) ?? []) {
+      if (child.entry_id) {
+        total += 1
+        if (child.status === 'done') done += 1
+      }
+      visit(child.id)
+    }
+  }
+  visit(itemId)
+  return { total, done }
+}
+
+export function findStructureIssues(outline: CollectionOutlineItem[]): StructureIssue[] {
+  const issues: StructureIssue[] = []
+  const byId = new Map(outline.map((item) => [item.id, item]))
+  const children = new Map<string, CollectionOutlineItem[]>()
+  const entryLocations = new Map<string, string[]>()
+  for (const item of outline) {
+    if (item.parent_id) {
+      children.set(item.parent_id, [...(children.get(item.parent_id) ?? []), item])
+    }
+    if (item.entry_id) {
+      entryLocations.set(item.entry_id, [...(entryLocations.get(item.entry_id) ?? []), item.id])
+    }
+  }
+
+  for (const item of outline) {
+    const parent = item.parent_id ? byId.get(item.parent_id) ?? null : null
+    if (
+      !allowedChildTypes(parent?.item_type ?? null).includes(item.item_type)
+      || (item.parent_id && !parent)
+    ) {
+      issues.push({ itemId: item.id, kind: 'invalid_parent' })
+    }
+    const itemChildren = children.get(item.id) ?? []
+    if (itemChildren.length && ['scene', 'note'].includes(item.item_type)) {
+      issues.push({ itemId: item.id, kind: 'children_on_leaf' })
+    }
+    if (
+      item.entry_id
+      && (itemChildren.length > 0 || item.item_type === 'part' || item.item_type === 'note')
+    ) {
+      issues.push({ itemId: item.id, kind: 'linked_container' })
+    }
+  }
+  for (const [entryId, itemIds] of entryLocations) {
+    if (itemIds.length < 2) continue
+    for (const itemId of itemIds) {
+      issues.push({ itemId, kind: 'duplicate_article', entryId })
+    }
+  }
+  return issues
 }
 
 export function buildManuscriptTree(outline: CollectionOutlineItem[]): ManuscriptTreeNode[] {

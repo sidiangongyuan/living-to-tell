@@ -396,6 +396,50 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "draft_id" not in agent_run_cols:
         conn.execute("ALTER TABLE collection_agent_runs ADD COLUMN draft_id TEXT")
 
+    _normalize_collection_outline_structure(conn)
+
+
+def _normalize_collection_outline_structure(conn: sqlite3.Connection) -> None:
+    """Repair only legacy outline shapes whose intended role is unambiguous.
+
+    Before the strict structure model, a content node could accidentally gain
+    children. An unlinked content node at the top level or directly below a
+    part is necessarily acting as a chapter container, so it is safe to relabel.
+    All other legacy conflicts remain untouched for explicit user review.
+    """
+    table = conn.execute(
+        """
+        SELECT 1 FROM sqlite_master
+         WHERE type = 'table' AND name = 'collection_outline_items'
+        """
+    ).fetchone()
+    if table is None:
+        return
+    conn.execute(
+        """
+        UPDATE collection_outline_items AS item
+           SET item_type = 'chapter',
+               updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+         WHERE item.item_type = 'scene'
+           AND item.entry_id IS NULL
+           AND EXISTS (
+               SELECT 1
+                 FROM collection_outline_items AS child
+                WHERE child.parent_id = item.id
+           )
+           AND (
+               item.parent_id IS NULL
+               OR EXISTS (
+                   SELECT 1
+                     FROM collection_outline_items AS parent
+                    WHERE parent.id = item.parent_id
+                      AND parent.collection_id = item.collection_id
+                      AND parent.item_type = 'part'
+               )
+           )
+        """
+    )
+
 
 def _ensure_reference_passages_fts_schema(
     conn: sqlite3.Connection, *, force_rebuild: bool = False

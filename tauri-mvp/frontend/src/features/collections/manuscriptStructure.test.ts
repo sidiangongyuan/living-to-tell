@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { CollectionArticle, CollectionOutlineItem } from '../../api/collections'
 import {
+  allowedChildTypes,
   buildManuscriptTree,
+  canLinkArticle,
   canUseParent,
+  descendantArticleProgress,
+  findStructureIssues,
   flattenManuscriptTree,
   labelsForProject,
   unplannedArticles,
@@ -15,6 +19,7 @@ function outlineItem(partial: Partial<CollectionOutlineItem>): CollectionOutline
     parent_id: null,
     entry_id: null,
     title: '条目',
+    display_title: partial.display_title ?? partial.title ?? '条目',
     item_type: 'scene',
     status: 'idea',
     summary: '',
@@ -46,7 +51,8 @@ describe('manuscript structure helpers', () => {
 
   it('returns project-aware labels', () => {
     expect(labelsForProject('novel', 'zh').part).toBe('分部')
-    expect(labelsForProject('essay', 'zh').scene).toBe('篇章')
+    expect(labelsForProject('essay', 'zh').chapter).toBe('章节')
+    expect(labelsForProject('essay', 'zh').scene).toBe('文章')
     expect(labelsForProject('nonfiction', 'en').scene).toBe('Section')
   })
 
@@ -68,5 +74,32 @@ describe('manuscript structure helpers', () => {
 
     expect(canUseParent(outline, 'parent', 'child')).toBe(false)
     expect(canUseParent(outline, 'child', 'parent')).toBe(true)
+  })
+
+  it('defines strict container and body-leaf roles', () => {
+    expect(allowedChildTypes(null)).toEqual(['part', 'chapter'])
+    expect(allowedChildTypes('part')).toEqual(['chapter', 'note'])
+    expect(allowedChildTypes('chapter')).toEqual(['scene', 'note'])
+    expect(allowedChildTypes('scene')).toEqual([])
+
+    const chapter = outlineItem({ id: 'chapter', item_type: 'chapter' })
+    const body = outlineItem({ id: 'body', parent_id: 'chapter', entry_id: 'article-1' })
+    const outline = [chapter, body]
+    expect(canLinkArticle(chapter, outline)).toBe(false)
+    expect(canLinkArticle(body, outline)).toBe(true)
+    expect(descendantArticleProgress('chapter', outline)).toEqual({ total: 1, done: 0 })
+  })
+
+  it('flags ambiguous legacy conflicts without mutating them', () => {
+    const outline = [
+      outlineItem({ id: 'legacy', item_type: 'scene', entry_id: 'article-1' }),
+      outlineItem({ id: 'child', parent_id: 'legacy', item_type: 'note' }),
+      outlineItem({ id: 'duplicate', item_type: 'chapter', entry_id: 'article-1' }),
+    ]
+
+    const issues = findStructureIssues(outline)
+    expect(issues.some((issue) => issue.itemId === 'legacy' && issue.kind === 'children_on_leaf')).toBe(true)
+    expect(issues.filter((issue) => issue.kind === 'duplicate_article')).toHaveLength(2)
+    expect(outline[0].item_type).toBe('scene')
   })
 })

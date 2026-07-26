@@ -56,7 +56,7 @@ def test_collection_markdown_exports_outline_tree_when_articles_are_linked(tmp_p
     collections.add_entry(collection.id, first.id)
     collections.add_entry(collection.id, second.id)
     part = outline.create(collection.id, title="第一辑", item_type="part")
-    outline.create(
+    chapter = outline.create(
         collection.id,
         title="人生哲思",
         item_type="chapter",
@@ -64,22 +64,25 @@ def test_collection_markdown_exports_outline_tree_when_articles_are_linked(tmp_p
     )
     outline.create(
         collection.id,
-        title="生命不能承受之轻",
+        title="旧结构标题",
         item_type="scene",
-        parent_id=part.id,
+        parent_id=chapter.id,
         entry_id=second.id,
     )
     outline.create(
         collection.id,
         title="内部备忘",
         item_type="note",
+        parent_id=part.id,
         notes="不应进入书稿导出。",
     )
+    entries.update(second.id, title="生命不能承受之轻", body=second.body, tags=second.tags)
 
     md = CollectionExportService(collections, outline, entries).export_collection_md(collection.id)
 
     assert "## 第一辑" in md
     assert "### 生命不能承受之轻" in md
+    assert "旧结构标题" not in md
     assert "第二篇正文。" in md
     assert "第一篇正文。" not in md
     assert "内部备忘" not in md

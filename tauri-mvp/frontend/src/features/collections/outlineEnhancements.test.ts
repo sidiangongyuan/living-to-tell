@@ -9,6 +9,7 @@ function outlineItem(partial: Partial<CollectionOutlineItem>): CollectionOutline
     parent_id: null,
     entry_id: null,
     title: '条目',
+    display_title: partial.display_title ?? partial.title ?? '条目',
     item_type: 'scene',
     status: 'idea',
     summary: '',
@@ -41,7 +42,8 @@ describe('outline enhancements', () => {
     const summary = buildOutlineProgressSummary(outline, articles)
 
     expect(summary.totalItems).toBe(4)
-    expect(summary.linkedItems).toBe(3)
+    expect(summary.linkedItems).toBe(2)
+    expect(summary.totalArticles).toBe(2)
     expect(summary.unlinkedItems).toBe(1)
     expect(summary.targetWordTotal).toBe(2000)
     expect(summary.linkedArticleWordCount).toBe(800)
@@ -72,6 +74,7 @@ describe('outline enhancements', () => {
       outline: [
         outlineItem({
           title: '第一场',
+          display_title: '返乡章节',
           item_type: 'scene',
           status: 'drafting',
           entry_id: 'article-1',
@@ -87,6 +90,7 @@ describe('outline enhancements', () => {
 
     expect(markdown).toContain('# 长篇计划')
     expect(markdown).toContain('## 书稿结构')
+    expect(markdown).toContain('### 1. 返乡章节')
     expect(markdown).toContain('关联文章：返乡章节')
     expect(markdown).toContain('标签：返乡、等待')
   })

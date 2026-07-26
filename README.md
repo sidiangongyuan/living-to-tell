@@ -6,12 +6,12 @@
 
 A local-first Windows writing studio for long-form projects, traceable references, and reviewable AI.
 
-[![Latest release](https://img.shields.io/badge/preview-0.1.50-2563eb?style=flat-square)](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.50)
+[![Latest release](https://img.shields.io/badge/preview-0.1.51-2563eb?style=flat-square)](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.51)
 [![Windows](https://img.shields.io/badge/Windows-x64-111827?style=flat-square&logo=windows11)](https://github.com/sidiangongyuan/living-to-tell/releases/latest)
 [![Local first](https://img.shields.io/badge/data-local--first-15803d?style=flat-square)](#data-and-privacy)
 [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](LICENSE)
 
-[**Download for Windows**](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.50/LivingToTell_0.1.50_x64-setup.exe)
+[**Download for Windows**](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.51/LivingToTell_0.1.51_x64-setup.exe)
  · [中文说明](README.zh-CN.md)
  · [User guide](docs/user-guide.md)
  · [Visual tutorials](docs/tutorials.md)
@@ -30,7 +30,7 @@ Living to Tell connects the parts of a serious writing practice that usually end
 
 | Write with calm | Build the whole work | Use AI deliberately |
 | --- | --- | --- |
-| A focused long-form editor with autosave, notes, versions, epigraphs, search, and export. | Collections turn separate articles into an ordered manuscript, outline, planning board, and exportable book project. | Choose the exact model and context, watch long tasks progress, compare results, and confirm every change. |
+| A focused long-form editor with autosave, notes, versions, epigraphs, search, and export. | Collections turn separate articles into a coherent chapter tree, draggable planning board, and exportable book project. | Choose the exact model and context, watch long tasks progress, compare results, and confirm every change. |
 
 ## From a paragraph to a book
 
@@ -77,7 +77,7 @@ The [visual tutorials](docs/tutorials.md) show seven complete workflows with sho
 | Your goal | Open | First action |
 | --- | --- | --- |
 | Start writing now | **Articles** | Select **New**, write, and let autosave handle the draft. |
-| Plan a novel, essay collection, or nonfiction book | **Collections** | Create a project, add articles, then arrange parts, chapters, scenes, or notes in the manuscript tree. |
+| Plan a novel, essay collection, or nonfiction book | **Collections** | Create a project, add articles, then arrange structural containers and article-bearing leaves in the manuscript tree. |
 | Save a quotation or research passage | **Reference Library** | Create a reference with passage, title, author, purpose, and personal note. |
 | Track a recurring image or idea | **Motif Star Map** | Select text in an article or reference, right-click, and link it to a motif. |
 | Ask AI for writing help | **Settings**, then **AI Edit** | Save or import an AI profile, send a real test request, then open an article and run a focused edit. |
@@ -87,7 +87,7 @@ The [visual tutorials](docs/tutorials.md) show seven complete workflows with sho
 
 1. Create an article and write one real scene, essay fragment, or argument.
 2. Create a collection and add that article to it.
-3. Add a chapter or scene node, then link the article to the node.
+3. Link the article to a leaf chapter, or place it as an article, scene, or subsection under a chapter.
 4. Add one source passage to the Reference Library and link important text to a motif if useful.
 5. Optionally configure AI and run a small task before sending longer text.
 6. Open Export & Backup, create a restore point, and export the article or collection.
@@ -99,7 +99,7 @@ Prefer learning by exploring? The first-run checklist can create a disposable sa
 | Area | What it gives you |
 | --- | --- |
 | **Article Studio** | Autosave, tags, full-text search, find/replace, writing notes, version history, epigraphs, focus mode, motif anchors, and Markdown/TXT/DOCX export. |
-| **Collections** | Searchable project shelf, manuscript hierarchy, unplanned articles, linked drafts, status board, guided tour, ordered export, and project-level Agent. |
+| **Collections** | A strict container-to-draft manuscript hierarchy, live article titles, unplanned articles, draggable status board, guided tour, ordered export, and project-level Agent. |
 | **Collection Agent** | A collection-bound coauthor with named sessions, `Discuss / Plan / Draft / Review` modes, layered memory, explicit context, a persistent draft library, and reviewable proposals. Collapsible session and workspace panels keep the conversation readable. |
 | **Reference Library** | Reading-first passages with source, author, purpose, personal notes, grouped browsing, highlighted search matches, keyboard navigation, and complete citation copy. |
 | **Motif Star Map** | Bidirectional source anchors, real excerpt co-occurrence, author-confirmed formal relationships, review-first AI discovery, D3 zoom/focus navigation, structured concept archives, and optional AI enrichment. |
@@ -129,8 +129,8 @@ See the [user guide](docs/user-guide.md) for provider-specific AI setup instruct
 
 The current public preview supports Windows x64.
 
-- Recommended: [`LivingToTell_0.1.50_x64-setup.exe`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.50/LivingToTell_0.1.50_x64-setup.exe)
-- MSI package: [`LivingToTell_0.1.50_x64_zh-CN.msi`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.50/LivingToTell_0.1.50_x64_zh-CN.msi)
+- Recommended: [`LivingToTell_0.1.51_x64-setup.exe`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.51/LivingToTell_0.1.51_x64-setup.exe)
+- MSI package: [`LivingToTell_0.1.51_x64_zh-CN.msi`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.51/LivingToTell_0.1.51_x64_zh-CN.msi)
 - Release notes and older builds: [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases)
 
 Preview installers are currently unsigned, so Windows SmartScreen may show a warning. Only run installers downloaded from this repository's Release page.

@@ -74,6 +74,7 @@ class OutlineItemOut(BaseModel):
     parent_id: Optional[str] = None
     entry_id: Optional[str] = None
     title: str
+    display_title: str
     item_type: str
     status: str
     summary: str
@@ -105,6 +106,16 @@ class OutlineItemCreate(BaseModel):
 
 class OutlineItemUpdate(OutlineItemCreate):
     title: str
+
+
+class OutlineStatusUpdate(BaseModel):
+    status: str
+
+
+class OutlineMakeContainerOut(BaseModel):
+    parent: OutlineItemOut
+    created_child: Optional[OutlineItemOut] = None
+    changed: bool = False
 
 
 class ArticleOut(BaseModel):
@@ -443,13 +454,28 @@ def _entry_to_dto(entry: DomainEntry, *, sort_order: int = 0) -> ArticleOut:
     )
 
 
-def _outline_to_dto(item: CollectionOutlineItem) -> OutlineItemOut:
+def _outline_display_title(
+    item: CollectionOutlineItem,
+    container: AppContainer,
+) -> str:
+    if item.entry_id:
+        entry = container.entry_repository.get(item.entry_id)
+        if entry is not None and entry.title.strip():
+            return entry.title.strip()
+    return item.title.strip() or "未命名节点"
+
+
+def _outline_to_dto(
+    item: CollectionOutlineItem,
+    container: AppContainer,
+) -> OutlineItemOut:
     return OutlineItemOut(
         id=item.id,
         collection_id=item.collection_id,
         parent_id=item.parent_id,
         entry_id=item.entry_id,
         title=item.title,
+        display_title=_outline_display_title(item, container),
         item_type=item.item_type,
         status=item.status,
         summary=item.summary,
@@ -850,8 +876,9 @@ def _agent_reference_to_attachment(
         item = container.collection_outline_repository.get(ref_id)
         if item is None:
             return None
+        display_title = _outline_display_title(item, container)
         parts = [
-            f"标题：{item.title}",
+            f"标题：{display_title}",
             f"类型：{item.item_type}",
             f"状态：{item.status}",
             f"摘要：{item.summary}",
@@ -865,7 +892,7 @@ def _agent_reference_to_attachment(
             entry = container.entry_repository.get(item.entry_id)
             if entry is not None:
                 parts.append(f"关联文章：{entry.title}\n{_truncate(entry.body, 6000)}")
-        return {"kind": kind, "ref_id": ref_id, "name": item.title or "结构节点", "body": "\n".join(parts)}
+        return {"kind": kind, "ref_id": ref_id, "name": display_title, "body": "\n".join(parts)}
     if kind == "article":
         entry = container.entry_repository.get(ref_id)
         if entry is None:
@@ -943,9 +970,9 @@ def _build_collection_context_pack(
     if outline:
         for item in outline[:160]:
             linked = article_by_id.get(item.entry_id or "")
-            linked_label = f"；关联文章：{linked.title}" if linked else ""
+            display_title = linked.title if linked and linked.title.strip() else item.title
             bits = [
-                f"{path_map.get(item.id, '?')} [{item.item_type}/{item.status}] {item.title}{linked_label}",
+                f"{path_map.get(item.id, '?')} [{item.item_type}/{item.status}] {display_title or '未命名节点'}",
                 f"摘要：{_truncate(item.summary, 240) or '无'}",
             ]
             if item.notes:
@@ -1583,7 +1610,7 @@ def list_collection_outline(
 ) -> list[OutlineItemOut]:
     _collection_or_404(collection_id, container)
     return [
-        _outline_to_dto(item)
+        _outline_to_dto(item, container)
         for item in container.collection_outline_repository.list_for_collection(collection_id)
     ]
 
@@ -1615,7 +1642,7 @@ def create_collection_outline_item(
         raise HTTPException(400, str(exc)) from exc
     if item is None:
         raise HTTPException(404, "Collection not found")
-    return _outline_to_dto(item)
+    return _outline_to_dto(item, container)
 
 
 @router.put("/{collection_id}/outline/order", response_model=list[OutlineItemOut])
@@ -1626,7 +1653,7 @@ def reorder_collection_outline(
 ) -> list[OutlineItemOut]:
     _collection_or_404(collection_id, container)
     return [
-        _outline_to_dto(item)
+        _outline_to_dto(item, container)
         for item in container.collection_outline_repository.reorder(
             collection_id,
             data.item_ids,
@@ -1662,7 +1689,54 @@ def update_collection_outline_item(
         raise HTTPException(400, str(exc)) from exc
     if item is None or item.collection_id != collection_id:
         raise HTTPException(404, "Outline item not found")
-    return _outline_to_dto(item)
+    return _outline_to_dto(item, container)
+
+
+@router.patch("/{collection_id}/outline/{item_id}/status", response_model=OutlineItemOut)
+def update_collection_outline_status(
+    collection_id: str,
+    item_id: str,
+    data: OutlineStatusUpdate,
+    container: AppContainer = Depends(get_container),
+) -> OutlineItemOut:
+    _collection_or_404(collection_id, container)
+    try:
+        item = container.collection_outline_repository.update_status(
+            item_id,
+            data.status,
+            collection_id=collection_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if item is None:
+        raise HTTPException(404, "Outline item not found")
+    return _outline_to_dto(item, container)
+
+
+@router.post(
+    "/{collection_id}/outline/{item_id}/make-container",
+    response_model=OutlineMakeContainerOut,
+)
+def make_collection_outline_container(
+    collection_id: str,
+    item_id: str,
+    container: AppContainer = Depends(get_container),
+) -> OutlineMakeContainerOut:
+    _collection_or_404(collection_id, container)
+    try:
+        parent, child, changed = container.collection_outline_repository.make_container(
+            item_id,
+            collection_id=collection_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if parent is None:
+        raise HTTPException(404, "Outline item not found")
+    return OutlineMakeContainerOut(
+        parent=_outline_to_dto(parent, container),
+        created_child=_outline_to_dto(child, container) if child is not None else None,
+        changed=changed,
+    )
 
 
 @router.delete("/{collection_id}/outline/{item_id}", status_code=204)
@@ -1672,10 +1746,14 @@ def delete_collection_outline_item(
     container: AppContainer = Depends(get_container),
 ):
     _collection_or_404(collection_id, container)
-    if not container.collection_outline_repository.delete(
-        item_id,
-        collection_id=collection_id,
-    ):
+    try:
+        deleted = container.collection_outline_repository.delete(
+            item_id,
+            collection_id=collection_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not deleted:
         raise HTTPException(404, "Outline item not found")
 
 
@@ -1966,13 +2044,14 @@ def search_collection_agent_references(
     for item in container.collection_outline_repository.list_for_collection(collection_id):
         if len(results) >= limit:
             break
-        if not match(item.title, item.summary, item.notes, item.pov, item.setting, item.timeline):
+        display_title = _outline_display_title(item, container)
+        if not match(display_title, item.summary, item.notes, item.pov, item.setting, item.timeline):
             continue
         results.append(
             CollectionAgentReferenceOut(
                 kind="outline",
                 ref_id=item.id,
-                name=item.title or "结构节点",
+                name=display_title,
                 body_preview=_truncate(item.summary or item.notes, 160),
                 meta={"type": item.item_type, "status": item.status},
             )

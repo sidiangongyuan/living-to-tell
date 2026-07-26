@@ -176,6 +176,7 @@ const outlineItems = [
     parent_id: null,
     entry_id: null,
     title: '第一部：回到旧城',
+    display_title: '第一部：回到旧城',
     item_type: 'part',
     status: 'drafting',
     summary: '主角回到旧城，故事从私人记忆转向现实追索。',
@@ -193,8 +194,9 @@ const outlineItems = [
     id: 'outline-chapter-a',
     collection_id: collection.id,
     parent_id: 'outline-part-a',
-    entry_id: article.id,
-    title: '雨夜来信',
+    entry_id: null,
+    title: '第一章：旧城来信',
+    display_title: '第一章：旧城来信',
     item_type: 'chapter',
     status: 'drafting',
     summary: '一封迟来的信打破日常，把主角推向已经封存的往事。',
@@ -212,8 +214,9 @@ const outlineItems = [
     id: 'outline-scene-a',
     collection_id: collection.id,
     parent_id: 'outline-chapter-a',
-    entry_id: null,
-    title: '河岸清单',
+    entry_id: article.id,
+    title: '旧规划标题',
+    display_title: article.title,
     item_type: 'scene',
     status: 'idea',
     summary: '主角把谜团拆成三件可执行的事，开始从被动等待转为行动。',
@@ -230,9 +233,10 @@ const outlineItems = [
   {
     id: 'outline-note-a',
     collection_id: collection.id,
-    parent_id: null,
+    parent_id: 'outline-part-a',
     entry_id: null,
     title: '结尾余韵备忘',
+    display_title: '结尾余韵备忘',
     item_type: 'note',
     status: 'done',
     summary: '结尾要落回人物选择，而不是只落在谜底。',
@@ -592,6 +596,7 @@ async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
             id: 'outline-created',
             collection_id: collection.id,
             title: body.title ?? '新大纲项',
+            display_title: body.title ?? '新大纲项',
             item_type: body.item_type ?? 'scene',
             status: body.status ?? 'idea',
             summary: body.summary ?? '',
@@ -618,6 +623,17 @@ async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
       return
     }
     if (url.pathname.startsWith('/api/collections/collection-a/outline/')) {
+      if (url.pathname.endsWith('/status') && request.method() === 'PATCH') {
+        const itemId = url.pathname.split('/').at(-2) ?? ''
+        const existing = outlineItems.find((item) => item.id === itemId)
+        if (!existing) {
+          await route.fulfill({ status: 404, json: { detail: 'Outline item not found' } })
+          return
+        }
+        Object.assign(existing, request.postDataJSON())
+        await route.fulfill({ json: existing })
+        return
+      }
       if (request.method() === 'DELETE') {
         await route.fulfill({ status: 204 })
         return
@@ -1983,6 +1999,7 @@ test('rapid collection switching ignores a late 404 from the previous collection
     entry_id: articleForB.id,
     parent_id: null,
     title: '第二部章节',
+    display_title: articleForB.title,
   }
   let articleARequests = 0
   let outlineARequests = 0
@@ -2033,7 +2050,7 @@ test('rapid collection switching ignores a late 404 from the previous collection
   await page.getByRole('button', { name: new RegExp(collectionB.title) }).click()
 
   await expect(page.getByRole('heading', { name: collectionB.title, exact: true })).toBeVisible()
-  await expect(page.getByTestId('collection-outline-reader').getByRole('heading', { name: outlineForB.title, exact: true })).toBeVisible()
+  await expect(page.getByTestId('collection-outline-reader').getByRole('heading', { name: articleForB.title, exact: true })).toBeVisible()
   await page.waitForTimeout(500)
   await expect(page.getByText('Collection not found', { exact: true })).toHaveCount(0)
   await expect(page.getByText('当前作品集已不存在，请重新选择。', { exact: true })).toHaveCount(0)
@@ -2434,7 +2451,7 @@ test('collection agent draft mode keeps a local draft and previews article write
   await expect.poll(() => applyRequests).toBe(1)
 })
 
-test('collection planning board groups outline items and opens the selected outline detail', async ({ page }) => {
+test('collection planning board drags one card without changing child status or order', async ({ page }) => {
   await page.goto('/collections')
   await expect(page.getByRole('heading', { name: '测试作品集', exact: true })).toBeVisible({ timeout: 20000 })
 
@@ -2444,22 +2461,38 @@ test('collection planning board groups outline items and opens the selected outl
   await expect(board.locator('div').filter({ hasText: /^构思$/ })).toBeVisible()
   await expect(board.locator('div').filter({ hasText: /^草稿$/ })).toBeVisible()
   await expect(board.locator('div').filter({ hasText: /^完成$/ })).toBeVisible()
-  await expect(board.locator('article').filter({ hasText: '雨夜来信' })).toBeVisible()
-  await expect(board.locator('article').filter({ hasText: '河岸清单' })).toBeVisible()
+  await expect(board.locator('article').filter({ hasText: '导出测试文章' })).toBeVisible()
   await updatePublicScreenshot(page, 'collections.png')
 
-  await board.locator('article').filter({ hasText: '河岸清单' }).click()
+  const movingCard = board.locator('article').filter({ hasText: '导出测试文章' })
+  const dataTransfer = await page.evaluateHandle(() => new DataTransfer())
+  await movingCard.dispatchEvent('dragstart', { dataTransfer })
+  await board.locator('[data-board-status="done"]').dispatchEvent('dragenter', { dataTransfer })
+  await board.locator('[data-board-status="done"]').dispatchEvent('dragover', { dataTransfer })
+  await board.locator('[data-board-status="done"]').dispatchEvent('drop', { dataTransfer })
+  await movingCard.dispatchEvent('dragend', { dataTransfer })
+  await expect(board.locator('[data-board-status="done"]').locator('article').filter({ hasText: '导出测试文章' })).toBeVisible()
+  expect(outlineItems.find((item) => item.id === 'outline-scene-a')?.status).toBe('done')
+  expect(outlineItems.find((item) => item.id === 'outline-chapter-a')?.status).toBe('drafting')
+  expect(outlineItems.map((item) => item.id)).toEqual([
+    'outline-part-a',
+    'outline-chapter-a',
+    'outline-scene-a',
+    'outline-note-a',
+  ])
+
+  await board.locator('[data-board-status="done"]').locator('article').filter({ hasText: '导出测试文章' }).click()
   const detail = page.getByTestId('collection-outline-detail')
   await expect(detail).toBeVisible()
-  await expect(detail.getByTestId('collection-outline-reader')).toContainText('河岸清单')
+  await expect(detail.getByTestId('collection-outline-reader')).toContainText('导出测试文章')
   await detail.getByTestId('outline-edit-details').click()
-  await expect(detail.locator('input').first()).toHaveValue('河岸清单')
+  await expect(detail.locator('input').first()).toHaveValue('导出测试文章')
   await expect(detail.getByLabel(/视角/)).toHaveValue('林澄')
 })
 
 test('collection article route highlight does not override manual outline selection', async ({ page }) => {
   await page.goto('/collections?id=collection-a&article=article-a')
-  const chapterCard = page.locator('[data-outline-item-id="outline-chapter-a"]')
+  const chapterCard = page.locator('[data-outline-item-id="outline-scene-a"]')
   const partCard = page.locator('[data-outline-item-id="outline-part-a"]')
 
   await expect(chapterCard).toHaveClass(/ring-2/, { timeout: 20000 })
@@ -2516,7 +2549,7 @@ test('collection reorder failures show a visible error', async ({ page }) => {
   await page.goto('/collections')
   await expect(page.getByRole('heading', { name: '测试作品集', exact: true })).toBeVisible({ timeout: 20000 })
 
-  const firstCard = page.locator('article').filter({ hasText: '第一部：回到旧城' }).first()
+  const firstCard = page.locator('article').filter({ hasText: '第一章：旧城来信' }).first()
   await firstCard.hover()
   await firstCard.getByRole('button', { name: '↓' }).click()
 

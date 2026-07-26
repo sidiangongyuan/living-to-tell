@@ -10,8 +10,8 @@ Use this to confirm where the app lives, where your writing lives, and what upgr
 
 Steps:
 
-1. Download the latest Windows preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.49).
-2. Run the recommended installer: `LivingToTell_0.1.49_x64-setup.exe`. The MSI asset is `LivingToTell_0.1.49_x64_zh-CN.msi`.
+1. Download the latest Windows preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.51).
+2. Run the recommended installer: `LivingToTell_0.1.51_x64-setup.exe`. The MSI asset is `LivingToTell_0.1.51_x64_zh-CN.msi`.
 3. Open **活着为了讲述** from the Start menu or desktop shortcut.
 4. Open **Settings → Data and Storage** to review the active SQLite database, backup folder, and checkpoint folder.
 5. Before major edits, open **Export & Backup** and create a backup or named checkpoint.
@@ -88,11 +88,11 @@ Steps:
 1. Open **Collections**.
 2. The first visit shows a small tutorial invitation. Choose **Start Tutorial** to begin spotlight steps, **Later** to postpone, or **Do Not Show Again** to dismiss it. Restart Collections or any other workspace tour from **Settings > Interface & Tutorials > Tutorial Center**.
 3. Create a collection with a title, description, and project type: General, Novel, Essay Collection, or Nonfiction. Use **Edit Info** when you later need to change the title or description.
-4. In **Manuscript**, add top-level nodes such as parts, chapters, sections, essays, or scenes. Labels change by project type.
-5. To put several articles under one chapter, select that chapter and click **New Child**, or place **Unplanned Articles** under the selected node.
-6. One structure node directly links one article; use multiple child nodes for multiple articles.
+4. In **Manuscript**, establish groups/parts/sections and chapters first. The top level holds structural containers or chapters; article-bearing leaves sit below chapters.
+5. To put several articles under one chapter, select that chapter and click **New Child**, or place **Unplanned Articles** under it. The leaf is called an article, scene, or subsection according to project type.
+6. A chapter without children may link one draft directly. Once split, it becomes a container; after confirmation, its existing draft moves to the first child.
 7. Selecting a node opens its reading view first. Use **Edit Details** only when you need to change status, summary, point of view, timeline, setting, tags, or target word count.
-8. Switch to **Board** to scan idea, draft, revision, done, and parked items across the same tree.
+8. Switch to **Board** and drag any card to idea, draft, revision, done, or parked. Only that card changes status; child status and manuscript order stay intact.
 9. Create an article from a structure node, or link an existing article.
 10. Export the collection as Markdown, TXT, or DOCX. Export prefers the manuscript tree.
 
@@ -102,12 +102,14 @@ Safety notes:
 - Removing an article from a collection does not delete the article.
 - In an article's right context pane, use **Collections > Open** to return to its collection and locate that draft.
 - Unplanned Articles belong to the collection but are not in the manuscript tree. Once the collection has linked structure nodes, unplanned articles are not included in manuscript export automatically.
-- Title names the structure node; Type describes its role; Parent places it in the tree; Linked Article creates a relationship only and does not copy or move article text.
-- Project type changes terminology only: novels use part / chapter / scene, essay collections use section / group / essay, and nonfiction uses part / chapter / section.
+- Before linking, Title names the planning card. After linking, the tree, detail, board, export, and Agent use the article's current title; rename it in Articles.
+- Type describes a node's role; Parent places it in the tree; Linked Article creates a relationship only and does not copy or move article text. One article can appear only once in one collection manuscript.
+- Project types use fixed hierarchies: General is group / chapter / article; Novel is part / chapter / scene; Essay Collection is section / chapter / article; Nonfiction is part / chapter / subsection.
 
 Common mistakes:
 
-- **How do I put several articles under one chapter?** A chapter can link one article directly and also contain child nodes. Select the chapter, then create children or place unplanned articles below it.
+- **How do I put several articles under one chapter?** Select the chapter, then create children or place unplanned articles below it. The chapter is the container; each child links one draft.
+- **Can I split a chapter that already links a draft?** Yes. Create a child or choose the split action; after confirmation, the original draft moves to the first child and the chapter becomes a container.
 - **Can I plan before writing articles?** Yes. Structure nodes can stay unlinked until you create or attach articles.
 
 ### Co-create with the Collection Agent

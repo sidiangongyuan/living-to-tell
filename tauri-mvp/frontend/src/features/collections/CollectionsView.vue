@@ -39,12 +39,18 @@ import {
 import {
   articleTitleForId,
   articleTypeForProject,
+  allowedChildTypes,
   boardTabLabel,
   buildManuscriptTree,
+  canLinkArticle,
   canUseParent,
+  canUseStructureParent,
   collectionProjectType,
   defaultChildType,
+  descendantArticleProgress,
+  displayTitleForItem,
   exportTabLabel,
+  findStructureIssues,
   flattenManuscriptTree,
   labelsForProject,
   projectTypeLabel,
@@ -95,6 +101,8 @@ const draftDescription = ref('')
 const draftProjectType = ref<CollectionProjectType>('general')
 const savingMeta = ref(false)
 const dragOutlineItemId = ref<string | null>(null)
+const dragBoardItemId = ref<string | null>(null)
+const boardDropStatus = ref<OutlineItemStatus | null>(null)
 const actionError = ref<string | null>(null)
 const outlineActionError = ref<string | null>(null)
 const outlineSaving = ref(false)
@@ -249,7 +257,16 @@ const filteredOutline = computed(() => filterOutlineItems(store.outline, {
   status: outlineFilterStatus.value,
   unlinkedOnly: outlineFilterUnlinkedOnly.value,
 }))
+const boardFilteredOutline = computed(() => filterOutlineItems(store.outline, {
+  type: outlineFilterType.value,
+  status: 'all',
+  unlinkedOnly: false,
+}))
 const unplanned = computed(() => unplannedArticles(store.articles, store.outline))
+const structureIssues = computed(() => findStructureIssues(store.outline))
+const selectedStructureIssues = computed(() =>
+  structureIssues.value.filter((issue) => issue.itemId === store.selectedOutlineItemId)
+)
 const hasLinkedStructure = computed(() => store.outline.some((item) => Boolean(item.entry_id)))
 const selectedParent = computed(() => {
   const parentId = store.selectedOutlineItem?.parent_id
@@ -263,15 +280,55 @@ const outlineLinkedArticle = computed(() => {
     ?? null
 })
 const parentOptions = computed(() => {
-  const currentId = store.selectedOutlineItemId
+  const current = store.selectedOutlineItem
+  const currentId = current?.id
   return flatTree.value.filter((node) =>
-    !currentId || node.item.id !== currentId && canUseParent(store.outline, currentId, node.item.id)
+    !currentId
+    || (
+      node.item.id !== currentId
+      && canUseStructureParent(
+        store.outline,
+        { id: currentId, item_type: outlineDraftType.value },
+        node.item.id,
+      )
+    )
+  )
+})
+const selectedOutlineChildren = computed(() =>
+  store.outline
+    .filter((item) => item.parent_id === store.selectedOutlineItemId)
+    .sort((a, b) => a.sort_order - b.sort_order)
+)
+const selectedChapterContents = computed(() =>
+  selectedOutlineChildren.value.filter((item) => item.item_type !== 'note')
+)
+const unplannedPlacementParentId = computed(() =>
+  ['part', 'chapter'].includes(store.selectedOutlineItem?.item_type ?? '')
+    ? store.selectedOutlineItemId
+    : null
+)
+const selectedCanLinkArticle = computed(() =>
+  Boolean(
+    store.selectedOutlineItem
+    && canLinkArticle(store.selectedOutlineItem, store.outline)
+  )
+)
+const availableLinkArticles = computed(() => {
+  const selectedEntryId = store.selectedOutlineItem?.entry_id
+  const used = new Set(
+    store.outline
+      .filter((item) => item.id !== store.selectedOutlineItemId)
+      .map((item) => item.entry_id)
+      .filter((id): id is string => Boolean(id)),
+  )
+  return allArticles.value.filter((article) =>
+    article.id === selectedEntryId || !used.has(article.id)
   )
 })
 const outlineBoardColumns = computed(() =>
   outlineStatusOptions.value.map((status) => ({
     ...status,
-    items: filteredOutline.value.filter((item) => item.status === status.value),
+    items: boardFilteredOutline.value.filter((item) => item.status === status.value),
   }))
 )
 const agentRuns = computed(() => agentState.value?.runs ?? [])
@@ -480,6 +537,19 @@ const outlineTypeOptions = computed(() => ([
   { value: 'scene' as const, label: projectLabels.value.scene },
   { value: 'note' as const, label: projectLabels.value.note },
 ]))
+const topLevelTypeOptions = computed(() =>
+  outlineTypeOptions.value.filter((option) => allowedChildTypes(null).includes(option.value))
+)
+const outlineEditableTypeOptions = computed(() => {
+  const parent = outlineDraftParentId.value
+    ? store.outline.find((item) => item.id === outlineDraftParentId.value) ?? null
+    : null
+  const allowed = allowedChildTypes(parent?.item_type ?? null)
+  return outlineTypeOptions.value.filter((option) =>
+    allowed.includes(option.value)
+    || option.value === store.selectedOutlineItem?.item_type
+  )
+})
 const outlineStatusOptions = computed(() => ([
   { value: 'idea' as const, label: t('collectionOutline.statusIdea') },
   { value: 'drafting' as const, label: t('collectionOutline.statusDrafting') },
@@ -493,7 +563,7 @@ const outlineTypeGuide = computed(() => {
       return 'Novel structure usually reads Part -> Chapter -> Scene. A part is a large act or volume, a chapter is what readers see in the table of contents, a scene is one concrete beat or draft slot, and a note is planning-only.'
     }
     if (projectType.value === 'essay') {
-      return 'Essay collections usually read Section -> Group -> Essay. A section is a large theme, a group gathers related essays, an essay is a real piece, and a note is planning-only.'
+      return 'Essay collections read Section -> Chapter -> Article. A section is a large theme, a chapter gathers related pieces, and each article is a real draft.'
     }
     if (projectType.value === 'nonfiction') {
       return 'Nonfiction usually reads Part -> Chapter -> Section. A part is the large argument block, a chapter develops one claim, a section is a smaller unit, and a note is planning-only.'
@@ -504,13 +574,49 @@ const outlineTypeGuide = computed(() => {
     return '小说通常是“分部 -> 章节 -> 场景”。分部是一卷、一幕或一大段；章节是读者看到的一章；场景是章节里的具体事件或一个正文位置；笔记只放规划提醒，不代表正文。'
   }
   if (projectType.value === 'essay') {
-    return '散文集通常是“辑 -> 篇组 -> 篇章”。辑是一组主题，篇组收纳相近文章，篇章才是一篇真实作品；笔记只放规划提醒。'
+    return '散文集使用“辑 -> 章节 -> 文章”。辑是一组大主题，章节收纳一组相关文章，文章才是关联真实正文的叶节点；笔记只放规划提醒。'
   }
   if (projectType.value === 'nonfiction') {
     return '非虚构通常是“部分 -> 章节 -> 小节”。部分是一大块论述，章节推进一个主要问题，小节承载更小的论证或材料；笔记只放规划提醒。'
   }
   return '通用作品集可用“分组 -> 章节 -> 文章”。分组是大容器，章节是中层，文章才是正文位置；笔记只放规划提醒。'
 })
+const structureV2Copy = computed(() => locale.value === 'en'
+  ? {
+      arranged: 'Drafts arranged',
+      needsCleanup: 'This manuscript has legacy structure that needs review.',
+      reviewNode: 'Review node',
+      linkedTitleHelp: 'The visible title follows the linked article. Rename it on the article page.',
+      directBody: 'Direct body',
+      chapterContents: 'Chapter contents',
+      noChapterContents: 'This chapter has no child articles yet.',
+      splitChapter: 'Split into child items',
+      splitConfirm: 'This chapter already links an article. Move that article into the first child item and turn the chapter into a container?',
+      childProgress: (total: number, done: number) => `${total} articles · ${done} done`,
+      boardStatus: 'Move card to status',
+      boardDragHint: 'Drag any card between columns. Only that card changes status.',
+      invalidChild: 'This item cannot contain children.',
+      invalidPlacement: 'Select a part or chapter before placing this article.',
+      duplicateHint: 'The same article appears more than once. Choose one position to keep, then unlink the others.',
+    }
+  : {
+      arranged: '正文已编排',
+      needsCleanup: '这份书稿含有需要确认的旧结构。',
+      reviewNode: '查看节点',
+      linkedTitleHelp: '显示标题跟随真实文章；如需改名，请到文章页修改。',
+      directBody: '直接正文',
+      chapterContents: '本章内容',
+      noChapterContents: '本章还没有下属正文。',
+      splitChapter: '拆成子项',
+      splitConfirm: '这个章节已经关联正文。是否把正文移动到第一个子项，并将章节转为容器？',
+      childProgress: (total: number, done: number) => `${total} 篇文章 · ${done} 篇完成`,
+      boardStatus: '移动卡片到状态',
+      boardDragHint: '可把任意卡片拖到其他列，只改变当前卡片状态。',
+      invalidChild: '这个节点不能继续添加子项。',
+      invalidPlacement: '请先选择分部或章节，再放置这篇文章。',
+      duplicateHint: '同一篇文章出现在多个位置。请选择保留一个位置，再解除其他关联。',
+    }
+)
 
 interface CollectionTourStep {
   id: string
@@ -1988,9 +2094,29 @@ function outlineStatusTone(status: OutlineItemStatus): string {
 }
 
 function nodeTitle(node: ManuscriptTreeNode): string {
-  if (node.item.title) return node.item.title
+  if (displayTitleForItem(node.item)) return displayTitleForItem(node.item)
   if (node.item.entry_id) return articleTitleForId(node.item.entry_id, store.articles)
   return t('collectionOutline.untitled')
+}
+
+function outlineItemTitle(item: CollectionOutlineItem): string {
+  return displayTitleForItem(item) || t('collectionOutline.untitled')
+}
+
+function boardArticleProgress(item: CollectionOutlineItem) {
+  return descendantArticleProgress(item.id, store.outline)
+}
+
+function outlineArticleWordCount(entryId: string | null): number {
+  if (!entryId) return 0
+  return store.articles.find((article) => article.id === entryId)?.word_count
+    ?? allArticles.value.find((article) => article.id === entryId)?.body.length
+    ?? 0
+}
+
+async function openOutlineItemArticle(item: CollectionOutlineItem) {
+  if (!item.entry_id) return
+  await router.push({ name: 'articles', query: { id: item.entry_id } })
 }
 
 function defaultTitleForType(type: OutlineItemType): string {
@@ -2070,7 +2196,9 @@ async function saveCollectionMetaIfNeeded(): Promise<boolean> {
 
 function loadOutlineDraft(item: CollectionOutlineItem | null) {
   outlineActionError.value = null
-  outlineDraftTitle.value = item?.title ?? ''
+  outlineDraftTitle.value = item
+    ? (item.entry_id ? displayTitleForItem(item) : item.title)
+    : ''
   outlineDraftType.value = item?.item_type ?? articleTypeForProject(projectType.value)
   outlineDraftStatus.value = item?.status ?? 'idea'
   outlineDraftParentId.value = item?.parent_id ?? ''
@@ -2091,7 +2219,9 @@ function outlinePayload(): CollectionOutlineItemInput {
     .filter(Boolean)
   return {
     parent_id: outlineDraftParentId.value || null,
-    title: outlineDraftTitle.value.trim() || t('collectionOutline.untitled'),
+    title: store.selectedOutlineItem?.entry_id
+      ? store.selectedOutlineItem.title
+      : outlineDraftTitle.value.trim() || t('collectionOutline.untitled'),
     item_type: outlineDraftType.value,
     status: outlineDraftStatus.value,
     summary: outlineDraftSummary.value,
@@ -2153,6 +2283,19 @@ async function createOutlineItem(type: OutlineItemType = articleTypeForProject(p
 
 async function createChildOutlineItem() {
   const parent = store.selectedOutlineItem
+  if (!parent || !['part', 'chapter'].includes(parent.item_type)) {
+    outlineActionError.value = structureV2Copy.value.invalidChild
+    return
+  }
+  if (parent.item_type === 'chapter' && parent.entry_id) {
+    if (!confirm(structureV2Copy.value.splitConfirm)) return
+    try {
+      await store.makeOutlineContainer(parent.id)
+    } catch (e) {
+      outlineActionError.value = errorMessage(e)
+      return
+    }
+  }
   const type = defaultChildType(parent?.item_type ?? null, projectType.value)
   await createOutlineItem(type, parent?.id ?? null)
 }
@@ -2165,13 +2308,35 @@ async function createSiblingOutlineItem() {
 async function createNodeFromArticle(article: CollectionArticle, parentId: string | null = store.selectedOutlineItemId) {
   if (!store.selectedCollection) return
   outlineActionError.value = null
+  let parent = parentId
+    ? store.outline.find((item) => item.id === parentId) ?? null
+    : null
+  let itemType: OutlineItemType = 'chapter'
+  if (parent?.item_type === 'part') {
+    itemType = 'chapter'
+  } else if (parent?.item_type === 'chapter') {
+    if (parent.entry_id) {
+      if (!confirm(structureV2Copy.value.splitConfirm)) return
+      try {
+        await store.makeOutlineContainer(parent.id)
+        parent = store.outline.find((item) => item.id === parent?.id) ?? parent
+      } catch (e) {
+        outlineActionError.value = errorMessage(e)
+        return
+      }
+    }
+    itemType = articleTypeForProject(projectType.value)
+  } else if (parent) {
+    outlineActionError.value = structureV2Copy.value.invalidPlacement
+    return
+  }
   try {
     const created = await store.createOutlineItem({
       title: article.title || t('articles.untitled'),
-      item_type: articleTypeForProject(projectType.value),
+      item_type: itemType,
       status: article.body.trim() ? 'drafting' : 'idea',
       entry_id: article.id,
-      parent_id: parentId,
+      parent_id: parent?.id ?? null,
       target_word_count: article.word_count || null,
     })
     if (created) {
@@ -2251,6 +2416,12 @@ async function selectOutlineItem(id: string) {
   scrollToOutlineItem(id)
 }
 
+async function selectFirstStructureIssue() {
+  const issue = structureIssues.value[0]
+  if (!issue) return
+  await selectOutlineItem(issue.itemId)
+}
+
 async function deleteSelectedOutlineItem() {
   if (!store.selectedOutlineItem) return
   if (!confirm(t('collectionOutline.deleteConfirm'))) return
@@ -2282,7 +2453,7 @@ async function moveOutlineItem(itemId: string, direction: -1 | 1) {
 }
 
 async function changeOutlineParent(item: CollectionOutlineItem, parentId: string | null) {
-  if (!canUseParent(store.outline, item.id, parentId)) {
+  if (!canUseStructureParent(store.outline, item, parentId)) {
     outlineActionError.value = t('collectionOutline.parentCycleError')
     return
   }
@@ -2315,7 +2486,7 @@ async function onOutlineDrop(targetId: string) {
 }
 
 async function createArticleFromOutline() {
-  if (!store.selectedOutlineItem) return
+  if (!store.selectedOutlineItem || !selectedCanLinkArticle.value) return
   const saved = await saveOutlineItemIfDirty()
   if (!saved) return
   try {
@@ -2333,6 +2504,58 @@ async function createArticleFromOutline() {
   } catch (e) {
     outlineActionError.value = errorMessage(e)
   }
+}
+
+async function makeSelectedOutlineContainer() {
+  const item = store.selectedOutlineItem
+  if (!item || item.item_type !== 'chapter') return
+  if (item.entry_id && !confirm(structureV2Copy.value.splitConfirm)) return
+  try {
+    const result = await store.makeOutlineContainer(item.id)
+    if (result?.created_child) {
+      store.selectOutlineItem(item.id)
+    }
+  } catch (e) {
+    outlineActionError.value = errorMessage(e)
+  }
+}
+
+function onBoardDragStart(event: DragEvent, itemId: string) {
+  dragBoardItemId.value = itemId
+  event.dataTransfer?.setData('text/plain', itemId)
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+}
+
+function onBoardDragEnd() {
+  dragBoardItemId.value = null
+  boardDropStatus.value = null
+}
+
+async function moveBoardItemToStatus(
+  item: CollectionOutlineItem,
+  status: OutlineItemStatus,
+) {
+  if (item.status === status) return
+  outlineActionError.value = null
+  try {
+    await store.updateOutlineStatus(item.id, status)
+  } catch (e) {
+    outlineActionError.value = store.error || errorMessage(e)
+  }
+}
+
+function onBoardStatusSelect(item: CollectionOutlineItem, event: Event) {
+  const status = (event.target as HTMLSelectElement).value as OutlineItemStatus
+  void moveBoardItemToStatus(item, status)
+}
+
+async function onBoardDrop(status: OutlineItemStatus) {
+  const itemId = dragBoardItemId.value
+  onBoardDragEnd()
+  if (!itemId) return
+  const item = store.outline.find((candidate) => candidate.id === itemId)
+  if (!item) return
+  await moveBoardItemToStatus(item, status)
 }
 
 async function openLinkedOutlineArticle() {
@@ -2621,7 +2844,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
               <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-600">
                 <span>{{ t('collections.articleCount', { count: store.articles.length }) }}</span>
                 <span>{{ t('collectionOutline.itemCount', { count: store.outline.length }) }}</span>
-                <span>{{ t('collectionOutline.linkedCompact', { linked: outlineProgress.linkedItems, total: outlineProgress.totalItems }) }}</span>
+                <span>{{ structureV2Copy.arranged }} {{ outlineProgress.linkedItems }}/{{ outlineProgress.totalArticles }}</span>
                 <span>{{ t('collectionOutline.wordsCompact', { current: outlineProgress.linkedArticleWordCount, target: outlineProgress.targetWordTotal || '—' }) }}</span>
                 <span v-if="outlineProgressPercent !== null">{{ outlineProgressPercent }}%</span>
               </div>
@@ -2692,7 +2915,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                 </button>
                 <div v-if="outlineCreateMenuOpen" class="absolute right-0 top-10 z-30 w-44 rounded-lg border border-stone-200 bg-white p-1 shadow-xl">
                   <button
-                    v-for="option in outlineTypeOptions"
+                    v-for="option in topLevelTypeOptions"
                     :key="option.value"
                     class="w-full rounded-md px-3 py-2 text-left text-sm text-stone-700 hover:bg-stone-50"
                     @click="createOutlineItem(option.value, null)"
@@ -2713,6 +2936,14 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
 
             <div v-if="outlineActionError || store.error" class="mb-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
               {{ outlineActionError || store.error }}
+            </div>
+            <div v-if="structureIssues.length" class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+              <div class="flex items-center justify-between gap-3">
+                <span>{{ structureV2Copy.needsCleanup }}</span>
+                <button class="shrink-0 font-semibold text-amber-800 underline-offset-2 hover:underline" @click="selectFirstStructureIssue">
+                  {{ structureV2Copy.reviewNode }}
+                </button>
+              </div>
             </div>
             <div v-if="store.outlineLoading" class="rounded-xl bg-white/70 p-4 text-sm text-stone-600">
               {{ t('common.loading') }}
@@ -2783,10 +3014,11 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                     ↓
                   </button>
                   <button
+                    v-if="['part', 'chapter'].includes(node.item.item_type)"
                     class="rounded-lg px-2 py-1 text-xs text-stone-500 hover:bg-stone-100"
-                    @click.stop="createOutlineItem(defaultChildType(node.item.item_type, projectType), node.item.id)"
+                    @click.stop="store.selectOutlineItem(node.item.id); createChildOutlineItem()"
                   >
-                    {{ t('collectionOutline.newChild') }}
+                    {{ node.item.item_type === 'chapter' && node.item.entry_id ? structureV2Copy.splitChapter : t('collectionOutline.newChild') }}
                   </button>
                 </div>
               </article>
@@ -2820,9 +3052,9 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                   <div class="mt-3 flex flex-wrap gap-2">
                     <button
                       class="rounded-lg bg-stone-900 px-2 py-1 text-xs font-semibold text-white"
-                      @click="createNodeFromArticle(article, store.selectedOutlineItemId)"
+                      @click="createNodeFromArticle(article, unplannedPlacementParentId)"
                     >
-                      {{ store.selectedOutlineItem ? t('collectionOutline.placeUnderSelected') : t('collectionOutline.placeTopLevel') }}
+                      {{ unplannedPlacementParentId ? t('collectionOutline.placeUnderSelected') : t('collectionOutline.placeTopLevel') }}
                     </button>
                     <button class="rounded-lg bg-stone-100 px-2 py-1 text-xs text-stone-600" @click="removeUnplannedArticle(article.id)">
                       {{ t('collectionOutline.removeFromCollection') }}
@@ -2844,7 +3076,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                       <span :class="['rounded-full px-2 py-0.5 text-xs ring-1', outlineStatusTone(store.selectedOutlineItem.status)]">{{ outlineStatusLabel(store.selectedOutlineItem.status) }}</span>
                       <span v-if="store.selectedOutlineItem.entry_id" class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">{{ t('collectionOutline.linked') }}</span>
                     </div>
-                    <h3 class="mt-3 text-2xl font-semibold text-stone-950">{{ store.selectedOutlineItem.title || t('collectionOutline.untitled') }}</h3>
+                    <h3 class="mt-3 text-2xl font-semibold text-stone-950">{{ outlineItemTitle(store.selectedOutlineItem) }}</h3>
                     <p class="mt-3 max-w-3xl whitespace-pre-wrap text-sm leading-7 text-stone-600">
                       {{ store.selectedOutlineItem.summary || t('collectionOutline.noSummary') }}
                     </p>
@@ -2853,7 +3085,20 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                     <button class="rounded-lg bg-stone-100 px-3 py-2 text-sm text-stone-700" @click="createSiblingOutlineItem">
                       {{ t('collectionOutline.newSibling') }}
                     </button>
-                    <button class="rounded-lg bg-stone-100 px-3 py-2 text-sm text-stone-700" data-tour="outline-new-child" @click="createChildOutlineItem">
+                    <button
+                      v-if="store.selectedOutlineItem.item_type === 'chapter' && store.selectedOutlineItem.entry_id"
+                      class="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800"
+                      data-tour="outline-new-child"
+                      @click="makeSelectedOutlineContainer"
+                    >
+                      {{ structureV2Copy.splitChapter }}
+                    </button>
+                    <button
+                      v-else-if="['part', 'chapter'].includes(store.selectedOutlineItem.item_type)"
+                      class="rounded-lg bg-stone-100 px-3 py-2 text-sm text-stone-700"
+                      data-tour="outline-new-child"
+                      @click="createChildOutlineItem"
+                    >
                       {{ t('collectionOutline.newChild') }}
                     </button>
                     <button data-testid="outline-edit-details" class="rounded-lg bg-stone-900 px-3 py-2 text-sm font-semibold text-white" @click="editOutlineItem">
@@ -2874,13 +3119,16 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                   <div class="mb-1 text-xs font-semibold text-amber-700">{{ t('collectionOutline.fieldNotes') }}</div>
                   <p class="whitespace-pre-wrap">{{ store.selectedOutlineItem.notes }}</p>
                 </div>
+                <div v-if="selectedStructureIssues.length" class="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                  {{ selectedStructureIssues.some((issue) => issue.kind === 'duplicate_article') ? structureV2Copy.duplicateHint : structureV2Copy.needsCleanup }}
+                </div>
               </div>
 
               <div v-else class="rounded-xl border border-stone-200 bg-white p-6 shadow-sm">
                 <div class="mb-5 flex items-start justify-between gap-4">
                   <div>
                     <h3 class="text-xl font-semibold text-stone-900">{{ t('collectionOutline.editDetails') }}</h3>
-                    <p class="mt-1 text-sm text-stone-500">{{ store.selectedOutlineItem.title || t('collectionOutline.untitled') }}</p>
+                    <p class="mt-1 text-sm text-stone-500">{{ outlineItemTitle(store.selectedOutlineItem) }}</p>
                   </div>
                   <div class="flex flex-wrap justify-end gap-2">
                     <button class="rounded-lg bg-stone-100 px-3 py-2 text-sm text-stone-700" @click="cancelOutlineEdit">
@@ -2895,13 +3143,22 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                 <div class="grid gap-4 md:grid-cols-2" data-tour="outline-detail-fields">
                   <label class="md:col-span-2" data-tour="outline-title-field">
                     <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldTitle') }}</span>
-                    <input v-model="outlineDraftTitle" class="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" />
-                    <span class="mt-1 block text-xs leading-5 text-stone-400">{{ t('collectionOutline.fieldTitleHelp') }}</span>
+                    <input
+                      v-model="outlineDraftTitle"
+                      :readonly="Boolean(store.selectedOutlineItem.entry_id)"
+                      :class="[
+                        'w-full rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200',
+                        store.selectedOutlineItem.entry_id ? 'cursor-not-allowed bg-stone-100 text-stone-500' : 'bg-white'
+                      ]"
+                    />
+                    <span class="mt-1 block text-xs leading-5 text-stone-400">
+                      {{ store.selectedOutlineItem.entry_id ? structureV2Copy.linkedTitleHelp : t('collectionOutline.fieldTitleHelp') }}
+                    </span>
                   </label>
                   <label data-tour="outline-type-field">
                     <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldType') }}</span>
                     <select v-model="outlineDraftType" class="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200">
-                      <option v-for="option in outlineTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                      <option v-for="option in outlineEditableTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
                     </select>
                     <span class="mt-1 block text-xs leading-5 text-stone-400">{{ t('collectionOutline.fieldTypeHelp') }}</span>
                     <span class="mt-2 block rounded-xl bg-indigo-50 px-3 py-2 text-xs leading-5 text-indigo-800">{{ outlineTypeGuide }}</span>
@@ -2915,7 +3172,7 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                       </option>
                     </select>
                     <span class="mt-1 block text-xs leading-5 text-stone-400">
-                      {{ selectedParent ? t('collectionOutline.currentParent', { title: selectedParent.title }) : t('collectionOutline.parentHelp') }}
+                      {{ selectedParent ? t('collectionOutline.currentParent', { title: outlineItemTitle(selectedParent) }) : t('collectionOutline.parentHelp') }}
                     </span>
                   </label>
                   <label>
@@ -2924,11 +3181,11 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                       <option v-for="option in outlineStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
                     </select>
                   </label>
-                  <label data-tour="outline-linked-article">
+                  <label v-if="selectedCanLinkArticle || store.selectedOutlineItem.entry_id" data-tour="outline-linked-article">
                     <span class="mb-1 block text-xs font-semibold text-stone-500">{{ t('collectionOutline.fieldEntry') }}</span>
                     <select v-model="outlineDraftEntryId" class="w-full rounded-xl border border-stone-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200">
                       <option value="">{{ t('collectionOutline.noLinkedArticle') }}</option>
-                      <option v-for="article in allArticles" :key="article.id" :value="article.id">
+                      <option v-for="article in availableLinkArticles" :key="article.id" :value="article.id">
                         {{ article.title || t('articles.untitled') }}
                       </option>
                     </select>
@@ -2966,15 +3223,56 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                 </div>
               </div>
 
-              <div class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+              <div
+                v-if="store.selectedOutlineItem.item_type === 'chapter' && selectedOutlineChildren.length"
+                class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm"
+                data-testid="outline-chapter-contents"
+              >
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <h4 class="font-semibold text-stone-900">{{ structureV2Copy.chapterContents }}</h4>
+                    <p class="mt-1 text-xs text-stone-500">
+                      {{ structureV2Copy.childProgress(boardArticleProgress(store.selectedOutlineItem).total, boardArticleProgress(store.selectedOutlineItem).done) }}
+                    </p>
+                  </div>
+                  <button class="rounded-lg bg-stone-100 px-3 py-2 text-sm text-stone-700" @click="createChildOutlineItem">
+                    {{ t('collectionOutline.newChild') }}
+                  </button>
+                </div>
+                <p v-if="!selectedChapterContents.length" class="mt-4 rounded-lg border border-dashed border-stone-200 px-4 py-5 text-center text-sm text-stone-500">
+                  {{ structureV2Copy.noChapterContents }}
+                </p>
+                <div v-else class="mt-4 divide-y divide-stone-100 border-y border-stone-100">
+                  <div v-for="child in selectedChapterContents" :key="child.id" class="flex items-center gap-3 py-3">
+                    <div class="min-w-0 flex-1">
+                      <p class="truncate text-sm font-semibold text-stone-800">{{ outlineItemTitle(child) }}</p>
+                      <p class="mt-1 text-xs text-stone-500">
+                        {{ outlineStatusLabel(child.status) }}
+                        <span v-if="child.entry_id"> · {{ outlineArticleWordCount(child.entry_id) }} {{ locale === 'en' ? 'words' : '字' }}</span>
+                      </p>
+                    </div>
+                    <button
+                      v-if="child.entry_id"
+                      class="shrink-0 rounded-lg bg-stone-100 px-3 py-1.5 text-xs text-stone-700"
+                      @click="openOutlineItemArticle(child)"
+                    >
+                      {{ t('collectionOutline.openArticle') }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                v-else-if="selectedCanLinkArticle || store.selectedOutlineItem.entry_id"
+                class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm"
+              >
                 <div class="flex flex-col gap-4 min-[1280px]:flex-row min-[1280px]:items-start min-[1280px]:justify-between">
                   <div>
-                    <h4 class="font-semibold text-stone-900">{{ t('collectionOutline.linkedArticle') }}</h4>
+                    <h4 class="font-semibold text-stone-900">{{ structureV2Copy.directBody }}</h4>
                     <p class="mt-1 text-sm text-stone-500">
                       {{ outlineLinkedArticle?.title || t('collectionOutline.noLinkedArticle') }}
                     </p>
                     <p class="mt-1 text-xs leading-5 text-stone-400">{{ t('collectionOutline.linkedArticleHelp') }}</p>
-                    <p class="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">{{ t('collectionOutline.multiArticleHelp') }}</p>
                   </div>
                   <div class="flex flex-wrap justify-start gap-2 min-[1280px]:justify-end">
                     <button class="rounded-xl bg-stone-100 px-3 py-2 text-sm text-stone-700" @click="createArticleFromOutline">
@@ -3010,16 +3308,12 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
             <div class="mb-4 flex flex-col gap-3 border-b border-stone-200 pb-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <h3 class="text-xl font-semibold text-stone-900">{{ t('collectionOutline.boardTitle') }}</h3>
-                <p class="mt-1 text-sm text-stone-500">{{ t('collectionOutline.boardDescriptionCompact') }}</p>
+                <p class="mt-1 text-sm text-stone-500">{{ structureV2Copy.boardDragHint }}</p>
               </div>
               <div class="flex flex-wrap gap-2">
                 <select v-model="outlineFilterType" class="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs outline-none">
                   <option value="all">{{ t('collectionOutline.allTypes') }}</option>
                   <option v-for="option in outlineTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-                </select>
-                <select v-model="outlineFilterStatus" class="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs outline-none">
-                  <option value="all">{{ t('collectionOutline.allStatuses') }}</option>
-                  <option v-for="option in outlineStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
                 </select>
                 <button
                   type="button"
@@ -3048,7 +3342,16 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
               <section
                 v-for="column in outlineBoardColumns"
                 :key="column.value"
-                class="min-h-[420px] rounded-3xl border border-stone-200 bg-white/60 p-3"
+                :data-board-status="column.value"
+                :class="[
+                  'min-h-[420px] rounded-2xl border bg-white/60 p-3 transition-colors',
+                  boardDropStatus === column.value && dragBoardItemId
+                    ? 'border-teal-400 bg-teal-50/70 ring-2 ring-teal-100'
+                    : 'border-stone-200'
+                ]"
+                @dragenter.prevent="boardDropStatus = column.value"
+                @dragover.prevent="boardDropStatus = column.value"
+                @drop.prevent="onBoardDrop(column.value)"
               >
                 <div class="mb-3 flex items-center justify-between gap-2">
                   <div class="font-semibold text-stone-800">{{ column.label }}</div>
@@ -3063,11 +3366,18 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                   <article
                     v-for="item in column.items"
                     :key="item.id"
-                    class="cursor-pointer rounded-2xl border border-stone-200 bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                    draggable="true"
+                    :data-board-item-id="item.id"
+                    :class="[
+                      'cursor-grab rounded-lg border border-stone-200 bg-white p-3 shadow-sm transition hover:shadow-md active:cursor-grabbing',
+                      dragBoardItemId === item.id ? 'opacity-45' : ''
+                    ]"
                     @click="selectOutlineItem(item.id); viewMode = 'structure'"
+                    @dragstart="onBoardDragStart($event, item.id)"
+                    @dragend="onBoardDragEnd"
                   >
                     <div class="flex items-start justify-between gap-2">
-                      <h4 class="line-clamp-2 text-sm font-semibold leading-5 text-stone-900">{{ item.title || t('collectionOutline.untitled') }}</h4>
+                      <h4 class="line-clamp-2 text-sm font-semibold leading-5 text-stone-900">{{ outlineItemTitle(item) }}</h4>
                       <span class="shrink-0 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] text-indigo-700">
                         {{ outlineTypeLabel(item.item_type) }}
                       </span>
@@ -3085,7 +3395,24 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                       <span v-if="item.pov" class="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] text-stone-500">
                         {{ item.pov }}
                       </span>
+                      <span
+                        v-if="boardArticleProgress(item).total"
+                        class="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] text-sky-700"
+                      >
+                        {{ structureV2Copy.childProgress(boardArticleProgress(item).total, boardArticleProgress(item).done) }}
+                      </span>
                     </div>
+                    <label class="mt-3 block border-t border-stone-100 pt-2 text-[10px] font-semibold text-stone-400" @click.stop>
+                      <span class="sr-only">{{ structureV2Copy.boardStatus }}</span>
+                      <select
+                        :value="item.status"
+                        class="w-full rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-xs font-medium text-stone-700 outline-none focus:border-teal-500"
+                        :aria-label="`${structureV2Copy.boardStatus}: ${outlineItemTitle(item)}`"
+                        @change="onBoardStatusSelect(item, $event)"
+                      >
+                        <option v-for="option in outlineStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                      </select>
+                    </label>
                   </article>
                 </div>
               </section>

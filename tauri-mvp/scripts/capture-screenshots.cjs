@@ -48,6 +48,7 @@ const collections = [
     id: 'demo-collection-1',
     title: '夏天的讲述',
     description: '收集关于日常、远方与自我确认的短文。',
+    project_type: 'general',
     article_count: 2,
     created_at: '2026-06-10T12:00:00',
     updated_at: now,
@@ -68,6 +69,89 @@ const collectionArticles = [
     word_count: 52,
     char_count: articles[1].body.length,
     sort_order: 2,
+  },
+]
+
+const outlineItems = [
+  {
+    id: 'outline-group',
+    collection_id: 'demo-collection-1',
+    parent_id: null,
+    entry_id: null,
+    title: '第一组：海边与远方',
+    display_title: '第一组：海边与远方',
+    item_type: 'part',
+    status: 'drafting',
+    summary: '把两篇文章组织成一组关于记忆与距离的散文。',
+    notes: '',
+    pov: '',
+    setting: '',
+    timeline: '',
+    tags: ['主题'],
+    target_word_count: null,
+    sort_order: 1,
+    created_at: now,
+    updated_at: now,
+  },
+  {
+    id: 'outline-chapter',
+    collection_id: 'demo-collection-1',
+    parent_id: 'outline-group',
+    entry_id: null,
+    title: '第一章：潮声与回信',
+    display_title: '第一章：潮声与回信',
+    item_type: 'chapter',
+    status: 'drafting',
+    summary: '两篇文章共同讨论记忆如何被讲述和送往远方。',
+    notes: '章节只组织下属正文。',
+    pov: '',
+    setting: '',
+    timeline: '',
+    tags: ['记忆', '距离'],
+    target_word_count: null,
+    sort_order: 1,
+    created_at: now,
+    updated_at: now,
+  },
+  {
+    id: 'outline-article-1',
+    collection_id: 'demo-collection-1',
+    parent_id: 'outline-chapter',
+    entry_id: 'demo-article-1',
+    title: '潮湿的堤岸',
+    display_title: '清晨的海边笔记',
+    item_type: 'scene',
+    status: 'drafting',
+    summary: '通过风、盐、石头和脚步声建立文章的感官底色。',
+    notes: '',
+    pov: '第一人称',
+    setting: '清晨堤岸',
+    timeline: '现在时',
+    tags: ['海边', '感官'],
+    target_word_count: 900,
+    sort_order: 1,
+    created_at: now,
+    updated_at: now,
+  },
+  {
+    id: 'outline-article-2',
+    collection_id: 'demo-collection-1',
+    parent_id: 'outline-chapter',
+    entry_id: 'demo-article-2',
+    title: '远方的回声',
+    display_title: '给远方的一封信',
+    item_type: 'scene',
+    status: 'done',
+    summary: '把“远方”处理成行动距离，而不是抽象情绪。',
+    notes: '',
+    pov: '第一人称',
+    setting: '长街',
+    timeline: '傍晚',
+    tags: ['信', '远方'],
+    target_word_count: 1100,
+    sort_order: 2,
+    created_at: now,
+    updated_at: now,
   },
 ]
 
@@ -265,7 +349,7 @@ async function installDemoApi(page) {
     if (pathname === '/api/app/version') {
       return json(route, {
         app_name: 'Living to Tell',
-        version: '0.1.49',
+        version: '0.1.51',
         api_version: '2.0.0',
         capabilities: [
           'data_location',
@@ -284,6 +368,8 @@ async function installDemoApi(page) {
           'update_check',
           'article_versions',
           'collection_outline',
+          'collection_structure_rules_v2',
+          'collection_board_drag',
         ],
       })
     }
@@ -309,7 +395,7 @@ async function installDemoApi(page) {
     if (pathname === '/api/collections') return json(route, collections)
     if (pathname === '/api/collections/demo-collection-1') return json(route, collections[0])
     if (pathname === '/api/collections/demo-collection-1/articles') return json(route, collectionArticles)
-    if (pathname === '/api/collections/demo-collection-1/outline') return json(route, [])
+    if (pathname === '/api/collections/demo-collection-1/outline') return json(route, outlineItems)
     if (pathname.startsWith('/api/collections/for-entry/')) return json(route, collections)
     if (pathname === '/api/library/stats') {
       return json(route, { total: references.length, by_usage_kind: { imagery: 1, style: 1 } })
@@ -572,7 +658,11 @@ async function main() {
         await page.keyboard.press('F11')
       },
     })
-    await shot(page, '/collections', 'collections.png')
+    await shot(page, '/collections', 'collections.png', {
+      before: async (page) => {
+        await page.getByText('第一章：潮声与回信', { exact: true }).first().click()
+      },
+    })
     await shot(page, '/library?ref=demo-reference-1&group=source', 'reference-library.png')
   }
   await shot(page, '/ai?scope_kind=article&scope_id=demo-article-1', 'ai-workspace.png', {

@@ -17,7 +17,7 @@ The current seven-flow set is:
 
 1. Sample project.
 2. Article writing.
-3. Collection planning.
+3. Collection chapter structure, live article titles, and board dragging.
 4. Reference Library and Motif Star Map.
 5. AI profiles and article-edit context.
 6. Collection Agent.

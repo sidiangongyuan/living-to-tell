@@ -53,6 +53,7 @@ function outline(id: string, collectionId: string, title: string): CollectionOut
     parent_id: null,
     entry_id: null,
     title,
+    display_title: title,
     item_type: 'chapter',
     status: 'idea',
     summary: '',
@@ -109,5 +110,25 @@ describe('collections store request ownership', () => {
     expect(store.error).toBeNull()
     expect(store.articlesLoading).toBe(false)
     expect(store.outlineLoading).toBe(false)
+  })
+
+  it('optimistically moves a board card and restores it when saving fails', async () => {
+    setActivePinia(createPinia())
+    const store = useCollectionsStore()
+    const currentCollection = collection('collection-a', '作品 A')
+    const currentOutline = outline('outline-a', currentCollection.id, '第一章')
+    store.collections = [currentCollection]
+    store.selectedCollectionId = currentCollection.id
+    store.outline = [currentOutline]
+    const pending = deferred<CollectionOutlineItem>()
+    vi.spyOn(collectionsApi, 'updateOutlineStatus').mockReturnValue(pending.promise)
+
+    const update = store.updateOutlineStatus(currentOutline.id, 'done')
+    expect(store.outline[0].status).toBe('done')
+    pending.reject(new Error('offline'))
+    await expect(update).rejects.toThrow('offline')
+
+    expect(store.outline[0].status).toBe('idea')
+    expect(store.error).toContain('看板状态保存失败')
   })
 })

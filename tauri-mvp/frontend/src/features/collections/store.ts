@@ -300,6 +300,63 @@ export const useCollectionsStore = defineStore('collections', () => {
     }
   }
 
+  async function updateOutlineStatus(itemId: string, status: CollectionOutlineItem['status']) {
+    if (!selectedCollectionId.value) return null
+    const collectionId = selectedCollectionId.value
+    const index = outline.value.findIndex((item) => item.id === itemId)
+    if (index < 0) return null
+    const previous = outline.value[index]
+    outline.value[index] = { ...previous, status }
+    error.value = null
+    try {
+      const updated = await collectionsApi.updateOutlineStatus(
+        collectionId,
+        itemId,
+        status,
+      )
+      if (selectedCollectionId.value !== collectionId) return updated
+      const currentIndex = outline.value.findIndex((item) => item.id === itemId)
+      if (currentIndex !== -1) outline.value[currentIndex] = updated
+      return updated
+    } catch (e) {
+      if (selectedCollectionId.value !== collectionId) return null
+      const currentIndex = outline.value.findIndex((item) => item.id === itemId)
+      if (currentIndex !== -1 && outline.value[currentIndex].status === status) {
+        outline.value[currentIndex] = previous
+      }
+      error.value = `看板状态保存失败：${errorMessage(e)}`
+      throw e
+    }
+  }
+
+  async function makeOutlineContainer(itemId: string) {
+    if (!selectedCollectionId.value) return null
+    const collectionId = selectedCollectionId.value
+    error.value = null
+    try {
+      const result = await collectionsApi.makeOutlineContainer(
+        collectionId,
+        itemId,
+      )
+      if (selectedCollectionId.value !== collectionId) return result
+      const parentIndex = outline.value.findIndex((item) => item.id === itemId)
+      if (parentIndex !== -1) outline.value[parentIndex] = result.parent
+      if (
+        result.created_child
+        && !outline.value.some((item) => item.id === result.created_child?.id)
+      ) {
+        outline.value = [...outline.value, result.created_child]
+          .sort((a, b) => a.sort_order - b.sort_order)
+      }
+      await refreshSelectedCollection()
+      return result
+    } catch (e) {
+      if (selectedCollectionId.value !== collectionId) return null
+      error.value = errorMessage(e)
+      throw e
+    }
+  }
+
   async function deleteOutlineItem(itemId: string) {
     if (!selectedCollectionId.value) return
     error.value = null
@@ -406,6 +463,8 @@ export const useCollectionsStore = defineStore('collections', () => {
     reorderArticles,
     createOutlineItem,
     updateOutlineItem,
+    updateOutlineStatus,
+    makeOutlineContainer,
     deleteOutlineItem,
     reorderOutline,
     exportSelected,

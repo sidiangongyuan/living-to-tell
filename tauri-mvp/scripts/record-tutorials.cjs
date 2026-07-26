@@ -84,6 +84,7 @@ const collections = [
     id: 'demo-collection-1',
     title: '夏天的讲述',
     description: '收集关于日常、远方与自我确认的短文。',
+    project_type: 'general',
     article_count: 2,
     created_at: '2026-06-24T12:00:00',
     updated_at: now,
@@ -104,16 +105,17 @@ const outlineItems = [
     collection_id: 'demo-collection-1',
     parent_id: null,
     entry_id: null,
-    title: '第一部：海边的清晨',
+    title: '第一组：海边与远方',
+    display_title: '第一组：海边与远方',
     item_type: 'part',
     status: 'done',
-    summary: '把主题落在“讲述如何让记忆变清晰”上。',
-    notes: '作为整组文章的开场。',
-    pov: '第一人称',
-    setting: '海边小城',
-    timeline: '初夏清晨',
-    tags: ['主题', '开场'],
-    target_word_count: 1200,
+    summary: '把两篇文章组织成一组关于记忆与距离的散文。',
+    notes: '作为作品集的第一组。',
+    pov: '',
+    setting: '',
+    timeline: '',
+    tags: ['主题'],
+    target_word_count: null,
     sort_order: 1,
     created_at: now,
     updated_at: now,
@@ -121,9 +123,30 @@ const outlineItems = [
   {
     id: 'outline-2',
     collection_id: 'demo-collection-1',
-    parent_id: null,
+    parent_id: 'outline-1',
+    entry_id: null,
+    title: '第一章：潮声与回信',
+    display_title: '第一章：潮声与回信',
+    item_type: 'chapter',
+    status: 'drafting',
+    summary: '两篇文章共同讨论记忆如何被讲述和送往远方。',
+    notes: '章节是容器，正文放在下属文章节点。',
+    pov: '',
+    setting: '',
+    timeline: '',
+    tags: ['记忆', '距离'],
+    target_word_count: null,
+    sort_order: 1,
+    created_at: now,
+    updated_at: now,
+  },
+  {
+    id: 'outline-3',
+    collection_id: 'demo-collection-1',
+    parent_id: 'outline-2',
     entry_id: 'demo-article-1',
-    title: '场景：潮湿的堤岸',
+    title: '潮湿的堤岸',
+    display_title: '清晨的海边笔记',
     item_type: 'scene',
     status: 'drafting',
     summary: '通过风、盐、石头和脚步声建立文章的感官底色。',
@@ -133,17 +156,18 @@ const outlineItems = [
     timeline: '现在时',
     tags: ['海边', '感官'],
     target_word_count: 900,
-    sort_order: 2,
+    sort_order: 1,
     created_at: now,
     updated_at: now,
   },
   {
-    id: 'outline-3',
+    id: 'outline-4',
     collection_id: 'demo-collection-1',
-    parent_id: null,
+    parent_id: 'outline-2',
     entry_id: 'demo-article-2',
-    title: '信件：远方的回声',
-    item_type: 'chapter',
+    title: '远方的回声',
+    display_title: '给远方的一封信',
+    item_type: 'scene',
     status: 'revising',
     summary: '把“远方”处理成行动距离，而不是抽象情绪。',
     notes: '需要更明确的回信动作。',
@@ -152,7 +176,7 @@ const outlineItems = [
     timeline: '傍晚',
     tags: ['信', '远方'],
     target_word_count: 1100,
-    sort_order: 3,
+    sort_order: 2,
     created_at: now,
     updated_at: now,
   },
@@ -353,7 +377,7 @@ const agentState = {
       stage: 'succeeded',
       stage_label: '已完成',
       request: { message: '请体检当前作品集，指出最值得先解决的结构问题。', task_type: 'diagnose_collection' },
-      result: { answer: '目前最清楚的是“讲述如何改变记忆”这一主线。下一步先处理两篇文章之间的递进关系：第一篇建立感官与命题，第二篇让“远方”变成一次具体行动。建议先确认结尾是否回收来信，再调整篇章顺序。' },
+      result: { answer: '目前最清楚的是“讲述如何改变记忆”这一主线。下一步先处理两篇文章之间的递进关系：第一篇建立感官与命题，第二篇让“远方”变成一次具体行动。建议先确认结尾是否回收来信，再调整文章顺序。' },
       error: '',
       profile_id: 'demo-profile-opencode',
       provider: 'opencode',
@@ -372,7 +396,7 @@ const agentState = {
   actions: [agentAction],
   profiles: aiProfiles.map((profile) => ({ id: profile.id, name: profile.name })),
   sessions: [
-    { id: 'demo-agent-session-1', collection_id: 'demo-collection-1', thread_id: 'demo-agent-thread-1', title: '结构体检', mode: 'review', summary: '已确认主题主线，正在处理篇章递进与结尾回收。', archived: false, message_count: 2, run_count: 1, draft_count: 0, created_at: now, updated_at: now, last_message_at: now },
+    { id: 'demo-agent-session-1', collection_id: 'demo-collection-1', thread_id: 'demo-agent-thread-1', title: '结构体检', mode: 'review', summary: '已确认主题主线，正在处理文章递进与结尾回收。', archived: false, message_count: 2, run_count: 1, draft_count: 0, created_at: now, updated_at: now, last_message_at: now },
   ],
   active_session_id: 'demo-agent-session-1',
   drafts: [],
@@ -462,7 +486,7 @@ async function installDemoApi(page) {
     if (pathname === '/api/app/version') {
       return json(route, {
         app_name: 'Living to Tell',
-        version: '0.1.49',
+        version: '0.1.51',
         api_version: '2.0.0',
         capabilities: [
           'data_location',
@@ -480,6 +504,8 @@ async function installDemoApi(page) {
           'guided_tours_v2',
           'article_versions',
           'collection_outline',
+          'collection_structure_rules_v2',
+          'collection_board_drag',
           'collection_manuscript_structure',
           'collection_agent',
           'collection_agent_sessions',
@@ -582,11 +608,21 @@ async function installDemoApi(page) {
     if (pathname === '/api/collections/demo-collection-1/export') return text(route, '# 夏天的讲述\n\n' + articleBody, 'text/markdown')
     if (pathname === '/api/collections/demo-collection-1/outline') return json(route, outlineItems)
     if (pathname === '/api/collections/demo-collection-1/outline/order') return json(route, outlineItems)
-    if (pathname.startsWith('/api/collections/demo-collection-1/outline/')) return json(route, outlineItems[0])
+    if (/^\/api\/collections\/demo-collection-1\/outline\/[^/]+\/status$/.test(pathname) && method === 'PATCH') {
+      const itemId = pathname.split('/').at(-2)
+      const item = outlineItems.find((candidate) => candidate.id === itemId)
+      if (!item) return json(route, { detail: 'Outline item not found' }, 404)
+      item.status = request.postDataJSON().status
+      return json(route, item)
+    }
+    if (pathname.startsWith('/api/collections/demo-collection-1/outline/')) {
+      const itemId = pathname.split('/').at(-1)
+      return json(route, outlineItems.find((candidate) => candidate.id === itemId) || outlineItems[0])
+    }
     if (pathname === '/api/collections/demo-collection-1/agent') return json(route, agentState)
     if (pathname === '/api/collections/demo-collection-1/agent/references') {
       return json(route, [
-        { kind: 'outline', ref_id: 'outline-2', name: '场景：潮湿的堤岸', body_preview: outlineItems[1].summary, meta: { status: 'drafting' } },
+        { kind: 'outline', ref_id: 'outline-2', name: outlineItems[1].display_title, body_preview: outlineItems[1].summary, meta: { status: 'drafting' } },
         { kind: 'article', ref_id: 'demo-article-1', name: articles[0].title, body_preview: articles[0].body.slice(0, 72), meta: {} },
         { kind: 'ai_card', ref_id: 'demo-card-style', name: aiCards[0].title, body_preview: aiCards[0].content.slice(0, 72), meta: {} },
       ])
@@ -926,14 +962,23 @@ async function main() {
 
     await recordFlow(browser, '03-collection-planning.gif', async (page, frames, dir) => {
       await goto(page, '/collections?id=demo-collection-1')
-      await capture(page, frames, dir, 'Step 1：作品集用一棵书稿树统一管理层级、文章和导出顺序。')
-      await clickText(page, '第一部：海边的清晨')
-      await capture(page, frames, dir, 'Step 2：分部、章节、场景和笔记是不同粒度的结构节点；节点可以继续包含子项。')
+      await capture(page, frames, dir, 'Step 1：作品集用“结构容器 → 正文节点”书稿树统一管理层级、文章和导出顺序。')
+      await clickText(page, '第一章：潮声与回信')
+      await capture(page, frames, dir, 'Step 2：章节作为容器列出下属文章；关联后的节点标题始终跟随真实文章。')
       await page.getByRole('button', { name: /^看板$/ }).click()
       await page.waitForTimeout(500)
-      await capture(page, frames, dir, 'Step 3：看板按状态总览构思、草稿、修订、完成和暂停。')
-      await clickText(page, '场景：潮湿的堤岸')
-      await capture(page, frames, dir, 'Step 4：点击看板卡片会回到书稿详情，继续维护摘要、目标字数和关联文章。')
+      await capture(page, frames, dir, 'Step 3：看板按状态显示同一棵树，章节卡同时汇总下属正文进度。')
+      const card = page.locator('[data-board-item-id="outline-3"]')
+      const dataTransfer = await page.evaluateHandle(() => new DataTransfer())
+      await card.dispatchEvent('dragstart', { dataTransfer })
+      await page.locator('[data-board-status="done"]').dispatchEvent('dragenter', { dataTransfer })
+      await page.locator('[data-board-status="done"]').dispatchEvent('dragover', { dataTransfer })
+      await page.locator('[data-board-status="done"]').dispatchEvent('drop', { dataTransfer })
+      await card.dispatchEvent('dragend', { dataTransfer })
+      await page.waitForTimeout(500)
+      await capture(page, frames, dir, 'Step 4：把卡片拖到目标列，只更新当前卡状态，不改变子项状态或书稿顺序。')
+      await clickText(page, '清晨的海边笔记')
+      await capture(page, frames, dir, 'Step 5：点击卡片回到书稿详情；正文标题应在文章页修改并自动同步。')
     })
 
     await recordFlow(browser, '04-reference-motif.gif', async (page, frames, dir) => {

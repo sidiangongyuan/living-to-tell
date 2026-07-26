@@ -50,6 +50,61 @@ def _indexes(conn: sqlite3.Connection, table: str) -> set[str]:
     return {row[1] for row in conn.execute(f"PRAGMA index_list({table})")}
 
 
+def test_collection_outline_migration_only_repairs_unambiguous_containers(
+    tmp_path: Path,
+) -> None:
+    conn = open_and_initialize(tmp_path / "writer.db")
+    conn.execute(
+        "INSERT INTO collections (id, name, project_type) VALUES ('c1', '文集', 'essay')"
+    )
+    conn.execute(
+        "INSERT INTO entries (id, title, body) VALUES ('e1', '文章一', '正文')"
+    )
+    conn.execute(
+        """
+        INSERT INTO collection_outline_items
+            (id, collection_id, title, item_type, sort_order)
+        VALUES ('container', 'c1', '人生哲思', 'scene', 0)
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO collection_outline_items
+            (id, collection_id, parent_id, entry_id, title, item_type, sort_order)
+        VALUES ('child', 'c1', 'container', 'e1', '文章一', 'scene', 1)
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO collection_outline_items
+            (id, collection_id, entry_id, title, item_type, sort_order)
+        VALUES ('ambiguous', 'c1', 'e1', '有正文的旧节点', 'scene', 2)
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO collection_outline_items
+            (id, collection_id, parent_id, title, item_type, sort_order)
+        VALUES ('ambiguous-child', 'c1', 'ambiguous', '旧子项', 'note', 3)
+        """
+    )
+
+    _migrate(conn)
+    _migrate(conn)
+
+    repaired = conn.execute(
+        "SELECT item_type, entry_id FROM collection_outline_items WHERE id = 'container'"
+    ).fetchone()
+    ambiguous = conn.execute(
+        "SELECT item_type, entry_id FROM collection_outline_items WHERE id = 'ambiguous'"
+    ).fetchone()
+    assert repaired["item_type"] == "chapter"
+    assert repaired["entry_id"] is None
+    assert ambiguous["item_type"] == "scene"
+    assert ambiguous["entry_id"] == "e1"
+    conn.close()
+
+
 def test_pre_m5_database_upgrades_without_error(tmp_path: Path) -> None:
     db_path = tmp_path / "writer.db"
     _make_pre_m5_db(db_path)

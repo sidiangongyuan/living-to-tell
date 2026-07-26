@@ -49,6 +49,7 @@ export interface CollectionOutlineItem {
   parent_id: string | null
   entry_id: string | null
   title: string
+  display_title: string
   item_type: OutlineItemType
   status: OutlineItemStatus
   summary: string
@@ -76,6 +77,12 @@ export interface CollectionOutlineItemInput {
   timeline?: string
   tags?: string[]
   target_word_count?: number | null
+}
+
+export interface CollectionOutlineMakeContainerResult {
+  parent: CollectionOutlineItem
+  created_child: CollectionOutlineItem | null
+  changed: boolean
 }
 
 export type CollectionExportFormat = 'txt' | 'md' | 'docx'
@@ -393,6 +400,22 @@ export const collectionsApi = {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async updateOutlineStatus(collectionId: string, itemId: string, status: OutlineItemStatus): Promise<CollectionOutlineItem> {
+    const res = await apiFetch(`/api/collections/${collectionId}/outline/${itemId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    })
+    return handleResponse(res)
+  },
+
+  async makeOutlineContainer(collectionId: string, itemId: string): Promise<CollectionOutlineMakeContainerResult> {
+    const res = await apiFetch(`/api/collections/${collectionId}/outline/${itemId}/make-container`, {
+      method: 'POST',
     })
     return handleResponse(res)
   },
