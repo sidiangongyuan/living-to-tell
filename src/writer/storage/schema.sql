@@ -330,8 +330,6 @@ CREATE TABLE IF NOT EXISTS collection_outline_items (
 
 CREATE INDEX IF NOT EXISTS idx_collection_outline_collection_order
     ON collection_outline_items (collection_id, sort_order);
-CREATE INDEX IF NOT EXISTS idx_collection_outline_board_order
-    ON collection_outline_items (collection_id, status, board_sort_order);
 CREATE INDEX IF NOT EXISTS idx_collection_outline_entry
     ON collection_outline_items (entry_id);
 

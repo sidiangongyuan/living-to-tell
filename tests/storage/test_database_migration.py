@@ -229,6 +229,58 @@ def test_collection_outline_board_order_migration_backfills_per_status_from_sort
     conn.close()
 
 
+def test_full_startup_adds_board_order_before_creating_its_index(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "writer.db"
+    conn = open_and_initialize(db_path)
+    conn.execute(
+        """
+        INSERT INTO collections (id, name, project_type)
+        VALUES ('c1', '文集', 'essay')
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO collection_outline_items
+            (id, collection_id, title, item_type, status, sort_order, board_sort_order)
+        VALUES ('chapter-1', 'c1', '第一章', 'chapter', 'drafting', 4, 0)
+        """
+    )
+    conn.execute("DROP INDEX idx_collection_outline_board_order")
+    conn.execute(
+        "ALTER TABLE collection_outline_items DROP COLUMN board_sort_order"
+    )
+    conn.commit()
+    conn.close()
+
+    upgraded = open_and_initialize(db_path)
+    try:
+        assert "board_sort_order" in _columns(
+            upgraded,
+            "collection_outline_items",
+        )
+        row = upgraded.execute(
+            """
+            SELECT board_sort_order
+              FROM collection_outline_items
+             WHERE id = 'chapter-1'
+            """
+        ).fetchone()
+        assert row is not None
+        assert row["board_sort_order"] == 0
+        assert upgraded.execute(
+            """
+            SELECT 1
+              FROM sqlite_master
+             WHERE type = 'index'
+               AND name = 'idx_collection_outline_board_order'
+            """
+        ).fetchone() is not None
+    finally:
+        upgraded.close()
+
+
 def test_pre_m5_database_upgrades_without_error(tmp_path: Path) -> None:
     db_path = tmp_path / "writer.db"
     _make_pre_m5_db(db_path)

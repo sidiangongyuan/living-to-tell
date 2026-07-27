@@ -1,5 +1,18 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.54 - Existing Database Startup Repair (2026-07-27)
+
+### Fixed
+
+- Fixed `0.1.52` and `0.1.53` failing on existing databases whose `collection_outline_items` table predated `board_sort_order`.
+- The board-priority index is now created only after the column migration and deterministic backfill have completed. Fresh databases keep the same final schema.
+- Added a full `initialize_schema()` regression that recreates the pre-`0.1.52` outline table shape and verifies the column, existing rows, and dependent index survive an application-style startup.
+
+### Safety and compatibility
+
+- The migration adds one integer ordering column and its index. It does not delete or rewrite articles, collections, outline nodes, AI settings, or other writing data.
+- The fix was reproduced against a SQLite backup of an affected production database: the old package returned 500 on the first article request, while the corrected startup returned data with `PRAGMA quick_check=ok`.
+
 ## 0.1.53 - Reliable Cold Start (2026-07-27)
 
 ### Fixed
