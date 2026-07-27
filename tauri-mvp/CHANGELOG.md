@@ -1,5 +1,18 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.53 - Reliable Cold Start (2026-07-27)
+
+### Fixed
+
+- Fixed a cold-start race where the frontend could request data before the packaged backend sidecar had published its dynamic port, causing a misleading “backend service is starting or connecting” error on an otherwise healthy installation.
+- Initial Tauri requests now share one bounded sidecar-readiness wait. When the port becomes available, all waiting requests continue against the same backend instead of failing independently.
+- A genuine sidecar startup failure still ends with the existing actionable error instead of falling back to the development port or hiding the failure.
+
+### Compatibility
+
+- No database, AI configuration, article, collection, or writing data is changed.
+- Browser development mode and recovery from a stale cached backend URL retain their existing behavior.
+
 ## 0.1.52 - Sortable Planning Board and AI Results Workspace (2026-07-27)
 
 ### Added

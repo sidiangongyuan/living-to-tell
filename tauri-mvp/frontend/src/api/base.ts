@@ -16,7 +16,11 @@ export const FALLBACK_API_BASE_URL =
   String(import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000')
 
 let cachedApiBaseUrl: string | null = null
+let pendingApiBaseUrl: Promise<string> | null = null
+let apiBaseResolutionGeneration = 0
 const BACKEND_UNAVAILABLE_MESSAGE = '后台服务正在启动或连接中，请稍后重试；如果持续出现，请重启应用。'
+const BACKEND_STARTUP_TIMEOUT_MS = 15_000
+const BACKEND_STARTUP_POLL_INTERVAL_MS = 150
 
 export interface ApiError {
   detail: string
@@ -128,8 +132,29 @@ function isNetworkFailure(error: unknown): boolean {
 }
 
 export function clearCachedApiBaseUrl() {
+  apiBaseResolutionGeneration += 1
   cachedApiBaseUrl = null
+  pendingApiBaseUrl = null
   setApiBaseOnWindow(null)
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds)
+  })
+}
+
+async function waitForTauriApiBaseUrl(
+  invoke: <T>(command: string) => Promise<T>,
+): Promise<string | null> {
+  const deadline = Date.now() + BACKEND_STARTUP_TIMEOUT_MS
+  while (true) {
+    const value = await invoke<string | null>('get_api_base_url')
+    if (value) return value
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) return null
+    await wait(Math.min(BACKEND_STARTUP_POLL_INTERVAL_MS, remaining))
+  }
 }
 
 export async function getApiBaseUrl(forceRefresh = false): Promise<string> {
@@ -140,24 +165,44 @@ export async function getApiBaseUrl(forceRefresh = false): Promise<string> {
     cachedApiBaseUrl = windowBase
     return cachedApiBaseUrl
   }
+  if (pendingApiBaseUrl) return pendingApiBaseUrl
 
   const runningInTauri = hasTauriRuntime()
-  try {
-    const { invoke } = await import('@tauri-apps/api/core')
-    const value = await invoke<string | null>('get_api_base_url')
-    if (value) {
-      cachedApiBaseUrl = value
-      setApiBaseOnWindow(value)
-      return value
+  const generation = apiBaseResolutionGeneration
+  const resolution = (async () => {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      const value = runningInTauri
+        ? await waitForTauriApiBaseUrl(invoke)
+        : await invoke<string | null>('get_api_base_url')
+      if (value) {
+        if (generation === apiBaseResolutionGeneration) {
+          cachedApiBaseUrl = value
+          setApiBaseOnWindow(value)
+        }
+        return value
+      }
+      if (runningInTauri) throw new BackendUnavailableError()
+    } catch (e) {
+      if (runningInTauri) {
+        if (e instanceof BackendUnavailableError) throw e
+        throw new BackendUnavailableError(e)
+      }
+      // Browser/dev mode has no Tauri runtime.
     }
-    if (runningInTauri) throw new BackendUnavailableError()
-  } catch (e) {
-    if (runningInTauri) throw new BackendUnavailableError(e)
-    // Browser/dev mode has no Tauri runtime.
-  }
 
-  cachedApiBaseUrl = String(FALLBACK_API_BASE_URL)
-  return cachedApiBaseUrl
+    const fallback = String(FALLBACK_API_BASE_URL)
+    if (generation === apiBaseResolutionGeneration) {
+      cachedApiBaseUrl = fallback
+    }
+    return fallback
+  })()
+  pendingApiBaseUrl = resolution
+  try {
+    return await resolution
+  } finally {
+    if (pendingApiBaseUrl === resolution) pendingApiBaseUrl = null
+  }
 }
 
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {

@@ -8,6 +8,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 }))
 
 afterEach(() => {
+  vi.useRealTimers()
   clearCachedApiBaseUrl()
   invokeMock.mockReset()
   vi.unstubAllGlobals()
@@ -76,12 +77,37 @@ describe('api base errors', () => {
   })
 
   it('does not fall back to port 8000 inside the Tauri runtime', async () => {
+    vi.useFakeTimers()
     vi.stubGlobal('window', { __TAURI_INTERNALS__: {} })
     invokeMock.mockResolvedValue(null)
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(apiFetch('/health')).rejects.toBeInstanceOf(BackendUnavailableError)
+    const response = apiFetch('/health')
+    const expectation = expect(response).rejects.toBeInstanceOf(BackendUnavailableError)
+    await vi.runAllTimersAsync()
+    await expectation
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('waits for the packaged sidecar port during a cold Tauri start', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: {} })
+    invokeMock
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue('http://ready.example')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true })))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const first = apiFetch('/entries')
+    const second = apiFetch('/collections')
+    await vi.runAllTimersAsync()
+
+    await expect(first).resolves.toMatchObject({ ok: true })
+    await expect(second).resolves.toMatchObject({ ok: true })
+    expect(invokeMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledWith('http://ready.example/entries', undefined)
+    expect(fetchMock).toHaveBeenCalledWith('http://ready.example/collections', undefined)
   })
 })
