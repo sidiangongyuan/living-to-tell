@@ -10,8 +10,8 @@ Use this to confirm where the app lives, where your writing lives, and what upgr
 
 Steps:
 
-1. Download the latest Windows preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.51).
-2. Run the recommended installer: `LivingToTell_0.1.51_x64-setup.exe`. The MSI asset is `LivingToTell_0.1.51_x64_zh-CN.msi`.
+1. Download the latest Windows preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.52).
+2. Run the recommended installer: `LivingToTell_0.1.52_x64-setup.exe`. The MSI asset is `LivingToTell_0.1.52_x64_zh-CN.msi`.
 3. Open **活着为了讲述** from the Start menu or desktop shortcut.
 4. Open **Settings → Data and Storage** to review the active SQLite database, backup folder, and checkpoint folder.
 5. Before major edits, open **Export & Backup** and create a backup or named checkpoint.
@@ -92,7 +92,7 @@ Steps:
 5. To put several articles under one chapter, select that chapter and click **New Child**, or place **Unplanned Articles** under it. The leaf is called an article, scene, or subsection according to project type.
 6. A chapter without children may link one draft directly. Once split, it becomes a container; after confirmation, its existing draft moves to the first child.
 7. Selecting a node opens its reading view first. Use **Edit Details** only when you need to change status, summary, point of view, timeline, setting, tags, or target word count.
-8. Switch to **Board** and drag any card to idea, draft, revision, done, or parked. Only that card changes status; child status and manuscript order stay intact.
+8. Switch to **Board**. Drag within a column to set planning priority, or drag across columns to change the current card's status and landing position. Neither action changes child status, manuscript order, or export order. Use the card menu for Move Up, Move Down, Move to Top, or Move to Bottom without dragging.
 9. Create an article from a structure node, or link an existing article.
 10. Export the collection as Markdown, TXT, or DOCX. Export prefers the manuscript tree.
 
@@ -105,6 +105,7 @@ Safety notes:
 - Before linking, Title names the planning card. After linking, the tree, detail, board, export, and Agent use the article's current title; rename it in Articles.
 - Type describes a node's role; Parent places it in the tree; Linked Article creates a relationship only and does not copy or move article text. One article can appear only once in one collection manuscript.
 - Project types use fixed hierarchies: General is group / chapter / article; Novel is part / chapter / scene; Essay Collection is section / chapter / article; Nonfiction is part / chapter / subsection.
+- Board order answers “what should I work on first?” Manuscript order answers “what will the reader read first?” They are intentionally independent.
 
 Common mistakes:
 
@@ -173,15 +174,17 @@ Steps:
 3. Run **Check All Locally** first. This checks local credential and login availability without contacting a model.
 4. Select only the profiles you want to verify, then send a minimal real test. Real tests can use tokens and incur provider cost; each profile keeps its last health state and test time.
 5. Open an article and choose **AI Edit**, or select text first and enter from the article toolbar. Direct entry to AI Edit asks you to choose an article; there is no arbitrary paste mode.
-6. Choose Polish, Rewrite, Expand, or Continue.
-7. Use the first-class **Reference Context** area to choose any combination of **Reference Specimens**, **AI Cards**, and **Article Notes**. Each source opens a large searchable picker with readable cards, full-content preview, staged multi-selection, and a fixed confirmation bar.
-8. Reference specimens can be filtered by purpose; AI Cards by style, character, or scene; article notes by active or completed state, with pinned notes first. Changing articles clears note selections so notes cannot leak into the wrong draft, while specimens and cards stay selected for the current AI Edit page session.
-9. **More Requirements** now contains only presets, additional instructions, and advanced task parameters. None of the three context sources is hidden there.
-10. Select one or more profiles. Selecting a non-default profile replaces the sole default selection; the default returns only if you explicitly select it again.
-11. Run the task and read the first successful result immediately. A failed model stays local to its status row and does not block other models. Leaving the page does not restart the task.
-12. Switch between **Generated Result** and **Difference from Original**. The result records names and sizes from the frozen context snapshot without returning attachment bodies. Write-back always opens a preview, verifies that the article has not drifted, and creates an `AI_BEFORE_APPLY` version first.
-13. In Articles, open **AI Chat** for discussion. Closing the drawer keeps the draft, thread, and in-flight reply. Copying or saving a reply remains explicit.
-14. Open **AI Cards** to create style, character, or scene cards. Review generated card drafts before saving; choose cards directly from the AI Edit picker when they should guide a run.
+6. Choose Polish, Rewrite, Expand, or Continue, then choose a writing purpose. The 25 built-in purposes are grouped into Common and Creative sets and can be filtered for General, Fiction, Essay, or Nonfiction work. Each task starts with a restrained default.
+7. Creative purposes disclose their higher-change risk. Viewpoint or tense conversion, argument expansion, and scene expansion ask for structured controls instead of expecting you to compose a prompt.
+8. Use the first-class **Reference Context** area to choose any combination of **Reference Specimens**, **AI Cards**, and **Article Notes**. Each source opens a large searchable picker with readable cards, full-content preview, staged multi-selection, and a fixed confirmation bar.
+9. Reference specimens can be filtered by purpose; AI Cards by style, character, or scene; article notes by active or completed state, with pinned notes first. Changing articles clears note selections so notes cannot leak into the wrong draft, while specimens and cards stay selected for the current AI Edit page session.
+10. **More Requirements** contains supplementary instructions and advanced task parameters. Reference sources and writing-purpose presets remain visible at the first level.
+11. Select one or more profiles. Selecting a non-default profile replaces the sole default selection; the default returns only if you explicitly select it again.
+12. Run the task. The app opens `/ai/results/:runId` immediately, where each model reports waiting, success, or failure independently. Leaving the results workspace does not restart or resend the task.
+13. Use **Original Comparison**, **Two Models**, or **Paragraph Diff**. The last 20 runs and any edited copies stay available for this app session only. Model output is immutable; **Edit a Copy** saves a separate draft after a short pause.
+14. The write-back area checks the current article before you act. A changed or missing article cannot be overwritten positionally. A valid write-back creates an `AI_BEFORE_APPLY` version first, and repeating the same candidate is a no-op.
+15. In Articles, open **AI Chat** for discussion. Closing the drawer keeps the draft, thread, and in-flight reply. Copying or saving a reply remains explicit.
+16. Open **AI Cards** to create style, character, or scene cards. Review generated card drafts before saving; choose cards directly from the AI Edit picker when they should guide a run.
 
 Safety notes:
 
@@ -192,6 +195,8 @@ Safety notes:
 - Specimens guide writing method, style, structure, imagery, or rhetoric; they are not fact sources. The prompt forbids copying or near-copying sentences and importing specimen people, facts, plot, or named entities.
 - Reconnection only checks task state. It never resends a provider request. Local cancellation cannot guarantee that a request already sent to a provider stops generating or billing.
 - Article drift blocks positional write-back. Copy the result or rerun against the current article instead of forcing an unsafe replacement.
+- The prose output contract and a conservative normalizer remove accidental leading/trailing blank paragraphs and collapse repeated blank lines before display, copy, diff, statistics, and raw write-back. They preserve nonempty indentation, list markers, poetry line breaks, and internal spaces; an author-edited copy is never reformatted automatically.
+- Built-in presets never attach references, models, articles, or selections. Custom presets save only task controls and supplementary instructions, and can be renamed or deleted.
 - Scene modules and other context are selected manually; unselected material is not sent to AI.
 - AI Cards should store structure and guidance, not long source excerpts. Keep cards readable enough that you can reuse them as prompt context later.
 

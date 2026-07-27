@@ -39,6 +39,10 @@ const navItems = computed(() => [
   { name: 'settings', label: t('nav.settings'), icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' }
 ])
 
+function isNavActive(name: string): boolean {
+  return router.currentRoute.value.name === name || router.currentRoute.value.meta.navName === name
+}
+
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'F11') {
     e.preventDefault()
@@ -244,7 +248,7 @@ async function openUpdateReleasePage() {
         @click="router.push({ name: item.name })"
         :class="[
           'relative w-14 h-14 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors',
-          router.currentRoute.value.name === item.name
+          isNavActive(item.name)
             ? 'bg-blue-600 text-white'
             : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
         ]"
@@ -253,7 +257,7 @@ async function openUpdateReleasePage() {
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon" />
         </svg>
-        <span :class="['text-xs', router.currentRoute.value.name === item.name ? 'text-white' : '']">{{ item.label }}</span>
+        <span :class="['text-xs', isNavActive(item.name) ? 'text-white' : '']">{{ item.label }}</span>
         <span
           v-if="item.name === 'ai' && articleTaskRun.running"
           class="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-gray-900"

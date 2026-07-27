@@ -6,12 +6,12 @@
 
 A local-first Windows writing studio for long-form projects, traceable references, and reviewable AI.
 
-[![Latest release](https://img.shields.io/badge/preview-0.1.51-2563eb?style=flat-square)](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.51)
+[![Latest release](https://img.shields.io/badge/preview-0.1.52-2563eb?style=flat-square)](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.52)
 [![Windows](https://img.shields.io/badge/Windows-x64-111827?style=flat-square&logo=windows11)](https://github.com/sidiangongyuan/living-to-tell/releases/latest)
 [![Local first](https://img.shields.io/badge/data-local--first-15803d?style=flat-square)](#data-and-privacy)
 [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](LICENSE)
 
-[**Download for Windows**](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.51/LivingToTell_0.1.51_x64-setup.exe)
+[**Download for Windows**](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.52/LivingToTell_0.1.52_x64-setup.exe)
  · [中文说明](README.zh-CN.md)
  · [User guide](docs/user-guide.md)
  · [Visual tutorials](docs/tutorials.md)
@@ -52,13 +52,13 @@ Nothing is silently moved into the manuscript. References, motifs, AI context, m
 | :---: | :---: |
 | ![Collection planning board](tauri-mvp/docs/assets/screenshots/collections.png) | ![Reference library](tauri-mvp/docs/assets/screenshots/reference-library.png) |
 
-| Choose writing references | Compare AI results |
+| Choose a writing purpose | Compare AI results |
 | :---: | :---: |
-| ![Reference specimen picker](tauri-mvp/docs/assets/screenshots/ai-reference-picker.png) | ![Article AI edit workspace](tauri-mvp/docs/assets/screenshots/ai-workspace.png) |
+| ![AI Edit purpose presets](tauri-mvp/docs/assets/screenshots/ai-presets.png) | ![Dedicated AI results workspace](tauri-mvp/docs/assets/screenshots/ai-results-workspace.png) |
 
-| Configure one reliable default | Discuss the current article |
+| Choose reference context | Discuss the current article |
 | :---: | :---: |
-| ![AI profile setup wizard](tauri-mvp/docs/assets/screenshots/settings-wizard.png) | ![Article AI chat drawer](tauri-mvp/docs/assets/screenshots/article-ai-chat.png) |
+| ![Reference specimen picker](tauri-mvp/docs/assets/screenshots/ai-reference-picker.png) | ![Article AI chat drawer](tauri-mvp/docs/assets/screenshots/article-ai-chat.png) |
 
 ### See recurring ideas as author-confirmed relationships
 
@@ -99,11 +99,11 @@ Prefer learning by exploring? The first-run checklist can create a disposable sa
 | Area | What it gives you |
 | --- | --- |
 | **Article Studio** | Autosave, tags, full-text search, find/replace, writing notes, version history, epigraphs, focus mode, motif anchors, and Markdown/TXT/DOCX export. |
-| **Collections** | A strict container-to-draft manuscript hierarchy, live article titles, unplanned articles, draggable status board, guided tour, ordered export, and project-level Agent. |
+| **Collections** | A strict container-to-draft manuscript hierarchy, live article titles, unplanned articles, independently sortable board priorities, guided tour, ordered export, and project-level Agent. |
 | **Collection Agent** | A collection-bound coauthor with named sessions, `Discuss / Plan / Draft / Review` modes, layered memory, explicit context, a persistent draft library, and reviewable proposals. Collapsible session and workspace panels keep the conversation readable. |
 | **Reference Library** | Reading-first passages with source, author, purpose, personal notes, grouped browsing, highlighted search matches, keyboard navigation, and complete citation copy. |
 | **Motif Star Map** | Bidirectional source anchors, real excerpt co-occurrence, author-confirmed formal relationships, review-first AI discovery, D3 zoom/focus navigation, structured concept archives, and optional AI enrichment. |
-| **AI Edit** | Article-bound polish, rewrite, expand, and continue tools with equal large pickers for reference specimens, AI Cards, and article notes; explicit model selection, recoverable multi-model runs, paragraph diff, and versioned write-back. |
+| **AI Edit** | Article-bound polish, rewrite, expand, and continue tools with 25 guided purposes, equal large context pickers, explicit model selection, a dedicated multi-model results workspace, editable copies, paragraph diff, and versioned write-back. |
 | **Article AI Chat** | A closable article-side drawer for discussion. Its draft, thread, and in-flight reply survive closing; saving a reply elsewhere always requires an explicit action. |
 | **AI Cards** | Reusable style, character, and scene modules with reading-first templates, search, prompt copy, selected model profiles, and recoverable background generation. |
 | **Export & Backup** | Article and collection export, restore-point review, backups, checkpoints, reminders, data-path visibility, and copy-based data-directory migration. |
@@ -116,7 +116,9 @@ AI is optional. The writing, collection, reference, motif, export, and backup wo
 - Keep several independent AI profiles, each with its own provider, model, endpoint, local credential source, and visible health state; choose exactly one default profile for single-model features.
 - Run one or many explicitly selected profiles in AI Edit; selecting a non-default profile replaces the sole default selection, and the default is never silently added back.
 - Open AI Edit from an exact article selection, including articles with an epigraph; the preview and write-back range stay aligned with the text selected in the editor.
+- Start from one of 25 built-in writing purposes across polish, rewrite, expand, and continue. Creative purposes disclose their higher-change risk, while structured controls handle viewpoint, tense, argument direction, and scene focus without requiring a hand-written prompt.
 - Choose reference specimens, AI Cards, and current-article notes through three large searchable pickers. Only confirmed material is attached, every model receives the same frozen set, and specimen prompts forbid copying sentences or importing specimen facts and names.
+- A run opens in its own results workspace with this-session history, original comparison, two-model comparison, paragraph diff, and an editable copy. Conservative output normalization removes accidental blank-line inflation before display, copy, comparison, and write-back without flattening poetry, lists, or indentation.
 - Create profiles through the three-step setup wizard, run free local checks first, and send a minimal real request only for the profiles you select. Real tests may use tokens and incur provider cost.
 - Long-running jobs remain visible when you leave and return to the feature. Reconnection checks task state and does not resend the provider request.
 - Collection Agent carries a visible session summary plus recent turns, while confirmed canon stays separately in the Project Bible. Conversations and rejected proposals never become memory by accident.
@@ -129,8 +131,8 @@ See the [user guide](docs/user-guide.md) for provider-specific AI setup instruct
 
 The current public preview supports Windows x64.
 
-- Recommended: [`LivingToTell_0.1.51_x64-setup.exe`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.51/LivingToTell_0.1.51_x64-setup.exe)
-- MSI package: [`LivingToTell_0.1.51_x64_zh-CN.msi`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.51/LivingToTell_0.1.51_x64_zh-CN.msi)
+- Recommended: [`LivingToTell_0.1.52_x64-setup.exe`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.52/LivingToTell_0.1.52_x64-setup.exe)
+- MSI package: [`LivingToTell_0.1.52_x64_zh-CN.msi`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.52/LivingToTell_0.1.52_x64_zh-CN.msi)
 - Release notes and older builds: [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases)
 
 Preview installers are currently unsigned, so Windows SmartScreen may show a warning. Only run installers downloaded from this repository's Release page.

@@ -31,6 +31,7 @@ def _row_to_outline_item(row: sqlite3.Row) -> CollectionOutlineItem:
         tags_text=row["tags_text"],
         target_word_count=row["target_word_count"],
         sort_order=int(row["sort_order"]),
+        board_sort_order=int(row["board_sort_order"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -68,14 +69,15 @@ class CollectionOutlineRepository:
             entry_id=entry_id,
         )
         next_order = self._next_order(collection_id)
+        next_board_order = self._next_board_order(collection_id, clean_status)
         new_id = str(uuid.uuid4())
         self._conn.execute(
             """
             INSERT INTO collection_outline_items (
                 id, collection_id, parent_id, entry_id, title, item_type, status,
                 summary, notes, pov, setting, timeline, tags_text,
-                target_word_count, sort_order
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                target_word_count, sort_order, board_sort_order
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 new_id,
@@ -93,6 +95,7 @@ class CollectionOutlineRepository:
                 serialize_tags(tags or []),
                 target_word_count,
                 next_order,
+                next_board_order,
             ),
         )
         self._touch_collection(collection_id)
@@ -120,6 +123,9 @@ class CollectionOutlineRepository:
             return None
         clean_type = self._normalize_type(item_type)
         clean_status = self._normalize_status(status)
+        next_board_order = existing.board_sort_order
+        if clean_status != existing.status:
+            next_board_order = self._next_board_order(existing.collection_id, clean_status)
         structural_change = (
             clean_type != existing.item_type
             or parent_id != existing.parent_id
@@ -148,6 +154,7 @@ class CollectionOutlineRepository:
                    timeline = ?,
                    tags_text = ?,
                    target_word_count = ?,
+                   board_sort_order = ?,
                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
              WHERE id = ?
             """,
@@ -164,9 +171,12 @@ class CollectionOutlineRepository:
                 timeline,
                 serialize_tags(tags or []),
                 target_word_count,
+                next_board_order,
                 item_id,
             ),
         )
+        if clean_status != existing.status:
+            self._compact_board_status(existing.collection_id, existing.status)
         self._touch_collection(existing.collection_id)
         return self.get(item_id)
 
@@ -182,17 +192,76 @@ class CollectionOutlineRepository:
             collection_id is not None and existing.collection_id != collection_id
         ):
             return None
+        clean_status = self._normalize_status(status)
+        next_board_order = existing.board_sort_order
+        if clean_status != existing.status:
+            next_board_order = self._next_board_order(existing.collection_id, clean_status)
         self._conn.execute(
             """
             UPDATE collection_outline_items
                SET status = ?,
+                   board_sort_order = ?,
                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
              WHERE id = ?
             """,
-            (self._normalize_status(status), item_id),
+            (clean_status, next_board_order, item_id),
         )
+        if clean_status != existing.status:
+            self._compact_board_status(existing.collection_id, existing.status)
         self._touch_collection(existing.collection_id)
         return self.get(item_id)
+
+    def move_board_position(
+        self,
+        item_id: str,
+        *,
+        status: str,
+        target_index: int,
+        collection_id: Optional[str] = None,
+    ) -> list[CollectionOutlineItem]:
+        if target_index < 0:
+            raise ValueError("看板位置无效。")
+        existing = self.get(item_id)
+        if existing is None or (
+            collection_id is not None and existing.collection_id != collection_id
+        ):
+            return []
+        clean_status = self._normalize_status(status)
+        source_ids = self._board_ids(existing.collection_id, existing.status)
+        from_index = source_ids.index(existing.id)
+        if clean_status == existing.status:
+            raw_target = min(target_index, len(source_ids))
+            adjusted_target = raw_target
+            if raw_target > from_index:
+                adjusted_target -= 1
+            reordered = [row_id for row_id in source_ids if row_id != existing.id]
+            adjusted_target = max(0, min(adjusted_target, len(reordered)))
+            reordered.insert(adjusted_target, existing.id)
+            if reordered == source_ids:
+                return self.list_for_collection(existing.collection_id)
+            self._rewrite_board_ids(
+                existing.collection_id,
+                clean_status,
+                reordered,
+                moved_item_id=existing.id,
+            )
+            self._touch_collection(existing.collection_id)
+            return self.list_for_collection(existing.collection_id)
+
+        dest_ids = self._board_ids(existing.collection_id, clean_status)
+        insert_at = max(0, min(target_index, len(dest_ids)))
+        reordered_dest = list(dest_ids)
+        reordered_dest.insert(insert_at, existing.id)
+        reordered_source = [row_id for row_id in source_ids if row_id != existing.id]
+        self._rewrite_board_ids(existing.collection_id, existing.status, reordered_source)
+        self._rewrite_board_ids(
+            existing.collection_id,
+            clean_status,
+            reordered_dest,
+            moved_item_id=existing.id,
+        )
+        self._touch_collection(existing.collection_id)
+        return self.list_for_collection(existing.collection_id)
 
     def make_container(
         self,
@@ -254,8 +323,8 @@ class CollectionOutlineRepository:
                 INSERT INTO collection_outline_items (
                     id, collection_id, parent_id, entry_id, title, item_type,
                     status, summary, notes, pov, setting, timeline, tags_text,
-                    target_word_count, sort_order
-                ) VALUES (?, ?, ?, ?, ?, 'scene', ?, '', '', ?, ?, ?, ?, ?, ?)
+                    target_word_count, sort_order, board_sort_order
+                ) VALUES (?, ?, ?, ?, ?, 'scene', ?, '', '', ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     child_id,
@@ -270,6 +339,7 @@ class CollectionOutlineRepository:
                     existing.tags_text,
                     existing.target_word_count,
                     existing.sort_order + 1,
+                    self._next_board_order(existing.collection_id, existing.status),
                 ),
             )
             self._touch_collection(existing.collection_id)
@@ -308,6 +378,7 @@ class CollectionOutlineRepository:
         )
         if cur.rowcount > 0:
             self._compact(existing.collection_id)
+            self._compact_board_status(existing.collection_id, existing.status)
             self._touch_collection(existing.collection_id)
         return cur.rowcount > 0
 
@@ -472,6 +543,28 @@ class CollectionOutlineRepository:
         ).fetchone()
         return int(row["next_order"])
 
+    def _next_board_order(self, collection_id: str, status: str) -> int:
+        row = self._conn.execute(
+            """
+            SELECT COALESCE(MAX(board_sort_order), -1) + 1 AS next_order
+              FROM collection_outline_items
+             WHERE collection_id = ? AND status = ?
+            """,
+            (collection_id, status),
+        ).fetchone()
+        return int(row["next_order"])
+
+    def _board_ids(self, collection_id: str, status: str) -> list[str]:
+        rows = self._conn.execute(
+            """
+            SELECT id FROM collection_outline_items
+             WHERE collection_id = ? AND status = ?
+             ORDER BY board_sort_order ASC, sort_order ASC, created_at ASC, id ASC
+            """,
+            (collection_id, status),
+        ).fetchall()
+        return [str(row["id"]) for row in rows]
+
     def _is_descendant(self, item_id: str, *, descendant_of: str) -> bool:
         current = self.get(item_id)
         seen: set[str] = set()
@@ -497,6 +590,43 @@ class CollectionOutlineRepository:
             self._conn.execute(
                 "UPDATE collection_outline_items SET sort_order = ? WHERE id = ?",
                 (slot, row["id"]),
+            )
+
+    def _compact_board_status(self, collection_id: str, status: str) -> None:
+        for slot, item_id in enumerate(self._board_ids(collection_id, status)):
+            self._conn.execute(
+                "UPDATE collection_outline_items SET board_sort_order = ? WHERE id = ?",
+                (slot, item_id),
+            )
+
+    def _rewrite_board_ids(
+        self,
+        collection_id: str,
+        status: str,
+        ordered_ids: list[str],
+        *,
+        moved_item_id: Optional[str] = None,
+    ) -> None:
+        for slot, current_id in enumerate(ordered_ids):
+            if current_id == moved_item_id:
+                self._conn.execute(
+                    """
+                    UPDATE collection_outline_items
+                       SET status = ?,
+                           board_sort_order = ?,
+                           updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                     WHERE id = ? AND collection_id = ?
+                    """,
+                    (status, slot, current_id, collection_id),
+                )
+                continue
+            self._conn.execute(
+                """
+                UPDATE collection_outline_items
+                   SET board_sort_order = ?
+                 WHERE id = ? AND collection_id = ? AND status = ?
+                """,
+                (slot, current_id, collection_id, status),
             )
 
     def _touch_collection(self, collection_id: str) -> None:

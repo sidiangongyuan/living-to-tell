@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 
 APP_DISPLAY_NAME = "Living to Tell"
-APP_VERSION = os.environ.get("LIVING_TO_TELL_APP_VERSION", "0.1.51")
+APP_VERSION = os.environ.get("LIVING_TO_TELL_APP_VERSION", "0.1.52")
 API_VERSION = "2.0.0"
 API_CAPABILITIES = [
     "data_location",
@@ -19,6 +19,9 @@ API_CAPABILITIES = [
     "ai_task_compare_stream",
     "article_ai_task_runs",
     "article_ai_chat_drawer",
+    "article_ai_result_workspace_v2",
+    "article_ai_presets_v2",
+    "article_ai_output_normalization",
     "motif_star_map",
     "motif_ai_enrichment",
     "motif_ai_enrichment_jobs",
@@ -31,6 +34,7 @@ API_CAPABILITIES = [
     "collection_manuscript_structure",
     "collection_structure_rules_v2",
     "collection_board_drag",
+    "collection_board_priority",
     "collection_agent",
     "collection_agent_sessions",
     "collection_agent_drafts",

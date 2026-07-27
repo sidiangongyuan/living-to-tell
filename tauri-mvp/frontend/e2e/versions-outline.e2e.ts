@@ -45,6 +45,7 @@ interface MockOutlineItem {
   tags: string[]
   target_word_count: number | null
   sort_order: number
+  board_sort_order: number
   created_at: string | null
   updated_at: string | null
 }
@@ -254,7 +255,7 @@ test('collection outline creates a real outline item and article link', async ({
   await page.route('**/api/collections/collection-a/outline', async (route) => {
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON() as Partial<MockOutlineItem>
-      const item: MockOutlineItem = {
+        const item: MockOutlineItem = {
         id: `outline-${outline.length + 1}`,
         collection_id: collection.id,
         parent_id: null,
@@ -268,12 +269,13 @@ test('collection outline creates a real outline item and article link', async ({
         pov: body.pov ?? '',
         setting: body.setting ?? '',
         timeline: body.timeline ?? '',
-        tags: body.tags ?? [],
-        target_word_count: body.target_word_count ?? null,
-        sort_order: outline.length,
-        created_at: null,
-        updated_at: null,
-      }
+          tags: body.tags ?? [],
+          target_word_count: body.target_word_count ?? null,
+          sort_order: outline.length,
+          board_sort_order: 0,
+          created_at: null,
+          updated_at: null,
+        }
       outline.push(item)
       await route.fulfill({ status: 201, json: item })
       return

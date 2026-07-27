@@ -169,7 +169,7 @@ async function fulfillCompareStream(route: Route, resultForProfile?: (profileId:
   })
 }
 
-const outlineItems = [
+const outlineItemsSeed = [
   {
     id: 'outline-part-a',
     collection_id: collection.id,
@@ -187,6 +187,7 @@ const outlineItems = [
     tags: ['长篇', '结构'],
     target_word_count: 8000,
     sort_order: 0,
+    board_sort_order: 0,
     created_at: null,
     updated_at: null,
   },
@@ -207,6 +208,7 @@ const outlineItems = [
     tags: ['开端', '悬念'],
     target_word_count: 3500,
     sort_order: 1,
+    board_sort_order: 0,
     created_at: null,
     updated_at: null,
   },
@@ -227,6 +229,7 @@ const outlineItems = [
     tags: ['行动', '线索'],
     target_word_count: 1800,
     sort_order: 2,
+    board_sort_order: 0,
     created_at: null,
     updated_at: null,
   },
@@ -247,10 +250,12 @@ const outlineItems = [
     tags: ['修订'],
     target_word_count: null,
     sort_order: 3,
+    board_sort_order: 0,
     created_at: null,
     updated_at: null,
   },
 ]
+let outlineItems = outlineItemsSeed.map((item) => ({ ...item, tags: [...item.tags] }))
 
 const backupItems = [
   {
@@ -280,11 +285,64 @@ async function updatePublicScreenshot(page: Page, name: string) {
   })
 }
 
+function cloneOutlineItems() {
+  return outlineItemsSeed.map((item) => ({ ...item, tags: [...item.tags] }))
+}
+
+function boardItemsForStatus(status: string) {
+  return outlineItems
+    .filter((item) => item.status === status)
+    .slice()
+    .sort((a, b) => (
+      a.board_sort_order - b.board_sort_order
+      || a.sort_order - b.sort_order
+      || a.id.localeCompare(b.id)
+    ))
+}
+
+function moveOutlineBoardItem(itemId: string, status: string, targetIndex: number) {
+  const moving = outlineItems.find((item) => item.id === itemId)
+  if (!moving) return
+  const sourceItems = boardItemsForStatus(moving.status)
+  const sourceIds = sourceItems.map((item) => item.id)
+  const fromIndex = sourceIds.indexOf(itemId)
+  if (fromIndex < 0) return
+  if (moving.status === status) {
+    const rawTarget = Math.max(0, Math.min(targetIndex, sourceIds.length))
+    let adjustedTarget = rawTarget
+    if (rawTarget > fromIndex) adjustedTarget -= 1
+    const reordered = sourceIds.filter((id) => id !== itemId)
+    adjustedTarget = Math.max(0, Math.min(adjustedTarget, reordered.length))
+    reordered.splice(adjustedTarget, 0, itemId)
+    reordered.forEach((id, index) => {
+      const item = outlineItems.find((candidate) => candidate.id === id)
+      if (item) item.board_sort_order = index
+    })
+    return
+  }
+  const destIds = boardItemsForStatus(status).map((item) => item.id)
+  const insertAt = Math.max(0, Math.min(targetIndex, destIds.length))
+  const reorderedSource = sourceIds.filter((id) => id !== itemId)
+  const reorderedDest = [...destIds]
+  reorderedDest.splice(insertAt, 0, itemId)
+  reorderedSource.forEach((id, index) => {
+    const item = outlineItems.find((candidate) => candidate.id === id)
+    if (item) item.board_sort_order = index
+  })
+  reorderedDest.forEach((id, index) => {
+    const item = outlineItems.find((candidate) => candidate.id === id)
+    if (!item) return
+    item.board_sort_order = index
+    if (id === itemId) item.status = status
+  })
+}
+
 async function expectArticleEditorBody(page: Page, body: string) {
   await expect(page.getByTestId('article-body-editor')).toHaveValue(body, { timeout: 20000 })
 }
 
 async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
+  outlineItems = cloneOutlineItems()
   let currentArticleTaskRun: Record<string, any> | null = null
   let articleTaskRunGetCount = 0
   let sampleProjectInstalled = false
@@ -608,7 +666,8 @@ async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
             target_word_count: body.target_word_count ?? null,
             entry_id: body.entry_id ?? null,
             parent_id: body.parent_id ?? null,
-            sort_order: 0,
+            sort_order: outlineItems.length,
+            board_sort_order: outlineItems.filter((item) => item.status === (body.status ?? 'idea')).length,
             created_at: null,
             updated_at: null,
           },
@@ -622,6 +681,13 @@ async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
       await route.fulfill({ json: outlineItems })
       return
     }
+    if (url.pathname.startsWith('/api/collections/collection-a/outline/') && url.pathname.endsWith('/board-position')) {
+      const itemId = url.pathname.split('/').at(-2) ?? ''
+      const body = request.postDataJSON() as { status: string; target_index: number }
+      moveOutlineBoardItem(itemId, body.status, body.target_index)
+      await route.fulfill({ json: outlineItems })
+      return
+    }
     if (url.pathname.startsWith('/api/collections/collection-a/outline/')) {
       if (url.pathname.endsWith('/status') && request.method() === 'PATCH') {
         const itemId = url.pathname.split('/').at(-2) ?? ''
@@ -630,7 +696,11 @@ async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
           await route.fulfill({ status: 404, json: { detail: 'Outline item not found' } })
           return
         }
-        Object.assign(existing, request.postDataJSON())
+        const patch = request.postDataJSON() as { status?: string }
+        if (patch.status && patch.status !== existing.status) {
+          existing.status = patch.status as typeof existing.status
+          existing.board_sort_order = Math.max(0, boardItemsForStatus(existing.status).length - 1)
+        }
         await route.fulfill({ json: existing })
         return
       }
@@ -806,7 +876,13 @@ async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
     const cardType = url.searchParams.get('card_type')
     await route.fulfill({ json: cards.filter((card) => !cardType || card.card_type === cardType) })
   })
-  await page.route('**/api/ai/task-presets', async (route) => route.fulfill({ json: {} }))
+  let taskPresets: Record<string, unknown> = {}
+  await page.route('**/api/ai/task-presets', async (route) => {
+    if (route.request().method() === 'PUT') {
+      taskPresets = route.request().postDataJSON() as Record<string, unknown>
+    }
+    await route.fulfill({ json: taskPresets })
+  })
   await page.route('**/api/settings/ai/profiles', async (route) => {
     await route.fulfill({
       json: {
@@ -857,6 +933,17 @@ async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
       await route.fulfill({ json: currentArticleTaskRun })
       return
     }
+    if (url.pathname === '/api/ai/task-runs' && request.method() === 'GET') {
+      await route.fulfill({ json: currentArticleTaskRun ? [currentArticleTaskRun] : [] })
+      return
+    }
+    if (url.pathname === '/api/ai/task-runs' && request.method() === 'DELETE') {
+      if (currentArticleTaskRun && ['succeeded', 'failed', 'cancelled'].includes(currentArticleTaskRun.status)) {
+        currentArticleTaskRun = null
+      }
+      await route.fulfill({ status: 204 })
+      return
+    }
     if (url.pathname === '/api/ai/task-runs' && request.method() === 'POST') {
       const body = request.postDataJSON() as {
         article_id: string
@@ -865,17 +952,20 @@ async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
         selection_start?: number | null
         selection_end?: number | null
         attachments?: Array<{ kind: string; ref_id: string; name: string; body: string }>
+        preset_snapshot?: Record<string, unknown> | null
+        control_snapshot?: Record<string, unknown>
       }
       articleTaskRunGetCount = 0
       currentArticleTaskRun = {
         run_id: 'article-run-1', article_id: body.article_id, article_title: article.title,
-        task_type: body.task_type, article_hash: 'hash', original_text: article.body, selection_start: body.selection_start ?? null,
+        task_type: body.task_type, article_hash: 'hash', article_state: 'ready', original_text: article.body, selection_start: body.selection_start ?? null,
         selection_end: body.selection_end ?? null, status: 'queued', stage: 'queued', stage_label: '排队中', error: '',
+        preset_snapshot: body.preset_snapshot ?? null, control_snapshot: body.control_snapshot ?? {},
         profiles: body.profile_ids.map((id) => ({ profile_id: id, profile_name: id === 'profile-gemini' ? 'Gemini 测试' : 'DeepSeek 测试', provider: id === 'profile-gemini' ? 'gemini' : 'openai', model: id === 'profile-gemini' ? 'gemini-test-model' : 'deepseek-test-model' })),
         attachment_snapshots: (body.attachments ?? []).map((item) => ({ kind: item.kind, ref_id: item.ref_id, name: item.name, size_chars: Math.min(item.body.trim().length, 40_000) })),
-        results: body.profile_ids.map((id) => ({ profile_id: id, profile_name: id === 'profile-gemini' ? 'Gemini 测试' : 'DeepSeek 测试', provider: id === 'profile-gemini' ? 'gemini' : 'openai', model: id === 'profile-gemini' ? 'gemini-test-model' : 'deepseek-test-model', transport: null, status: 'pending', result: '', error: '', elapsed_ms: 0, input_tokens: null, output_tokens: null, cost: null, finish_reason: null, stats: { input_chars: article.body.length, output_chars: 0, delta_chars: -article.body.length, output_ratio: 0, input_paragraphs: 1, output_paragraphs: 0 } })),
+        results: body.profile_ids.map((id) => ({ profile_id: id, profile_name: id === 'profile-gemini' ? 'Gemini 测试' : 'DeepSeek 测试', provider: id === 'profile-gemini' ? 'gemini' : 'openai', model: id === 'profile-gemini' ? 'gemini-test-model' : 'deepseek-test-model', transport: null, status: 'pending', result: '', raw_result: '', draft_result: null, raw_fingerprint: null, draft_fingerprint: null, error: '', elapsed_ms: 0, input_tokens: null, output_tokens: null, cost: null, finish_reason: null, stats: { input_chars: article.body.length, output_chars: 0, delta_chars: -article.body.length, output_ratio: 0, input_paragraphs: 1, output_paragraphs: 0 } })),
         created_at: '2026-01-01T00:00:00Z', started_at: null, updated_at: '2026-01-01T00:00:00Z', completed_at: null, elapsed_ms: 0,
-        applied_profile_id: null, applied_at: null, applied_version_id: null,
+        applied_profile_id: null, applied_candidate: null, applied_fingerprint: null, applied_at: null, applied_version_id: null,
       }
       await route.fulfill({ status: 202, json: currentArticleTaskRun })
       return
@@ -890,10 +980,31 @@ async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
       return
     }
     if (url.pathname.endsWith('/apply') && request.method() === 'POST') {
-      const profileId = (request.postDataJSON() as { profile_id: string }).profile_id
+      const body = request.postDataJSON() as { profile_id: string; candidate?: 'raw' | 'draft' }
+      const profileId = body.profile_id
       const result = (currentArticleTaskRun.results as Array<Record<string, any>>).find((item) => item.profile_id === profileId)
-      currentArticleTaskRun = { ...currentArticleTaskRun, applied_profile_id: profileId, applied_at: '2026-01-01T00:00:02Z', applied_version_id: 'version-before-ai' }
-      await route.fulfill({ json: { run: currentArticleTaskRun, entry: { ...article, body: result?.result || article.body }, version_id: 'version-before-ai', was_noop: false } })
+      const candidate = body.candidate === 'draft' ? result?.draft_result : result?.raw_result
+      currentArticleTaskRun = { ...currentArticleTaskRun, applied_profile_id: profileId, applied_candidate: body.candidate || 'raw', applied_fingerprint: body.candidate === 'draft' ? result?.draft_fingerprint : result?.raw_fingerprint, applied_at: '2026-01-01T00:00:02Z', applied_version_id: 'version-before-ai' }
+      await route.fulfill({ json: { run: currentArticleTaskRun, entry: { ...article, body: candidate || result?.result || article.body }, version_id: 'version-before-ai', was_noop: false } })
+      return
+    }
+    if (url.pathname.includes('/drafts/') && request.method() === 'PATCH') {
+      const profileId = url.pathname.split('/').at(-1)!
+      const body = request.postDataJSON() as { draft_result: string }
+      const results = (currentArticleTaskRun.results as Array<Record<string, any>>).map((item) => item.profile_id === profileId
+        ? { ...item, result: body.draft_result, draft_result: body.draft_result, draft_fingerprint: `draft-${body.draft_result.length}` }
+        : item)
+      currentArticleTaskRun = { ...currentArticleTaskRun, results }
+      await route.fulfill({ json: currentArticleTaskRun })
+      return
+    }
+    if (url.pathname.includes('/drafts/') && request.method() === 'DELETE') {
+      const profileId = url.pathname.split('/').at(-1)!
+      const results = (currentArticleTaskRun.results as Array<Record<string, any>>).map((item) => item.profile_id === profileId
+        ? { ...item, result: item.raw_result, draft_result: null, draft_fingerprint: null }
+        : item)
+      currentArticleTaskRun = { ...currentArticleTaskRun, results }
+      await route.fulfill({ json: currentArticleTaskRun })
       return
     }
     if (request.method() === 'DELETE') {
@@ -905,7 +1016,7 @@ async function mockVisibleActionApi(page: Page, language: 'zh' | 'en' = 'zh') {
     const results = (currentArticleTaskRun.results as Array<Record<string, any>>).map((item, index) => {
       if (articleTaskRunGetCount === 1 && index > 0) return item
       const output = item.profile_id === 'profile-gemini' ? 'Gemini 增量结果' : 'DeepSeek 增量结果'
-      return { ...item, status: 'success', result: output, transport: item.profile_id === 'profile-gemini' ? 'gemini_native' : 'chat_completions', elapsed_ms: index ? 240 : 80, input_tokens: 8, output_tokens: 12, cost: 0.001, stats: { ...item.stats, output_chars: output.length, delta_chars: output.length - article.body.length, output_ratio: 0.5, output_paragraphs: 1 } }
+      return { ...item, status: 'success', result: output, raw_result: output, draft_result: null, raw_fingerprint: `raw-${item.profile_id}`, draft_fingerprint: null, transport: item.profile_id === 'profile-gemini' ? 'gemini_native' : 'chat_completions', elapsed_ms: index ? 240 : 80, input_tokens: 8, output_tokens: 12, cost: 0.001, stats: { ...item.stats, output_chars: output.length, delta_chars: output.length - article.body.length, output_ratio: 0.5, output_paragraphs: 1 } }
     })
     const done = results.every((item) => item.status === 'success')
     currentArticleTaskRun = { ...currentArticleTaskRun, results, status: done ? 'succeeded' : 'running', stage: done ? 'succeeded' : 'collecting_results', stage_label: done ? '已完成' : '正在收集模型结果', elapsed_ms: done ? 240 : 80 }
@@ -1883,6 +1994,7 @@ test('collection export buttons trigger downloads and article management actions
           parent_id: body.parent_id ?? null,
           entry_id: body.entry_id ?? null,
           title: body.title ?? '新结构节点',
+          display_title: body.title ?? '新结构节点',
           item_type: body.item_type ?? 'scene',
           status: body.status ?? 'idea',
           summary: body.summary ?? '',
@@ -1893,6 +2005,7 @@ test('collection export buttons trigger downloads and article management actions
           tags: body.tags ?? [],
           target_word_count: body.target_word_count ?? null,
           sort_order: outlineItems.length + outlineCreateRequests.length,
+          board_sort_order: outlineItems.filter((item) => item.status === (body.status ?? 'idea')).length,
           created_at: null,
           updated_at: null,
         },
@@ -2451,7 +2564,7 @@ test('collection agent draft mode keeps a local draft and previews article write
   await expect.poll(() => applyRequests).toBe(1)
 })
 
-test('collection planning board drags one card without changing child status or order', async ({ page }) => {
+test('collection planning board keeps manuscript order while supporting column priority and cross-column drops', async ({ page }) => {
   await page.goto('/collections')
   await expect(page.getByRole('heading', { name: '测试作品集', exact: true })).toBeVisible({ timeout: 20000 })
 
@@ -2464,15 +2577,29 @@ test('collection planning board drags one card without changing child status or 
   await expect(board.locator('article').filter({ hasText: '导出测试文章' })).toBeVisible()
   await updatePublicScreenshot(page, 'collections.png')
 
+  const draftingColumn = board.locator('[data-board-status="drafting"]')
+  await expect(draftingColumn.locator('article').nth(0)).toContainText('第一部：回到旧城')
+  await draftingColumn.locator('article').filter({ hasText: '第一部：回到旧城' }).getByRole('button', { name: '看板排序' }).click()
+  await page.getByTestId('context-menu').getByRole('button', { name: '移到底部' }).click()
+  await expect(draftingColumn.locator('article').nth(0)).toContainText('第一章：旧城来信')
+  await expect(draftingColumn.locator('article').nth(1)).toContainText('第一部：回到旧城')
+  expect(outlineItems.find((item) => item.id === 'outline-chapter-a')?.board_sort_order).toBe(0)
+  expect(outlineItems.find((item) => item.id === 'outline-part-a')?.board_sort_order).toBe(1)
+
   const movingCard = board.locator('article').filter({ hasText: '导出测试文章' })
+  const doneCard = board.locator('[data-board-status="done"]').locator('article').filter({ hasText: '结尾余韵备忘' })
+  const doneBox = await doneCard.boundingBox()
+  if (!doneBox) throw new Error('done column card is missing')
   const dataTransfer = await page.evaluateHandle(() => new DataTransfer())
   await movingCard.dispatchEvent('dragstart', { dataTransfer })
-  await board.locator('[data-board-status="done"]').dispatchEvent('dragenter', { dataTransfer })
-  await board.locator('[data-board-status="done"]').dispatchEvent('dragover', { dataTransfer })
-  await board.locator('[data-board-status="done"]').dispatchEvent('drop', { dataTransfer })
+  await doneCard.dispatchEvent('dragenter', { dataTransfer, clientY: doneBox.y + 2 })
+  await doneCard.dispatchEvent('dragover', { dataTransfer, clientY: doneBox.y + 2 })
+  await doneCard.dispatchEvent('drop', { dataTransfer, clientY: doneBox.y + 2 })
   await movingCard.dispatchEvent('dragend', { dataTransfer })
-  await expect(board.locator('[data-board-status="done"]').locator('article').filter({ hasText: '导出测试文章' })).toBeVisible()
+  await expect(board.locator('[data-board-status="done"]').locator('article').nth(0)).toContainText('导出测试文章')
   expect(outlineItems.find((item) => item.id === 'outline-scene-a')?.status).toBe('done')
+  expect(outlineItems.find((item) => item.id === 'outline-scene-a')?.board_sort_order).toBe(0)
+  expect(outlineItems.find((item) => item.id === 'outline-note-a')?.board_sort_order).toBe(1)
   expect(outlineItems.find((item) => item.id === 'outline-chapter-a')?.status).toBe('drafting')
   expect(outlineItems.map((item) => item.id)).toEqual([
     'outline-part-a',
@@ -2830,6 +2957,7 @@ test('article AI reference picker stages selections and sends only confirmed sty
   })
 
   await page.goto('/ai?scope_kind=article&scope_id=article-a')
+  await expect(page.getByRole('heading', { name: 'AI 修改' })).toBeVisible({ timeout: 15_000 })
   const section = page.getByTestId('article-ai-reference-section')
   await expect(section).toBeVisible()
   await expect(section.getByText('尚未选择文脉标本').first()).toBeVisible()
@@ -2891,6 +3019,7 @@ test('article AI reference picker stages selections and sends only confirmed sty
   await updatePublicScreenshot(page, 'ai-workspace.png')
   await page.getByRole('button', { name: '运行 AI 修改' }).click()
   await expect.poll(() => runRequests.length).toBe(1)
+  await expect(page).toHaveURL(/\/ai\/results\/article-run-1/)
 
   expect(runRequests[0].article_id).toBe('article-b')
   expect(runRequests[0].task_type).toBe('rewrite')
@@ -2906,7 +3035,6 @@ test('article AI reference picker stages selections and sends only confirmed sty
   expect(runRequests[0].attachments[0].body).toContain('标本正文：\n已有标本正文')
 
   await expect(page.getByText('Gemini 增量结果')).toBeVisible({ timeout: 10000 })
-  await expect(section.getByText('已选 2 条')).toBeVisible()
   const runReferences = page.getByTestId('article-ai-run-references')
   await expect(runReferences.getByText('《测试书》 · 测试作者')).toBeVisible()
   await expect(runReferences.getByText('《另一本书》 · 另一作者')).toBeVisible()
@@ -2914,6 +3042,7 @@ test('article AI reference picker stages selections and sends only confirmed sty
   await page.goto('/dates')
   await page.goto('/ai')
   await expect(page.getByTestId('article-ai-reference-section').getByText('尚未选择文脉标本').first()).toBeVisible()
+  await page.getByRole('button', { name: '打开结果工作区' }).click()
   const recoveredReferences = page.getByTestId('article-ai-run-references')
   await expect(recoveredReferences.getByText('《测试书》 · 测试作者')).toBeVisible()
   await expect(recoveredReferences.getByText('《另一本书》 · 另一作者')).toBeVisible()
@@ -2978,8 +3107,21 @@ test('article AI card and note pickers confirm drafts, filter clearly, and freez
   await noteDialog.getByRole('button', { name: '使用 1 条' }).click()
   await expect(noteSection.getByText('置顶任务')).toBeVisible()
 
+  await page.getByRole('combobox', { name: '处理对象' }).selectOption('article-b')
+  await expect(cardSection.getByText('已选 1 条')).toBeVisible()
+  await expect(noteSection.getByText('已选 0 条')).toBeVisible()
+  await expect(noteSection.getByText('置顶任务')).toHaveCount(0)
+
+  await page.getByRole('combobox', { name: '处理对象' }).selectOption('article-a')
+  await noteSection.getByRole('button', { name: '选择文章便签' }).click()
+  noteDialog = page.getByRole('dialog', { name: '选择文章便签' })
+  await noteDialog.getByRole('button', { name: '进行中', exact: true }).click()
+  await noteDialog.getByRole('button', { name: '置顶任务', exact: true }).click()
+  await noteDialog.getByRole('button', { name: '使用 1 条' }).click()
+
   await page.getByRole('button', { name: '运行 AI 修改' }).click()
   await expect.poll(() => runRequests.length).toBe(1)
+  await expect(page).toHaveURL(/\/ai\/results\/article-run-1/)
   expect(runRequests[0].attachments.map((item: Record<string, string>) => item.kind)).toEqual(['ai_card', 'writing_note'])
   expect(runRequests[0].attachments[0]).toEqual(expect.objectContaining({ ref_id: 'scene-a', name: '等待回应' }))
   expect(runRequests[0].attachments[1]).toEqual(expect.objectContaining({ ref_id: 'note-open-picker', name: '置顶任务' }))
@@ -2988,18 +3130,46 @@ test('article AI card and note pickers confirm drafts, filter clearly, and freez
   const snapshots = page.getByTestId('article-ai-run-references')
   await expect(snapshots.getByText('等待回应')).toBeVisible()
   await expect(snapshots.getByText('置顶任务')).toBeVisible()
+})
 
-  await page.getByRole('combobox', { name: '处理对象' }).selectOption('article-b')
-  await expect(cardSection.getByText('已选 1 条')).toBeVisible()
-  await expect(noteSection.getByText('已选 0 条')).toBeVisible()
-  await expect(noteSection.getByText('置顶任务')).toHaveCount(0)
+test('article AI exposes purpose presets, structured controls, and custom preset lifecycle', async ({ page }) => {
+  await page.goto('/ai?scope_kind=article&scope_id=article-a')
+  const presets = page.getByTestId('article-ai-preset-panel')
+  await expect(presets.getByRole('button', { name: /清楚顺读/ })).toBeVisible()
+
+  await page.getByRole('button', { name: /^改写/ }).click()
+  await presets.getByRole('tab', { name: '创作性' }).click()
+  await presets.getByRole('button', { name: '小说叙事' }).click()
+  await presets.getByRole('button', { name: /转换视角或时态/ }).click()
+  await expect(page.getByTestId('article-ai-structured-controls')).toBeVisible()
+  await expect(page.getByRole('button', { name: '运行 AI 修改' })).toBeDisabled()
+  await page.getByRole('combobox', { name: '目标时态' }).selectOption('past')
+  await expect(page.getByRole('button', { name: '运行 AI 修改' })).toBeEnabled()
+
+  await presets.getByRole('button', { name: '保存当前设置' }).click()
+  await presets.getByLabel('预设名称').fill('过去时叙述')
+  await presets.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByText('已保存到“我的预设”。')).toBeVisible()
+  await presets.getByRole('tab', { name: '我的预设' }).click()
+  await expect(presets.getByRole('button', { name: '过去时叙述', exact: true })).toBeVisible()
+  await presets.getByRole('button', { name: '编辑', exact: true }).click()
+  await presets.getByLabel('重命名预设').fill('过去时叙述二')
+  await presets.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(presets.getByRole('button', { name: '过去时叙述二', exact: true })).toBeVisible()
+  page.once('dialog', (dialog) => dialog.accept())
+  await presets.getByRole('button', { name: '删除', exact: true }).click()
+  await expect(presets.getByText('还没有自己的预设。')).toBeVisible()
 })
 
 test('article AI runs only selected profiles, reveals incremental results, previews apply, and clears explicitly', async ({ page }) => {
   const runRequests: Array<Record<string, unknown>> = []
+  const applyRequests: Array<Record<string, unknown>> = []
   page.on('request', (request) => {
     if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/ai/task-runs') {
       runRequests.push(request.postDataJSON() as Record<string, unknown>)
+    }
+    if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/apply')) {
+      applyRequests.push(request.postDataJSON() as Record<string, unknown>)
     }
   })
   await page.goto('/ai?scope_kind=article&scope_id=article-a')
@@ -3015,18 +3185,25 @@ test('article AI runs only selected profiles, reveals incremental results, previ
 
   await page.getByRole('button', { name: '运行 AI 修改' }).click()
   await expect.poll(() => runRequests.length).toBe(1)
+  await expect(page).toHaveURL(/\/ai\/results\/article-run-1/)
   expect(runRequests[0].profile_ids).toEqual(['profile-deepseek', 'profile-gemini'])
   expect(runRequests[0]).toEqual(expect.objectContaining({ article_id: 'article-a', task_type: 'polish' }))
   await expect(page.getByText('DeepSeek 增量结果')).toBeVisible({ timeout: 10000 })
   await page.getByRole('button', { name: /Gemini 测试.*已完成/ }).click()
   await expect(page.getByText('Gemini 增量结果')).toBeVisible({ timeout: 10000 })
 
-  await page.getByRole('button', { name: '预览写回' }).click()
-  await expect(page.getByRole('dialog', { name: '确认写回文章' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: '确认写回文章' })).toBeVisible()
+  await page.getByRole('button', { name: '编辑副本' }).click()
+  await page.getByRole('textbox', { name: '编辑副本' }).fill('作者人工修订的结果')
+  await expect(page.getByText('编辑副本已保存').first()).toBeVisible({ timeout: 5000 })
+  await page.getByRole('button', { name: '段落差异' }).click()
+  await expect(page.getByText('作者人工修订的结果')).toBeVisible()
+  await page.getByRole('button', { name: '原文对照' }).click()
+
+  await expect(page.getByTestId('article-ai-writeback-panel')).toBeVisible()
   await expect(page.getByText('AI_BEFORE_APPLY')).toBeVisible()
   await page.getByRole('button', { name: '创建版本并写回' }).click()
   await expect(page.getByText('已写回文章，并创建写回前版本。')).toBeVisible()
+  expect(applyRequests[0]).toEqual(expect.objectContaining({ candidate: 'draft' }))
 
   page.once('dialog', async (dialog) => dialog.accept())
   await page.getByRole('button', { name: '清空本轮结果' }).click()
@@ -3043,6 +3220,7 @@ test('article AI background run survives navigation and is recovered without res
   await expect.poll(() => creates).toBe(1)
   await page.goto('/dates')
   await page.goto('/ai')
+  await page.getByRole('button', { name: '打开结果工作区' }).click()
   await expect(page.getByText('Gemini 增量结果')).toBeVisible({ timeout: 10000 })
   expect(creates).toBe(1)
 })

@@ -60,6 +60,7 @@ export interface CollectionOutlineItem {
   tags: string[]
   target_word_count: number | null
   sort_order: number
+  board_sort_order: number
   created_at: string | null
   updated_at: string | null
 }
@@ -409,6 +410,19 @@ export const collectionsApi = {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
+    })
+    return handleResponse(res)
+  },
+
+  async updateOutlineBoardPosition(
+    collectionId: string,
+    itemId: string,
+    data: { status: OutlineItemStatus; target_index: number },
+  ): Promise<CollectionOutlineItem[]> {
+    const res = await apiFetch(`/api/collections/${collectionId}/outline/${itemId}/board-position`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
     })
     return handleResponse(res)
   },

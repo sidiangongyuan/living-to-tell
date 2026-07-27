@@ -17,8 +17,8 @@ The current seven-flow set is:
 
 1. Sample project.
 2. Article writing.
-3. Collection chapter structure, live article titles, and board dragging.
+3. Collection chapter structure, live article titles, same-column planning priority, and cross-column status dragging.
 4. Reference Library and Motif Star Map.
-5. AI profiles and article-edit context.
+5. AI profiles, writing-purpose presets, article-edit context, and the dedicated results workspace.
 6. Collection Agent.
 7. Export and backup.

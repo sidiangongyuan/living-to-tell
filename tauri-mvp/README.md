@@ -4,7 +4,7 @@
 
 ### The current Windows desktop preview for 活着为了讲述 / Living to Tell
 
-[![Version](https://img.shields.io/badge/version-0.1.51-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.52-blue.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/sidiangongyuan/living-to-tell/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-preview-orange.svg)](#download)
@@ -28,9 +28,9 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 | :---: | :---: |
 | ![Collections](docs/assets/screenshots/collections.png) | ![Reference library](docs/assets/screenshots/reference-library.png) |
 
-| Article AI Edit | AI Profiles |
+| AI Purpose Presets | AI Results Workspace |
 | :---: | :---: |
-| ![Article AI edit](docs/assets/screenshots/ai-workspace.png) | ![AI profile settings](docs/assets/screenshots/settings.png) |
+| ![AI purpose presets](docs/assets/screenshots/ai-presets.png) | ![AI results workspace](docs/assets/screenshots/ai-results-workspace.png) |
 
 | Reference Specimen Picker | Profile Setup Wizard |
 | :---: | :---: |
@@ -69,7 +69,7 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 - Use project-aware labels: general group/chapter/article, novel part/chapter/scene, essay section/chapter/article, and nonfiction part/chapter/subsection.
 - Link one article directly to a leaf chapter, or split the chapter into children. A linked title always follows the current article title.
 - Keep added-but-unplaced drafts in **Unplanned Articles** until they are placed into the tree.
-- Drag any card across the board's idea, draft, revision, done, and parked columns. Only that card's status changes; manuscript order and child status remain intact.
+- Drag within a board column to rank planning priority, or across columns to change the current card's status and landing position. Board priority stays independent from manuscript/export order and child status.
 - Export the manuscript to Markdown, TXT, or DOCX from the structure tree, and export a separate planning file when needed.
 - Use the lightweight tutorial invitation to walk through Manuscript Structure, Project Type, Unplanned Articles, Linked Article, Board, and Export; restart any tutorial from the Settings tutorial center.
 - Use the collection-bound Agent as a coauthoring workspace with named sessions, Discuss / Plan / Draft / Review modes, visible context summaries, persistent unapplied scene drafts, shared project canon, author-style evidence cycles, background runs, and reviewable proposals.
@@ -97,11 +97,14 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 ### AI
 
 - Focused AI tools for polishing, rewriting, expanding, and continuing.
-- Per-tool personal presets.
+- Twenty-five built-in purpose presets across common and creative work, with general, fiction, essay, and nonfiction filters plus structured viewpoint, tense, argument, and scene controls.
+- Personal presets save task controls and supplementary instructions without capturing articles, selections, models, or context attachments.
 - AI Edit is bound to one real article or selection and never asks users to paste an unrelated text block.
 - Reference specimens, AI Cards, and current-article notes are equal first-class AI Edit context sources. Each has a large searchable picker, readable cards, full-content preview, staged multi-selection, and no automatic attachment.
 - Confirmed specimens are sent as method and style guidance with purpose, tags, personal notes, and text. All selected models receive the same run snapshot, with explicit rules against copying sentences or transplanting source facts and names.
-- AI results are reviewed as one readable result at a time, with a paragraph diff before explicit write-back and an `AI_BEFORE_APPLY` version snapshot.
+- Each run opens in a dedicated results workspace with this-session history, original comparison, two-model comparison, paragraph diff, immutable model output, and a separately editable copy.
+- Prose output is normalized conservatively before display, copy, comparison, statistics, and raw write-back so accidental repeated blank lines do not distort the result; poetry, lists, indentation, and author-edited spacing remain intact.
+- Write-back checks article state before the action, creates an `AI_BEFORE_APPLY` snapshot, and treats an identical repeated apply as a no-op.
 - Background article tasks show honest per-model waiting, success, and failure states; they continue after navigation and reconnect by status query without resending provider requests.
 - AI Edit runs exactly the explicitly selected provider profiles and compares latency, tokens, cost, and actual transport when available. Selecting more models may increase wait time, token use, and provider cost.
 - Article-scoped chat lives in a closable article drawer; drafts, history, and an in-flight reply survive closing.
@@ -129,15 +132,15 @@ The Tauri preview is the current public direction. It uses a Vue frontend, a bun
 
 ## Download
 
-Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.51).
+Download the latest public preview from [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.52).
 
 Recommended Windows asset:
 
-- `LivingToTell_0.1.51_x64-setup.exe`
+- `LivingToTell_0.1.52_x64-setup.exe`
 
 Optional asset:
 
-- `LivingToTell_0.1.51_x64_zh-CN.msi`
+- `LivingToTell_0.1.52_x64_zh-CN.msi`
 
 Windows SmartScreen may warn because preview builds are unsigned. Only run installers downloaded from this repository's release page.
 

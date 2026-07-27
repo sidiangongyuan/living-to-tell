@@ -64,6 +64,7 @@ function outline(id: string, collectionId: string, title: string): CollectionOut
     tags: [],
     target_word_count: null,
     sort_order: 0,
+    board_sort_order: 0,
     created_at: null,
     updated_at: null,
   }
@@ -130,5 +131,42 @@ describe('collections store request ownership', () => {
 
     expect(store.outline[0].status).toBe('idea')
     expect(store.error).toContain('看板状态保存失败')
+  })
+
+  it('keeps the newer collection outline when a late board response returns for the previous collection', async () => {
+    setActivePinia(createPinia())
+    const store = useCollectionsStore()
+    const collectionA = collection('collection-a', '作品 A')
+    const collectionB = collection('collection-b', '作品 B')
+    const outlineA = [
+      outline('outline-a1', collectionA.id, 'A1'),
+      { ...outline('outline-a2', collectionA.id, 'A2'), board_sort_order: 1 },
+    ]
+    const outlineB = [outline('outline-b1', collectionB.id, 'B1')]
+    store.collections = [collectionA, collectionB]
+    store.selectedCollectionId = collectionA.id
+    store.outline = outlineA
+
+    const pendingA = deferred<CollectionOutlineItem[]>()
+    const pendingB = deferred<CollectionOutlineItem[]>()
+    vi.spyOn(collectionsApi, 'updateOutlineBoardPosition').mockImplementation((collectionId) => (
+      collectionId === collectionA.id ? pendingA.promise : pendingB.promise
+    ))
+
+    const movingA = store.updateOutlineBoardPosition('outline-a1', 'idea', 2)
+    store.selectedCollectionId = collectionB.id
+    store.outline = outlineB
+    const movingB = store.updateOutlineBoardPosition('outline-b1', 'done', 0)
+
+    pendingB.resolve([{ ...outlineB[0], status: 'done', board_sort_order: 0 }])
+    await movingB
+    pendingA.resolve([
+      { ...outlineA[1], board_sort_order: 0 },
+      { ...outlineA[0], board_sort_order: 1 },
+    ])
+    await movingA
+
+    expect(store.selectedCollectionId).toBe(collectionB.id)
+    expect(store.outline).toEqual([{ ...outlineB[0], status: 'done', board_sort_order: 0 }])
   })
 })

@@ -27,9 +27,10 @@ _REWRITE_TASKS = {
     AiTaskType.EXPAND,
     AiTaskType.CONTINUE,
 }
+_PROSE_TASKS = _REWRITE_TASKS | {AiTaskType.STYLE_TRANSFER}
 _SPECIMEN_GUIDED_TASKS = _REWRITE_TASKS | {AiTaskType.STYLE_TRANSFER}
 
-_VOICE_PRESERVE_TASKS = _REWRITE_TASKS | {AiTaskType.STYLE_TRANSFER}
+_VOICE_PRESERVE_TASKS = _PROSE_TASKS
 _STYLE_GUIDED_TASKS = {AiTaskType.POLISH, AiTaskType.STYLE_TRANSFER}
 
 
@@ -243,8 +244,8 @@ class TaskPromptBuilder:
                 )
             )
 
-        if request.task_type in _REWRITE_TASKS:
-            user_parts.append(_rewrite_output_contract(is_zh))
+        if request.task_type in _PROSE_TASKS:
+            user_parts.append(_prose_output_contract(request.task_type, is_zh))
         if request.task_type is AiTaskType.POLISH:
             user_parts.append(_polish_output_guidance(request, is_zh))
         elif request.task_type is AiTaskType.EXPAND:
@@ -347,25 +348,45 @@ def _task_intensity_label(task_type: AiTaskType, is_zh: bool) -> str:
     return labels.get(task_type, "Intensity: ")
 
 
-def _rewrite_output_contract(is_zh: bool) -> str:
+def _prose_output_contract(task_type: AiTaskType, is_zh: bool) -> str:
+    returns_full_text = task_type in {
+        AiTaskType.POLISH,
+        AiTaskType.EXPAND,
+        AiTaskType.STYLE_TRANSFER,
+    }
     if is_zh:
+        first_rule = (
+            "- 润色、改写和扩写返回完整正文；续写只返回新增续写内容。"
+            if returns_full_text
+            else "- 续写只返回新增续写内容，不要重写已有正文。"
+        )
         return "\n".join(
             [
                 "输出要求：",
-                "- 润色和扩写返回完整正文；续写只返回新增续写内容。",
+                first_rule,
                 "- 不要标题、不要解释、不要分点、不要附带风格解析。",
                 "- 即使风格要求里写了多个作家或多个特征，也只返回一版最终结果。",
+                "- 保持原文段落骨架，不要在开头或结尾加空白段。",
+                "- 普通正文段落之间最多保留一个空白段距。",
+                "- 诗行、列表、引文和有意缩进的格式要保留。",
                 "- 直接输出正文，不要加引号。",
             ]
         )
+    first_rule = (
+        "- Polish, rewrite, and expand return the full resulting text; continue returns only the new continuation."
+        if returns_full_text
+        else "- Continue returns only the new continuation and must not rewrite the source."
+    )
     return "\n".join(
         [
             "Output rules:",
-            "- Polish and expand return the full resulting text; "
-            "continue returns only the new continuation.",
+            first_rule,
             "- No heading, no explanation, no bullet list, and no style analysis.",
             "- Even if the style instruction mentions multiple authors or traits, "
             "still return only one final result.",
+            "- Keep the paragraph skeleton of the source and do not add leading or trailing blank paragraphs.",
+            "- In ordinary prose, keep at most one blank line between paragraphs.",
+            "- Preserve intentional poetry lines, list items, quotations, and indentation.",
             "- Output the prose directly, with no quotation marks.",
         ]
     )

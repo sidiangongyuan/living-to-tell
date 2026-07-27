@@ -52,6 +52,8 @@ class ArticleTaskRunRecord:
     selection_start: Optional[int]
     selection_end: Optional[int]
     request: dict[str, Any]
+    preset_snapshot: Optional[dict[str, Any]]
+    control_snapshot: dict[str, Any]
     profiles: list[dict[str, Any]]
     results: list[dict[str, Any]]
     status: str = "queued"
@@ -66,6 +68,8 @@ class ArticleTaskRunRecord:
     completed_monotonic: Optional[float] = None
     cancel_requested: bool = False
     applied_profile_id: Optional[str] = None
+    applied_candidate: Optional[str] = None
+    applied_fingerprint: Optional[str] = None
     applied_at: Optional[str] = None
     applied_version_id: Optional[str] = None
     applied_entry: Optional[dict[str, Any]] = None
@@ -132,6 +136,15 @@ class ArticleTaskRunManager:
             record = self._runs.get(self._latest_run_id)
             return copy.deepcopy(record) if record is not None else None
 
+    def list_recent(self, *, limit: int = 20) -> list[ArticleTaskRunRecord]:
+        with self._lock:
+            records = sorted(
+                self._runs.values(),
+                key=lambda item: (item.created_at, item.run_id),
+                reverse=True,
+            )
+            return [copy.deepcopy(item) for item in records[: max(1, limit)]]
+
     def is_cancelled(self, run_id: str) -> bool:
         with self._lock:
             record = self._runs.get(run_id)
@@ -146,7 +159,14 @@ class ArticleTaskRunManager:
             record.stage_label = STAGE_LABELS.get(stage, stage)
             record.updated_at = _now_iso()
 
-    def set_result(self, run_id: str, profile_id: str, result: dict[str, Any]) -> None:
+    def set_result(
+        self,
+        run_id: str,
+        profile_id: str,
+        result: dict[str, Any],
+        *,
+        update_stage: bool = True,
+    ) -> None:
         with self._lock:
             record = self._runs.get(run_id)
             if record is None or record.cancel_requested or record.status == "cancelled":
@@ -155,8 +175,9 @@ class ArticleTaskRunManager:
                 if str(existing.get("profile_id") or "") == profile_id:
                     record.results[index] = copy.deepcopy(result)
                     break
-            record.stage = "collecting_results"
-            record.stage_label = STAGE_LABELS[record.stage]
+            if update_stage:
+                record.stage = "collecting_results"
+                record.stage_label = STAGE_LABELS[record.stage]
             record.updated_at = _now_iso()
 
     def complete(self, run_id: str) -> None:
@@ -205,6 +226,8 @@ class ArticleTaskRunManager:
         run_id: str,
         *,
         profile_id: str,
+        candidate: str,
+        fingerprint: str,
         version_id: str,
         entry: dict[str, Any],
     ) -> ArticleTaskRunRecord:
@@ -213,6 +236,8 @@ class ArticleTaskRunManager:
             if record is None:
                 raise HTTPException(404, "文章 AI 任务已不存在，可能是应用已经重启或结果已清空。")
             record.applied_profile_id = profile_id
+            record.applied_candidate = candidate
+            record.applied_fingerprint = fingerprint
             record.applied_version_id = version_id
             record.applied_entry = copy.deepcopy(entry)
             record.applied_at = _now_iso()
@@ -228,7 +253,29 @@ class ArticleTaskRunManager:
                 raise HTTPException(400, "运行中的任务不能清空，请先等待完成或中断本地等待。")
             self._runs.pop(run_id, None)
             if self._latest_run_id == run_id:
-                self._latest_run_id = None
+                self._refresh_latest_locked()
+
+    def clear_terminal(self) -> int:
+        with self._lock:
+            deletable = [
+                run_id
+                for run_id, record in self._runs.items()
+                if record.status in TERMINAL_STATUSES
+            ]
+            for run_id in deletable:
+                self._runs.pop(run_id, None)
+            self._refresh_latest_locked()
+            return len(deletable)
+
+    def _refresh_latest_locked(self) -> None:
+        if not self._runs:
+            self._latest_run_id = None
+            return
+        latest = max(
+            self._runs.values(),
+            key=lambda item: (item.created_at, item.run_id),
+        )
+        self._latest_run_id = latest.run_id
 
 
 article_task_run_manager = ArticleTaskRunManager()

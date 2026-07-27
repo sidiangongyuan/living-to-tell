@@ -28,6 +28,12 @@ const router = createRouter({
       component: () => import('./features/ai/ArticleAiView.vue')
     },
     {
+      path: '/ai/results/:runId',
+      name: 'ai-results',
+      meta: { navName: 'ai' },
+      component: () => import('./features/ai/ArticleAiResultView.vue')
+    },
+    {
       path: '/library',
       name: 'library',
       component: () => import('./features/library/LibraryView.vue')

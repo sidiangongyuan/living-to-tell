@@ -3,6 +3,7 @@ import type { AiTaskRequest } from '../../api/ai'
 export type FocusTaskType = 'polish' | 'rewrite' | 'expand' | 'continue'
 
 export interface TaskControls {
+  presetGuidance: string
   polishIntensity: 'light' | 'medium' | 'strong'
   polishGoal: 'clarity' | 'rhythm' | 'literary' | 'restrained'
   polishRhythm: 'balanced' | 'tight' | 'flowing'
@@ -30,6 +31,11 @@ export interface TaskControls {
   outlineDepth: 'brief' | 'standard' | 'deep'
   titleCount: 'few' | 'standard' | 'many'
   titleStyle: string
+  targetViewpoint: 'keep' | 'first' | 'third_limited' | 'omniscient'
+  viewpointCharacter: string
+  targetTense: 'keep' | 'past' | 'present'
+  argumentDirection: string
+  sceneFocus: string
   extraInstructions: string
 }
 
@@ -37,6 +43,7 @@ export const FOCUS_TASKS: FocusTaskType[] = ['polish', 'rewrite', 'expand', 'con
 
 export function createDefaultControls(): TaskControls {
   return {
+    presetGuidance: '',
     polishIntensity: 'medium',
     polishGoal: 'clarity',
     polishRhythm: 'balanced',
@@ -64,6 +71,11 @@ export function createDefaultControls(): TaskControls {
     outlineDepth: 'standard',
     titleCount: 'standard',
     titleStyle: '克制、有辨识度，不标题党',
+    targetViewpoint: 'keep',
+    viewpointCharacter: '',
+    targetTense: 'keep',
+    argumentDirection: '',
+    sceneFocus: '',
     extraInstructions: '',
   }
 }
@@ -93,6 +105,12 @@ export function mergeControls(raw: unknown): TaskControls {
     styleTransferStrictness: coerceOption(value.styleTransferStrictness, ['light', 'medium', 'strong'], defaults.styleTransferStrictness),
     outlineDepth: coerceOption(value.outlineDepth, ['brief', 'standard', 'deep'], defaults.outlineDepth),
     titleCount: coerceOption(value.titleCount, ['few', 'standard', 'many'], defaults.titleCount),
+    targetViewpoint: coerceOption(
+      value.targetViewpoint,
+      ['keep', 'first', 'third_limited', 'omniscient'],
+      defaults.targetViewpoint,
+    ),
+    targetTense: coerceOption(value.targetTense, ['keep', 'past', 'present'], defaults.targetTense),
     preserveVoice: value.preserveVoice ?? defaults.preserveVoice,
     compressRedundancy: value.compressRedundancy ?? defaults.compressRedundancy,
     keepImagery: value.keepImagery ?? defaults.keepImagery,
@@ -103,6 +121,7 @@ export function mergeControls(raw: unknown): TaskControls {
 export function buildTaskRequestOptions(
   taskType: AiTaskRequest['task_type'],
   controls: TaskControls,
+  locale: 'zh' | 'en' = 'zh',
 ): Pick<AiTaskRequest, 'style' | 'intensity' | 'extra_instructions' | 'max_output_chars' | 'preserve_voice' | 'preserve_meaning'> {
   if (taskType === 'polish') {
     return {
@@ -111,10 +130,13 @@ export function buildTaskRequestOptions(
       preserve_voice: controls.preserveVoice,
       preserve_meaning: true,
       extra_instructions: joinLines([
-        polishGoalInstruction(controls.polishGoal),
-        polishRhythmInstruction(controls.polishRhythm),
-        polishImageryInstruction(controls.polishImagery),
-        controls.compressRedundancy ? '压缩冗余表达，让句子更紧致。' : '',
+        controls.presetGuidance,
+        polishGoalInstruction(controls.polishGoal, locale),
+        polishRhythmInstruction(controls.polishRhythm, locale),
+        polishImageryInstruction(controls.polishImagery, locale),
+        controls.compressRedundancy
+          ? localized(locale, '压缩冗余表达，让句子更紧致。', 'Compress redundant phrasing and tighten the prose.')
+          : '',
         controls.extraInstructions,
       ]),
     }
@@ -127,8 +149,16 @@ export function buildTaskRequestOptions(
       preserve_voice: controls.narrativeTone === '贴近原文',
       preserve_meaning: true,
       extra_instructions: joinLines([
-        `叙述语气：${controls.narrativeTone}`,
-        controls.keepImagery ? '保留原文关键意象和象征，不要把它们替换成普通概括。' : '',
+        controls.presetGuidance,
+        localized(locale, `叙述语气：${controls.narrativeTone}`, `Narrative tone: ${controls.narrativeTone}`),
+        controls.keepImagery
+          ? localized(
+            locale,
+            '保留原文关键意象和象征，不要把它们替换成普通概括。',
+            'Preserve key images and symbols instead of flattening them into generic summary.',
+          )
+          : '',
+        viewpointInstruction(controls, locale),
         controls.extraInstructions,
       ]),
     }
@@ -142,8 +172,21 @@ export function buildTaskRequestOptions(
       preserve_meaning: true,
       max_output_chars: lengthToChars(controls.expandLength, 1800, 3000, 5000),
       extra_instructions: joinLines([
-        `细节类型：${controls.detailType}`,
-        controls.sensoryDetail ? '加入必要的感官描写，但不要堆砌形容词。' : '',
+        controls.presetGuidance,
+        localized(locale, `细节类型：${controls.detailType}`, `Detail types: ${controls.detailType}`),
+        controls.argumentDirection.trim()
+          ? localized(locale, `论述方向：${controls.argumentDirection}`, `Argument direction: ${controls.argumentDirection}`)
+          : '',
+        controls.sceneFocus.trim()
+          ? localized(locale, `场面重心：${controls.sceneFocus}`, `Scene focus: ${controls.sceneFocus}`)
+          : '',
+        controls.sensoryDetail
+          ? localized(
+            locale,
+            '加入必要的感官描写，但不要堆砌形容词。',
+            'Add only useful sensory detail and avoid piling up adjectives.',
+          )
+          : '',
         controls.extraInstructions,
       ]),
     }
@@ -157,8 +200,9 @@ export function buildTaskRequestOptions(
       preserve_meaning: true,
       max_output_chars: lengthToChars(controls.continueLength, 1200, 2400, 4200),
       extra_instructions: joinLines([
-        `情绪走向：${controls.emotionalDirection}`,
-        `推进速度：${controls.pacing}`,
+        controls.presetGuidance,
+        localized(locale, `情绪走向：${controls.emotionalDirection}`, `Emotional direction: ${controls.emotionalDirection}`),
+        localized(locale, `推进速度：${controls.pacing}`, `Pacing: ${controls.pacing}`),
         controls.extraInstructions,
       ]),
     }
@@ -171,7 +215,12 @@ export function buildTaskRequestOptions(
       preserve_voice: true,
       preserve_meaning: true,
       extra_instructions: joinLines([
-        '把 AI 卡片作为风格、人物或场景结构参考；不要照搬卡片或文脉标本中的原句。',
+        controls.presetGuidance,
+        localized(
+          locale,
+          '把 AI 卡片作为风格、人物或场景结构参考；不要照搬卡片或文脉标本中的原句。',
+          'Use AI Cards for style, character, or scene structure only. Do not copy sentences from cards or reference specimens.',
+        ),
         controls.extraInstructions,
       ]),
     }
@@ -246,25 +295,65 @@ function titleCountToChars(value: 'few' | 'standard' | 'many'): number {
   return 2000
 }
 
-function polishGoalInstruction(value: TaskControls['polishGoal']): string {
-  if (value === 'rhythm') return '润色目标：优先打磨句子节奏、停顿、长短句组织；不要改变叙事事实。'
-  if (value === 'literary') return '润色目标：提升文学质感和画面感，但不要堆砌形容词，不要新增情节信息。'
-  if (value === 'restrained') return '润色目标：克制、干净、少修辞；只修掉笨重和含混之处。'
-  return '润色目标：优先提升清晰度、准确性和顺读性，避免只做同义词替换。'
+function polishGoalInstruction(value: TaskControls['polishGoal'], locale: 'zh' | 'en'): string {
+  if (value === 'rhythm') {
+    return localized(locale, '润色目标：优先打磨句子节奏、停顿、长短句组织；不要改变叙事事实。', 'Polish goal: improve rhythm, pauses, and sentence-length variation without changing narrative facts.')
+  }
+  if (value === 'literary') {
+    return localized(locale, '润色目标：提升文学质感和画面感，但不要堆砌形容词，不要新增情节信息。', 'Polish goal: improve literary texture and imagery without adjective overload or new plot information.')
+  }
+  if (value === 'restrained') {
+    return localized(locale, '润色目标：克制、干净、少修辞；只修掉笨重和含混之处。', 'Polish goal: stay restrained and clean, removing only clumsy or unclear phrasing.')
+  }
+  return localized(locale, '润色目标：优先提升清晰度、准确性和顺读性，避免只做同义词替换。', 'Polish goal: improve clarity, accuracy, and readability rather than merely swapping synonyms.')
 }
 
-function polishRhythmInstruction(value: TaskControls['polishRhythm']): string {
-  if (value === 'tight') return '节奏偏好：句子更紧，删除拖沓转折和重复铺垫。'
-  if (value === 'flowing') return '节奏偏好：允许更舒展的长短句交替，保留必要的余韵。'
-  return '节奏偏好：保持均衡，不刻意压缩或拉长。'
+function polishRhythmInstruction(value: TaskControls['polishRhythm'], locale: 'zh' | 'en'): string {
+  if (value === 'tight') {
+    return localized(locale, '节奏偏好：句子更紧，删除拖沓转折和重复铺垫。', 'Rhythm: tighten sentences and remove slow transitions or repeated setup.')
+  }
+  if (value === 'flowing') {
+    return localized(locale, '节奏偏好：允许更舒展的长短句交替，保留必要的余韵。', 'Rhythm: allow a more flowing alternation of long and short sentences, preserving useful resonance.')
+  }
+  return localized(locale, '节奏偏好：保持均衡，不刻意压缩或拉长。', 'Rhythm: stay balanced without forcing compression or expansion.')
 }
 
-function polishImageryInstruction(value: TaskControls['polishImagery']): string {
-  if (value === 'enhance') return '意象处理：在不新增事实的前提下增强已有意象的感官清晰度。'
-  if (value === 'reduce') return '意象处理：削弱过满或过直白的意象，保留核心画面。'
-  return '意象处理：保留原有关键意象，不替换成普通概括。'
+function polishImageryInstruction(value: TaskControls['polishImagery'], locale: 'zh' | 'en'): string {
+  if (value === 'enhance') {
+    return localized(locale, '意象处理：在不新增事实的前提下增强已有意象的感官清晰度。', 'Imagery: make existing images more sensorially precise without adding facts.')
+  }
+  if (value === 'reduce') {
+    return localized(locale, '意象处理：削弱过满或过直白的意象，保留核心画面。', 'Imagery: reduce overloaded or overly explicit images while keeping the core picture.')
+  }
+  return localized(locale, '意象处理：保留原有关键意象，不替换成普通概括。', 'Imagery: preserve key images instead of replacing them with generic summary.')
 }
 
 function joinLines(values: string[]): string {
   return values.map((value) => value.trim()).filter(Boolean).join('\n')
+}
+
+function viewpointInstruction(controls: TaskControls, locale: 'zh' | 'en'): string {
+  const values: string[] = []
+  if (controls.targetViewpoint !== 'keep') {
+    const labels = {
+      first: localized(locale, '第一人称', 'first person'),
+      third_limited: localized(locale, '第三人称限知', 'third-person limited'),
+      omniscient: localized(locale, '全知视角', 'omniscient'),
+    }
+    values.push(localized(locale, `目标视角：${labels[controls.targetViewpoint]}`, `Target viewpoint: ${labels[controls.targetViewpoint]}`))
+  }
+  if (controls.targetViewpoint === 'third_limited' && controls.viewpointCharacter.trim()) {
+    values.push(localized(locale, `视角人物：${controls.viewpointCharacter}`, `Focal character: ${controls.viewpointCharacter}`))
+  }
+  if (controls.targetTense !== 'keep') {
+    const tense = controls.targetTense === 'past'
+      ? localized(locale, '过去时', 'past tense')
+      : localized(locale, '现在时', 'present tense')
+    values.push(localized(locale, `目标时态：${tense}`, `Target tense: ${tense}`))
+  }
+  return values.join('\n')
+}
+
+function localized(locale: 'zh' | 'en', zh: string, en: string): string {
+  return locale === 'en' ? en : zh
 }

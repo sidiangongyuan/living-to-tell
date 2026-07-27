@@ -6,12 +6,12 @@
 
 一款面向 Windows 的本地优先写作工作室：适合长篇项目、可追溯文脉，以及需要作者确认的 AI 协作。
 
-[![最新版本](https://img.shields.io/badge/预览版-0.1.51-2563eb?style=flat-square)](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.51)
+[![最新版本](https://img.shields.io/badge/预览版-0.1.52-2563eb?style=flat-square)](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.52)
 [![Windows](https://img.shields.io/badge/Windows-x64-111827?style=flat-square&logo=windows11)](https://github.com/sidiangongyuan/living-to-tell/releases/latest)
 [![本地优先](https://img.shields.io/badge/数据-本地优先-15803d?style=flat-square)](#数据与隐私)
 [![许可证](https://img.shields.io/badge/许可证-MIT-f59e0b?style=flat-square)](LICENSE)
 
-[**下载 Windows 安装包**](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.51/LivingToTell_0.1.51_x64-setup.exe)
+[**下载 Windows 安装包**](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.52/LivingToTell_0.1.52_x64-setup.exe)
  · [English](README.md)
  · [使用手册](docs/user-guide.zh-CN.md)
  · [动态教程](docs/tutorials.zh-CN.md)
@@ -52,13 +52,13 @@
 | :---: | :---: |
 | ![作品集规划看板](tauri-mvp/docs/assets/screenshots/collections.png) | ![文脉标本库](tauri-mvp/docs/assets/screenshots/reference-library.png) |
 
-| 选择文脉标本 | 对比 AI 结果 |
+| 选择写作目的 | 对比 AI 结果 |
 | :---: | :---: |
-| ![文脉标本选择器](tauri-mvp/docs/assets/screenshots/ai-reference-picker.png) | ![文章 AI 修改工作台](tauri-mvp/docs/assets/screenshots/ai-workspace.png) |
+| ![AI 修改目的预设](tauri-mvp/docs/assets/screenshots/ai-presets.png) | ![独立 AI 结果工作区](tauri-mvp/docs/assets/screenshots/ai-results-workspace.png) |
 
-| 配好一个可靠的默认模型 | 围绕当前文章讨论 |
+| 选择参考上下文 | 围绕当前文章讨论 |
 | :---: | :---: |
-| ![AI 配置档案三步向导](tauri-mvp/docs/assets/screenshots/settings-wizard.png) | ![文章 AI 对话抽屉](tauri-mvp/docs/assets/screenshots/article-ai-chat.png) |
+| ![文脉标本选择器](tauri-mvp/docs/assets/screenshots/ai-reference-picker.png) | ![文章 AI 对话抽屉](tauri-mvp/docs/assets/screenshots/article-ai-chat.png) |
 
 ### 把反复出现的观念整理成作者确认的关系
 
@@ -99,11 +99,11 @@
 | 区域 | 能做什么 |
 | --- | --- |
 | **文章工作室** | 自动保存、标签、全文搜索、查找替换、文章便签、历史版本、题记、专注模式、意象锚点，以及 Markdown/TXT/DOCX 导出。 |
-| **作品集** | 自洽的“结构容器 → 正文节点”书稿树、跟随正文的标题、未编排文章、可拖动状态看板、互动教程、顺序导出和作品集 Agent。 |
+| **作品集** | 自洽的“结构容器 → 正文节点”书稿树、跟随正文的标题、未编排文章、可独立排序的看板优先级、互动教程、顺序导出和作品集 Agent。 |
 | **作品集 Agent** | 绑定当前作品集的共创 Agent：支持命名会话、`讨论 / 规划 / 草稿 / 审校`、分层记忆、显式上下文、本机草稿库和可确认提案。会话栏与工作栏均可折叠，优先保证对话阅读宽度。 |
 | **文脉标本库** | 阅读优先的摘录、出处、作者、用途、个人笔记、分组浏览、搜索命中高亮、键盘导航和完整引用复制。 |
 | **意象星图** | 双向来源锚点、真实摘录共现、作者确认的正式关系、先审阅后应用的 AI 发现、D3 缩放聚焦、结构化概念档案和可选 AI 丰富。 |
-| **AI 修改** | 绑定文章或选区的润色、改写、扩写、续写；文脉标本、AI Cards 和文章便签各有同级大选择器，并支持显式模型选择、可恢复多模型任务、段落差异和带版本快照的写回。 |
+| **AI 修改** | 绑定文章或选区的润色、改写、扩写、续写；提供 25 个写作目的、同级大选择器、明确模型选择、独立多模型结果工作区、编辑副本、段落差异和版本化写回。 |
 | **文章 AI 对话** | 文章侧可关闭抽屉；关闭后保留输入、会话和等待中的回复，把回复存到其他位置仍需作者明确操作。 |
 | **AI Cards** | 可复用的风格、人物、场景模块；支持阅读态模板、搜索、复制为提示词、指定模型和可恢复后台生成。 |
 | **导出与备份** | 文章与作品集导出、恢复点、备份、检查点、提醒、数据路径查看和复制式数据目录迁移。 |
@@ -116,7 +116,9 @@ AI 是可选能力。写作、作品集、文脉、意象、导出和备份都�
 - 可以保存多个互相独立的 AI 配置档案，每个档案拥有自己的提供方、模型、地址、本机凭据来源和可见健康状态；单模型功能只使用唯一默认档案。
 - AI 修改可以运行一个或多个明确勾选的档案；首次选择非默认档案会替换单独选中的默认项，多模型任务不会偷偷把默认档案加回来。
 - 从文章精确选区进入 AI 修改时，即使文章带有题记，预览和后续写回范围也会与编辑器中真正选中的文字保持一致。
+- 润色、改写、扩写和续写共提供 25 个内置写作目的。创作性预设会提示变化风险，视角、时态、论述方向和场面重心使用结构化选项，不要求作者自己拼 Prompt。
 - 文脉标本、AI Cards 和当前文章便签分别使用大尺寸可搜索选择器。只有确认过的资料会附加，所有模型收到同一份冻结快照；文脉提示词明确禁止照搬原句或移植标本事实、人物和专有名词。
+- 运行后进入独立结果工作区，可查看本次启动历史、原文对照、双模型、段落差异和编辑副本。展示、复制、对比和写回前会保守整理模型意外产生的连续空行，但不会破坏诗行、列表或缩进。
 - 三步向导负责新建档案；先做免费的本地检查，再只对勾选档案发送最小真实请求。真实测试可能使用 token 并产生供应商费用。
 - 离开功能页面后，长任务仍可继续；回来时只查询任务状态，不会重新发送供应商请求。
 - 作品集 Agent 使用可见的会话摘要和最近对话保持工作记忆；作者确认的 canon 单独保存在项目圣经里，普通聊天和被拒绝提案不会误入长期记忆。
@@ -129,8 +131,8 @@ AI 是可选能力。写作、作品集、文脉、意象、导出和备份都�
 
 当前公开预览版支持 Windows x64。
 
-- 推荐安装包：[`LivingToTell_0.1.51_x64-setup.exe`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.51/LivingToTell_0.1.51_x64-setup.exe)
-- MSI 安装包：[`LivingToTell_0.1.51_x64_zh-CN.msi`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.51/LivingToTell_0.1.51_x64_zh-CN.msi)
+- 推荐安装包：[`LivingToTell_0.1.52_x64-setup.exe`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.52/LivingToTell_0.1.52_x64-setup.exe)
+- MSI 安装包：[`LivingToTell_0.1.52_x64_zh-CN.msi`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.52/LivingToTell_0.1.52_x64_zh-CN.msi)
 - 更新说明与历史版本：[GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases)
 
 预览版安装包暂未签名，Windows SmartScreen 可能显示风险提示。请只运行从本仓库 Release 页面下载的文件。

@@ -117,6 +117,7 @@ const outlineItems = [
     tags: ['主题'],
     target_word_count: null,
     sort_order: 1,
+    board_sort_order: 0,
     created_at: now,
     updated_at: now,
   },
@@ -137,6 +138,7 @@ const outlineItems = [
     tags: ['记忆', '距离'],
     target_word_count: null,
     sort_order: 1,
+    board_sort_order: 1,
     created_at: now,
     updated_at: now,
   },
@@ -157,6 +159,7 @@ const outlineItems = [
     tags: ['海边', '感官'],
     target_word_count: 900,
     sort_order: 1,
+    board_sort_order: 2,
     created_at: now,
     updated_at: now,
   },
@@ -177,6 +180,7 @@ const outlineItems = [
     tags: ['信', '远方'],
     target_word_count: 1100,
     sort_order: 2,
+    board_sort_order: 0,
     created_at: now,
     updated_at: now,
   },
@@ -427,6 +431,47 @@ let sampleState = {
 
 let articleTaskRun = null
 
+function boardItemsForStatus(status) {
+  return outlineItems
+    .filter((item) => item.status === status)
+    .slice()
+    .sort((a, b) => a.board_sort_order - b.board_sort_order || a.sort_order - b.sort_order)
+}
+
+function moveOutlineBoardItem(itemId, status, targetIndex) {
+  const moving = outlineItems.find((item) => item.id === itemId)
+  if (!moving) return
+  const sourceIds = boardItemsForStatus(moving.status).map((item) => item.id)
+  const fromIndex = sourceIds.indexOf(itemId)
+  if (fromIndex < 0) return
+
+  if (moving.status === status) {
+    const rawTarget = Math.max(0, Math.min(targetIndex, sourceIds.length))
+    const reordered = sourceIds.filter((id) => id !== itemId)
+    const insertAt = Math.max(0, Math.min(rawTarget > fromIndex ? rawTarget - 1 : rawTarget, reordered.length))
+    reordered.splice(insertAt, 0, itemId)
+    reordered.forEach((id, index) => {
+      const item = outlineItems.find((candidate) => candidate.id === id)
+      if (item) item.board_sort_order = index
+    })
+    return
+  }
+
+  const destinationIds = boardItemsForStatus(status).map((item) => item.id)
+  const insertAt = Math.max(0, Math.min(targetIndex, destinationIds.length))
+  sourceIds.filter((id) => id !== itemId).forEach((id, index) => {
+    const item = outlineItems.find((candidate) => candidate.id === id)
+    if (item) item.board_sort_order = index
+  })
+  destinationIds.splice(insertAt, 0, itemId)
+  destinationIds.forEach((id, index) => {
+    const item = outlineItems.find((candidate) => candidate.id === id)
+    if (!item) return
+    item.board_sort_order = index
+    if (id === itemId) item.status = status
+  })
+}
+
 function json(route, data, status = 200) {
   return route.fulfill({
     status,
@@ -486,7 +531,7 @@ async function installDemoApi(page) {
     if (pathname === '/api/app/version') {
       return json(route, {
         app_name: 'Living to Tell',
-        version: '0.1.51',
+        version: '0.1.52',
         api_version: '2.0.0',
         capabilities: [
           'data_location',
@@ -506,6 +551,10 @@ async function installDemoApi(page) {
           'collection_outline',
           'collection_structure_rules_v2',
           'collection_board_drag',
+          'collection_board_priority',
+          'article_ai_result_workspace_v2',
+          'article_ai_presets_v2',
+          'article_ai_output_normalization',
           'collection_manuscript_structure',
           'collection_agent',
           'collection_agent_sessions',
@@ -608,6 +657,12 @@ async function installDemoApi(page) {
     if (pathname === '/api/collections/demo-collection-1/export') return text(route, '# 夏天的讲述\n\n' + articleBody, 'text/markdown')
     if (pathname === '/api/collections/demo-collection-1/outline') return json(route, outlineItems)
     if (pathname === '/api/collections/demo-collection-1/outline/order') return json(route, outlineItems)
+    if (/^\/api\/collections\/demo-collection-1\/outline\/[^/]+\/board-position$/.test(pathname) && method === 'PATCH') {
+      const itemId = pathname.split('/').at(-2)
+      const body = request.postDataJSON()
+      moveOutlineBoardItem(itemId, body.status, body.target_index)
+      return json(route, outlineItems)
+    }
     if (/^\/api\/collections\/demo-collection-1\/outline\/[^/]+\/status$/.test(pathname) && method === 'PATCH') {
       const itemId = pathname.split('/').at(-2)
       const item = outlineItems.find((candidate) => candidate.id === itemId)
@@ -658,6 +713,7 @@ async function installDemoApi(page) {
 
     if (pathname === '/api/ai/task-presets') return json(route, {})
     if (pathname === '/api/ai/task-runs/active' && method === 'GET') return json(route, articleTaskRun)
+    if (pathname === '/api/ai/task-runs' && method === 'GET') return json(route, articleTaskRun ? [articleTaskRun] : [])
     if (pathname === '/api/ai/task-runs' && method === 'POST') {
       const body = request.postDataJSON()
       const requestedProfiles = aiProfiles.filter((profile) => (body.profile_ids || []).includes(profile.id))
@@ -671,6 +727,12 @@ async function installDemoApi(page) {
         result: index === 0
           ? '风越过堤岸，带来盐、潮气和一点清晨的亮。\n\n我把昨天没写完的段落又读了一遍，发现该留下的并不是发生过什么，而是那种被光一点点托起来的感觉。'
           : '风从堤岸吹来，裹着盐意和潮湿的晨光。\n\n重读昨天搁下的段落时，我才意识到真正应该留下的不是事件本身，而是它一点点亮起来的过程。',
+        raw_result: index === 0
+          ? '风越过堤岸，带来盐、潮气和一点清晨的亮。\n\n我把昨天没写完的段落又读了一遍，发现该留下的并不是发生过什么，而是那种被光一点点托起来的感觉。'
+          : '风从堤岸吹来，裹着盐意和潮湿的晨光。\n\n重读昨天搁下的段落时，我才意识到真正应该留下的不是事件本身，而是它一点点亮起来的过程。',
+        draft_result: null,
+        raw_fingerprint: `demo-fingerprint-${index + 1}`,
+        draft_fingerprint: null,
         error: '',
         elapsed_ms: index === 0 ? 1860 : 2380,
         input_tokens: 76,
@@ -682,8 +744,11 @@ async function installDemoApi(page) {
       articleTaskRun = {
         run_id: 'demo-article-run-1', article_id: 'demo-article-1', article_title: articles[0].title,
         task_type: body.task_type || 'polish', article_hash: 'demo-hash', original_text: articleBody,
+        article_state: 'ready', article_current_hash: 'demo-hash',
         selection_start: null, selection_end: null, status: 'succeeded', stage: 'succeeded', stage_label: '已完成', error: '',
         profiles: requestedProfiles.map((profile) => ({ profile_id: profile.id, profile_name: profile.name, provider: profile.provider_name, model: profile.model })),
+        preset_snapshot: body.preset_snapshot || null,
+        control_snapshot: body.control_snapshot || {},
         results, created_at: now, started_at: now, updated_at: now, completed_at: now, elapsed_ms: 2380,
         attachment_snapshots: (body.attachments || []).map((attachment) => ({
           kind: attachment.kind,
@@ -691,11 +756,24 @@ async function installDemoApi(page) {
           name: attachment.name || '',
           size_chars: String(attachment.content || '').length,
         })),
-        applied_profile_id: null, applied_at: null, applied_version_id: null,
+        applied_profile_id: null, applied_candidate: null, applied_fingerprint: null, applied_at: null, applied_version_id: null,
       }
       return json(route, articleTaskRun, 202)
     }
     if (pathname === '/api/ai/task-runs/demo-article-run-1' && method === 'GET') return json(route, articleTaskRun)
+    if (/^\/api\/ai\/task-runs\/demo-article-run-1\/drafts\/[^/]+$/.test(pathname) && method === 'PATCH') {
+      const profileId = pathname.split('/').at(-1)
+      const result = articleTaskRun?.results.find((item) => item.profile_id === profileId)
+      if (result) {
+        result.draft_result = request.postDataJSON().draft_result
+        result.draft_fingerprint = `demo-draft-${profileId}`
+      }
+      return json(route, articleTaskRun)
+    }
+    if (pathname === '/api/ai/task-runs' && method === 'DELETE') {
+      articleTaskRun = null
+      return route.fulfill({ status: 204 })
+    }
     if (pathname === '/api/ai/task-runs/demo-article-run-1' && method === 'DELETE') {
       articleTaskRun = null
       return route.fulfill({ status: 204 })
@@ -967,18 +1045,26 @@ async function main() {
       await capture(page, frames, dir, 'Step 2：章节作为容器列出下属文章；关联后的节点标题始终跟随真实文章。')
       await page.getByRole('button', { name: /^看板$/ }).click()
       await page.waitForTimeout(500)
-      await capture(page, frames, dir, 'Step 3：看板按状态显示同一棵树，章节卡同时汇总下属正文进度。')
+      await capture(page, frames, dir, 'Step 3：看板按状态分组；卡片上下顺序是独立的规划优先级，不是书稿阅读顺序。')
       const card = page.locator('[data-board-item-id="outline-3"]')
       const dataTransfer = await page.evaluateHandle(() => new DataTransfer())
       await card.dispatchEvent('dragstart', { dataTransfer })
-      await page.locator('[data-board-status="done"]').dispatchEvent('dragenter', { dataTransfer })
-      await page.locator('[data-board-status="done"]').dispatchEvent('dragover', { dataTransfer })
-      await page.locator('[data-board-status="done"]').dispatchEvent('drop', { dataTransfer })
+      const firstDraftingCard = page.locator('[data-board-item-id="outline-1"]')
+      await firstDraftingCard.dispatchEvent('dragover', { dataTransfer, clientY: 0 })
+      await firstDraftingCard.dispatchEvent('drop', { dataTransfer })
       await card.dispatchEvent('dragend', { dataTransfer })
       await page.waitForTimeout(500)
-      await capture(page, frames, dir, 'Step 4：把卡片拖到目标列，只更新当前卡状态，不改变子项状态或书稿顺序。')
+      await capture(page, frames, dir, 'Step 4：同一列上下拖动只调整“先做什么”，书稿树和导出顺序完全不变。')
+      const statusDataTransfer = await page.evaluateHandle(() => new DataTransfer())
+      await card.dispatchEvent('dragstart', { dataTransfer: statusDataTransfer })
+      await page.locator('[data-board-status="done"]').dispatchEvent('dragenter', { dataTransfer: statusDataTransfer })
+      await page.locator('[data-board-status="done"]').dispatchEvent('dragover', { dataTransfer: statusDataTransfer })
+      await page.locator('[data-board-status="done"]').dispatchEvent('drop', { dataTransfer: statusDataTransfer })
+      await card.dispatchEvent('dragend', { dataTransfer: statusDataTransfer })
+      await page.waitForTimeout(500)
+      await capture(page, frames, dir, 'Step 5：跨列拖动同时更新当前卡状态和落点，仍不会联动父项、子项或书稿顺序。')
       await clickText(page, '清晨的海边笔记')
-      await capture(page, frames, dir, 'Step 5：点击卡片回到书稿详情；正文标题应在文章页修改并自动同步。')
+      await capture(page, frames, dir, 'Step 6：点击卡片回到书稿详情；正文标题应在文章页修改并自动同步。')
     })
 
     await recordFlow(browser, '04-reference-motif.gif', async (page, frames, dir) => {
@@ -1000,6 +1086,11 @@ async function main() {
       await goto(page, '/settings?section=ai_profiles')
       await capture(page, frames, dir, 'Step 1：AI 设置只保留配置档案和一个默认档案；本地检查与真实请求分开。')
       await goto(page, '/ai?scope_kind=article&scope_id=demo-article-1')
+      await page.getByRole('button', { name: /^改写/ }).click()
+      await page.getByTestId('article-ai-preset-panel').getByRole('tab', { name: '创作性' }).click()
+      await page.getByTestId('article-ai-preset-panel').getByRole('button', { name: '小说叙事' }).click()
+      await page.getByTestId('article-ai-preset-panel').getByRole('button', { name: /展示而非说明/ }).click()
+      await capture(page, frames, dir, 'Step 2：先选择写作目的。25 个内置预设按任务、文体和常用或创作性整理，不必从零组织 Prompt。')
       await page.getByRole('button', { name: '选择文脉标本' }).click()
       await page.getByRole('dialog', { name: '选择文脉标本' }).getByTestId('article-ai-reference-card').filter({ hasText: '海边札记' }).getByRole('button', { name: /选择\s+《海边札记》/ }).click()
       await page.getByRole('dialog', { name: '选择文脉标本' }).getByRole('button', { name: '使用 1 条标本' }).click()
@@ -1010,15 +1101,17 @@ async function main() {
       await page.getByRole('dialog', { name: '选择文章便签' }).getByRole('button', { name: /结尾可以回到/ }).click()
       await page.getByRole('dialog', { name: '选择文章便签' }).getByRole('button', { name: '使用 1 条' }).click()
       await page.getByTestId('article-ai-context-section').scrollIntoViewIfNeeded()
-      await capture(page, frames, dir, 'Step 2：文脉标本、AI Cards 和文章便签是三个同级入口，整卡阅读后再明确选择。')
+      await capture(page, frames, dir, 'Step 3：文脉标本、AI Cards 和文章便签是三个同级入口，整卡阅读后再明确选择。')
       await page.getByRole('button', { name: /已选择 1 个模型/ }).click()
       await page.locator('label').filter({ hasText: 'Gemini 中转' }).locator('input').check()
+      await page.locator('label').filter({ hasText: 'OpenCode · DeepSeek Flash' }).locator('input').check()
       await page.getByRole('button', { name: '完成', exact: true }).click()
-      await capture(page, frames, dir, 'Step 3：同一份上下文快照发送给作者明确勾选的模型，不隐性加入默认档案。')
+      await capture(page, frames, dir, 'Step 4：同一份上下文快照发送给作者明确勾选的模型，不隐性加入默认档案。')
       await page.getByRole('button', { name: '运行 AI 修改' }).click()
-      await page.getByText(/风越过堤岸/).waitFor({ timeout: 6000 })
-      await page.getByRole('button', { name: '与原文差异' }).click()
-      await capture(page, frames, dir, 'Step 4：模型先完成先出现；查看差异和本轮参考，确认后才写回文章。')
+      await page.getByTestId('article-ai-results-workspace').waitFor({ timeout: 6000 })
+      await capture(page, frames, dir, 'Step 5：运行后直接进入独立结果工作区，历史、模型状态、原文和结果不再堆在配置页底部。')
+      await page.getByRole('button', { name: '双模型' }).click()
+      await capture(page, frames, dir, 'Step 6：可以并排比较两个模型，或编辑副本；只有确认写回才会改变文章。')
     })
 
     await recordFlow(browser, '06-collection-agent.gif', async (page, frames, dir) => {

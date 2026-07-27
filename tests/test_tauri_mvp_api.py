@@ -48,6 +48,9 @@ def test_tauri_app_version_capabilities(monkeypatch):
         "ai_task_compare",
         "ai_jobs",
         "ai_card_jobs",
+        "article_ai_result_workspace_v2",
+        "article_ai_presets_v2",
+        "article_ai_output_normalization",
         "motif_star_map",
         "motif_ai_enrichment",
         "motif_ai_enrichment_jobs",
@@ -55,6 +58,7 @@ def test_tauri_app_version_capabilities(monkeypatch):
         "article_versions",
         "collection_outline",
         "collection_manuscript_structure",
+        "collection_board_priority",
         "collection_agent",
         "collection_agent_sessions",
         "collection_agent_drafts",
@@ -382,6 +386,7 @@ def test_tauri_collection_outline_crud(monkeypatch):
     assert item["tags"] == ["爱情", "等待"]
     assert item["entry_id"] == article["id"]
     assert item["display_title"] == "雨夜来信"
+    assert item["board_sort_order"] == 0
 
     listed = client.get(f"/api/collections/{collection_id}/outline")
     assert listed.status_code == 200, listed.text
@@ -433,6 +438,54 @@ def test_tauri_collection_outline_crud(monkeypatch):
     delete = client.delete(f"/api/collections/{collection_id}/outline/{item['id']}")
     assert delete.status_code == 204, delete.text
     assert client.get(f"/api/collections/{collection_id}/outline").json() == []
+
+
+def test_tauri_collection_outline_board_position_returns_full_outline(monkeypatch):
+    client = _tauri_client(monkeypatch)
+
+    collection = client.post(
+        "/api/collections",
+        json={"title": "看板优先级测试", "description": "board", "project_type": "novel"},
+    )
+    assert collection.status_code == 201, collection.text
+    collection_id = collection.json()["id"]
+
+    first = client.post(
+        f"/api/collections/{collection_id}/outline",
+        json={"title": "第一章", "item_type": "chapter", "status": "drafting"},
+    ).json()
+    second = client.post(
+        f"/api/collections/{collection_id}/outline",
+        json={"title": "第二章", "item_type": "chapter", "status": "drafting"},
+    ).json()
+    third = client.post(
+        f"/api/collections/{collection_id}/outline",
+        json={"title": "第三章", "item_type": "chapter", "status": "idea"},
+    ).json()
+
+    moved_same_column = client.patch(
+        f"/api/collections/{collection_id}/outline/{first['id']}/board-position",
+        json={"status": "drafting", "target_index": 2},
+    )
+    assert moved_same_column.status_code == 200, moved_same_column.text
+    payload = moved_same_column.json()
+    assert [row["id"] for row in payload] == [first["id"], second["id"], third["id"]]
+    by_id = {row["id"]: row for row in payload}
+    assert by_id[second["id"]]["board_sort_order"] == 0
+    assert by_id[first["id"]]["board_sort_order"] == 1
+    assert by_id[first["id"]]["sort_order"] == 0
+
+    moved_cross_column = client.patch(
+        f"/api/collections/{collection_id}/outline/{third['id']}/board-position",
+        json={"status": "drafting", "target_index": 1},
+    )
+    assert moved_cross_column.status_code == 200, moved_cross_column.text
+    moved_payload = moved_cross_column.json()
+    moved_by_id = {row["id"]: row for row in moved_payload}
+    assert moved_by_id[third["id"]]["status"] == "drafting"
+    assert moved_by_id[second["id"]]["board_sort_order"] == 0
+    assert moved_by_id[third["id"]]["board_sort_order"] == 1
+    assert moved_by_id[first["id"]]["board_sort_order"] == 2
 
 
 def test_tauri_collection_agent_run_memory_and_actions(monkeypatch):
@@ -4604,6 +4657,391 @@ def test_tauri_article_ai_task_run_freezes_safe_specimen_snapshots_for_all_profi
         if run_id is not None:
             response = client.delete(f"/api/ai/task-runs/{run_id}")
             assert response.status_code == 204, response.text
+
+
+def _wait_for_article_ai_run(client, run_id: str, *, loops: int = 120):
+    snapshot = None
+    for _ in range(loops):
+        time.sleep(0.02)
+        response = client.get(f"/api/ai/task-runs/{run_id}")
+        assert response.status_code == 200, response.text
+        snapshot = response.json()
+        if snapshot["status"] == "succeeded":
+            return snapshot
+    raise AssertionError(f"article task run {run_id} did not finish: {snapshot}")
+
+
+def test_tauri_article_ai_task_run_normalizes_results_and_freezes_ui_snapshots(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    monkeypatch.setenv("WRITER_ARTICLE_NORMALIZE_KEY", "test-key")
+    from features.ai import routes as ai_routes
+    from writer.services.ai.interfaces import ChatResponse
+
+    profile = client.post(
+        "/api/settings/ai/profiles",
+        json={
+            "name": "Normalize profile",
+            "provider_name": "openai",
+            "base_url": "https://normalize.example/v1",
+            "wire_api": "chat_completions",
+            "model": "normalize-model",
+            "api_key_source": "env:WRITER_ARTICLE_NORMALIZE_KEY",
+        },
+    ).json()
+
+    class NormalizingProvider:
+        def __init__(self, config):
+            self.config = config
+
+        def chat(self, messages, *, model=None):
+            return ChatResponse(
+                content="\r\n\r\n  第一行  \r\n\t第二行\r\n\r\n\r\n- 列表一  \r\n  - 子项\t\r\n\r\n",
+                model=model or self.config.model,
+                provider="fake",
+                transport="chat_completions",
+            )
+
+    monkeypatch.setattr(
+        ai_routes,
+        "provider_for_config",
+        lambda config, prompt_builder=None: NormalizingProvider(config),
+    )
+    article = client.post(
+        "/api/articles",
+        json={"title": "Normalize article", "body": "原文。", "tags": []},
+    ).json()
+    created = client.post(
+        "/api/ai/task-runs",
+        json={
+            "article_id": article["id"],
+            "task_type": "rewrite",
+            "profile_ids": [profile["id"]],
+            "preset_snapshot": {
+                "id": "rewrite-literary",
+                "name": "更有文学感",
+                "tier": "creative",
+                "genre": "fiction",
+                "built_in": True,
+            },
+            "control_snapshot": {
+                "targetViewpoint": "first_person",
+                "targetTense": "past",
+            },
+        },
+    )
+    assert created.status_code == 202, created.text
+    run_id = created.json()["run_id"]
+    finished = _wait_for_article_ai_run(client, run_id)
+    result = finished["results"][0]
+    expected = "  第一行\n\t第二行\n\n- 列表一\n  - 子项"
+    assert finished["article_state"] == "ready"
+    assert finished["preset_snapshot"]["name"] == "更有文学感"
+    assert finished["control_snapshot"]["targetViewpoint"] == "first_person"
+    assert result["raw_result"] == expected
+    assert result["draft_result"] is None
+    assert result["result"] == expected
+    assert result["draft_fingerprint"] is None
+
+    drafted = client.patch(
+        f"/api/ai/task-runs/{run_id}/drafts/{profile['id']}",
+        json={
+            "draft_result": "人工改写\n\n\n保留这段空行",
+            "expected_fingerprint": result["raw_fingerprint"],
+        },
+    )
+    assert drafted.status_code == 200, drafted.text
+    drafted_result = drafted.json()["results"][0]
+    assert drafted_result["raw_result"] == expected
+    assert drafted_result["draft_result"] == "人工改写\n\n\n保留这段空行"
+    assert drafted_result["result"] == "人工改写\n\n\n保留这段空行"
+    assert drafted_result["raw_fingerprint"] != drafted_result["draft_fingerprint"]
+
+    reset = client.delete(f"/api/ai/task-runs/{run_id}/drafts/{profile['id']}")
+    assert reset.status_code == 200, reset.text
+    reset_result = reset.json()["results"][0]
+    assert reset_result["draft_result"] is None
+    assert reset_result["result"] == expected
+    assert reset_result["draft_fingerprint"] is None
+
+    live = client.get(f"/api/articles/{article['id']}").json()
+    changed = client.put(
+        f"/api/articles/{article['id']}",
+        json={"title": live["title"], "body": live["body"] + "\n作者追加了一句。", "tags": live["tags"]},
+    )
+    assert changed.status_code == 200, changed.text
+    refreshed = client.get(f"/api/ai/task-runs/{run_id}")
+    assert refreshed.status_code == 200, refreshed.text
+    assert refreshed.json()["article_state"] == "changed"
+
+    deleted = client.delete(f"/api/ai/task-runs/{run_id}")
+    assert deleted.status_code == 204
+
+
+def test_tauri_article_ai_task_run_apply_respects_fingerprints_and_candidate_conflicts(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    monkeypatch.setenv("WRITER_ARTICLE_APPLY_KEY", "test-key")
+    from features.ai import routes as ai_routes
+    from writer.services.ai.interfaces import ChatResponse
+
+    profile = client.post(
+        "/api/settings/ai/profiles",
+        json={
+            "name": "Apply profile",
+            "provider_name": "openai",
+            "base_url": "https://apply.example/v1",
+            "wire_api": "chat_completions",
+            "model": "apply-model",
+            "api_key_source": "env:WRITER_ARTICLE_APPLY_KEY",
+        },
+    ).json()
+
+    class ApplyProvider:
+        def __init__(self, config):
+            self.config = config
+
+        def chat(self, messages, *, model=None):
+            return ChatResponse(
+                content="\r\n第一稿\r\n\r\n\r\n第二稿\r\n",
+                model=model or self.config.model,
+                provider="fake",
+                transport="chat_completions",
+            )
+
+    monkeypatch.setattr(
+        ai_routes,
+        "provider_for_config",
+        lambda config, prompt_builder=None: ApplyProvider(config),
+    )
+    article = client.post(
+        "/api/articles",
+        json={"title": "Apply article", "body": "原文。", "tags": []},
+    ).json()
+    created = client.post(
+        "/api/ai/task-runs",
+        json={"article_id": article["id"], "task_type": "polish", "profile_ids": [profile["id"]]},
+    )
+    assert created.status_code == 202, created.text
+    run_id = created.json()["run_id"]
+    finished = _wait_for_article_ai_run(client, run_id)
+    raw = finished["results"][0]
+
+    stale = client.post(
+        f"/api/ai/task-runs/{run_id}/apply",
+        json={
+            "profile_id": profile["id"],
+            "candidate": "raw",
+            "expected_fingerprint": "stale-fingerprint",
+        },
+    )
+    assert stale.status_code == 409
+    assert "结果内容已经变化" in stale.json()["detail"]
+
+    drafted = client.patch(
+        f"/api/ai/task-runs/{run_id}/drafts/{profile['id']}",
+        json={
+            "draft_result": "人工修订版",
+            "expected_fingerprint": raw["raw_fingerprint"],
+        },
+    )
+    assert drafted.status_code == 200, drafted.text
+
+    applied = client.post(
+        f"/api/ai/task-runs/{run_id}/apply",
+        json={
+            "profile_id": profile["id"],
+            "candidate": "raw",
+            "expected_fingerprint": raw["raw_fingerprint"],
+        },
+    )
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["entry"]["body"] == "第一稿\n\n第二稿"
+    assert applied.json()["was_noop"] is False
+
+    noop = client.post(
+        f"/api/ai/task-runs/{run_id}/apply",
+        json={
+            "profile_id": profile["id"],
+            "candidate": "raw",
+            "expected_fingerprint": raw["raw_fingerprint"],
+        },
+    )
+    assert noop.status_code == 200, noop.text
+    assert noop.json()["was_noop"] is True
+
+    conflict = client.post(
+        f"/api/ai/task-runs/{run_id}/apply",
+        json={
+            "profile_id": profile["id"],
+            "candidate": "draft",
+            "expected_fingerprint": drafted.json()["results"][0]["draft_fingerprint"],
+        },
+    )
+    assert conflict.status_code == 409
+    assert "不同内容" in conflict.json()["detail"]
+
+    deleted = client.delete(f"/api/ai/task-runs/{run_id}")
+    assert deleted.status_code == 204
+
+
+def test_tauri_article_ai_task_run_continue_apply_preserves_poetry_list_and_spacing(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    monkeypatch.setenv("WRITER_ARTICLE_CONTINUE_KEY", "test-key")
+    from features.ai import routes as ai_routes
+    from writer.services.ai.interfaces import ChatResponse
+
+    profile = client.post(
+        "/api/settings/ai/profiles",
+        json={
+            "name": "Continue profile",
+            "provider_name": "openai",
+            "base_url": "https://continue.example/v1",
+            "wire_api": "chat_completions",
+            "model": "continue-model",
+            "api_key_source": "env:WRITER_ARTICLE_CONTINUE_KEY",
+        },
+    ).json()
+
+    class ContinueProvider:
+        def __init__(self, config):
+            self.config = config
+
+        def chat(self, messages, *, model=None):
+            return ChatResponse(
+                content="\r\n\r\n  星光未落\r\n月色仍亮\r\n\r\n\r\n- 清单一  \r\n  - 子项\r\n",
+                model=model or self.config.model,
+                provider="fake",
+                transport="chat_completions",
+            )
+
+    monkeypatch.setattr(
+        ai_routes,
+        "provider_for_config",
+        lambda config, prompt_builder=None: ContinueProvider(config),
+    )
+    article = client.post(
+        "/api/articles",
+        json={"title": "Continue article", "body": "开头。\n\n结尾。", "tags": []},
+    ).json()
+    created = client.post(
+        "/api/ai/task-runs",
+        json={
+            "article_id": article["id"],
+            "task_type": "continue",
+            "profile_ids": [profile["id"]],
+            "selection_start": 0,
+            "selection_end": 3,
+        },
+    )
+    assert created.status_code == 202, created.text
+    run_id = created.json()["run_id"]
+    finished = _wait_for_article_ai_run(client, run_id)
+    assert finished["results"][0]["raw_result"] == "  星光未落\n月色仍亮\n\n- 清单一\n  - 子项"
+
+    applied = client.post(
+        f"/api/ai/task-runs/{run_id}/apply",
+        json={"profile_id": profile["id"], "candidate": "raw"},
+    )
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["entry"]["body"] == (
+        "开头。\n\n  星光未落\n月色仍亮\n\n- 清单一\n  - 子项\n\n结尾。"
+    )
+
+    deleted = client.delete(f"/api/ai/task-runs/{run_id}")
+    assert deleted.status_code == 204
+
+
+def test_tauri_article_ai_task_run_history_listing_and_clear_terminal(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    monkeypatch.setenv("WRITER_ARTICLE_HISTORY_KEY", "test-key")
+    from features.ai import routes as ai_routes
+    from writer.services.ai.interfaces import ChatResponse
+    import threading
+
+    profile = client.post(
+        "/api/settings/ai/profiles",
+        json={
+            "name": "History profile",
+            "provider_name": "openai",
+            "base_url": "https://history.example/v1",
+            "wire_api": "chat_completions",
+            "model": "history-model",
+            "api_key_source": "env:WRITER_ARTICLE_HISTORY_KEY",
+        },
+    ).json()
+
+    entered = threading.Event()
+    release = threading.Event()
+    call_count = {"value": 0}
+
+    class HistoryProvider:
+        def __init__(self, config):
+            self.config = config
+
+        def chat(self, messages, *, model=None):
+            call_count["value"] += 1
+            if call_count["value"] >= 3:
+                entered.set()
+                release.wait(timeout=3)
+            return ChatResponse(
+                content=f"第 {call_count['value']} 次结果",
+                model=model or self.config.model,
+                provider="fake",
+                transport="chat_completions",
+            )
+
+    monkeypatch.setattr(
+        ai_routes,
+        "provider_for_config",
+        lambda config, prompt_builder=None: HistoryProvider(config),
+    )
+    article = client.post(
+        "/api/articles",
+        json={"title": "History article", "body": "原文。", "tags": []},
+    ).json()
+    first = client.post(
+        "/api/ai/task-runs",
+        json={"article_id": article["id"], "task_type": "polish", "profile_ids": [profile["id"]]},
+    )
+    assert first.status_code == 202, first.text
+    _wait_for_article_ai_run(client, first.json()["run_id"])
+
+    second = client.post(
+        "/api/ai/task-runs",
+        json={"article_id": article["id"], "task_type": "expand", "profile_ids": [profile["id"]]},
+    )
+    assert second.status_code == 202, second.text
+    _wait_for_article_ai_run(client, second.json()["run_id"])
+
+    third = client.post(
+        "/api/ai/task-runs",
+        json={"article_id": article["id"], "task_type": "rewrite", "profile_ids": [profile["id"]]},
+    )
+    assert third.status_code == 202, third.text
+    assert entered.wait(timeout=1)
+
+    listed = client.get("/api/ai/task-runs")
+    assert listed.status_code == 200, listed.text
+    assert len(listed.json()) == 3
+    assert [item["run_id"] for item in listed.json()] == [
+        third.json()["run_id"],
+        second.json()["run_id"],
+        first.json()["run_id"],
+    ]
+
+    cleared = client.delete("/api/ai/task-runs")
+    assert cleared.status_code == 204
+    still_listed = client.get("/api/ai/task-runs")
+    assert still_listed.status_code == 200, still_listed.text
+    assert [item["run_id"] for item in still_listed.json()] == [third.json()["run_id"]]
+    assert still_listed.json()[0]["status"] in {"running", "queued"}
+
+    release.set()
+    _wait_for_article_ai_run(client, third.json()["run_id"])
+    final_clear = client.delete("/api/ai/task-runs")
+    assert final_clear.status_code == 204
+    after_clear = client.get("/api/ai/task-runs")
+    assert after_clear.status_code == 200, after_clear.text
+    assert after_clear.json() == []
 
 
 def test_tauri_collection_docx_export_cleans_temp_file_on_generation_failure(

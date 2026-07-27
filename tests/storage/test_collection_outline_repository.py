@@ -37,6 +37,8 @@ def test_collection_outline_crud_and_order(container):
 
     assert first is not None
     assert second is not None
+    assert first.board_sort_order == 0
+    assert second.board_sort_order == 0
     assert [item.id for item in container.collection_outline_repository.list_for_collection(collection.id)] == [
         first.id,
         second.id,
@@ -69,6 +71,83 @@ def test_collection_outline_crud_and_order(container):
         [second.id, first.id],
     )
     assert [item.id for item in reordered] == [second.id, first.id]
+
+
+def test_collection_outline_board_position_reorders_within_status_without_touching_sort_order(container):
+    collection = container.collection_repository.create("Novel")
+    first = container.collection_outline_repository.create(
+        collection.id,
+        title="第一章",
+        item_type="chapter",
+        status="drafting",
+    )
+    second = container.collection_outline_repository.create(
+        collection.id,
+        title="第二章",
+        item_type="chapter",
+        status="drafting",
+    )
+    third = container.collection_outline_repository.create(
+        collection.id,
+        title="第三章",
+        item_type="chapter",
+        status="drafting",
+    )
+
+    moved = container.collection_outline_repository.move_board_position(
+        second.id,
+        status="drafting",
+        target_index=3,
+        collection_id=collection.id,
+    )
+
+    by_id = {item.id: item for item in moved}
+    assert [item.id for item in moved] == [first.id, second.id, third.id]
+    assert [by_id[first.id].board_sort_order, by_id[third.id].board_sort_order, by_id[second.id].board_sort_order] == [0, 1, 2]
+    assert [by_id[first.id].sort_order, by_id[second.id].sort_order, by_id[third.id].sort_order] == [0, 1, 2]
+
+
+def test_collection_outline_board_position_moves_card_across_status_without_reordering_manuscript(container):
+    collection = container.collection_repository.create("Novel")
+    idea_a = container.collection_outline_repository.create(
+        collection.id,
+        title="灵感 A",
+        item_type="chapter",
+        status="idea",
+    )
+    idea_b = container.collection_outline_repository.create(
+        collection.id,
+        title="灵感 B",
+        item_type="chapter",
+        status="idea",
+    )
+    drafting_a = container.collection_outline_repository.create(
+        collection.id,
+        title="草稿 A",
+        item_type="chapter",
+        status="drafting",
+    )
+    drafting_b = container.collection_outline_repository.create(
+        collection.id,
+        title="草稿 B",
+        item_type="chapter",
+        status="drafting",
+    )
+
+    moved = container.collection_outline_repository.move_board_position(
+        idea_b.id,
+        status="drafting",
+        target_index=1,
+        collection_id=collection.id,
+    )
+
+    by_id = {item.id: item for item in moved}
+    assert [item.id for item in moved] == [idea_a.id, idea_b.id, drafting_a.id, drafting_b.id]
+    assert by_id[idea_b.id].status == "drafting"
+    assert by_id[drafting_a.id].board_sort_order == 0
+    assert by_id[idea_b.id].board_sort_order == 1
+    assert by_id[drafting_b.id].board_sort_order == 2
+    assert by_id[idea_a.id].board_sort_order == 0
 
 
 def test_collection_outline_preserves_children_when_parent_is_deleted(container):

@@ -396,7 +396,52 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "draft_id" not in agent_run_cols:
         conn.execute("ALTER TABLE collection_agent_runs ADD COLUMN draft_id TEXT")
 
+    _ensure_collection_outline_board_order(conn)
     _normalize_collection_outline_structure(conn)
+
+
+def _ensure_collection_outline_board_order(conn: sqlite3.Connection) -> None:
+    table = conn.execute(
+        """
+        SELECT 1 FROM sqlite_master
+         WHERE type = 'table' AND name = 'collection_outline_items'
+        """
+    ).fetchone()
+    if table is None:
+        return
+    cols = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(collection_outline_items)")
+    }
+    if "board_sort_order" not in cols:
+        conn.execute(
+            "ALTER TABLE collection_outline_items "
+            "ADD COLUMN board_sort_order INTEGER NOT NULL DEFAULT 0"
+        )
+        _backfill_collection_outline_board_order(conn)
+
+
+def _backfill_collection_outline_board_order(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        """
+        SELECT id, collection_id, status
+          FROM collection_outline_items
+         ORDER BY collection_id ASC,
+                  status ASC,
+                  sort_order ASC,
+                  created_at ASC,
+                  id ASC
+        """
+    ).fetchall()
+    next_slot: dict[tuple[str, str], int] = {}
+    for row in rows:
+        key = (str(row["collection_id"]), str(row["status"] or "idea"))
+        slot = next_slot.get(key, 0)
+        conn.execute(
+            "UPDATE collection_outline_items SET board_sort_order = ? WHERE id = ?",
+            (slot, row["id"]),
+        )
+        next_slot[key] = slot + 1
 
 
 def _normalize_collection_outline_structure(conn: sqlite3.Connection) -> None:
@@ -676,6 +721,10 @@ def _ensure_post_migration_indexes(conn: sqlite3.Connection) -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_collection_outline_collection_order "
             "ON collection_outline_items (collection_id, sort_order)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_collection_outline_board_order "
+            "ON collection_outline_items (collection_id, status, board_sort_order)"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_collection_outline_entry "

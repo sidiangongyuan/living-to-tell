@@ -90,6 +90,7 @@ const outlineItems = [
     tags: ['主题'],
     target_word_count: null,
     sort_order: 1,
+    board_sort_order: 0,
     created_at: now,
     updated_at: now,
   },
@@ -110,6 +111,7 @@ const outlineItems = [
     tags: ['记忆', '距离'],
     target_word_count: null,
     sort_order: 1,
+    board_sort_order: 1,
     created_at: now,
     updated_at: now,
   },
@@ -130,6 +132,7 @@ const outlineItems = [
     tags: ['海边', '感官'],
     target_word_count: 900,
     sort_order: 1,
+    board_sort_order: 2,
     created_at: now,
     updated_at: now,
   },
@@ -150,6 +153,7 @@ const outlineItems = [
     tags: ['信', '远方'],
     target_word_count: 1100,
     sort_order: 2,
+    board_sort_order: 0,
     created_at: now,
     updated_at: now,
   },
@@ -301,6 +305,47 @@ const aiSettings = {
 
 let articleTaskRun = null
 
+function boardItemsForStatus(status) {
+  return outlineItems
+    .filter((item) => item.status === status)
+    .slice()
+    .sort((a, b) => a.board_sort_order - b.board_sort_order || a.sort_order - b.sort_order)
+}
+
+function moveOutlineBoardItem(itemId, status, targetIndex) {
+  const moving = outlineItems.find((item) => item.id === itemId)
+  if (!moving) return
+  const sourceIds = boardItemsForStatus(moving.status).map((item) => item.id)
+  const fromIndex = sourceIds.indexOf(itemId)
+  if (fromIndex < 0) return
+
+  if (moving.status === status) {
+    const rawTarget = Math.max(0, Math.min(targetIndex, sourceIds.length))
+    const reordered = sourceIds.filter((id) => id !== itemId)
+    const insertAt = Math.max(0, Math.min(rawTarget > fromIndex ? rawTarget - 1 : rawTarget, reordered.length))
+    reordered.splice(insertAt, 0, itemId)
+    reordered.forEach((id, index) => {
+      const item = outlineItems.find((candidate) => candidate.id === id)
+      if (item) item.board_sort_order = index
+    })
+    return
+  }
+
+  const destinationIds = boardItemsForStatus(status).map((item) => item.id)
+  const insertAt = Math.max(0, Math.min(targetIndex, destinationIds.length))
+  sourceIds.filter((id) => id !== itemId).forEach((id, index) => {
+    const item = outlineItems.find((candidate) => candidate.id === id)
+    if (item) item.board_sort_order = index
+  })
+  destinationIds.splice(insertAt, 0, itemId)
+  destinationIds.forEach((id, index) => {
+    const item = outlineItems.find((candidate) => candidate.id === id)
+    if (!item) return
+    item.board_sort_order = index
+    if (id === itemId) item.status = status
+  })
+}
+
 function json(route, data, status = 200) {
   return route.fulfill({
     status,
@@ -349,7 +394,7 @@ async function installDemoApi(page) {
     if (pathname === '/api/app/version') {
       return json(route, {
         app_name: 'Living to Tell',
-        version: '0.1.51',
+        version: '0.1.52',
         api_version: '2.0.0',
         capabilities: [
           'data_location',
@@ -370,6 +415,10 @@ async function installDemoApi(page) {
           'collection_outline',
           'collection_structure_rules_v2',
           'collection_board_drag',
+          'collection_board_priority',
+          'article_ai_result_workspace_v2',
+          'article_ai_presets_v2',
+          'article_ai_output_normalization',
         ],
       })
     }
@@ -396,6 +445,12 @@ async function installDemoApi(page) {
     if (pathname === '/api/collections/demo-collection-1') return json(route, collections[0])
     if (pathname === '/api/collections/demo-collection-1/articles') return json(route, collectionArticles)
     if (pathname === '/api/collections/demo-collection-1/outline') return json(route, outlineItems)
+    if (/^\/api\/collections\/demo-collection-1\/outline\/[^/]+\/board-position$/.test(pathname) && method === 'PATCH') {
+      const itemId = pathname.split('/').at(-2)
+      const body = route.request().postDataJSON()
+      moveOutlineBoardItem(itemId, body.status, body.target_index)
+      return json(route, outlineItems)
+    }
     if (pathname.startsWith('/api/collections/for-entry/')) return json(route, collections)
     if (pathname === '/api/library/stats') {
       return json(route, { total: references.length, by_usage_kind: { imagery: 1, style: 1 } })
@@ -428,6 +483,7 @@ async function installDemoApi(page) {
     if (pathname === '/api/ai-cards/presets/list') return json(route, aiCards)
     if (pathname === '/api/ai/task-presets') return json(route, {})
     if (pathname === '/api/ai/task-runs/active' && method === 'GET') return json(route, articleTaskRun)
+    if (pathname === '/api/ai/task-runs' && method === 'GET') return json(route, articleTaskRun ? [articleTaskRun] : [])
     if (pathname === '/api/ai/task-runs' && method === 'POST') {
       const request = route.request().postDataJSON()
       const selected = aiProfiles.filter((profile) => (request.profile_ids || []).includes(profile.id))
@@ -441,6 +497,12 @@ async function installDemoApi(page) {
         result: index === 0
           ? '风越过堤岸，带来盐、潮气和一点清晨的亮。\n\n我把昨天没写完的段落又读了一遍，发现该留下的并不是发生过什么，而是那种被光一点点托起来的感觉。'
           : '风从堤岸吹来，裹着盐意和潮湿的晨光。\n\n重读昨天搁下的段落时，我才意识到真正应该留下的不是事件本身，而是它一点点亮起来的过程。',
+        raw_result: index === 0
+          ? '风越过堤岸，带来盐、潮气和一点清晨的亮。\n\n我把昨天没写完的段落又读了一遍，发现该留下的并不是发生过什么，而是那种被光一点点托起来的感觉。'
+          : '风从堤岸吹来，裹着盐意和潮湿的晨光。\n\n重读昨天搁下的段落时，我才意识到真正应该留下的不是事件本身，而是它一点点亮起来的过程。',
+        draft_result: null,
+        raw_fingerprint: `demo-fingerprint-${index + 1}`,
+        draft_fingerprint: null,
         error: '', elapsed_ms: index === 0 ? 1860 : 2380, input_tokens: 76, output_tokens: index === 0 ? 109 : 114,
         cost: index === 0 ? 0 : 0.0005, finish_reason: 'stop',
         stats: { input_chars: articles[0].body.length, output_chars: 88, delta_chars: 10, output_ratio: 1.08, input_paragraphs: 3, output_paragraphs: 2 },
@@ -448,6 +510,7 @@ async function installDemoApi(page) {
       articleTaskRun = {
         run_id: 'demo-run', article_id: articles[0].id, article_title: articles[0].title, task_type: request.task_type || 'polish',
         article_hash: 'demo-hash', original_text: articles[0].body, selection_start: null, selection_end: null,
+        article_state: 'ready', article_current_hash: 'demo-hash',
         status: 'succeeded', stage: 'succeeded', stage_label: '已完成', error: '',
         profiles: selected.map((profile) => ({ profile_id: profile.id, profile_name: profile.name, provider: profile.provider_name, model: profile.model })),
         attachment_snapshots: (request.attachments || []).map((attachment) => ({
@@ -456,12 +519,27 @@ async function installDemoApi(page) {
           name: attachment.name,
           size_chars: Math.min((attachment.content || '').trim().length, 40000),
         })),
+        preset_snapshot: request.preset_snapshot || null,
+        control_snapshot: request.control_snapshot || {},
         results, created_at: now, started_at: now, updated_at: now, completed_at: now, elapsed_ms: 2380,
-        applied_profile_id: null, applied_at: null, applied_version_id: null,
+        applied_profile_id: null, applied_candidate: null, applied_fingerprint: null, applied_at: null, applied_version_id: null,
       }
       return json(route, articleTaskRun, 202)
     }
     if (pathname === '/api/ai/task-runs/demo-run' && method === 'GET') return json(route, articleTaskRun)
+    if (/^\/api\/ai\/task-runs\/demo-run\/drafts\/[^/]+$/.test(pathname) && method === 'PATCH') {
+      const profileId = pathname.split('/').at(-1)
+      const result = articleTaskRun?.results.find((item) => item.profile_id === profileId)
+      if (result) {
+        result.draft_result = route.request().postDataJSON().draft_result
+        result.draft_fingerprint = `demo-draft-${profileId}`
+      }
+      return json(route, articleTaskRun)
+    }
+    if (pathname === '/api/ai/task-runs' && method === 'DELETE') {
+      articleTaskRun = null
+      return route.fulfill({ status: 204 })
+    }
     if (pathname === '/api/ai/task-runs/demo-run' && method === 'DELETE') { articleTaskRun = null; return route.fulfill({ status: 204 }) }
     if (pathname === '/api/ai/task/compare' && method === 'POST') {
       const request = route.request().postDataJSON()
@@ -660,7 +738,7 @@ async function main() {
     })
     await shot(page, '/collections', 'collections.png', {
       before: async (page) => {
-        await page.getByText('第一章：潮声与回信', { exact: true }).first().click()
+        await page.getByRole('button', { name: /^看板$/ }).click()
       },
     })
     await shot(page, '/library?ref=demo-reference-1&group=source', 'reference-library.png')
@@ -682,6 +760,26 @@ async function main() {
       await noteDialog.getByRole('button', { name: /结尾可以回到/ }).click()
       await noteDialog.getByRole('button', { name: '使用 1 条' }).click()
       await page.getByTestId('article-ai-context-section').scrollIntoViewIfNeeded()
+    },
+  })
+  await shot(page, '/ai?scope_kind=article&scope_id=demo-article-1', 'ai-presets.png', {
+    before: async (page) => {
+      await page.getByRole('button', { name: /^改写/ }).click()
+      const presets = page.getByTestId('article-ai-preset-panel')
+      await presets.getByRole('tab', { name: '创作性' }).click()
+      await presets.getByRole('button', { name: '小说叙事' }).click()
+      await presets.scrollIntoViewIfNeeded()
+    },
+  })
+  await shot(page, '/ai?scope_kind=article&scope_id=demo-article-1', 'ai-results-workspace.png', {
+    before: async (page) => {
+      await page.getByRole('button', { name: /^改写/ }).click()
+      await page.getByText('已选择 1 个模型').click()
+      await page.locator('label').filter({ hasText: 'Codex 本地登录' }).locator('input').check()
+      await page.locator('label').filter({ hasText: 'OpenCode · DeepSeek Flash' }).locator('input').check()
+      await page.getByRole('button', { name: '完成', exact: true }).click()
+      await page.getByRole('button', { name: '运行 AI 修改' }).click()
+      await page.getByTestId('article-ai-results-workspace').waitFor({ timeout: 10_000 })
     },
   })
   await shot(page, '/ai?scope_kind=article&scope_id=demo-article-1', 'ai-reference-picker.png', {

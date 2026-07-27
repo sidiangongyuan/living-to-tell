@@ -20,6 +20,7 @@ function outlineItem(partial: Partial<CollectionOutlineItem>): CollectionOutline
     tags: [],
     target_word_count: null,
     sort_order: 0,
+    board_sort_order: 0,
     created_at: null,
     updated_at: null,
     ...partial,

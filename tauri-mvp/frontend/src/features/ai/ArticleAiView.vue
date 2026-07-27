@@ -2,26 +2,34 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { articlesApi, type Entry } from '../../api/articles'
-import { aiApi, type AiContextAttachment, type AiTaskCompareResult, type AiTaskPresetMap } from '../../api/ai'
+import { aiApi, type AiContextAttachment, type AiTaskPreset, type AiTaskPresetMap } from '../../api/ai'
 import type { AiCard } from '../../api/aiCards'
 import type { Reference } from '../../api/library'
 import { notesApi, type WritingNote } from '../../api/notes'
 import { errorMessage } from '../../api/base'
 import { settingsApi, type AiProfile } from '../../api/settings'
 import { useI18n } from '../../i18n'
-import { buildParagraphDiff } from '../articles/versionDiff'
 import ArticleAiReferencePicker from './ArticleAiReferencePicker.vue'
 import ArticleAiCardPicker from './ArticleAiCardPicker.vue'
 import ArticleAiNotePicker from './ArticleAiNotePicker.vue'
+import ArticleAiPresetPicker from './ArticleAiPresetPicker.vue'
 import GuidedTourOverlay, { type GuidedTourStep } from '../../components/GuidedTourOverlay.vue'
 import TourInvitation from '../../components/TourInvitation.vue'
 import { useSettingsStore } from '../../stores/settings'
-import { buildTaskRequestOptions, createDefaultControls, mergeControls, type FocusTaskType } from './taskControls'
+import { buildTaskRequestOptions, cloneControls, createDefaultControls, type FocusTaskType } from './taskControls'
 import { useArticleTaskRunStore } from './articleTaskRunStore'
 import { toggleAiTaskProfileSelection } from './profileSelection'
 import { utf16OffsetToCodePointOffset } from './selectionOffsets'
+import {
+  BUILT_IN_WRITING_PRESETS,
+  controlsForBuiltInPreset,
+  customPresetControls,
+  defaultPresetForTask,
+  missingPresetRequirements,
+  type WritingPresetDefinition,
+} from './writingPresets'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const taskRun = useArticleTaskRunStore()
@@ -40,12 +48,9 @@ const controls = ref(createDefaultControls())
 const moreOpen = ref(false)
 const error = ref('')
 const notice = ref('')
-const selectedResultProfileId = ref<string | null>(null)
-const readerMode = ref<'result' | 'diff'>('result')
-const applyPreviewOpen = ref(false)
 
 const presets = ref<AiTaskPresetMap>({})
-const selectedPresetId = ref('')
+const selectedPresetId = ref(`system:${defaultPresetForTask('polish').id}`)
 const notes = ref<WritingNote[]>([])
 const selectedCards = ref<AiCard[]>([])
 const selectedNotes = ref<WritingNote[]>([])
@@ -83,37 +88,34 @@ const selectedReferenceChars = computed(() => selectedReferences.value.reduce((t
 const selectedCardChars = computed(() => selectedCards.value.reduce((total, item) => total + item.content.length, 0))
 const selectedNoteChars = computed(() => selectedNotes.value.reduce((total, item) => total + item.body.length, 0))
 const currentRun = computed(() => taskRun.run)
-const runReferenceSnapshots = computed(() => currentRun.value?.attachment_snapshots?.filter((item) => item.kind === 'style_specimen') ?? [])
-const runCardSnapshots = computed(() => currentRun.value?.attachment_snapshots?.filter((item) => item.kind === 'ai_card') ?? [])
-const runNoteSnapshots = computed(() => currentRun.value?.attachment_snapshots?.filter((item) => item.kind === 'writing_note') ?? [])
-const successfulResults = computed(() => currentRun.value?.results.filter((item) => item.status === 'success') ?? [])
-const selectedResult = computed<AiTaskCompareResult | null>(() => {
-  return currentRun.value?.results.find((item) => item.profile_id === selectedResultProfileId.value) ?? successfulResults.value[0] ?? null
-})
-const diffRows = computed(() => selectedResult.value ? buildParagraphDiff(currentRun.value?.results.length ? selectedTextForRun.value : '', selectedResult.value.result) : [])
-const selectedTextForRun = computed(() => {
-  const run = currentRun.value
-  if (!run) return selectedText.value
-  return run.original_text
-})
-const canRun = computed(() => Boolean(selectedArticle.value?.body.trim() && selectedProfileIds.value.length && !taskRun.running && !taskRun.creating))
 const taskPresets = computed(() => presets.value[taskType.value] ?? [])
+const activeSystemPreset = computed<WritingPresetDefinition | null>(() => {
+  if (!selectedPresetId.value.startsWith('system:')) return null
+  const id = selectedPresetId.value.slice('system:'.length)
+  return BUILT_IN_WRITING_PRESETS.find((item) => item.id === id && item.taskType === taskType.value) ?? null
+})
+const missingRequirements = computed(() => missingPresetRequirements(activeSystemPreset.value, controls.value))
+const canRun = computed(() => Boolean(
+  selectedArticle.value?.body.trim()
+  && selectedProfileIds.value.length
+  && !taskRun.running
+  && !taskRun.creating
+  && !missingRequirements.value.length,
+))
+const showViewpointControls = computed(() => activeSystemPreset.value?.requirements?.includes('viewpoint_or_tense') ?? false)
+const showArgumentDirection = computed(() => activeSystemPreset.value?.requirements?.includes('argument_direction') ?? false)
+const showSceneFocus = computed(() => activeSystemPreset.value?.requirements?.includes('scene_focus') ?? false)
 const tourSteps = computed<GuidedTourStep[]>(() => [
   { id: 'target', title: t('articleAiTour.targetTitle'), body: t('articleAiTour.targetBody'), target: '[data-tour="ai-target"]' },
   { id: 'task', title: t('articleAiTour.taskTitle'), body: t('articleAiTour.taskBody'), target: '[data-tour="ai-tasks"]' },
+  { id: 'presets', title: t('articleAiTour.presetsTitle'), body: t('articleAiTour.presetsBody'), target: '[data-tour="ai-presets"]' },
   { id: 'context', title: t('articleAiTour.contextTitle'), body: t('articleAiTour.contextBody'), target: '[data-tour="ai-context-sources"]' },
   { id: 'picker', title: t('articleAiTour.pickerTitle'), body: t('articleAiTour.pickerBody'), target: '[data-testid="article-ai-reference-picker"]', onEnter: () => { referencePickerOpen.value = true } },
   { id: 'models', title: t('articleAiTour.modelsTitle'), body: t('articleAiTour.modelsBody'), target: '[data-tour="ai-model-run"]', onEnter: () => { referencePickerOpen.value = false } },
-  { id: 'results', title: t('articleAiTour.resultsTitle'), body: t('articleAiTour.resultsBody'), target: '[data-tour="ai-results"]' },
-  { id: 'apply', title: t('articleAiTour.applyTitle'), body: t('articleAiTour.applyBody'), target: '[data-tour="ai-results"]' },
+  { id: 'results', title: t('articleAiTour.resultsTitle'), body: t('articleAiTour.resultsBody'), target: '[data-tour="ai-model-run"]' },
+  { id: 'apply', title: t('articleAiTour.applyTitle'), body: t('articleAiTour.applyBody'), target: '[data-tour="ai-model-run"]' },
 ])
 const tourProgress = computed(() => t('guidedTours.progress', { current: tourStepIndex.value + 1, total: tourSteps.value.length }))
-
-watch(() => currentRun.value?.results, (results) => {
-  if (!results?.length) return
-  const selectedStillValid = results.some((item) => item.profile_id === selectedResultProfileId.value && item.status === 'success')
-  if (!selectedStillValid) selectedResultProfileId.value = results.find((item) => item.status === 'success')?.profile_id ?? null
-}, { deep: true, immediate: true })
 
 watch(selectedArticleId, () => {
   if (selectedArticleId.value !== route.query.scope_id) {
@@ -124,6 +126,8 @@ watch(selectedArticleId, () => {
   selectedNotes.value = []
   notePickerOpen.value = false
 })
+
+watch(taskType, (value) => selectSystemPreset(defaultPresetForTask(value).id))
 
 function parseQueryNumber(value: unknown): number | null {
   if (typeof value !== 'string' || !/^\d+$/.test(value)) return null
@@ -157,6 +161,7 @@ async function loadInitial() {
     }
     const routedTask = String(route.query.task || '')
     if (['polish', 'rewrite', 'expand', 'continue'].includes(routedTask)) taskType.value = routedTask as FocusTaskType
+    selectSystemPreset(defaultPresetForTask(taskType.value).id)
     selectedProfileIds.value = defaultProfileId.value ? [defaultProfileId.value] : []
     await taskRun.hydrate()
   } catch (e) {
@@ -223,10 +228,75 @@ function toggleProfile(profileId: string) {
   )
 }
 
-function applyPreset(presetId: string) {
-  selectedPresetId.value = presetId
+function selectSystemPreset(presetId: string) {
+  const preset = BUILT_IN_WRITING_PRESETS.find((item) => item.id === presetId && item.taskType === taskType.value)
+  if (!preset) return
+  selectedPresetId.value = `system:${preset.id}`
+  controls.value = controlsForBuiltInPreset(preset, locale.value)
+}
+
+function selectCustomPreset(presetId: string) {
   const preset = taskPresets.value.find((item) => item.id === presetId)
-  if (preset) controls.value = mergeControls(preset.controls)
+  if (!preset) return
+  selectedPresetId.value = `custom:${preset.id}`
+  controls.value = customPresetControls(preset)
+}
+
+async function saveCustomPreset(name: string) {
+  const normalized = name.trim()
+  if (!normalized) return
+  if (taskPresets.value.some((item) => item.name.toLocaleLowerCase() === normalized.toLocaleLowerCase())) {
+    error.value = t('articleAi.presets.duplicateName')
+    return
+  }
+  const preset: AiTaskPreset = {
+    id: globalThis.crypto?.randomUUID?.() ?? `preset-${Date.now()}`,
+    task_type: taskType.value,
+    name: normalized,
+    controls: cloneControls(controls.value) as unknown as Record<string, unknown>,
+  }
+  const next = { ...presets.value, [taskType.value]: [...taskPresets.value, preset] }
+  if (!await persistCustomPresets(next)) return
+  selectedPresetId.value = `custom:${preset.id}`
+  notice.value = t('articleAi.presets.saved')
+}
+
+async function renameCustomPreset(payload: { id: string; name: string }) {
+  const normalized = payload.name.trim()
+  if (!normalized) return
+  if (taskPresets.value.some((item) => item.id !== payload.id && item.name.toLocaleLowerCase() === normalized.toLocaleLowerCase())) {
+    error.value = t('articleAi.presets.duplicateName')
+    return
+  }
+  const next = {
+    ...presets.value,
+    [taskType.value]: taskPresets.value.map((item) => item.id === payload.id ? { ...item, name: normalized } : item),
+  }
+  if (!await persistCustomPresets(next)) return
+  notice.value = t('articleAi.presets.renamed')
+}
+
+async function deleteCustomPreset(presetId: string) {
+  const next = {
+    ...presets.value,
+    [taskType.value]: taskPresets.value.filter((item) => item.id !== presetId),
+  }
+  if (!await persistCustomPresets(next)) return
+  if (selectedPresetId.value === `custom:${presetId}`) {
+    selectSystemPreset(defaultPresetForTask(taskType.value).id)
+  }
+  notice.value = t('articleAi.presets.deleted')
+}
+
+async function persistCustomPresets(next: AiTaskPresetMap): Promise<boolean> {
+  error.value = ''
+  try {
+    presets.value = await aiApi.saveTaskPresets(next)
+    return true
+  } catch (e) {
+    error.value = errorMessage(e)
+    return false
+  }
 }
 
 function attachments(): AiContextAttachment[] {
@@ -318,7 +388,7 @@ async function runTask() {
   if (!selectedArticle.value) return
   error.value = ''
   notice.value = ''
-  const options = buildTaskRequestOptions(taskType.value, controls.value)
+  const options = buildTaskRequestOptions(taskType.value, controls.value, locale.value)
   try {
     const run = await taskRun.create({
       article_id: selectedArticle.value.id,
@@ -331,9 +401,19 @@ async function runTask() {
         ? utf16OffsetToCodePointOffset(selectedArticle.value.body, selectionEnd.value)
         : null,
       attachments: attachments(),
+      preset_snapshot: {
+        id: selectedPresetId.value,
+        name: activeSystemPreset.value
+          ? (locale.value === 'en' ? activeSystemPreset.value.name.en : activeSystemPreset.value.name.zh)
+          : taskPresets.value.find((item) => `custom:${item.id}` === selectedPresetId.value)?.name ?? '',
+        tier: activeSystemPreset.value?.tier ?? 'custom',
+        genre: activeSystemPreset.value?.genres[0] ?? 'custom',
+        built_in: Boolean(activeSystemPreset.value),
+      },
+      control_snapshot: cloneControls(controls.value) as unknown as Record<string, unknown>,
       ...options,
     })
-    selectedResultProfileId.value = run.results.find((item) => item.status === 'success')?.profile_id ?? null
+    await router.push({ name: 'ai-results', params: { runId: run.run_id } })
   } catch (e) {
     error.value = errorMessage(e)
   }
@@ -352,31 +432,6 @@ async function clearRun() {
   if (!window.confirm(t('articleAi.clearConfirm'))) return
   try {
     await taskRun.clear()
-    selectedResultProfileId.value = null
-  } catch (e) {
-    error.value = errorMessage(e)
-  }
-}
-
-async function copyResult() {
-  if (!selectedResult.value) return
-  try {
-    await navigator.clipboard.writeText(selectedResult.value.result)
-    notice.value = t('articleAi.copied')
-  } catch (e) {
-    error.value = errorMessage(e)
-  }
-}
-
-async function applyResult() {
-  if (!selectedResult.value) return
-  error.value = ''
-  try {
-    const applied = await taskRun.apply(selectedResult.value.profile_id)
-    const index = articles.value.findIndex((item) => item.id === applied.entry.id)
-    if (index >= 0) articles.value[index] = applied.entry as Entry
-    notice.value = applied.was_noop ? t('articleAi.alreadyApplied') : t('articleAi.applied')
-    applyPreviewOpen.value = false
   } catch (e) {
     error.value = errorMessage(e)
   }
@@ -386,22 +441,19 @@ function formatElapsed(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
 }
 
-function resultStatus(result: AiTaskCompareResult): string {
-  if (result.status === 'success') return t('articleAi.status.success')
-  if (result.status === 'error') return t('articleAi.status.error')
-  return t('articleAi.status.pending')
-}
-
 function openArticle() {
   const id = currentRun.value?.article_id || selectedArticleId.value
   if (id) void router.push({ name: 'articles', query: { id } })
 }
 
+function openResults() {
+  if (currentRun.value) void router.push({ name: 'ai-results', params: { runId: currentRun.value.run_id } })
+}
+
 function onKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape') return
   if (referencePickerOpen.value) return
-  if (applyPreviewOpen.value) applyPreviewOpen.value = false
-  else if (profilePickerOpen.value) profilePickerOpen.value = false
+  if (profilePickerOpen.value) profilePickerOpen.value = false
 }
 
 onMounted(() => {
@@ -462,7 +514,57 @@ watch(() => route.query.tour, (value) => {
               </div>
             </div>
 
-            <div class="grid gap-4 border-y border-stone-200 py-5 md:grid-cols-2">
+            <ArticleAiPresetPicker
+              :task-type="taskType"
+              :active-preset-id="selectedPresetId"
+              :custom-presets="taskPresets"
+              @select-system="selectSystemPreset"
+              @select-custom="selectCustomPreset"
+              @save="saveCustomPreset"
+              @rename="renameCustomPreset"
+              @delete="deleteCustomPreset"
+            />
+
+            <div
+              v-if="showViewpointControls || showArgumentDirection || showSceneFocus"
+              class="grid gap-4 border-b border-stone-200 pb-5 md:grid-cols-2"
+              data-testid="article-ai-structured-controls"
+            >
+              <template v-if="showViewpointControls">
+                <label class="text-sm text-stone-700">
+                  {{ t('articleAi.presets.targetViewpoint') }}
+                  <select v-model="controls.targetViewpoint" class="mt-2 w-full rounded-md border border-stone-300 bg-white px-3 py-2">
+                    <option value="keep">{{ t('articleAi.presets.keepCurrent') }}</option>
+                    <option value="first">{{ t('articleAi.presets.firstPerson') }}</option>
+                    <option value="third_limited">{{ t('articleAi.presets.thirdLimited') }}</option>
+                    <option value="omniscient">{{ t('articleAi.presets.omniscient') }}</option>
+                  </select>
+                </label>
+                <label class="text-sm text-stone-700">
+                  {{ t('articleAi.presets.targetTense') }}
+                  <select v-model="controls.targetTense" class="mt-2 w-full rounded-md border border-stone-300 bg-white px-3 py-2">
+                    <option value="keep">{{ t('articleAi.presets.keepCurrent') }}</option>
+                    <option value="past">{{ t('articleAi.presets.pastTense') }}</option>
+                    <option value="present">{{ t('articleAi.presets.presentTense') }}</option>
+                  </select>
+                </label>
+                <label v-if="controls.targetViewpoint === 'third_limited'" class="text-sm text-stone-700 md:col-span-2">
+                  {{ t('articleAi.presets.viewpointCharacter') }}
+                  <input v-model="controls.viewpointCharacter" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" :placeholder="t('articleAi.presets.viewpointCharacterPlaceholder')" />
+                </label>
+              </template>
+              <label v-if="showArgumentDirection" class="text-sm text-stone-700 md:col-span-2">
+                {{ t('articleAi.presets.argumentDirection') }}
+                <input v-model="controls.argumentDirection" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" :placeholder="t('articleAi.presets.argumentDirectionPlaceholder')" />
+              </label>
+              <label v-if="showSceneFocus" class="text-sm text-stone-700 md:col-span-2">
+                {{ t('articleAi.presets.sceneFocus') }}
+                <input v-model="controls.sceneFocus" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" :placeholder="t('articleAi.presets.sceneFocusPlaceholder')" />
+              </label>
+              <p v-if="missingRequirements.length" class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 md:col-span-2">{{ t('articleAi.presets.completeRequired') }}</p>
+            </div>
+
+            <div class="grid gap-4 border-b border-stone-200 pb-5 md:grid-cols-2">
               <template v-if="taskType === 'polish'"><label class="text-sm text-stone-700">{{ t('articleAi.intensity') }}<select v-model="controls.polishIntensity" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2"><option value="light">{{ t('articleAi.light') }}</option><option value="medium">{{ t('articleAi.medium') }}</option><option value="strong">{{ t('articleAi.strong') }}</option></select></label><label class="text-sm text-stone-700">{{ t('articleAi.goal') }}<select v-model="controls.polishGoal" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2"><option value="clarity">{{ t('articleAi.clarity') }}</option><option value="rhythm">{{ t('articleAi.rhythm') }}</option><option value="literary">{{ t('articleAi.literary') }}</option><option value="restrained">{{ t('articleAi.restrained') }}</option></select></label><label class="flex items-center gap-2 text-sm text-stone-700"><input v-model="controls.preserveVoice" type="checkbox" />{{ t('articleAi.preserveVoice') }}</label></template>
               <template v-else-if="taskType === 'rewrite'"><label class="text-sm text-stone-700 md:col-span-2">{{ t('articleAi.direction') }}<input v-model="controls.rewriteDirection" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" /></label><label class="text-sm text-stone-700">{{ t('articleAi.changeLevel') }}<select v-model="controls.sentenceChange" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2"><option value="light">{{ t('articleAi.light') }}</option><option value="medium">{{ t('articleAi.medium') }}</option><option value="strong">{{ t('articleAi.strong') }}</option></select></label><label class="flex items-center gap-2 text-sm text-stone-700"><input v-model="controls.keepImagery" type="checkbox" />{{ t('articleAi.keepImagery') }}</label></template>
               <template v-else-if="taskType === 'expand'"><label class="text-sm text-stone-700">{{ t('articleAi.length') }}<select v-model="controls.expandLength" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2"><option value="short">{{ t('articleAi.short') }}</option><option value="medium">{{ t('articleAi.medium') }}</option><option value="long">{{ t('articleAi.long') }}</option></select></label><label class="text-sm text-stone-700">{{ t('articleAi.focus') }}<input v-model="controls.expandFocus" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" /></label><label class="flex items-center gap-2 text-sm text-stone-700"><input v-model="controls.sensoryDetail" type="checkbox" />{{ t('articleAi.sensory') }}</label></template>
@@ -491,7 +593,6 @@ watch(() => route.query.tour, (value) => {
             <details :open="moreOpen" @toggle="moreOpen = ($event.target as HTMLDetailsElement).open" class="border-b border-stone-200 pb-5">
               <summary class="cursor-pointer text-sm font-semibold text-stone-700">{{ t('articleAi.more') }}</summary>
               <div class="mt-4 space-y-4">
-                <label class="block text-sm text-stone-700">{{ t('articleAi.preset') }}<select :value="selectedPresetId" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" @change="applyPreset(($event.target as HTMLSelectElement).value)"><option value="">{{ t('articleAi.noPreset') }}</option><option v-for="preset in taskPresets" :key="preset.id" :value="preset.id">{{ preset.name }}</option></select></label>
                 <label class="block text-sm text-stone-700">{{ t('articleAi.extra') }}<textarea v-model="controls.extraInstructions" rows="3" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" /></label>
               </div>
             </details>
@@ -509,37 +610,11 @@ watch(() => route.query.tour, (value) => {
             <div v-if="currentRun" class="mt-6 border-t border-stone-200 pt-4">
               <div class="flex items-center justify-between gap-2"><span class="text-xs font-semibold text-stone-700">{{ currentRun.stage_label }}</span><span class="text-xs text-stone-400">{{ formatElapsed(currentRun.elapsed_ms) }}</span></div>
               <p v-if="taskRun.reconnectCount" class="mt-2 text-xs text-amber-700">{{ t('articleAi.reconnecting', { count: taskRun.reconnectCount }) }}</p>
+              <button class="mt-3 block text-xs font-medium text-teal-800 underline" @click="openResults">{{ t('articleAi.openResults') }}</button>
               <button v-if="taskRun.running" class="mt-3 text-xs font-medium text-red-700 underline" @click="cancelRun">{{ t('articleAi.cancel') }}</button>
               <button v-else class="mt-3 text-xs font-medium text-stone-600 underline" @click="clearRun">{{ t('articleAi.clear') }}</button>
             </div>
           </aside>
-        </section>
-
-        <section v-if="currentRun" class="border-t border-stone-300 pt-6" data-tour="ai-results">
-          <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h2 class="text-sm font-semibold text-stone-800">{{ t('articleAi.runFor', { title: currentRun.article_title }) }}</h2>
-            <span class="text-xs text-stone-500">{{ currentRun.stage_label }} · {{ formatElapsed(currentRun.elapsed_ms) }}</span>
-          </div>
-          <div v-if="runReferenceSnapshots.length || runCardSnapshots.length || runNoteSnapshots.length" class="mb-4 space-y-2" data-testid="article-ai-run-references">
-            <div v-if="runReferenceSnapshots.length" class="flex flex-wrap items-center gap-2"><span class="text-sm font-medium text-stone-700">{{ t('articleAi.contextSources.references') }}</span><span v-for="item in runReferenceSnapshots" :key="`${item.kind}:${item.ref_id}`" class="rounded bg-emerald-50 px-2 py-1 text-sm text-emerald-900">{{ item.name }}</span></div>
-            <div v-if="runCardSnapshots.length" class="flex flex-wrap items-center gap-2"><span class="text-sm font-medium text-stone-700">AI Cards</span><span v-for="item in runCardSnapshots" :key="`${item.kind}:${item.ref_id}`" class="rounded bg-sky-50 px-2 py-1 text-sm text-sky-900">{{ item.name }}</span></div>
-            <div v-if="runNoteSnapshots.length" class="flex flex-wrap items-center gap-2"><span class="text-sm font-medium text-stone-700">{{ t('articleAi.notes') }}</span><span v-for="item in runNoteSnapshots" :key="`${item.kind}:${item.ref_id}`" class="rounded bg-amber-50 px-2 py-1 text-sm text-amber-900">{{ item.name }}</span></div>
-          </div>
-          <div class="grid min-h-[360px] gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
-            <div class="space-y-2">
-              <button v-for="result in currentRun.results" :key="result.profile_id" type="button" :disabled="result.status !== 'success'" :class="['w-full border p-3 text-left', selectedResult?.profile_id === result.profile_id ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-200 bg-white text-stone-700', result.status !== 'success' ? 'cursor-default opacity-75' : 'hover:border-stone-500']" @click="selectedResultProfileId = result.profile_id">
-                <span class="block text-sm font-semibold">{{ result.profile_name }}</span><span class="mt-1 block text-xs">{{ resultStatus(result) }}<template v-if="result.elapsed_ms"> · {{ formatElapsed(result.elapsed_ms) }}</template></span><span v-if="result.status === 'success'" class="mt-1 block text-xs opacity-75">{{ result.output_tokens ?? '-' }} tokens<template v-if="result.cost !== null && result.cost !== undefined"> · {{ result.cost }}</template> · {{ result.transport || '-' }}</span><span v-if="result.error" class="mt-2 block text-xs text-red-600">{{ result.error }}</span>
-              </button>
-            </div>
-            <article class="min-w-0 bg-white p-5 ring-1 ring-stone-200">
-              <div v-if="selectedResult" class="flex h-full min-h-0 flex-col">
-                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 pb-3"><div class="inline-flex rounded-md bg-stone-100 p-1"><button :class="['rounded px-3 py-1.5 text-xs font-medium', readerMode === 'result' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500']" @click="readerMode = 'result'">{{ t('articleAi.result') }}</button><button :class="['rounded px-3 py-1.5 text-xs font-medium', readerMode === 'diff' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500']" @click="readerMode = 'diff'">{{ t('articleAi.diff') }}</button></div><div class="flex gap-2"><button class="rounded-md border border-stone-300 px-3 py-1.5 text-xs" @click="copyResult">{{ t('articleAi.copy') }}</button><button :disabled="Boolean(currentRun.applied_profile_id)" class="rounded-md bg-stone-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40" @click="applyPreviewOpen = true">{{ t('articleAi.apply') }}</button></div></div>
-                <div v-if="readerMode === 'result'" class="mt-4 whitespace-pre-wrap text-[15px] leading-7 text-stone-800">{{ selectedResult.result }}</div>
-                <div v-else class="mt-4 space-y-3"><div v-for="(row, index) in diffRows" :key="index" class="grid gap-2 border-b border-stone-100 pb-3 md:grid-cols-2"><div :class="['whitespace-pre-wrap p-2 text-sm leading-6', row.kind === 'removed' || row.kind === 'changed' ? 'bg-red-50 text-red-800' : 'text-stone-500']">{{ row.current || '∅' }}</div><div :class="['whitespace-pre-wrap p-2 text-sm leading-6', row.kind === 'added' || row.kind === 'changed' ? 'bg-emerald-50 text-emerald-900' : 'text-stone-700']">{{ row.historical || '∅' }}</div></div></div>
-              </div>
-              <div v-else class="flex h-full items-center justify-center text-sm text-stone-500">{{ taskRun.running ? t('articleAi.waiting') : t('articleAi.noSuccess') }}</div>
-            </article>
-          </div>
         </section>
       </div>
     </main>
@@ -572,7 +647,6 @@ watch(() => route.query.tour, (value) => {
     <Teleport to="body">
       <div v-if="profilePickerOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="profilePickerOpen = false"><div role="dialog" aria-modal="true" aria-labelledby="article-ai-model-picker-title" class="max-h-[75vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-2xl"><div class="flex items-center justify-between"><h3 id="article-ai-model-picker-title" class="font-semibold text-stone-900">{{ t('articleAi.chooseModels') }}</h3><button class="h-8 w-8 rounded-md hover:bg-stone-100" :aria-label="t('common.close')" @click="profilePickerOpen = false">×</button></div><p class="mt-1 text-xs leading-5 text-stone-500">{{ t('articleAi.modelHint') }}</p><div class="mt-4 divide-y divide-stone-200"><label v-for="profile in enabledProfiles" :key="profile.id" class="flex cursor-pointer items-start gap-3 py-3"><input :checked="selectedProfileIds.includes(profile.id)" type="checkbox" class="mt-1 h-4 w-4" @change="toggleProfile(profile.id)" /><span><span class="text-sm font-semibold text-stone-800">{{ profile.name }}<span v-if="profile.id === defaultProfileId" class="ml-2 text-xs text-stone-400">{{ t('settings.profileHub.default') }}</span></span><span class="mt-1 block text-xs text-stone-500">{{ profile.model }}</span></span></label></div><div class="mt-4 flex justify-end"><button class="rounded-md bg-stone-900 px-4 py-2 text-sm font-semibold text-white" @click="profilePickerOpen = false">{{ t('common.done') }}</button></div></div></div>
 
-      <div v-if="applyPreviewOpen && selectedResult" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="applyPreviewOpen = false"><div role="dialog" aria-modal="true" aria-labelledby="article-ai-apply-preview-title" class="max-h-[88vh] w-full max-w-4xl overflow-y-auto rounded-lg bg-white p-5 shadow-2xl"><div class="flex items-start justify-between gap-3"><div><h3 id="article-ai-apply-preview-title" class="font-semibold text-stone-900">{{ t('articleAi.applyPreview') }}</h3><p class="mt-1 text-xs text-stone-500">{{ t('articleAi.applySafety') }}</p></div><button class="h-8 w-8 rounded-md hover:bg-stone-100" :aria-label="t('common.close')" @click="applyPreviewOpen = false">×</button></div><div class="mt-4 grid gap-3 md:grid-cols-2"><div><h4 class="mb-2 text-xs font-semibold text-red-700">{{ t('articleAi.before') }}</h4><div class="max-h-80 overflow-y-auto whitespace-pre-wrap bg-red-50 p-3 text-sm leading-6 text-red-900">{{ selectedTextForRun }}</div></div><div><h4 class="mb-2 text-xs font-semibold text-emerald-700">{{ t('articleAi.after') }}</h4><div class="max-h-80 overflow-y-auto whitespace-pre-wrap bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">{{ selectedResult.result }}</div></div></div><div class="mt-5 flex justify-end gap-2"><button class="rounded-md border border-stone-300 px-3 py-2 text-sm" @click="applyPreviewOpen = false">{{ t('common.cancel') }}</button><button :disabled="taskRun.applying" class="rounded-md bg-stone-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40" @click="applyResult">{{ taskRun.applying ? t('common.saving') : t('articleAi.confirmApply') }}</button></div></div></div>
     </Teleport>
     <TourInvitation :open="tourInviteOpen" :title="t('articleAiTour.inviteTitle')" :body="t('articleAiTour.inviteBody')" :start-label="t('guidedTours.start')" :later-label="t('guidedTours.later')" :dismiss-label="t('guidedTours.dismiss')" @start="startAiTour" @later="tourInviteOpen = false" @dismiss="dismissAiTour" />
     <GuidedTourOverlay :open="tourOpen" :steps="tourSteps" :step-index="tourStepIndex" :previous-label="t('collectionsTour.previous')" :next-label="t('collectionsTour.next')" :skip-label="t('collectionsTour.skip')" :finish-label="t('collectionsTour.finish')" :progress-label="tourProgress" :close-label="t('common.close')" @previous="tourStepIndex = Math.max(0, tourStepIndex - 1)" @next="tourStepIndex = Math.min(tourSteps.length - 1, tourStepIndex + 1)" @close="finishAiTour" @finish="finishAiTour" />

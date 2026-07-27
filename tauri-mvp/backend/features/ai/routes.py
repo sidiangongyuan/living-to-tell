@@ -5,6 +5,7 @@ Long-running AI calls are synchronous with extended timeout (handled by frontend
 """
 from __future__ import annotations
 
+import copy
 import json
 import hashlib
 import time
@@ -20,6 +21,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from deps import get_container
+from features.ai.article_task_result_text import (
+    normalize_prose_result,
+    result_fingerprint,
+)
 from features.ai.job_manager import AiJobRecord, ai_job_manager
 from features.ai.article_task_runs import (
     ArticleTaskRunRecord,
@@ -143,6 +148,10 @@ class AiTaskCompareResult(BaseModel):
     transport: Optional[str] = None
     status: str
     result: str = ""
+    raw_result: str = ""
+    draft_result: Optional[str] = None
+    raw_fingerprint: Optional[str] = None
+    draft_fingerprint: Optional[str] = None
     error: str = ""
     elapsed_ms: int = 0
     input_tokens: Optional[int] = None
@@ -174,11 +183,15 @@ class ArticleTaskRunCreate(BaseModel):
     forbid_terms: list[str] = Field(default_factory=list)
     must_keep_terms: list[str] = Field(default_factory=list)
     attachments: list[AiAttachmentIn] = Field(default_factory=list)
+    preset_snapshot: Optional[dict[str, Any]] = None
+    control_snapshot: dict[str, Any] = Field(default_factory=dict)
     cost_tier: str = "balanced"
 
 
 class ArticleTaskRunApply(BaseModel):
     profile_id: str
+    candidate: str = "raw"
+    expected_fingerprint: Optional[str] = None
 
 
 class AiTaskAttachmentSnapshotOut(BaseModel):
@@ -194,6 +207,7 @@ class ArticleTaskRunOut(BaseModel):
     article_title: str
     task_type: str
     article_hash: str
+    article_state: str
     original_text: str
     selection_start: Optional[int] = None
     selection_end: Optional[int] = None
@@ -201,6 +215,8 @@ class ArticleTaskRunOut(BaseModel):
     stage: str
     stage_label: str
     error: str = ""
+    preset_snapshot: Optional[dict[str, Any]] = None
+    control_snapshot: dict[str, Any] = Field(default_factory=dict)
     profiles: list[dict[str, Any]]
     attachment_snapshots: list[AiTaskAttachmentSnapshotOut] = Field(default_factory=list)
     results: list[AiTaskCompareResult]
@@ -210,6 +226,8 @@ class ArticleTaskRunOut(BaseModel):
     completed_at: Optional[str] = None
     elapsed_ms: int
     applied_profile_id: Optional[str] = None
+    applied_candidate: Optional[str] = None
+    applied_fingerprint: Optional[str] = None
     applied_at: Optional[str] = None
     applied_version_id: Optional[str] = None
 
@@ -491,6 +509,67 @@ def _task_stats(input_text: str, output_text: str) -> AiTaskResultStats:
     )
 
 
+def _build_result_payload(
+    *,
+    input_text: str,
+    content: str,
+    profile_id: str,
+    profile_name: str,
+    provider: str,
+    model: str,
+    transport: Optional[str] = None,
+    status: str,
+    error: str = "",
+    elapsed_ms: int = 0,
+    input_tokens: Optional[int] = None,
+    output_tokens: Optional[int] = None,
+    cost: Optional[float] = None,
+    finish_reason: Optional[str] = None,
+) -> AiTaskCompareResult:
+    normalized = normalize_prose_result(content) if status == "success" else ""
+    fingerprint = result_fingerprint(normalized) if status == "success" else None
+    return AiTaskCompareResult(
+        profile_id=profile_id,
+        profile_name=profile_name,
+        provider=provider,
+        model=model,
+        transport=transport,
+        status=status,
+        result=normalized,
+        raw_result=normalized,
+        draft_result=None,
+        raw_fingerprint=fingerprint,
+        draft_fingerprint=None,
+        error=error,
+        elapsed_ms=elapsed_ms,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cost=cost,
+        finish_reason=finish_reason,
+        stats=_task_stats(input_text, normalized),
+    )
+
+
+def _result_candidate_payload(result: dict[str, Any], candidate: str) -> tuple[str, Optional[str]]:
+    if candidate == "draft":
+        if result.get("draft_result") is None:
+            return "", None
+        text = str(result.get("draft_result") or "")
+        fingerprint = str(result.get("draft_fingerprint") or "").strip() or None
+        return text, fingerprint
+    text = str(result.get("raw_result") or result.get("result") or "")
+    fingerprint = str(result.get("raw_fingerprint") or "").strip() or None
+    return text, fingerprint
+
+
+def _article_state_for(record: ArticleTaskRunRecord, container: AppContainer) -> str:
+    entry = container.entry_repository.get(record.article_id)
+    if entry is None:
+        return "missing"
+    current_hash = hashlib.sha256((entry.body or "").encode("utf-8")).hexdigest()
+    return "ready" if current_hash == record.article_hash else "changed"
+
+
 def _friendly_ai_error(exc: Exception) -> str:
     return safe_friendly_ai_error(exc)
 
@@ -626,7 +705,7 @@ def _job_snapshot(record: AiJobRecord) -> AiJobSnapshot:
     )
 
 
-def _article_run_out(record: ArticleTaskRunRecord) -> ArticleTaskRunOut:
+def _article_run_out(record: ArticleTaskRunRecord, container: AppContainer) -> ArticleTaskRunOut:
     attachment_snapshots = []
     for item in record.request.get("attachments", []):
         if not isinstance(item, dict):
@@ -646,6 +725,7 @@ def _article_run_out(record: ArticleTaskRunRecord) -> ArticleTaskRunOut:
         article_title=record.article_title,
         task_type=record.task_type,
         article_hash=record.article_hash,
+        article_state=_article_state_for(record, container),
         original_text=record.target_text,
         selection_start=record.selection_start,
         selection_end=record.selection_end,
@@ -653,6 +733,8 @@ def _article_run_out(record: ArticleTaskRunRecord) -> ArticleTaskRunOut:
         stage=record.stage,
         stage_label=record.stage_label,
         error=record.error,
+        preset_snapshot=record.preset_snapshot,
+        control_snapshot=record.control_snapshot,
         profiles=record.profiles,
         attachment_snapshots=attachment_snapshots,
         results=[AiTaskCompareResult(**item) for item in record.results],
@@ -662,6 +744,8 @@ def _article_run_out(record: ArticleTaskRunRecord) -> ArticleTaskRunOut:
         completed_at=record.completed_at,
         elapsed_ms=record.elapsed_ms(),
         applied_profile_id=record.applied_profile_id,
+        applied_candidate=record.applied_candidate,
+        applied_fingerprint=record.applied_fingerprint,
         applied_at=record.applied_at,
         applied_version_id=record.applied_version_id,
     )
@@ -933,7 +1017,9 @@ def _run_compare_profile(
     started = time.perf_counter()
     config = runtime.config
     if config is None:
-        return AiTaskCompareResult(
+        return _build_result_payload(
+            input_text=input_text,
+            content="",
             profile_id=runtime.profile_id,
             profile_name=runtime.profile_name,
             provider="",
@@ -941,12 +1027,13 @@ def _run_compare_profile(
             status="error",
             error=runtime.error or "这个 AI 配置档案不可用。",
             elapsed_ms=0,
-            stats=_task_stats(input_text, ""),
         )
 
     issues = preflight_rewrite(config, input_text, has_entry=True)
     if issues:
-        return AiTaskCompareResult(
+        return _build_result_payload(
+            input_text=input_text,
+            content="",
             profile_id=runtime.profile_id,
             profile_name=runtime.profile_name,
             provider=config.provider_key(),
@@ -955,7 +1042,6 @@ def _run_compare_profile(
             status="error",
             error=safe_friendly_ai_error(format_issues(issues)),
             elapsed_ms=int((time.perf_counter() - started) * 1000),
-            stats=_task_stats(input_text, ""),
         )
 
     prompt_builder = PromptBuilder()
@@ -967,7 +1053,9 @@ def _run_compare_profile(
     try:
         response = task_service.generate(domain_request, model_override=config.model)
     except Exception as exc:  # noqa: BLE001
-        return AiTaskCompareResult(
+        return _build_result_payload(
+            input_text=input_text,
+            content="",
             profile_id=runtime.profile_id,
             profile_name=runtime.profile_name,
             provider=config.provider_key(),
@@ -976,25 +1064,24 @@ def _run_compare_profile(
             status="error",
             error=_friendly_ai_error(exc),
             elapsed_ms=int((time.perf_counter() - started) * 1000),
-            stats=_task_stats(input_text, ""),
         )
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
-    return AiTaskCompareResult(
+    return _build_result_payload(
+        input_text=input_text,
         profile_id=runtime.profile_id,
         profile_name=runtime.profile_name,
         provider=response.provider or config.provider_key(),
         model=response.model or config.model,
         transport=response.transport,
         status="success",
-        result=response.content,
+        content=response.content,
         error="",
         elapsed_ms=elapsed_ms,
         input_tokens=response.input_tokens,
         output_tokens=response.output_tokens,
         cost=response.cost,
         finish_reason=response.finish_reason,
-        stats=_task_stats(input_text, response.content),
     )
 
 
@@ -1110,13 +1197,14 @@ def create_article_task_run(
         for profile in profiles
     ]
     pending_results = [
-        AiTaskCompareResult(
+        _build_result_payload(
+            input_text=target_text,
+            content="",
             profile_id=profile.profile_id,
             profile_name=profile.profile_name,
             provider=profile.config.provider_key() if profile.config is not None else "",
             model=profile.config.model if profile.config is not None else "",
             status="pending",
-            stats=_task_stats(target_text, ""),
         ).model_dump()
         for profile in profiles
     ]
@@ -1132,6 +1220,8 @@ def create_article_task_run(
         selection_start=start,
         selection_end=end,
         request=task_request.model_dump(),
+        preset_snapshot=copy.deepcopy(request.preset_snapshot),
+        control_snapshot=copy.deepcopy(request.control_snapshot),
         profiles=profile_snapshots,
         results=pending_results,
     )
@@ -1171,23 +1261,109 @@ def create_article_task_run(
             executor.shutdown(wait=not cancelled, cancel_futures=cancelled)
         article_task_run_manager.complete(active_run_id)
 
-    return _article_run_out(article_task_run_manager.create(record, worker))
+    return _article_run_out(article_task_run_manager.create(record, worker), container)
+
+
+@router.get("/task-runs", response_model=list[ArticleTaskRunOut])
+def list_article_task_runs(
+    container: AppContainer = Depends(get_container),
+) -> list[ArticleTaskRunOut]:
+    return [
+        _article_run_out(record, container)
+        for record in article_task_run_manager.list_recent(limit=20)
+    ]
+
+
+@router.delete("/task-runs", status_code=204)
+def clear_article_task_runs():
+    article_task_run_manager.clear_terminal()
 
 
 @router.get("/task-runs/active", response_model=Optional[ArticleTaskRunOut])
-def get_latest_article_task_run() -> Optional[ArticleTaskRunOut]:
+def get_latest_article_task_run(
+    container: AppContainer = Depends(get_container),
+) -> Optional[ArticleTaskRunOut]:
     record = article_task_run_manager.latest()
-    return _article_run_out(record) if record is not None else None
+    return _article_run_out(record, container) if record is not None else None
 
 
 @router.get("/task-runs/{run_id}", response_model=ArticleTaskRunOut)
-def get_article_task_run(run_id: str) -> ArticleTaskRunOut:
-    return _article_run_out(article_task_run_manager.get(run_id))
+def get_article_task_run(
+    run_id: str,
+    container: AppContainer = Depends(get_container),
+) -> ArticleTaskRunOut:
+    return _article_run_out(article_task_run_manager.get(run_id), container)
 
 
 @router.post("/task-runs/{run_id}/cancel", response_model=ArticleTaskRunOut)
-def cancel_article_task_run(run_id: str) -> ArticleTaskRunOut:
-    return _article_run_out(article_task_run_manager.cancel(run_id))
+def cancel_article_task_run(
+    run_id: str,
+    container: AppContainer = Depends(get_container),
+) -> ArticleTaskRunOut:
+    return _article_run_out(article_task_run_manager.cancel(run_id), container)
+
+
+class ArticleTaskDraftUpdate(BaseModel):
+    draft_result: str
+    expected_fingerprint: Optional[str] = None
+
+
+@router.patch("/task-runs/{run_id}/drafts/{profile_id}", response_model=ArticleTaskRunOut)
+def update_article_task_run_draft(
+    run_id: str,
+    profile_id: str,
+    data: ArticleTaskDraftUpdate,
+    container: AppContainer = Depends(get_container),
+) -> ArticleTaskRunOut:
+    record = article_task_run_manager.get(run_id)
+    result = next(
+        (
+            item for item in record.results
+            if str(item.get("profile_id") or "") == (profile_id or "").strip()
+        ),
+        None,
+    )
+    if result is None or result.get("status") != "success":
+        raise HTTPException(400, "只有成功返回的模型结果才能保存编辑副本。")
+    current_fingerprint = str(
+        result.get("draft_fingerprint")
+        or result.get("raw_fingerprint")
+        or ""
+    ).strip()
+    if data.expected_fingerprint and data.expected_fingerprint != current_fingerprint:
+        raise HTTPException(409, "结果内容已经变化，请刷新后再编辑。")
+    updated = dict(result)
+    updated["draft_result"] = str(data.draft_result or "")
+    updated["draft_fingerprint"] = result_fingerprint(updated["draft_result"])
+    updated["result"] = updated["draft_result"]
+    updated["stats"] = _task_stats(record.target_text, updated["draft_result"]).model_dump()
+    article_task_run_manager.set_result(run_id, profile_id, updated, update_stage=False)
+    return _article_run_out(article_task_run_manager.get(run_id), container)
+
+
+@router.delete("/task-runs/{run_id}/drafts/{profile_id}", response_model=ArticleTaskRunOut)
+def reset_article_task_run_draft(
+    run_id: str,
+    profile_id: str,
+    container: AppContainer = Depends(get_container),
+) -> ArticleTaskRunOut:
+    record = article_task_run_manager.get(run_id)
+    result = next(
+        (
+            item for item in record.results
+            if str(item.get("profile_id") or "") == (profile_id or "").strip()
+        ),
+        None,
+    )
+    if result is None or result.get("status") != "success":
+        raise HTTPException(400, "只有成功返回的模型结果才能重置编辑副本。")
+    updated = dict(result)
+    updated["draft_result"] = None
+    updated["draft_fingerprint"] = None
+    updated["result"] = str(updated.get("raw_result") or "")
+    updated["stats"] = _task_stats(record.target_text, updated["result"]).model_dump()
+    article_task_run_manager.set_result(run_id, profile_id, updated, update_stage=False)
+    return _article_run_out(article_task_run_manager.get(run_id), container)
 
 
 def _apply_article_task_run(
@@ -1197,19 +1373,9 @@ def _apply_article_task_run(
 ) -> ArticleTaskApplyOut:
     record = article_task_run_manager.get(run_id)
     profile_id = (data.profile_id or "").strip()
-    if record.applied_profile_id:
-        if record.applied_profile_id != profile_id:
-            raise HTTPException(409, "这轮结果已经写回文章，不能再写入另一个模型结果。")
-        if record.applied_entry is None or not record.applied_version_id:
-            raise HTTPException(409, "这轮结果已经写回，请刷新文章查看。")
-        return ArticleTaskApplyOut(
-            run=_article_run_out(record),
-            entry=record.applied_entry,
-            version_id=record.applied_version_id,
-            was_noop=True,
-        )
-    if record.status != "succeeded":
-        raise HTTPException(400, "任务尚未完成，暂时不能写回文章。")
+    candidate = (data.candidate or "raw").strip().lower()
+    if candidate not in {"raw", "draft"}:
+        raise HTTPException(400, "candidate 只支持 raw 或 draft。")
     result = next(
         (
             item for item in record.results
@@ -1220,6 +1386,29 @@ def _apply_article_task_run(
     )
     if result is None:
         raise HTTPException(400, "请选择一个已经成功返回的模型结果。")
+    generated, fingerprint = _result_candidate_payload(result, candidate)
+    if fingerprint is None:
+        raise HTTPException(400, "这个模型没有返回可写入的内容。")
+    if data.expected_fingerprint and data.expected_fingerprint != fingerprint:
+        raise HTTPException(409, "结果内容已经变化，请刷新后再决定是否写回。")
+    if record.applied_profile_id:
+        same_candidate = (
+            record.applied_profile_id == profile_id
+            and record.applied_candidate == candidate
+            and record.applied_fingerprint == fingerprint
+        )
+        if not same_candidate:
+            raise HTTPException(409, "这轮结果已经写回文章，不能再写入另一个模型或不同内容。")
+        if record.applied_entry is None or not record.applied_version_id:
+            raise HTTPException(409, "这轮结果已经写回，请刷新文章查看。")
+        return ArticleTaskApplyOut(
+            run=_article_run_out(record, container),
+            entry=record.applied_entry,
+            version_id=record.applied_version_id,
+            was_noop=True,
+        )
+    if record.status != "succeeded":
+        raise HTTPException(400, "任务尚未完成，暂时不能写回文章。")
 
     entry = container.entry_repository.get(record.article_id)
     if entry is None:
@@ -1231,7 +1420,6 @@ def _apply_article_task_run(
             "文章在 AI 运行后已经发生变化。为避免覆盖新内容，请重新运行；当前结果仍可复制。",
         )
 
-    generated = str(result.get("result") or "")
     if not generated.strip():
         raise HTTPException(400, "这个模型没有返回可写入的内容。")
     start = record.selection_start
@@ -1270,11 +1458,13 @@ def _apply_article_task_run(
     applied = article_task_run_manager.mark_applied(
         run_id,
         profile_id=profile_id,
+        candidate=candidate,
+        fingerprint=fingerprint,
         version_id=version.id,
         entry=payload,
     )
     return ArticleTaskApplyOut(
-        run=_article_run_out(applied),
+        run=_article_run_out(applied, container),
         entry=payload,
         version_id=version.id,
     )

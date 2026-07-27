@@ -1,5 +1,28 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.52 - Sortable Planning Board and AI Results Workspace (2026-07-27)
+
+### Added
+
+- Added an independent planning-priority order to every board column. Drag within a column to rank upcoming work, drag across columns to change status and landing position, or use keyboard-friendly top/up/down/bottom actions.
+- Added a dedicated `/ai/results/:runId` workspace with this-session history, original comparison, two-model comparison, paragraph diff, immutable model output, editable copies, and article-state checks before write-back.
+- Added 25 built-in writing-purpose presets across Polish, Rewrite, Expand, and Continue, organized by common/creative intent and general, fiction, essay, or nonfiction use.
+- Added structured controls for viewpoint, viewpoint character, tense, argument direction, and scene focus, plus complete save, rename, and delete behavior for personal presets.
+
+### Changed
+
+- Board priority is now intentionally separate from manuscript and export order. Moving one card never reorders the book or changes parent, child, or sibling status.
+- AI Edit now ends at the Run button. Results no longer accumulate beneath setup; the new workspace owns model status, reading, comparison, editing, and safe write-back.
+- All four article tasks use one explicit prose-format contract. Model output is normalized conservatively before display, copy, diff, statistics, and raw write-back to remove accidental blank-line inflation while preserving poetry, lists, indentation, and internal spaces.
+- Public screenshots and tutorials now demonstrate same-column board ordering and the purpose-preset-to-results workflow.
+
+### Safety and compatibility
+
+- Existing outline rows receive `board_sort_order` deterministically from their current status and manuscript order. Existing `sort_order` remains the sole source of manuscript and export order.
+- Recent AI runs and edited copies stay in process memory only, retain at most 20 runs, and expire when the app exits. Old result links show a localized expired state without resending a model request.
+- Write-back uses model, candidate kind, and content fingerprint for idempotency. Article drift or deletion is detected before the author can apply a positional change.
+- Existing personal presets migrate unchanged into **My Presets**; built-in presets never capture article text, selections, models, or context attachments.
+
 ## 0.1.51 - Coherent Collection Structure and Draggable Board (2026-07-26)
 
 ### Added

@@ -132,7 +132,9 @@ def test_polish_with_style_demands_single_direct_rewrite_only() -> None:
     assert "author-by-author variants" in system_content
     assert "No heading, no explanation" in user_content
     assert "multiple authors or traits" in user_content
-    assert "Polish and expand return the full resulting text" in user_content
+    assert "Polish, rewrite, and expand return the full resulting text" in user_content
+    assert "Keep the paragraph skeleton of the source" in user_content
+    assert "Preserve intentional poetry lines, list items, quotations, and indentation" in user_content
 
 
 def test_medium_polish_with_style_does_not_turn_into_expansion() -> None:
@@ -239,6 +241,22 @@ def test_prompt_contracts_distinguish_polish_expand_continue() -> None:
     cont_user = cont[-1]["content"]
     assert "output only new content after the source text" in cont_user
     assert "do not include, rewrite, or summarize the source" in cont_user
+
+
+def test_style_transfer_shares_prose_output_contract() -> None:
+    builder = TaskPromptBuilder()
+    messages = builder.build_messages(
+        AiTaskRequest(
+            task_type=AiTaskType.STYLE_TRANSFER,
+            target_kind=AiTargetKind.PASTE,
+            text="source text",
+            style="quiet literary prose",
+        )
+    )
+    user_content = messages[-1]["content"]
+    assert "Polish, rewrite, and expand return the full resulting text" in user_content
+    assert "at most one blank line between paragraphs" in user_content
+    assert "Preserve intentional poetry lines, list items, quotations, and indentation" in user_content
 
 
 def test_visible_structured_tasks_have_json_contracts() -> None:

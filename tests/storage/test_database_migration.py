@@ -105,6 +105,130 @@ def test_collection_outline_migration_only_repairs_unambiguous_containers(
     conn.close()
 
 
+def test_collection_outline_board_order_migration_backfills_per_status_from_sort_order(
+    tmp_path: Path,
+) -> None:
+    conn = sqlite3.connect(tmp_path / "writer.db")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        """
+        CREATE TABLE collections (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            project_type TEXT NOT NULL DEFAULT 'general',
+            created_at TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE entries (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL DEFAULT '',
+            body TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE reference_passages (
+            id TEXT PRIMARY KEY,
+            source_title TEXT NOT NULL DEFAULT '',
+            source_author TEXT NOT NULL DEFAULT '',
+            content TEXT NOT NULL DEFAULT '',
+            tags TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE entry_writing_notes (
+            id TEXT PRIMARY KEY,
+            entry_id TEXT NOT NULL
+        );
+        CREATE TABLE ai_cards (
+            id TEXT PRIMARY KEY,
+            card_type TEXT NOT NULL DEFAULT 'scene',
+            title TEXT NOT NULL DEFAULT '',
+            content TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE entry_versions (
+            id TEXT PRIMARY KEY,
+            entry_id TEXT NOT NULL,
+            version_type TEXT NOT NULL DEFAULT 'manual',
+            content TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE motif_nodes (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE collection_agent_settings (
+            collection_id TEXT PRIMARY KEY,
+            profile_id TEXT NOT NULL DEFAULT 'default',
+            enabled INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE TABLE collection_agent_runs (
+            id TEXT PRIMARY KEY,
+            collection_id TEXT NOT NULL,
+            thread_id TEXT,
+            status TEXT NOT NULL DEFAULT 'queued',
+            stage TEXT NOT NULL DEFAULT 'queued',
+            request_json TEXT NOT NULL DEFAULT '{}',
+            result_json TEXT NOT NULL DEFAULT '{}',
+            error_text TEXT NOT NULL DEFAULT '',
+            profile_id TEXT NOT NULL DEFAULT 'default',
+            provider TEXT,
+            model TEXT,
+            transport TEXT,
+            created_at TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE collection_outline_items (
+            id TEXT PRIMARY KEY,
+            collection_id TEXT NOT NULL,
+            parent_id TEXT,
+            entry_id TEXT,
+            title TEXT NOT NULL DEFAULT '',
+            item_type TEXT NOT NULL DEFAULT 'scene',
+            status TEXT NOT NULL DEFAULT 'idea',
+            summary TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            pov TEXT NOT NULL DEFAULT '',
+            setting TEXT NOT NULL DEFAULT '',
+            timeline TEXT NOT NULL DEFAULT '',
+            tags_text TEXT NOT NULL DEFAULT '',
+            target_word_count INTEGER,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT ''
+        );
+        INSERT INTO collections (id, name, project_type) VALUES ('c1', '文集', 'essay');
+        INSERT INTO collection_outline_items
+            (id, collection_id, title, item_type, status, sort_order)
+        VALUES
+            ('idea-a', 'c1', '构思 A', 'chapter', 'idea', 5),
+            ('draft-a', 'c1', '草稿 A', 'chapter', 'drafting', 1),
+            ('idea-b', 'c1', '构思 B', 'chapter', 'idea', 9),
+            ('draft-b', 'c1', '草稿 B', 'chapter', 'drafting', 7);
+        """
+    )
+
+    _migrate(conn)
+    _migrate(conn)
+
+    cols = _columns(conn, "collection_outline_items")
+    assert "board_sort_order" in cols
+    rows = conn.execute(
+        """
+        SELECT id, status, board_sort_order
+          FROM collection_outline_items
+         ORDER BY status ASC, board_sort_order ASC, id ASC
+        """
+    ).fetchall()
+    assert [
+        (row["id"], row["status"], row["board_sort_order"])
+        for row in rows
+    ] == [
+        ("draft-a", "drafting", 0),
+        ("draft-b", "drafting", 1),
+        ("idea-a", "idea", 0),
+        ("idea-b", "idea", 1),
+    ]
+    conn.close()
+
+
 def test_pre_m5_database_upgrades_without_error(tmp_path: Path) -> None:
     db_path = tmp_path / "writer.db"
     _make_pre_m5_db(db_path)

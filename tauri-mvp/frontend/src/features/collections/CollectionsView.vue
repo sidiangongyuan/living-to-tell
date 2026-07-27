@@ -36,6 +36,7 @@ import {
   filterOutlineItems,
   type OutlineFilters,
 } from './outlineEnhancements'
+import { boardItemsForStatus } from './boardPriority'
 import {
   articleTitleForId,
   articleTypeForProject,
@@ -102,7 +103,7 @@ const draftProjectType = ref<CollectionProjectType>('general')
 const savingMeta = ref(false)
 const dragOutlineItemId = ref<string | null>(null)
 const dragBoardItemId = ref<string | null>(null)
-const boardDropStatus = ref<OutlineItemStatus | null>(null)
+const boardDropTarget = ref<{ status: OutlineItemStatus; targetIndex: number } | null>(null)
 const actionError = ref<string | null>(null)
 const outlineActionError = ref<string | null>(null)
 const outlineSaving = ref(false)
@@ -229,6 +230,10 @@ const deleteContextMenuOpen = ref(false)
 const deleteContextMenuX = ref(0)
 const deleteContextMenuY = ref(0)
 const deleteContextTarget = ref<{ kind: 'collection'; id: string } | null>(null)
+const boardContextMenuOpen = ref(false)
+const boardContextMenuX = ref(0)
+const boardContextMenuY = ref(0)
+const boardContextTargetId = ref<string | null>(null)
 
 const projectType = computed(() => collectionProjectType(store.selectedCollection))
 const projectLabels = computed(() => labelsForProject(projectType.value, locale.value))
@@ -328,7 +333,10 @@ const availableLinkArticles = computed(() => {
 const outlineBoardColumns = computed(() =>
   outlineStatusOptions.value.map((status) => ({
     ...status,
-    items: boardFilteredOutline.value.filter((item) => item.status === status.value),
+    items: boardItemsForStatus(
+      boardFilteredOutline.value,
+      status.value,
+    ),
   }))
 )
 const agentRuns = computed(() => agentState.value?.runs ?? [])
@@ -594,7 +602,7 @@ const structureV2Copy = computed(() => locale.value === 'en'
       splitConfirm: 'This chapter already links an article. Move that article into the first child item and turn the chapter into a container?',
       childProgress: (total: number, done: number) => `${total} articles · ${done} done`,
       boardStatus: 'Move card to status',
-      boardDragHint: 'Drag any card between columns. Only that card changes status.',
+      boardDragHint: 'Drag within a column to rank priority, or across columns to change status and landing position. Manuscript order never changes.',
       invalidChild: 'This item cannot contain children.',
       invalidPlacement: 'Select a part or chapter before placing this article.',
       duplicateHint: 'The same article appears more than once. Choose one position to keep, then unlink the others.',
@@ -611,7 +619,7 @@ const structureV2Copy = computed(() => locale.value === 'en'
       splitConfirm: '这个章节已经关联正文。是否把正文移动到第一个子项，并将章节转为容器？',
       childProgress: (total: number, done: number) => `${total} 篇文章 · ${done} 篇完成`,
       boardStatus: '移动卡片到状态',
-      boardDragHint: '可把任意卡片拖到其他列，只改变当前卡片状态。',
+      boardDragHint: '同列拖动调整规划优先级，跨列拖动同时改状态和落点；书稿顺序始终不变。',
       invalidChild: '这个节点不能继续添加子项。',
       invalidPlacement: '请先选择分部或章节，再放置这篇文章。',
       duplicateHint: '同一篇文章出现在多个位置。请选择保留一个位置，再解除其他关联。',
@@ -2521,6 +2529,7 @@ async function makeSelectedOutlineContainer() {
 }
 
 function onBoardDragStart(event: DragEvent, itemId: string) {
+  closeBoardContextMenu()
   dragBoardItemId.value = itemId
   event.dataTransfer?.setData('text/plain', itemId)
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
@@ -2528,20 +2537,92 @@ function onBoardDragStart(event: DragEvent, itemId: string) {
 
 function onBoardDragEnd() {
   dragBoardItemId.value = null
-  boardDropStatus.value = null
+  boardDropTarget.value = null
+}
+
+function boardPositionMeta(item: CollectionOutlineItem) {
+  const items = boardItemsForStatus(boardFilteredOutline.value, item.status)
+  const index = items.findIndex((candidate) => candidate.id === item.id)
+  return { items, index }
+}
+
+function boardMoveTargetIndex(
+  index: number,
+  total: number,
+  direction: 'up' | 'down' | 'top' | 'bottom',
+): number | null {
+  if (index < 0 || total <= 0) return null
+  if (direction === 'top') return index === 0 ? null : 0
+  if (direction === 'bottom') return index >= total - 1 ? null : total
+  if (direction === 'up') return index <= 0 ? null : index - 1
+  return index >= total - 1 ? null : index + 2
+}
+
+function setBoardDropTarget(status: OutlineItemStatus, targetIndex: number) {
+  boardDropTarget.value = { status, targetIndex: Math.max(0, targetIndex) }
+}
+
+function isBoardDropLine(status: OutlineItemStatus, targetIndex: number): boolean {
+  return Boolean(
+    dragBoardItemId.value
+    && boardDropTarget.value?.status === status
+    && boardDropTarget.value?.targetIndex === targetIndex,
+  )
+}
+
+function boardColumnIsActive(status: OutlineItemStatus): boolean {
+  return Boolean(dragBoardItemId.value && boardDropTarget.value?.status === status)
+}
+
+function onBoardColumnDragOver(
+  event: DragEvent,
+  status: OutlineItemStatus,
+  itemCount: number,
+) {
+  if ((event.target as HTMLElement | null)?.closest('[data-board-item-id]')) return
+  setBoardDropTarget(status, itemCount)
+}
+
+function onBoardCardDragOver(
+  event: DragEvent,
+  status: OutlineItemStatus,
+  index: number,
+) {
+  const element = event.currentTarget as HTMLElement | null
+  if (!element) return
+  const rect = element.getBoundingClientRect()
+  const before = event.clientY < rect.top + rect.height / 2
+  setBoardDropTarget(status, before ? index : index + 1)
+}
+
+async function moveBoardItem(
+  itemId: string,
+  status: OutlineItemStatus,
+  targetIndex: number,
+) {
+  outlineActionError.value = null
+  try {
+    await store.updateOutlineBoardPosition(itemId, status, targetIndex)
+  } catch (e) {
+    outlineActionError.value = store.error || errorMessage(e)
+  }
 }
 
 async function moveBoardItemToStatus(
   item: CollectionOutlineItem,
   status: OutlineItemStatus,
 ) {
-  if (item.status === status) return
-  outlineActionError.value = null
-  try {
-    await store.updateOutlineStatus(item.id, status)
-  } catch (e) {
-    outlineActionError.value = store.error || errorMessage(e)
-  }
+  await moveBoardItem(item.id, status, 0)
+}
+
+async function moveBoardItemWithinStatus(
+  item: CollectionOutlineItem,
+  direction: 'up' | 'down' | 'top' | 'bottom',
+) {
+  const { items, index } = boardPositionMeta(item)
+  const targetIndex = boardMoveTargetIndex(index, items.length, direction)
+  if (targetIndex == null) return
+  await moveBoardItem(item.id, item.status, targetIndex)
 }
 
 function onBoardStatusSelect(item: CollectionOutlineItem, event: Event) {
@@ -2549,13 +2630,85 @@ function onBoardStatusSelect(item: CollectionOutlineItem, event: Event) {
   void moveBoardItemToStatus(item, status)
 }
 
-async function onBoardDrop(status: OutlineItemStatus) {
+function onBoardCardKeydown(event: KeyboardEvent, item: CollectionOutlineItem) {
+  if (event.altKey) {
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      void moveBoardItemWithinStatus(item, 'up')
+      return
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      void moveBoardItemWithinStatus(item, 'down')
+      return
+    }
+    if (event.key === 'Home') {
+      event.preventDefault()
+      void moveBoardItemWithinStatus(item, 'top')
+      return
+    }
+    if (event.key === 'End') {
+      event.preventDefault()
+      void moveBoardItemWithinStatus(item, 'bottom')
+      return
+    }
+  }
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    void selectOutlineItem(item.id)
+    viewMode.value = 'structure'
+  }
+}
+
+async function onBoardDrop(status: OutlineItemStatus, itemCount: number) {
   const itemId = dragBoardItemId.value
+  const target = boardDropTarget.value
   onBoardDragEnd()
   if (!itemId) return
-  const item = store.outline.find((candidate) => candidate.id === itemId)
+  await moveBoardItem(
+    itemId,
+    target?.status ?? status,
+    target?.status === status ? target.targetIndex : itemCount,
+  )
+}
+
+function closeBoardContextMenu() {
+  boardContextMenuOpen.value = false
+  boardContextTargetId.value = null
+}
+
+function openBoardContextMenu(event: MouseEvent, itemId: string) {
+  event.preventDefault()
+  event.stopPropagation()
+  boardContextTargetId.value = itemId
+  boardContextMenuX.value = Math.max(12, Math.min(event.clientX + 8, window.innerWidth - 188))
+  boardContextMenuY.value = Math.max(12, Math.min(event.clientY + 8, window.innerHeight - 180))
+  boardContextMenuOpen.value = true
+}
+
+const boardContextMenuItems = computed(() => {
+  const item = boardContextTargetId.value
+    ? store.outline.find((candidate) => candidate.id === boardContextTargetId.value) ?? null
+    : null
+  if (!item) return []
+  const { items, index } = boardPositionMeta(item)
+  return [
+    { key: 'top', label: t('collectionOutline.boardMoveTop'), disabled: index <= 0 },
+    { key: 'up', label: t('collectionOutline.boardMoveUp'), disabled: index <= 0 },
+    { key: 'down', label: t('collectionOutline.boardMoveDown'), disabled: index < 0 || index >= items.length - 1 },
+    { key: 'bottom', label: t('collectionOutline.boardMoveBottom'), disabled: index < 0 || index >= items.length - 1 },
+  ]
+})
+
+function handleBoardContextMenuSelect(action: { key: string }) {
+  const item = boardContextTargetId.value
+    ? store.outline.find((candidate) => candidate.id === boardContextTargetId.value) ?? null
+    : null
+  closeBoardContextMenu()
   if (!item) return
-  await moveBoardItemToStatus(item, status)
+  if (action.key === 'top' || action.key === 'up' || action.key === 'down' || action.key === 'bottom') {
+    void moveBoardItemWithinStatus(item, action.key as 'up' | 'down' | 'top' | 'bottom')
+  }
 }
 
 async function openLinkedOutlineArticle() {
@@ -3345,13 +3498,13 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                 :data-board-status="column.value"
                 :class="[
                   'min-h-[420px] rounded-2xl border bg-white/60 p-3 transition-colors',
-                  boardDropStatus === column.value && dragBoardItemId
+                  boardColumnIsActive(column.value)
                     ? 'border-teal-400 bg-teal-50/70 ring-2 ring-teal-100'
                     : 'border-stone-200'
                 ]"
-                @dragenter.prevent="boardDropStatus = column.value"
-                @dragover.prevent="boardDropStatus = column.value"
-                @drop.prevent="onBoardDrop(column.value)"
+                @dragenter.prevent="setBoardDropTarget(column.value, column.items.length)"
+                @dragover.prevent="onBoardColumnDragOver($event, column.value, column.items.length)"
+                @drop.prevent="onBoardDrop(column.value, column.items.length)"
               >
                 <div class="mb-3 flex items-center justify-between gap-2">
                   <div class="font-semibold text-stone-800">{{ column.label }}</div>
@@ -3359,61 +3512,90 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
                     {{ column.items.length }}
                   </span>
                 </div>
-                <div v-if="!column.items.length" class="rounded-2xl border border-dashed border-stone-200 p-4 text-center text-xs leading-5 text-stone-400">
-                  {{ t('collectionOutline.emptyColumn') }}
+                <div v-if="!column.items.length" class="space-y-2">
+                  <div
+                    v-if="isBoardDropLine(column.value, 0)"
+                    class="h-1.5 rounded-full bg-teal-500/80 shadow-[0_0_0_1px_rgba(13,148,136,0.18)]"
+                  />
+                  <div class="rounded-2xl border border-dashed border-stone-200 p-4 text-center text-xs leading-5 text-stone-400">
+                    {{ t('collectionOutline.emptyColumn') }}
+                  </div>
                 </div>
                 <div v-else class="space-y-2">
-                  <article
-                    v-for="item in column.items"
-                    :key="item.id"
-                    draggable="true"
-                    :data-board-item-id="item.id"
-                    :class="[
-                      'cursor-grab rounded-lg border border-stone-200 bg-white p-3 shadow-sm transition hover:shadow-md active:cursor-grabbing',
-                      dragBoardItemId === item.id ? 'opacity-45' : ''
-                    ]"
-                    @click="selectOutlineItem(item.id); viewMode = 'structure'"
-                    @dragstart="onBoardDragStart($event, item.id)"
-                    @dragend="onBoardDragEnd"
-                  >
-                    <div class="flex items-start justify-between gap-2">
-                      <h4 class="line-clamp-2 text-sm font-semibold leading-5 text-stone-900">{{ outlineItemTitle(item) }}</h4>
-                      <span class="shrink-0 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] text-indigo-700">
-                        {{ outlineTypeLabel(item.item_type) }}
-                      </span>
-                    </div>
-                    <p class="mt-2 line-clamp-3 text-xs leading-5 text-stone-500">
-                      {{ item.summary || t('collectionOutline.noSummary') }}
-                    </p>
-                    <div class="mt-3 flex flex-wrap gap-1.5">
-                      <span v-if="item.entry_id" class="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700">
-                        {{ t('collectionOutline.linked') }}
-                      </span>
-                      <span v-if="item.target_word_count" class="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">
-                        {{ item.target_word_count }} 字
-                      </span>
-                      <span v-if="item.pov" class="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] text-stone-500">
-                        {{ item.pov }}
-                      </span>
-                      <span
-                        v-if="boardArticleProgress(item).total"
-                        class="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] text-sky-700"
-                      >
-                        {{ structureV2Copy.childProgress(boardArticleProgress(item).total, boardArticleProgress(item).done) }}
-                      </span>
-                    </div>
-                    <label class="mt-3 block border-t border-stone-100 pt-2 text-[10px] font-semibold text-stone-400" @click.stop>
-                      <span class="sr-only">{{ structureV2Copy.boardStatus }}</span>
-                      <select
-                        :value="item.status"
-                        class="w-full rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-xs font-medium text-stone-700 outline-none focus:border-teal-500"
-                        :aria-label="`${structureV2Copy.boardStatus}: ${outlineItemTitle(item)}`"
-                        @change="onBoardStatusSelect(item, $event)"
-                      >
-                        <option v-for="option in outlineStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-                      </select>
-                    </label>
-                  </article>
+                  <template v-for="(item, index) in column.items" :key="item.id">
+                    <div
+                      v-if="isBoardDropLine(column.value, index)"
+                      class="h-1.5 rounded-full bg-teal-500/80 shadow-[0_0_0_1px_rgba(13,148,136,0.18)]"
+                    />
+                    <article
+                      draggable="true"
+                      tabindex="0"
+                      :data-board-item-id="item.id"
+                      :class="[
+                        'cursor-grab rounded-lg border border-stone-200 bg-white p-3 shadow-sm transition hover:shadow-md active:cursor-grabbing focus:outline-none focus:ring-2 focus:ring-teal-200',
+                        dragBoardItemId === item.id ? 'opacity-45' : ''
+                      ]"
+                      @click="selectOutlineItem(item.id); viewMode = 'structure'"
+                      @contextmenu="openBoardContextMenu($event, item.id)"
+                      @dragstart="onBoardDragStart($event, item.id)"
+                      @dragend="onBoardDragEnd"
+                      @dragover.prevent.stop="onBoardCardDragOver($event, column.value, index)"
+                      @drop.prevent.stop="onBoardDrop(column.value, column.items.length)"
+                      @keydown="onBoardCardKeydown($event, item)"
+                    >
+                      <div class="flex items-start justify-between gap-2">
+                        <h4 class="line-clamp-2 text-sm font-semibold leading-5 text-stone-900">{{ outlineItemTitle(item) }}</h4>
+                        <div class="flex items-start gap-1.5">
+                          <span class="shrink-0 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] text-indigo-700">
+                            {{ outlineTypeLabel(item.item_type) }}
+                          </span>
+                          <button
+                            type="button"
+                            class="rounded-md px-1.5 py-0.5 text-xs font-semibold text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
+                            :aria-label="t('collectionOutline.boardOrderMenu')"
+                            @click.stop="openBoardContextMenu($event, item.id)"
+                          >
+                            •••
+                          </button>
+                        </div>
+                      </div>
+                      <p class="mt-2 line-clamp-3 text-xs leading-5 text-stone-500">
+                        {{ item.summary || t('collectionOutline.noSummary') }}
+                      </p>
+                      <div class="mt-3 flex flex-wrap gap-1.5">
+                        <span v-if="item.entry_id" class="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700">
+                          {{ t('collectionOutline.linked') }}
+                        </span>
+                        <span v-if="item.target_word_count" class="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">
+                          {{ item.target_word_count }} 字
+                        </span>
+                        <span v-if="item.pov" class="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] text-stone-500">
+                          {{ item.pov }}
+                        </span>
+                        <span
+                          v-if="boardArticleProgress(item).total"
+                          class="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] text-sky-700"
+                        >
+                          {{ structureV2Copy.childProgress(boardArticleProgress(item).total, boardArticleProgress(item).done) }}
+                        </span>
+                      </div>
+                      <label class="mt-3 block border-t border-stone-100 pt-2 text-[10px] font-semibold text-stone-400" @click.stop>
+                        <span class="sr-only">{{ structureV2Copy.boardStatus }}</span>
+                        <select
+                          :value="item.status"
+                          class="w-full rounded-md border border-stone-200 bg-stone-50 px-2 py-1.5 text-xs font-medium text-stone-700 outline-none focus:border-teal-500"
+                          :aria-label="`${structureV2Copy.boardStatus}: ${outlineItemTitle(item)}`"
+                          @change="onBoardStatusSelect(item, $event)"
+                        >
+                          <option v-for="option in outlineStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                        </select>
+                      </label>
+                    </article>
+                  </template>
+                  <div
+                    v-if="isBoardDropLine(column.value, column.items.length)"
+                    class="h-1.5 rounded-full bg-teal-500/80 shadow-[0_0_0_1px_rgba(13,148,136,0.18)]"
+                  />
                 </div>
               </section>
             </div>
@@ -3819,6 +4001,14 @@ function handleDeleteContextMenuSelect(item: { key: string }) {
       :items="[{ key: 'delete', label: t('common.delete'), danger: true }]"
       @close="closeDeleteContextMenu"
       @select="handleDeleteContextMenuSelect"
+    />
+    <ContextMenu
+      :open="boardContextMenuOpen"
+      :x="boardContextMenuX"
+      :y="boardContextMenuY"
+      :items="boardContextMenuItems"
+      @close="closeBoardContextMenu"
+      @select="handleBoardContextMenuSelect"
     />
 
     <div v-if="createDialogOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">

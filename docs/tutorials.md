@@ -52,7 +52,7 @@ Steps:
 3. In **Manuscript**, first add a top-level group/part/section or chapter, then place articles, scenes, or subsections below chapters.
 4. Select a chapter and click **New Child**, or place **Unplanned Articles** below it. If the chapter already links a draft, confirm the split so that draft moves to the first child.
 5. Unlinked nodes keep planning titles; linked nodes consistently show the current article title. Detail editing still manages type, parent, status, summary, and target words.
-6. Switch to **Board** and drag a card to idea, draft, revision, done, or parked. Dragging does not change child status or manuscript order.
+6. Switch to **Board**. Drag within one column to rank what should be worked on first; drag across columns to change the current card's status and landing position. Board priority never changes manuscript or export order.
 7. Switch to **Export** to export the manuscript, or export a separate planning file for your own review.
 
 Expected result: Collections use one clear container-to-draft manuscript tree; a chapter can hold several articles, while articles not yet in the tree stay in Unplanned Articles.
@@ -88,15 +88,15 @@ Steps:
 
 1. In **Settings → AI**, review profile health, choose one default, and open the three-step profile wizard.
 2. Run local checks first; send a minimal real test only for profiles you explicitly select.
-3. Open **AI Edit** from an article or selection and choose Polish, Rewrite, Expand, or Continue.
+3. Open **AI Edit** from an article or selection, choose Polish, Rewrite, Expand, or Continue, then select one of 25 purpose presets. Creative purposes disclose their risk; structured controls handle choices such as viewpoint and tense.
 4. In **Reference Context**, open each large picker as needed: Reference Specimens, AI Cards, and Article Notes. Search, preview, stage choices, then confirm them; nothing is attached merely because it was viewed.
-5. Select one or more profiles. Every selected model receives the same frozen article and context snapshot.
-6. Read the first successful result immediately, inspect the recorded context names, switch to the paragraph difference, and open the write-back preview. More selected models can mean longer waits and higher provider cost.
+5. Select one or more profiles. Every selected model receives the same frozen article, purpose, controls, and context snapshot.
+6. Run the task and move directly into the dedicated results workspace. Review this-session history, original comparison, two-model comparison, paragraph diff, and an optional edited copy before explicit write-back.
 7. Open the article-side **AI Chat** drawer for discussion without leaving the draft.
 
-Expected result: AI Edit uses the selected article, exact selected profiles, and only confirmed context. Output stays in preview until you explicitly copy or apply it, and article chat remains separate from write-back.
+Expected result: AI Edit uses the selected article, exact selected profiles, purpose, and only confirmed context. Results remain separate from setup and do not affect the article until you explicitly apply one.
 
-Safety note: local config existence does not prove remote model availability. Real tests can use tokens and cost money. Reconnection checks status without resending the provider request; switching articles clears note selections so they cannot leak into another draft.
+Safety note: local config existence does not prove remote model availability. Real tests can use tokens and cost money. Reconnection checks status without resending the provider request; switching articles clears note selections so they cannot leak into another draft. Model output is conservatively normalized before display and raw write-back, while author-edited copies keep their deliberate spacing.
 
 ## 6. Collection Agent: Conversation, Memory, and Proposals
 

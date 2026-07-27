@@ -85,6 +85,7 @@ class OutlineItemOut(BaseModel):
     tags: list[str]
     target_word_count: Optional[int] = None
     sort_order: int
+    board_sort_order: int
     created_at: Optional[str]
     updated_at: Optional[str]
 
@@ -110,6 +111,11 @@ class OutlineItemUpdate(OutlineItemCreate):
 
 class OutlineStatusUpdate(BaseModel):
     status: str
+
+
+class OutlineBoardPositionUpdate(BaseModel):
+    status: str
+    target_index: int
 
 
 class OutlineMakeContainerOut(BaseModel):
@@ -486,6 +492,7 @@ def _outline_to_dto(
         tags=item.tags,
         target_word_count=item.target_word_count,
         sort_order=item.sort_order,
+        board_sort_order=item.board_sort_order,
         created_at=item.created_at,
         updated_at=item.updated_at,
     )
@@ -1711,6 +1718,28 @@ def update_collection_outline_status(
     if item is None:
         raise HTTPException(404, "Outline item not found")
     return _outline_to_dto(item, container)
+
+
+@router.patch("/{collection_id}/outline/{item_id}/board-position", response_model=list[OutlineItemOut])
+def update_collection_outline_board_position(
+    collection_id: str,
+    item_id: str,
+    data: OutlineBoardPositionUpdate,
+    container: AppContainer = Depends(get_container),
+) -> list[OutlineItemOut]:
+    _collection_or_404(collection_id, container)
+    try:
+        items = container.collection_outline_repository.move_board_position(
+            item_id,
+            status=data.status,
+            target_index=data.target_index,
+            collection_id=collection_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not items:
+        raise HTTPException(404, "Outline item not found")
+    return [_outline_to_dto(item, container) for item in items]
 
 
 @router.post(

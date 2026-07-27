@@ -323,12 +323,15 @@ CREATE TABLE IF NOT EXISTS collection_outline_items (
     tags_text         TEXT NOT NULL DEFAULT '',
     target_word_count INTEGER,
     sort_order        INTEGER NOT NULL DEFAULT 0,
+    board_sort_order  INTEGER NOT NULL DEFAULT 0,
     created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_collection_outline_collection_order
     ON collection_outline_items (collection_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_collection_outline_board_order
+    ON collection_outline_items (collection_id, status, board_sort_order);
 CREATE INDEX IF NOT EXISTS idx_collection_outline_entry
     ON collection_outline_items (entry_id);
 

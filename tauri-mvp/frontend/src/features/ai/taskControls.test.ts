@@ -59,4 +59,19 @@ describe('taskControls', () => {
     expect(outlineOptions.intensity).toBe('deep')
     expect(outlineOptions.max_output_chars).toBe(4200)
   })
+
+  it('adds localized preset guidance and structured rewrite controls', () => {
+    const controls = createDefaultControls()
+    controls.presetGuidance = 'Preserve the event while changing the narrative distance.'
+    controls.targetViewpoint = 'third_limited'
+    controls.viewpointCharacter = 'Lin'
+    controls.targetTense = 'past'
+
+    const options = buildTaskRequestOptions('rewrite', controls, 'en')
+
+    expect(options.extra_instructions).toContain('Preserve the event')
+    expect(options.extra_instructions).toContain('Target viewpoint: third-person limited')
+    expect(options.extra_instructions).toContain('Focal character: Lin')
+    expect(options.extra_instructions).toContain('Target tense: past tense')
+  })
 })

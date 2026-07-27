@@ -18,12 +18,14 @@ GitHub-facing screenshots live in `tauri-mvp/docs/assets/screenshots/`. They are
 - `reference-library.png`
 - `motif-star-map.png`
 - `ai-workspace.png`
+- `ai-presets.png`
+- `ai-results-workspace.png`
 - `settings.png`
 - `settings-wizard.png`
 - `article-ai-chat.png`
 - `dates-onboarding.png`
 - `backup-center.png`
 
-The main screenshot flow is maintained in `tauri-mvp/frontend/e2e/visible-actions.e2e.ts`. After regenerating an image, inspect it at full resolution, verify that only demo content is visible, and run the repository secret/path scan before committing it.
+The public screenshot flow is maintained in `tauri-mvp/scripts/capture-screenshots.cjs`, while focused E2E screenshots may also be refreshed from `tauri-mvp/frontend/e2e/visible-actions.e2e.ts`. After regenerating an image, inspect it at full resolution, verify that only demo content is visible, and run the repository secret/path scan before committing it.
 
 Tutorial GIFs have a separate workflow documented in [`tauri-mvp/docs/assets/tutorials/README.md`](../../tauri-mvp/docs/assets/tutorials/README.md).

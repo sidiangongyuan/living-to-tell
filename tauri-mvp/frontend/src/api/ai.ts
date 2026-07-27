@@ -44,6 +44,10 @@ export interface AiTaskCompareResult {
   transport?: string | null
   status: 'success' | 'error' | 'pending'
   result: string
+  raw_result?: string
+  draft_result?: string | null
+  raw_fingerprint?: string | null
+  draft_fingerprint?: string | null
   error: string
   elapsed_ms: number
   input_tokens?: number | null
@@ -90,6 +94,16 @@ export interface ArticleAiTaskRunCreate extends Omit<AiTaskRequest, 'text' | 'ta
   profile_ids: string[]
   selection_start?: number | null
   selection_end?: number | null
+  preset_snapshot?: AiTaskPresetSnapshot | null
+  control_snapshot?: Record<string, unknown>
+}
+
+export interface AiTaskPresetSnapshot {
+  id: string
+  name: string
+  tier: string
+  genre: string
+  built_in: boolean
 }
 
 export interface AiTaskAttachmentSnapshot {
@@ -105,6 +119,8 @@ export interface ArticleAiTaskRun {
   article_title: string
   task_type: 'polish' | 'rewrite' | 'expand' | 'continue'
   article_hash: string
+  article_state?: 'ready' | 'changed' | 'missing'
+  article_current_hash?: string | null
   original_text: string
   selection_start?: number | null
   selection_end?: number | null
@@ -114,6 +130,8 @@ export interface ArticleAiTaskRun {
   error: string
   profiles: AiTaskCompareProfileSnapshot[]
   attachment_snapshots?: AiTaskAttachmentSnapshot[]
+  preset_snapshot?: AiTaskPresetSnapshot | null
+  control_snapshot?: Record<string, unknown>
   results: AiTaskCompareResult[]
   created_at: string
   started_at?: string | null
@@ -121,6 +139,8 @@ export interface ArticleAiTaskRun {
   completed_at?: string | null
   elapsed_ms: number
   applied_profile_id?: string | null
+  applied_candidate?: 'raw' | 'draft' | null
+  applied_fingerprint?: string | null
   applied_at?: string | null
   applied_version_id?: string | null
 }
@@ -239,6 +259,11 @@ export const aiApi = {
     return handleResponse(res)
   },
 
+  async listArticleTaskRuns(): Promise<ArticleAiTaskRun[]> {
+    const res = await apiFetch('/api/ai/task-runs')
+    return handleResponse(res)
+  },
+
   async cancelArticleTaskRun(runId: string): Promise<ArticleAiTaskRun> {
     const res = await apiFetch(`/api/ai/task-runs/${encodeURIComponent(runId)}/cancel`, {
       method: 'POST',
@@ -246,11 +271,51 @@ export const aiApi = {
     return handleResponse(res)
   },
 
-  async applyArticleTaskRun(runId: string, profileId: string): Promise<ArticleAiTaskApplyResult> {
+  async applyArticleTaskRun(
+    runId: string,
+    profileId: string,
+    candidate: 'raw' | 'draft' = 'raw',
+    expectedFingerprint?: string | null,
+  ): Promise<ArticleAiTaskApplyResult> {
     const res = await apiFetch(`/api/ai/task-runs/${encodeURIComponent(runId)}/apply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profile_id: profileId }),
+      body: JSON.stringify({
+        profile_id: profileId,
+        candidate,
+        expected_fingerprint: expectedFingerprint ?? null,
+      }),
+    })
+    return handleResponse(res)
+  },
+
+  async saveArticleTaskDraft(
+    runId: string,
+    profileId: string,
+    draftResult: string,
+    expectedFingerprint?: string | null,
+  ): Promise<ArticleAiTaskRun> {
+    const res = await apiFetch(`/api/ai/task-runs/${encodeURIComponent(runId)}/drafts/${encodeURIComponent(profileId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        draft_result: draftResult,
+        expected_fingerprint: expectedFingerprint ?? null,
+      }),
+    })
+    return handleResponse(res)
+  },
+
+  async resetArticleTaskDraft(runId: string, profileId: string): Promise<ArticleAiTaskRun> {
+    const res = await apiFetch(`/api/ai/task-runs/${encodeURIComponent(runId)}/drafts/${encodeURIComponent(profileId)}`, {
+      method: 'DELETE',
+    })
+    return handleResponse(res)
+  },
+
+  async clearArticleTaskRunHistory(): Promise<void> {
+    const res = await apiFetch('/api/ai/task-runs', {
+      method: 'DELETE',
     })
     return handleResponse(res)
   },

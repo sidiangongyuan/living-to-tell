@@ -11,6 +11,7 @@ import {
 } from '../../api/collections'
 import { errorMessage, isHttpStatus } from '../../api/base'
 import { saveBlobWithDialog } from '../../utils/exportFile'
+import { moveOutlineBoardLocally } from './boardPriority'
 
 export const useCollectionsStore = defineStore('collections', () => {
   const collections = ref<Collection[]>([])
@@ -28,6 +29,7 @@ export const useCollectionsStore = defineStore('collections', () => {
   let collectionsLoadToken = 0
   let articlesLoadToken = 0
   let outlineLoadToken = 0
+  let outlineBoardMutationToken = 0
 
   function invalidateCollectionScopedLoads() {
     articlesLoadToken += 1
@@ -329,6 +331,38 @@ export const useCollectionsStore = defineStore('collections', () => {
     }
   }
 
+  async function updateOutlineBoardPosition(
+    itemId: string,
+    status: CollectionOutlineItem['status'],
+    targetIndex: number,
+  ) {
+    if (!selectedCollectionId.value) return null
+    const collectionId = selectedCollectionId.value
+    const previous = outline.value.map((item) => ({ ...item }))
+    const token = ++outlineBoardMutationToken
+    outline.value = moveOutlineBoardLocally(outline.value, itemId, status, targetIndex)
+    error.value = null
+    try {
+      const updated = await collectionsApi.updateOutlineBoardPosition(
+        collectionId,
+        itemId,
+        { status, target_index: targetIndex },
+      )
+      if (selectedCollectionId.value !== collectionId || token !== outlineBoardMutationToken) {
+        return updated
+      }
+      outline.value = updated
+      return updated
+    } catch (e) {
+      if (selectedCollectionId.value !== collectionId || token !== outlineBoardMutationToken) {
+        return null
+      }
+      outline.value = previous
+      error.value = `看板顺序保存失败：${errorMessage(e)}`
+      throw e
+    }
+  }
+
   async function makeOutlineContainer(itemId: string) {
     if (!selectedCollectionId.value) return null
     const collectionId = selectedCollectionId.value
@@ -464,6 +498,7 @@ export const useCollectionsStore = defineStore('collections', () => {
     createOutlineItem,
     updateOutlineItem,
     updateOutlineStatus,
+    updateOutlineBoardPosition,
     makeOutlineContainer,
     deleteOutlineItem,
     reorderOutline,

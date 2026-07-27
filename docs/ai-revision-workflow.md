@@ -2,6 +2,12 @@
 
 [中文](ai-revision-workflow.zh-CN.md) · English
 
+> Historical design note. The current Tauri workflow is documented in
+> [User Guide: AI Edit](user-guide.md#6-ai-edit-article-chat-and-ai-cards).
+> Since 0.1.52, setup and results are separate: runs open in
+> `/ai/results/:runId` with original comparison, two-model comparison, paragraph
+> diff, editable copies, and safe versioned write-back.
+
 This plan captures the next UX pass for Writer's AI-assisted editing flow. It is
 product-facing: the goal is to make AI suggestions easy to compare, safe to
 apply, and clearly different across task types.
