@@ -21,6 +21,7 @@ from writer.services.ai.interfaces import (
     RewriteRequest,
     RewriteResponse,
 )
+from writer.services.ai.env_utils import resolve_env_var
 from writer.services.ai.prompt_builder import PromptBuilder
 
 OPENAI_TIMEOUT_ENV = "WRITER_OPENAI_TIMEOUT_SECONDS"
@@ -73,7 +74,7 @@ class OpenAiProvider(AiProvider):
                 "env:OPENAI_API_KEY (or similar), or to 'codex' to reuse "
                 "~/.codex/auth.json, or to 'gemini' to reuse ~/.gemini/.env."
             )
-        api_key = os.environ.get(env_var, "").strip()
+        api_key = resolve_env_var(env_var)
         if not api_key:
             raise AiError(
                 f"Environment variable {env_var} is empty. "

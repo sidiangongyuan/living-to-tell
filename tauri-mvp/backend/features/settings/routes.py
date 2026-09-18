@@ -29,6 +29,7 @@ from writer.app.paths import (
 )
 from writer.app.container import AppContainer
 from writer.domain.models.ai_config import AiConfig
+from writer.services.ai.env_utils import resolve_env_var
 from writer.services.ai.codex_auth import CODEX_AUTH_SOURCE, CodexAuthResolver
 from writer.services.ai.codex_config_importer import CodexConfigImporter
 from writer.services.ai.gemini_auth import (
@@ -435,9 +436,10 @@ def _env_status(source: str) -> AiCredentialStatus:
     var = source.split(":", 1)[1].strip()
     if not var:
         return AiCredentialStatus(available=False, reason="empty_var")
+    val = resolve_env_var(var)
     return AiCredentialStatus(
-        available=bool(os.environ.get(var, "").strip()),
-        reason="" if os.environ.get(var, "").strip() else "missing_var",
+        available=bool(val),
+        reason="" if val else "missing_var",
         path=var,
     )
 
@@ -1076,7 +1078,7 @@ def _resolve_api_key_for_source(source: str) -> str:
         var = normalized.split(":", 1)[1].strip()
         if not var:
             raise AiError("环境变量名称为空。")
-        key = os.environ.get(var, "").strip()
+        key = resolve_env_var(var)
         if not key:
             raise AiError(f"环境变量 {var} 未配置。")
         return key

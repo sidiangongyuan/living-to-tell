@@ -21,6 +21,7 @@ from typing import List, Optional
 
 from writer.app.settings import SUPPORTED_WIRE_APIS
 from writer.domain.models.ai_config import AiConfig
+from writer.services.ai.env_utils import resolve_env_var
 from writer.services.ai.codex_auth import CODEX_AUTH_SOURCE, CodexAuthResolver
 from writer.services.ai.gemini_cli_provider import (
     GEMINI_CLI_AUTH_SOURCE,
@@ -215,7 +216,7 @@ def preflight_rewrite(
                     "(or whichever variable holds your key).",
                 )
             )
-        elif not (env.get(var, "") or "").strip():
+        elif not resolve_env_var(var, environ=env):
             issues.append(
                 PreflightIssue(
                     "missing_env_var",
