@@ -321,6 +321,18 @@ _CATALOG: dict[str, dict[str, str]] = {
                 "fill the Gemini CLI proxy field."
             ),
             "settings.gemini_cli_quota_btn": "Check Gemini quota",
+            "settings.gemini_cli_login_btn": "Sign in with Google",
+            "settings.gemini_cli_login_reauth_btn": "Re-authorize Google Account",
+            "settings.gemini_cli_logging_in": "Waiting for Google authorization in browser…",
+            "settings.gemini_cli_login_success": "Google account authorized successfully! Linked: {account}",
+            "settings.gemini_cli_login_failed": "Authorization failed: {error}",
+            "settings.gemini_cli_login_cancelled": "Authorization cancelled.",
+            "settings.gemini_cli_login_dialog_title": "Google Account Authorization",
+            "settings.gemini_cli_login_dialog_msg": (
+                "Your system browser has opened the Google sign-in page.\n\n"
+                "Please sign in and grant permission in the browser window.\n"
+                "This dialog will close automatically once authorized."
+            ),
             "settings.gemini_cli_quota_title": "Gemini quota / tier",
             "settings.gemini_cli_quota_status": (
                 "Account: {account}\n"
@@ -1436,6 +1448,18 @@ _CATALOG: dict[str, dict[str, str]] = {
                 "如果需要代理，请设置 {proxy_env}，或填写 Gemini CLI 代理。"
             ),
             "settings.gemini_cli_quota_btn": "查看 Gemini 额度",
+            "settings.gemini_cli_login_btn": "登录 Google 账号",
+            "settings.gemini_cli_login_reauth_btn": "重新授权 Google 账号",
+            "settings.gemini_cli_logging_in": "正在等待浏览器授权，请在打开的网页中完成登录…",
+            "settings.gemini_cli_login_success": "Google 账号授权成功！已绑定：{account}",
+            "settings.gemini_cli_login_failed": "授权失败：{error}",
+            "settings.gemini_cli_login_cancelled": "用户已取消授权。",
+            "settings.gemini_cli_login_dialog_title": "Google 账号授权",
+            "settings.gemini_cli_login_dialog_msg": (
+                "系统浏览器已打开 Google 登录授权页面。\n\n"
+                "请在浏览器中完成登录并允许授权。\n"
+                "完成授权后此窗口将自动关闭。"
+            ),
             "settings.gemini_cli_quota_title": "Gemini 额度 / 档位",
             "settings.gemini_cli_quota_status": (
                 "账号：{account}\n"

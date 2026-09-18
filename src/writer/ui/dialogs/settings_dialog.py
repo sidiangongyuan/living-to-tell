@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -74,6 +75,7 @@ from writer.services.ai.opencode_cli_provider import (
     find_opencode_cli,
     opencode_auth_status,
 )
+from writer.services.ai.gemini_oauth import GeminiOAuthFlow, GeminiOAuthResult
 from writer.ui.i18n import TR
 from writer.ui.widgets.controls import (
     NoWheelComboBox,
@@ -135,6 +137,69 @@ _EDITOR_FONT_PRESETS = (
     ),
 )
 _CUSTOM_FONT_PRESET = "custom"
+
+
+class GeminiLoginWorker(QThread):
+    finished_result = Signal(object)
+
+    def __init__(
+        self, proxy_url: Optional[str] = None, parent: Optional[QWidget] = None
+    ) -> None:
+        super().__init__(parent)
+        self._flow = GeminiOAuthFlow(proxy_url=proxy_url)
+
+    def run(self) -> None:
+        result = self._flow.run(open_browser=True)
+        self.finished_result.emit(result)
+
+    def cancel(self) -> None:
+        self._flow.cancel()
+
+
+class GeminiLoginDialog(QDialog):
+    def __init__(
+        self, worker: GeminiLoginWorker, parent: Optional[QWidget] = None
+    ) -> None:
+        super().__init__(parent)
+        self._worker = worker
+        self.setWindowTitle(TR("settings.gemini_cli_login_dialog_title"))
+        self.setModal(True)
+        self.setFixedWidth(440)
+        self.setWindowFlags(
+            self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+
+        self._desc = QLabel(TR("settings.gemini_cli_login_dialog_msg"))
+        self._desc.setWordWrap(True)
+        layout.addWidget(self._desc)
+
+        self._progress = QProgressBar()
+        self._progress.setRange(0, 0)
+        layout.addWidget(self._progress)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        self._cancel_btn = QPushButton(TR("dlg.rewrite_cancel"))
+        self._cancel_btn.clicked.connect(self._on_cancel)
+        btn_row.addWidget(self._cancel_btn)
+        layout.addLayout(btn_row)
+
+        self._worker.finished_result.connect(self._on_worker_finished)
+
+    def _on_cancel(self) -> None:
+        self._worker.cancel()
+        self.reject()
+
+    def _on_worker_finished(self, _result: object) -> None:
+        self.accept()
+
+    def reject(self) -> None:
+        self._worker.cancel()
+        super().reject()
 
 
 class SettingsDialog(QDialog):
@@ -343,6 +408,9 @@ class SettingsDialog(QDialog):
         self._gemini_quota_button = QPushButton(TR("settings.gemini_cli_quota_btn"))
         self._gemini_quota_button.clicked.connect(self._on_check_gemini_cli_quota)
 
+        self._gemini_login_button = QPushButton(TR("settings.gemini_cli_login_btn"))
+        self._gemini_login_button.clicked.connect(self._on_login_gemini_cli)
+
         test_button = QPushButton(TR("settings.test_btn"))
         test_button.clicked.connect(self._on_test_config)
 
@@ -355,6 +423,7 @@ class SettingsDialog(QDialog):
         action_row = QHBoxLayout()
         action_row.addWidget(import_button)
         action_row.addWidget(gemini_button)
+        action_row.addWidget(self._gemini_login_button)
         action_row.addWidget(self._gemini_quota_button)
         action_row.addWidget(test_button)
         action_row.addStretch(1)
@@ -412,6 +481,17 @@ class SettingsDialog(QDialog):
         show_gemini_cli = provider == "gemini_cli"
         self._gemini_cli_proxy.setVisible(show_gemini_cli)
         self._gemini_quota_button.setVisible(show_gemini_cli)
+        self._gemini_login_button.setVisible(show_gemini_cli)
+        if show_gemini_cli:
+            auth = gemini_cli_oauth_status()
+            if auth.available:
+                self._gemini_login_button.setText(
+                    TR("settings.gemini_cli_login_reauth_btn")
+                )
+            else:
+                self._gemini_login_button.setText(
+                    TR("settings.gemini_cli_login_btn")
+                )
         if self._gemini_cli_proxy_label is not None:
             self._gemini_cli_proxy_label.setVisible(show_gemini_cli)
         if provider == "gemini_cli":
@@ -520,21 +600,20 @@ class SettingsDialog(QDialog):
                 )
             return
         if self._current_provider_key() == "gemini_cli":
-            found = find_gemini_cli()
-            if not found:
-                self._key_status.setText(TR("settings.gemini_cli_missing"))
-                return
             auth = gemini_cli_oauth_status()
+            found = find_gemini_cli()
             proxy = self._gemini_cli_proxy.text().strip() or TR("settings.gemini_cli_proxy_auto")
             if auth.available:
                 account = auth.account or TR("settings.gemini_cli_unknown_account")
                 self._key_status.setText(
                     TR("settings.gemini_cli_ready").format(
-                        path=found,
+                        path=found or str(auth.creds_path),
                         account=account,
                         proxy=proxy,
                     )
                 )
+            elif not found:
+                self._key_status.setText(TR("settings.gemini_cli_missing"))
             else:
                 self._key_status.setText(
                     TR("settings.gemini_cli_auth_missing").format(
@@ -704,6 +783,46 @@ class SettingsDialog(QDialog):
             TR("settings.gemini_cli_quota_title"),
             message,
         )
+
+    def _on_login_gemini_cli(self) -> None:
+        proxy = self._gemini_cli_proxy.text().strip() or detect_gemini_cli_proxy()
+        worker = GeminiLoginWorker(proxy_url=proxy, parent=self)
+        dialog = GeminiLoginDialog(worker, parent=self)
+
+        result_holder: list[GeminiOAuthResult] = []
+
+        def on_finished(res: GeminiOAuthResult) -> None:
+            result_holder.append(res)
+
+        worker.finished_result.connect(on_finished)
+        worker.start()
+        dialog.exec()
+
+        worker.wait(2000)
+
+        self._refresh_provider_ui()
+        self._refresh_key_status()
+
+        if not result_holder:
+            return
+        res = result_holder[0]
+        if res.success:
+            account = res.email or TR("settings.gemini_cli_unknown_account")
+            QMessageBox.information(
+                self,
+                TR("settings.gemini_cli_login_dialog_title"),
+                TR("settings.gemini_cli_login_success").format(account=account),
+            )
+        elif res.cancelled:
+            self._key_status.setText(TR("settings.gemini_cli_login_cancelled"))
+        else:
+            QMessageBox.warning(
+                self,
+                TR("settings.gemini_cli_login_dialog_title"),
+                TR("settings.gemini_cli_login_failed").format(
+                    error=res.error or "unknown error"
+                ),
+            )
 
     def _on_test_config(self) -> None:
         """Run preflight on the CURRENT (unsaved) form values.
