@@ -146,7 +146,7 @@ def test_sdk_client_uses_bounded_timeout_and_disables_hidden_retries(monkeypatch
 
     provider._ensure_client()
 
-    assert captured["timeout"] == 120
+    assert captured["timeout"] == 300
     assert captured["max_retries"] == 0
 
 
@@ -225,3 +225,34 @@ def test_explicit_gemini_provider_name_sets_provider_name():
     )
 
     assert response.provider == "gemini"
+
+
+def test_chat_completions_streaming_returns_full_content():
+    class _FakeChunk:
+        def __init__(self, content=None, finish_reason=None):
+            delta = type("D", (), {"content": content, "reasoning_content": None})()
+            self.choices = [type("C", (), {"delta": delta, "finish_reason": finish_reason})()]
+            self.usage = None
+
+    class _FakeComp:
+        def create(self, **kwargs):
+            return iter([
+                _FakeChunk("hello "),
+                _FakeChunk("world", finish_reason="stop"),
+            ])
+
+    class _FakeStreamClient:
+        def __init__(self):
+            self.chat = type("Chat", (), {"completions": _FakeComp()})()
+
+    config = AiConfig(
+        wire_api="chat_completions",
+        model="deepseek-v4-pro",
+        api_key_source="env:NOPE",
+    )
+    provider = OpenAiProvider(config, PromptBuilder(), client=_FakeStreamClient())
+    response = provider.chat([{"role": "user", "content": "hi"}])
+    assert response.content == "hello world"
+    assert response.finish_reason == "stop"
+    assert response.model == "deepseek-v4-pro"
+

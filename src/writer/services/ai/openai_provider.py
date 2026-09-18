@@ -25,7 +25,7 @@ from writer.services.ai.env_utils import resolve_env_var
 from writer.services.ai.prompt_builder import PromptBuilder
 
 OPENAI_TIMEOUT_ENV = "WRITER_OPENAI_TIMEOUT_SECONDS"
-OPENAI_DEFAULT_TIMEOUT_SECONDS = 120
+OPENAI_DEFAULT_TIMEOUT_SECONDS = 300
 
 
 class OpenAiProvider(AiProvider):
@@ -183,11 +183,60 @@ class OpenAiProvider(AiProvider):
             response = client.chat.completions.create(
                 model=model,
                 messages=list(messages),
+                stream=True,
+            )
+        except TypeError:
+            response = client.chat.completions.create(
+                model=model,
+                messages=list(messages),
             )
         except AiError:
             raise
         except Exception as exc:  # noqa: BLE001
             raise AiError(f"AI request failed: {exc}") from exc
+
+        if hasattr(response, "__iter__") and not hasattr(response, "choices"):
+            content_parts: list[str] = []
+            reasoning_parts: list[str] = []
+            finish_reason: Optional[str] = None
+            usage = None
+            try:
+                for chunk in response:
+                    chunk_usage = getattr(chunk, "usage", None)
+                    if chunk_usage:
+                        usage = chunk_usage
+                    choices = getattr(chunk, "choices", None) or []
+                    if choices:
+                        choice = choices[0]
+                        fr = getattr(choice, "finish_reason", None)
+                        if fr:
+                            finish_reason = fr
+                        delta = getattr(choice, "delta", None)
+                        if delta:
+                            part = getattr(delta, "content", None)
+                            if isinstance(part, str) and part:
+                                content_parts.append(part)
+                            rc = getattr(delta, "reasoning_content", None)
+                            if isinstance(rc, str) and rc:
+                                reasoning_parts.append(rc)
+            except Exception as exc:  # noqa: BLE001
+                raise AiError(f"AI request failed: {exc}") from exc
+
+            text = "".join(content_parts).strip()
+            if not text and reasoning_parts:
+                text = "".join(reasoning_parts).strip()
+            if not text:
+                raise AiError("AI response contained no text output.")
+
+            return ChatResponse(
+                content=text,
+                model=model,
+                provider=self._provider_name(),
+                transport="openai_chat_completions",
+                input_tokens=_safe_int(usage, "prompt_tokens"),
+                output_tokens=_safe_int(usage, "completion_tokens"),
+                finish_reason=finish_reason or "stop",
+            )
 
         text = _extract_chat_completion_text(response)
         if not text:
