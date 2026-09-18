@@ -1,5 +1,14 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.56 - Streaming Chat Completions & Extended AI Timeouts (2026-09-18)
+
+### Fixed
+
+- Fixed Cloudflare Error 524 / proxy timeouts on OpenAI-compatible relays when using long-reasoning models (such as DeepSeek V4 Pro) during rich card generation and motif enrichment.
+- Added streaming chat completions in `OpenAiProvider` so token chunks flow continuously from the start of generation, preventing reverse proxy read timeouts.
+- Increased default OpenAI provider timeout from 120s to 300s (5 minutes) to match frontend long-running AI task timeouts.
+- Added dynamic Windows User Registry fallback for environment credentials (`resolve_env_var`), ensuring newly saved keys are immediately available to backend processes without restarting Windows.
+
 ## 0.1.55 - In-App Google OAuth for Gemini (2026-09-18)
 
 ### Added
