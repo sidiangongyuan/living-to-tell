@@ -6,12 +6,12 @@
 
 一款面向 Windows 的本地优先写作工作室：适合长篇项目、可追溯文脉，以及需要作者确认的 AI 协作。
 
-[![最新版本](https://img.shields.io/badge/预览版-0.1.54-2563eb?style=flat-square)](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.54)
+[![最新版本](https://img.shields.io/badge/预览版-0.1.55-2563eb?style=flat-square)](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.55)
 [![Windows](https://img.shields.io/badge/Windows-x64-111827?style=flat-square&logo=windows11)](https://github.com/sidiangongyuan/living-to-tell/releases/latest)
 [![本地优先](https://img.shields.io/badge/数据-本地优先-15803d?style=flat-square)](#数据与隐私)
 [![许可证](https://img.shields.io/badge/许可证-MIT-f59e0b?style=flat-square)](LICENSE)
 
-[**下载 Windows 安装包**](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.54/LivingToTell_0.1.54_x64-setup.exe)
+[**下载 Windows 安装包**](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.55/LivingToTell_0.1.55_x64-setup.exe)
  · [English](README.md)
  · [使用手册](docs/user-guide.zh-CN.md)
  · [动态教程](docs/tutorials.zh-CN.md)
@@ -131,8 +131,8 @@ AI 是可选能力。写作、作品集、文脉、意象、导出和备份都�
 
 当前公开预览版支持 Windows x64。
 
-- 推荐安装包：[`LivingToTell_0.1.54_x64-setup.exe`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.54/LivingToTell_0.1.54_x64-setup.exe)
-- MSI 安装包：[`LivingToTell_0.1.54_x64_zh-CN.msi`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.54/LivingToTell_0.1.54_x64_zh-CN.msi)
+- 推荐安装包：[`LivingToTell_0.1.55_x64-setup.exe`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.55/LivingToTell_0.1.55_x64-setup.exe)
+- MSI 安装包：[`LivingToTell_0.1.55_x64_zh-CN.msi`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.55/LivingToTell_0.1.55_x64_zh-CN.msi)
 - 更新说明与历史版本：[GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases)
 
 预览版安装包暂未签名，Windows SmartScreen 可能显示风险提示。请只运行从本仓库 Release 页面下载的文件。

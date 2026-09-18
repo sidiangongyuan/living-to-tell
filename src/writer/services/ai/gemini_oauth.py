@@ -493,3 +493,17 @@ class GeminiOAuthFlow:
                 json.dumps(accounts_data, indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
+
+
+def run_gemini_oauth_flow(
+    *,
+    proxy: Optional[str] = None,
+    timeout: int = 120,
+    open_browser: bool = True,
+) -> GeminiOAuthResult:
+    """Run an interactive OAuth login flow."""
+    flow = GeminiOAuthFlow(
+        proxy_url=proxy,
+        timeout_seconds=timeout,
+    )
+    return flow.run(open_browser=open_browser)

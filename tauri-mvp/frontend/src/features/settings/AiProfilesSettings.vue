@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { errorMessage } from '../../api/base'
 import {
   settingsApi,
@@ -31,6 +31,92 @@ const saving = ref(false)
 const keyInput = ref('')
 const advancedOpen = ref(false)
 const draft = ref<AiProfileCreate>(emptyDraft())
+const modelOptions = ref<string[]>([])
+const fetchingModels = ref(false)
+const modelError = ref('')
+let modelRequest = 0
+
+const geminiOAuthAccount = ref<string | null>(null)
+const geminiOAuthAvailable = ref(false)
+const loggingInGoogle = ref(false)
+const googleOAuthError = ref('')
+const googleOAuthNotice = ref('')
+
+async function refreshGeminiOAuthStatus() {
+  try {
+    const res = await settingsApi.getGeminiOAuthStatus()
+    geminiOAuthAvailable.value = res.available
+    geminiOAuthAccount.value = res.account ?? null
+  } catch {
+    geminiOAuthAvailable.value = false
+    geminiOAuthAccount.value = null
+  }
+}
+
+async function loginGoogle() {
+  loggingInGoogle.value = true
+  googleOAuthError.value = ''
+  googleOAuthNotice.value = ''
+  try {
+    const res = await settingsApi.startGeminiOAuth(draft.value.gemini_cli_proxy || undefined)
+    if (res.success) {
+      geminiOAuthAvailable.value = true
+      geminiOAuthAccount.value = res.account ?? null
+      googleOAuthNotice.value = t('settings.profileHub.geminiOAuthSuccess') + (res.account ? `: ${res.account}` : '')
+      await load()
+    } else {
+      googleOAuthError.value = res.error || t('settings.profileHub.missingCredential')
+    }
+  } catch (e) {
+    googleOAuthError.value = errorMessage(e)
+  } finally {
+    loggingInGoogle.value = false
+  }
+}
+
+watch(
+  () => [wizardOpen.value, draft.value.base_url, draft.value.provider_name, draft.value.api_key_source, keyInput.value],
+  () => {
+    modelRequest += 1
+    modelOptions.value = []
+    modelError.value = ''
+    fetchingModels.value = false
+  },
+  { flush: 'sync' },
+)
+
+function validRelayUrl(): boolean {
+  try {
+    const url = new URL((draft.value.base_url || '').trim())
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash
+  } catch {
+    return false
+  }
+}
+
+async function fetchModels() {
+  if (!validRelayUrl()) {
+    modelError.value = t('settings.profileHub.relayUrlRequired')
+    return
+  }
+  const request = ++modelRequest
+  fetchingModels.value = true
+  modelError.value = ''
+  modelOptions.value = []
+  try {
+    const result = await settingsApi.previewAiModels({
+      base_url: (draft.value.base_url || '').trim(),
+      api_key: keyInput.value.trim(),
+      api_key_source: draft.value.api_key_source,
+    })
+    if (request !== modelRequest) return
+    modelOptions.value = result.models
+  } catch {
+    if (request === modelRequest) modelError.value = t('settings.profileHub.modelFetchFailed')
+  } finally {
+    if (request === modelRequest) fetchingModels.value = false
+  }
+}
 
 const scanning = ref(false)
 const discovered = ref<AiDiscoveredProfile[]>([])
@@ -107,6 +193,7 @@ async function load() {
     profiles.value = result.profiles
     defaultProfileId.value = result.default_profile_id ?? null
     selectedLiveTestIds.value = selectedLiveTestIds.value.filter((id) => profiles.value.some((item) => item.id === id))
+    void refreshGeminiOAuthStatus()
   } catch (e) {
     error.value = errorMessage(e)
   } finally {
@@ -124,6 +211,8 @@ function openCreateWizard() {
   advancedOpen.value = false
   error.value = ''
   notice.value = ''
+  googleOAuthError.value = ''
+  googleOAuthNotice.value = ''
   wizardOpen.value = true
 }
 
@@ -157,6 +246,11 @@ function openEditWizard(profile: AiProfile) {
   wizardStep.value = 2
   error.value = ''
   notice.value = ''
+  googleOAuthError.value = ''
+  googleOAuthNotice.value = ''
+  if (profile.provider_name === 'gemini_cli') {
+    void refreshGeminiOAuthStatus()
+  }
   wizardOpen.value = true
 }
 
@@ -173,6 +267,7 @@ async function chooseAccess(kind: AccessKind) {
     next.model = 'gpt-4o-mini'
   } else if (kind === 'relay') {
     next.name = t('settings.profileHub.relayDefaultName')
+    next.api_key_source = ''
   } else if (kind === 'codex') {
     next.name = 'Codex / OpenAI'
     next.api_key_source = 'codex'
@@ -190,6 +285,7 @@ async function chooseAccess(kind: AccessKind) {
     next.api_key_source = 'gemini-cli'
     next.model = 'gemini-cli-default'
     next.wire_api = 'responses'
+    void refreshGeminiOAuthStatus()
   } else if (kind === 'opencode') {
     next.name = 'OpenCode'
     next.provider_name = 'opencode'
@@ -204,6 +300,14 @@ async function chooseAccess(kind: AccessKind) {
 async function saveWizardProfile() {
   const name = (draft.value.name || '').trim()
   const model = (draft.value.model || '').trim()
+  if (accessKind.value === 'relay' && !validRelayUrl()) {
+    error.value = t('settings.profileHub.relayUrlRequired')
+    return
+  }
+  if (accessKind.value === 'relay' && !keyInput.value.trim() && !draft.value.api_key_source.trim()) {
+    error.value = t('settings.profileHub.relayKeyRequired')
+    return
+  }
   if (!name || !model) {
     error.value = t('settings.profileHub.nameModelRequired')
     return
@@ -221,6 +325,7 @@ async function saveWizardProfile() {
         label: name,
       })
       apiKeySource = saved.api_key_source
+      draft.value.api_key_source = apiKeySource
       keyInput.value = ''
     }
     const payload: AiProfileCreate = {
@@ -432,6 +537,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               <div>{{ t('settings.profileHub.transport') }}: {{ profile.wire_api }}</div>
               <div class="break-all">{{ t('settings.baseUrl') }}: {{ profile.base_url || t('settings.profileHub.officialEndpoint') }}</div>
               <div class="break-all">{{ t('settings.credentialSource') }}: {{ profile.api_key_source }}</div>
+              <div v-if="profile.provider_name === 'gemini_cli' && geminiOAuthAccount">{{ t('settings.profileHub.geminiOAuthTitle') }}: {{ geminiOAuthAccount }}</div>
               <div v-if="profile.last_tested_at">{{ t('settings.profileHub.lastTest') }}: {{ profile.last_tested_at }}</div>
               <div v-if="profile.last_test_elapsed_ms !== null && profile.last_test_elapsed_ms !== undefined">{{ profile.last_test_elapsed_ms }}ms · {{ profile.last_test_transport || '-' }}</div>
             </div>
@@ -460,6 +566,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         </header>
 
         <div class="p-5">
+          <p v-if="error" role="alert" class="mb-4 text-sm text-red-700">{{ error }}</p>
+          <p v-if="notice" role="status" class="mb-4 text-sm text-emerald-700">{{ notice }}</p>
           <div v-if="wizardStep === 1" class="grid gap-3 sm:grid-cols-2">
             <button v-for="option in accessOptions" :key="option.id" type="button" class="border border-stone-200 p-4 text-left hover:border-stone-400 hover:bg-stone-50" @click="chooseAccess(option.id)">
               <span class="block text-sm font-semibold text-stone-900">{{ option.title }}</span>
@@ -473,16 +581,47 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
                 <input v-model="draft.name" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" />
               </label>
               <label class="block text-sm font-medium text-stone-700">{{ t('settings.model') }}
-                <input v-model="draft.model" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" />
+                <input v-model="draft.model" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" :placeholder="accessKind === 'relay' ? 'deepseek-v4-pro' : ''" />
               </label>
             </div>
-            <label v-if="!['gemini_cli', 'opencode'].includes(draft.provider_name)" class="block text-sm font-medium text-stone-700">{{ t('settings.baseUrl') }}
+            <label v-if="!['gemini_cli', 'opencode'].includes(draft.provider_name)" class="block text-sm font-medium text-stone-700">{{ accessKind === 'relay' ? t('settings.profileHub.relayUrl') : t('settings.baseUrl') }}
               <input v-model="draft.base_url" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" :placeholder="accessKind === 'relay' ? 'https://relay.example/v1' : 'https://api.openai.com/v1'" />
             </label>
+            <div v-if="draft.provider_name === 'gemini_cli'" class="rounded-md border border-stone-200 bg-stone-50 p-4 space-y-3">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <h4 class="text-sm font-semibold text-stone-900">{{ t('settings.profileHub.geminiOAuthTitle') }}</h4>
+                  <p class="mt-1 text-xs leading-5 text-stone-600">
+                    {{ geminiOAuthAccount ? t('settings.profileHub.geminiOAuthAuthorized', { account: geminiOAuthAccount }) : t('settings.profileHub.geminiOAuthNotAuthorized') }}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  :disabled="loggingInGoogle"
+                  class="rounded-md bg-stone-900 px-3.5 py-2 text-xs font-semibold text-white hover:bg-stone-700 disabled:opacity-40"
+                  @click="loginGoogle"
+                >
+                  {{ loggingInGoogle ? t('settings.profileHub.geminiOAuthLoggingIn') : (geminiOAuthAccount ? t('settings.profileHub.geminiOAuthReauth') : t('settings.profileHub.geminiOAuthLogin')) }}
+                </button>
+              </div>
+              <p v-if="googleOAuthError" role="alert" class="text-xs text-red-700">{{ googleOAuthError }}</p>
+              <p v-if="googleOAuthNotice" role="status" class="text-xs text-emerald-700">{{ googleOAuthNotice }}</p>
+              <p class="text-xs leading-5 text-stone-500">{{ t('settings.profileHub.geminiOAuthBrowserHint') }}</p>
+            </div>
             <label v-if="!['codex', 'gemini_cli', 'opencode'].includes(accessKind)" class="block text-sm font-medium text-stone-700">API Key
               <input v-model="keyInput" type="password" autocomplete="off" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" :placeholder="editingProfileId ? t('settings.profileHub.keepExistingKey') : t('settings.localApiKeyPlaceholder')" />
               <span class="mt-1 block text-xs leading-5 text-stone-500">{{ t('settings.profileHub.keyStoredLocally') }}</span>
             </label>
+            <div v-if="accessKind === 'relay' && draft.provider_name === 'openai'" class="space-y-2">
+              <button type="button" :disabled="fetchingModels || saving" class="rounded-md border border-stone-300 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40" @click="fetchModels">{{ fetchingModels ? t('common.loading') : t('settings.profileHub.fetchModels') }}</button>
+              <label v-if="modelOptions.length" class="block text-sm font-medium text-stone-700">{{ t('settings.profileHub.availableModels') }}
+                <select class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" :value="modelOptions.includes(draft.model) ? draft.model : ''" @change="draft.model = ($event.target as HTMLSelectElement).value">
+                  <option value="" disabled>{{ t('settings.profileHub.chooseModel') }}</option>
+                  <option v-for="model in modelOptions" :key="model" :value="model">{{ model }}</option>
+                </select>
+              </label>
+              <p v-if="modelError" role="alert" class="text-xs leading-5 text-amber-800">{{ modelError }}</p>
+            </div>
             <button type="button" class="text-sm font-medium text-stone-600 underline" @click="advancedOpen = !advancedOpen">{{ advancedOpen ? t('common.collapse') : t('settings.profileHub.advanced') }}</button>
             <div v-if="advancedOpen" class="grid gap-4 border-t border-stone-200 pt-4 md:grid-cols-2">
               <label class="block text-sm font-medium text-stone-700">Provider
@@ -495,6 +634,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               </label>
               <label class="block text-sm font-medium text-stone-700 md:col-span-2">{{ t('settings.credentialSource') }}
                 <input v-model="draft.api_key_source" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" />
+              </label>
+              <label v-if="draft.provider_name === 'gemini_cli'" class="block text-sm font-medium text-stone-700 md:col-span-2">
+                Gemini CLI Proxy (可选)
+                <input v-model="draft.gemini_cli_proxy" class="mt-2 w-full rounded-md border border-stone-300 px-3 py-2" placeholder="http://127.0.0.1:7897" />
               </label>
             </div>
             <div class="flex justify-between gap-3 border-t border-stone-200 pt-4">

@@ -44,7 +44,9 @@ from writer.services.ai.gemini_cli_provider import (
     find_gemini_cli,
     gemini_cli_oauth_status,
 )
+from writer.services.ai.gemini_oauth import run_gemini_oauth_flow
 from writer.services.ai.interfaces import AiError, AiProvider
+from writer.services.ai.openai_provider import _normalize_openai_base_url_for_sdk
 from writer.services.ai.opencode_cli_provider import (
     OPENCODE_AUTH_SOURCE,
     OPENCODE_DEFAULT_MODEL,
@@ -250,6 +252,30 @@ class AiLocalKeySaveOut(BaseModel):
     env_var: str
     message: str
     persisted: bool
+
+
+class AiModelPreviewRequest(BaseModel):
+    base_url: str
+    api_key: str = Field(default="", repr=False)
+    api_key_source: str = ""
+
+
+class AiGeminiOAuthStartRequest(BaseModel):
+    proxy: Optional[str] = None
+    timeout_seconds: int = 120
+
+
+class AiGeminiOAuthStartOut(BaseModel):
+    success: bool
+    account: Optional[str] = None
+    error: Optional[str] = None
+    message: str = ""
+
+
+class AiGeminiOAuthStatusOut(BaseModel):
+    available: bool
+    account: Optional[str] = None
+    reason: str = ""
 
 
 class DataLocationInfo(BaseModel):
@@ -536,10 +562,17 @@ def _gemini_status() -> AiCredentialStatus:
 def _gemini_cli_status(proxy: Optional[str]) -> AiCredentialStatus:
     command = find_gemini_cli()
     oauth = gemini_cli_oauth_status()
+    is_available = bool(oauth.available or (command and oauth.available))
+    reason = ""
+    if not is_available:
+        if oauth.reason and oauth.reason != "missing_file":
+            reason = oauth.reason
+        else:
+            reason = "missing_login" if command else "missing_command"
     return AiCredentialStatus(
-        available=bool(command and oauth.available),
+        available=is_available,
         path=str(oauth.creds_path),
-        reason="" if command and oauth.available else ("missing_command" if not command else oauth.reason),
+        reason=reason,
         account=oauth.account,
         command=command,
         proxy=proxy or detect_gemini_cli_proxy(),
@@ -911,12 +944,33 @@ def _discovered_gemini_profile() -> AiDiscoveredProfileOut:
     )
 
 
+def _discovered_gemini_cli_profile() -> AiDiscoveredProfileOut:
+    oauth = gemini_cli_oauth_status()
+    command = find_gemini_cli()
+    available = bool(oauth.available or (command and oauth.available))
+    return AiDiscoveredProfileOut(
+        name="Gemini CLI / Code Assist",
+        provider_name="gemini_cli",
+        base_url=None,
+        wire_api="responses",
+        model=GEMINI_CLI_DEFAULT_MODEL,
+        api_key_source=GEMINI_CLI_AUTH_SOURCE,
+        gemini_cli_proxy=detect_gemini_cli_proxy(),
+        enabled=True,
+        source_key="local:gemini_cli",
+        source_label=f"Google 账号 ({oauth.account})" if oauth.account else "Gemini CLI",
+        available=available,
+        reason="" if available else ("未登录 Google 账号" if command else "未找到 Google 授权或命令行工具"),
+    )
+
+
 def _discover_local_ai_profiles(container: AppContainer) -> list[AiDiscoveredProfileOut]:
     profiles = _load_ai_profiles(container)
     discovered = [
         _discovered_opencode_profile(),
         _discovered_codex_profile(),
         _discovered_gemini_profile(),
+        _discovered_gemini_cli_profile(),
     ]
     out: list[AiDiscoveredProfileOut] = []
     for candidate in discovered:
@@ -1034,15 +1088,10 @@ def _resolve_api_key_for_source(source: str) -> str:
 
 
 def _openai_compatible_models_url(base_url: str) -> str:
-    base = (base_url or "").strip().rstrip("/")
+    base = _normalize_openai_base_url_for_sdk(base_url)
     if not base:
         raise AiError("模型列表拉取需要配置 Base URL。")
-    lower = base.lower()
-    if lower.endswith("/models"):
-        return base
-    if lower.endswith("/v1") or lower.endswith("/v1beta") or lower.endswith("/openai"):
-        return f"{base}/models"
-    return f"{base}/v1/models"
+    return f"{base}/models"
 
 
 def _extract_model_ids(payload: Any) -> list[str]:
@@ -1517,6 +1566,33 @@ def delete_ai_profile(
     container.settings.save_ai_profile_health(health)
 
 
+@router.post("/ai/models/preview", response_model=AiModelListOut)
+def preview_ai_models(data: AiModelPreviewRequest) -> AiModelListOut:
+    # Unsaved credentials travel in the body and are never persisted by discovery.
+    base_url = data.base_url.strip()
+    try:
+        parsed = urlparse(base_url)
+        valid = (
+            parsed.scheme in {"http", "https"} and parsed.hostname
+            and not parsed.username and not parsed.password
+            and not parsed.query and not parsed.fragment
+        )
+        parsed.port
+    except ValueError:
+        valid = False
+    if not valid:
+        raise HTTPException(400, "请填写有效的 HTTP(S) API 地址，不含账号、密码、查询参数或片段。")
+    key = data.api_key.strip()
+    if "\n" in key or "\r" in key:
+        raise HTTPException(400, "API Key 不能包含换行。")
+    try:
+        key = key or _resolve_api_key_for_source(data.api_key_source)
+        models = _fetch_openai_compatible_models(base_url, key)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, _friendly_model_fetch_error(exc)) from None
+    return AiModelListOut(provider="openai", models=models, source="live")
+
+
 @router.get("/ai/models", response_model=AiModelListOut)
 def get_ai_models(
     provider: str,
@@ -1755,6 +1831,35 @@ def import_gemini_settings(
             "wire_api": result.wire_api,
             "credential_source": GEMINI_AUTH_SOURCE if auth_status.available else None,
         },
+    )
+
+
+@router.get("/ai/gemini-oauth/status", response_model=AiGeminiOAuthStatusOut)
+def gemini_oauth_status() -> AiGeminiOAuthStatusOut:
+    status = gemini_cli_oauth_status()
+    return AiGeminiOAuthStatusOut(
+        available=status.available,
+        account=status.account,
+        reason=status.reason,
+    )
+
+
+@router.post("/ai/gemini-oauth/start", response_model=AiGeminiOAuthStartOut)
+def start_gemini_oauth(
+    data: AiGeminiOAuthStartRequest = AiGeminiOAuthStartRequest(),
+) -> AiGeminiOAuthStartOut:
+    proxy = (data.proxy or "").strip() or detect_gemini_cli_proxy()
+    result = run_gemini_oauth_flow(proxy=proxy, timeout=data.timeout_seconds)
+    if result.success:
+        return AiGeminiOAuthStartOut(
+            success=True,
+            account=result.email,
+            message=f"Google 账号授权成功：{result.email}" if result.email else "Google 账号授权成功。",
+        )
+    return AiGeminiOAuthStartOut(
+        success=False,
+        error=result.error or "Google 账号授权失败。",
+        message=result.error or "Google 账号授权失败。",
     )
 
 

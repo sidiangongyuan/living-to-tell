@@ -106,6 +106,19 @@ export interface AiImportResult {
   imported: Record<string, unknown>
 }
 
+export interface AiGeminiOAuthStatusResult {
+  available: boolean
+  account?: string | null
+  reason: string
+}
+
+export interface AiGeminiOAuthStartResult {
+  success: boolean
+  account?: string | null
+  error?: string | null
+  message: string
+}
+
 export interface AiTestResult {
   ok: boolean
   message: string
@@ -295,6 +308,15 @@ export const settingsApi = {
     return handleResponse(res)
   },
 
+  async previewAiModels(data: { base_url: string; api_key: string; api_key_source: string }): Promise<AiModelListResult> {
+    const res = await apiFetch('/api/settings/ai/models/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
   async importCodexSettings(): Promise<AiImportResult> {
     const res = await apiFetch('/api/settings/ai/import-codex', {
       method: 'POST',
@@ -319,6 +341,20 @@ export const settingsApi = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
+    })
+    return handleResponse(res)
+  },
+
+  async getGeminiOAuthStatus(): Promise<AiGeminiOAuthStatusResult> {
+    const res = await apiFetch('/api/settings/ai/gemini-oauth/status')
+    return handleResponse(res)
+  },
+
+  async startGeminiOAuth(proxy?: string, timeoutSeconds = 120): Promise<AiGeminiOAuthStartResult> {
+    const res = await apiFetch('/api/settings/ai/gemini-oauth/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ proxy: proxy || null, timeout_seconds: timeoutSeconds }),
     })
     return handleResponse(res)
   },

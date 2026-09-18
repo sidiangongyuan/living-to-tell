@@ -6,12 +6,12 @@
 
 A local-first Windows writing studio for long-form projects, traceable references, and reviewable AI.
 
-[![Latest release](https://img.shields.io/badge/preview-0.1.54-2563eb?style=flat-square)](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.54)
+[![Latest release](https://img.shields.io/badge/preview-0.1.55-2563eb?style=flat-square)](https://github.com/sidiangongyuan/living-to-tell/releases/tag/living-to-tell-v0.1.55)
 [![Windows](https://img.shields.io/badge/Windows-x64-111827?style=flat-square&logo=windows11)](https://github.com/sidiangongyuan/living-to-tell/releases/latest)
 [![Local first](https://img.shields.io/badge/data-local--first-15803d?style=flat-square)](#data-and-privacy)
 [![License](https://img.shields.io/badge/license-MIT-f59e0b?style=flat-square)](LICENSE)
 
-[**Download for Windows**](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.54/LivingToTell_0.1.54_x64-setup.exe)
+[**Download for Windows**](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.55/LivingToTell_0.1.55_x64-setup.exe)
  · [中文说明](README.zh-CN.md)
  · [User guide](docs/user-guide.md)
  · [Visual tutorials](docs/tutorials.md)
@@ -131,8 +131,8 @@ See the [user guide](docs/user-guide.md) for provider-specific AI setup instruct
 
 The current public preview supports Windows x64.
 
-- Recommended: [`LivingToTell_0.1.54_x64-setup.exe`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.54/LivingToTell_0.1.54_x64-setup.exe)
-- MSI package: [`LivingToTell_0.1.54_x64_zh-CN.msi`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.54/LivingToTell_0.1.54_x64_zh-CN.msi)
+- Recommended: [`LivingToTell_0.1.55_x64-setup.exe`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.55/LivingToTell_0.1.55_x64-setup.exe)
+- MSI package: [`LivingToTell_0.1.55_x64_zh-CN.msi`](https://github.com/sidiangongyuan/living-to-tell/releases/download/living-to-tell-v0.1.55/LivingToTell_0.1.55_x64_zh-CN.msi)
 - Release notes and older builds: [GitHub Releases](https://github.com/sidiangongyuan/living-to-tell/releases)
 
 Preview installers are currently unsigned, so Windows SmartScreen may show a warning. Only run installers downloaded from this repository's Release page.

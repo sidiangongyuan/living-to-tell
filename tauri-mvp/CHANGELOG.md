@@ -1,5 +1,15 @@
 # Living to Tell Tauri Preview Changelog
 
+## 0.1.55 - In-App Google OAuth for Gemini (2026-09-18)
+
+### Added
+
+- Added in-app one-click Google OAuth 2.0 authorization for Gemini in the Tauri desktop application.
+- Users can now authorize their Google account directly inside the AI Profile setup wizard without needing to install or run the Gemini CLI in a terminal.
+- Added support for directly accessing Gemini Code Assist via authenticated Google tokens without requiring a global `gemini.cmd` installation on the system.
+- Added automatic detection of local Google OAuth credentials in the local configuration scanner.
+- Added OpenAI-compatible relay model discovery preview with unsaved key support.
+
 ## 0.1.54 - Existing Database Startup Repair (2026-07-27)
 
 ### Fixed

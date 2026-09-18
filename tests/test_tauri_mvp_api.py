@@ -3464,6 +3464,81 @@ def test_tauri_ai_profiles_discover_and_import_local(monkeypatch):
     assert len([p for p in payload_again["profiles"] if p["source_key"] == "local:opencode"]) == 1
 
 
+def test_tauri_relay_model_preview_uses_unsaved_key_without_persisting(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.settings import routes as settings_routes
+
+    calls = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"data":[{"id":"deepseek-v4-pro"},{"id":"deepseek-v4-flash"}]}'
+
+    def fetch(req, timeout):
+        calls.append((req.full_url, req.headers.get("Authorization")))
+        return Response()
+
+    def never_persist(*args):
+        raise AssertionError("Model discovery must not save credentials")
+
+    monkeypatch.setattr(settings_routes.urlrequest, "urlopen", fetch)
+    monkeypatch.setattr(settings_routes, "_set_user_environment_variable", never_persist)
+    for base, expected in [
+        ("https://relay.example/", "https://relay.example/v1/models"),
+        ("https://relay.example/v1/", "https://relay.example/v1/models"),
+        ("https://relay.example/v1/chat/completions", "https://relay.example/v1/models"),
+        ("https://relay.example/v1/responses", "https://relay.example/v1/models"),
+        ("https://relay.example/v1/models", "https://relay.example/v1/models"),
+        ("https://relay.example/custom/api", "https://relay.example/custom/api/models"),
+    ]:
+        response = client.post("/api/settings/ai/models/preview", json={
+            "base_url": base, "api_key": "test-preview-key",
+        })
+        assert response.status_code == 200, response.text
+        assert response.json()["models"] == ["deepseek-v4-pro", "deepseek-v4-flash"]
+        assert response.json()["source"] == "live"
+        assert "test-preview-key" not in response.text
+        assert calls[-1] == (expected, "Bearer test-preview-key")
+
+    monkeypatch.setenv("LTT_TEST_PREVIEW_KEY", "saved-preview-key")
+    response = client.post("/api/settings/ai/models/preview", json={
+        "base_url": "https://relay.example", "api_key_source": "env:LTT_TEST_PREVIEW_KEY",
+    })
+    assert response.status_code == 200
+    assert calls[-1][1] == "Bearer saved-preview-key"
+
+
+def test_tauri_relay_model_preview_validates_and_sanitizes_errors(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.settings import routes as settings_routes
+
+    calls = []
+
+    def failed_fetch(*args):
+        calls.append(args)
+        raise RuntimeError("401 rejected secret-preview-key")
+
+    monkeypatch.setattr(settings_routes, "_fetch_openai_compatible_models", failed_fetch)
+    for base in ["", "relay.example", "file:///tmp/key", "https://user:password@relay.example", "https://relay.example?key=secret", "https://relay.example/#part", "https://relay.example:bad"]:
+        response = client.post("/api/settings/ai/models/preview", json={
+            "base_url": base, "api_key": "secret-preview-key",
+        })
+        assert response.status_code == 400
+    assert calls == []
+    response = client.post("/api/settings/ai/models/preview", json={
+        "base_url": "https://relay.example", "api_key": "secret-preview-key",
+    })
+    assert response.status_code == 400
+    assert "secret-preview-key" not in response.text
+    assert "models" not in response.json()
+
+
 def test_tauri_ai_settings_models_endpoint_fetches_opencode_live(monkeypatch):
     client = _tauri_client(monkeypatch)
     from features.settings import routes as settings_routes
@@ -5250,3 +5325,60 @@ def test_tauri_motif_relation_discovery_is_lightweight_review_first_and_idempote
     assert created_concept.note == ""
     assert created_concept.profile == {}
     assert created_concept.excerpt_count == 0
+
+
+def test_tauri_gemini_oauth_status_and_start(monkeypatch):
+    client = _tauri_client(monkeypatch)
+    from features.settings import routes as settings_routes
+    from writer.services.ai.gemini_oauth import GeminiOAuthResult
+    from writer.services.ai.gemini_cli_provider import GeminiCliOAuthStatus
+    from pathlib import Path
+
+    # 1. Test status
+    monkeypatch.setattr(
+        settings_routes,
+        "gemini_cli_oauth_status",
+        lambda: GeminiCliOAuthStatus(
+            available=True,
+            creds_path=Path("/tmp/oauth.json"),
+            account="user@example.com",
+            reason="",
+        ),
+    )
+    status_res = client.get("/api/settings/ai/gemini-oauth/status")
+    assert status_res.status_code == 200
+    assert status_res.json() == {
+        "available": True,
+        "account": "user@example.com",
+        "reason": "",
+    }
+
+    # 2. Test start success
+    def fake_flow_success(proxy=None, timeout=120):
+        return GeminiOAuthResult(
+            success=True,
+            email="user@example.com",
+        )
+
+    monkeypatch.setattr(settings_routes, "run_gemini_oauth_flow", fake_flow_success)
+    start_res = client.post("/api/settings/ai/gemini-oauth/start", json={"proxy": "http://127.0.0.1:7890"})
+    assert start_res.status_code == 200
+    data = start_res.json()
+    assert data["success"] is True
+    assert data["account"] == "user@example.com"
+    assert "Google 账号授权成功" in data["message"]
+
+    # 3. Test start failure
+    def fake_flow_failure(proxy=None, timeout=120):
+        return GeminiOAuthResult(
+            success=False,
+            error="OAuth authorization timed out",
+        )
+
+    monkeypatch.setattr(settings_routes, "run_gemini_oauth_flow", fake_flow_failure)
+    fail_res = client.post("/api/settings/ai/gemini-oauth/start", json={})
+    assert fail_res.status_code == 200
+    fail_data = fail_res.json()
+    assert fail_data["success"] is False
+    assert "OAuth authorization timed out" in fail_data["error"]
+
